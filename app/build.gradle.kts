@@ -23,7 +23,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("VRCX_KEYSTORE_FILE") ?: "release-keystore.jks")
+            storeFile = rootProject.file(System.getenv("VRCX_KEYSTORE_FILE") ?: "release-keystore.jks")
             storePassword = System.getenv("VRCX_KEYSTORE_PASSWORD")
             keyAlias = System.getenv("VRCX_KEY_ALIAS") ?: "vrcx-android"
             keyPassword = System.getenv("VRCX_KEYSTORE_PASSWORD")
@@ -53,6 +53,14 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "vrcx-android-${variant.versionName}.apk"
+        }
     }
 }
 
