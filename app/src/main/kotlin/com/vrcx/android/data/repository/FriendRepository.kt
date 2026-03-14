@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -39,6 +41,7 @@ class FriendRepository @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val OFFLINE_DELAY_MS = 5000L
 
+    private val friendsMutex = Mutex()
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
     val friends: StateFlow<Map<String, FriendContext>> = _friends.asStateFlow()
 
@@ -82,7 +85,7 @@ class FriendRepository @Inject constructor(
         _friends.value = friendMap
     }
 
-    fun handleEvent(event: PipelineEvent) {
+    suspend fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.FriendOnline -> handleFriendOnline(event)
             is PipelineEvent.FriendOffline -> handleFriendOffline(event)
@@ -95,7 +98,7 @@ class FriendRepository @Inject constructor(
         }
     }
 
-    private fun handleFriendOnline(event: PipelineEvent.FriendOnline) {
+    private suspend fun handleFriendOnline(event: PipelineEvent.FriendOnline) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"])
@@ -104,7 +107,7 @@ class FriendRepository @Inject constructor(
         updateFriend(userId) { ctx ->
             ctx.copy(
                 state = FriendState.ONLINE,
-                ref = user ?: ctx.ref,
+                ref = (user ?: ctx.ref)?.copy(location = location),
                 name = user?.displayName ?: ctx.name,
                 pendingOffline = false,
             )
@@ -113,7 +116,7 @@ class FriendRepository @Inject constructor(
         writeFeedOnlineOffline(userId, displayName, "online", location)
     }
 
-    private fun handleFriendOffline(event: PipelineEvent.FriendOffline) {
+    private suspend fun handleFriendOffline(event: PipelineEvent.FriendOffline) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val displayName = _friends.value[userId]?.name ?: userId
@@ -121,16 +124,21 @@ class FriendRepository @Inject constructor(
         updateFriend(userId) { it.copy(pendingOffline = true) }
         scope.launch {
             delay(OFFLINE_DELAY_MS)
-            val current = _friends.value[userId]
-            if (current?.pendingOffline == true) {
-                updateFriend(userId) { it.copy(state = FriendState.OFFLINE, pendingOffline = false) }
+            val previous = updateFriend(userId) { ctx ->
+                if (ctx.pendingOffline) {
+                    ctx.copy(state = FriendState.OFFLINE, pendingOffline = false)
+                } else {
+                    ctx
+                }
+            }
+            if (previous.pendingOffline) {
                 writeFeedOnlineOffline(userId, displayName, "offline", "")
                 _confirmedOfflineEvents.emit(userId to displayName)
             }
         }
     }
 
-    private fun handleFriendActive(event: PipelineEvent.FriendActive) {
+    private suspend fun handleFriendActive(event: PipelineEvent.FriendActive) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"])
@@ -145,7 +153,7 @@ class FriendRepository @Inject constructor(
         if (user != null) userRepository.cacheUser(user)
     }
 
-    private fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
+    private suspend fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"]) ?: return
@@ -172,18 +180,16 @@ class FriendRepository @Inject constructor(
         updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
     }
 
-    private fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
+    private suspend fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val location = content["location"]?.jsonPrimitive?.content
         val user = tryDecodeUser(content["user"])
-        val displayName = user?.displayName ?: _friends.value[userId]?.name ?: userId
-        val previousLocation = _friends.value[userId]?.ref?.location ?: ""
         val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content
             ?: content["worldName"]?.jsonPrimitive?.content
             ?: ""
 
-        updateFriend(userId) { ctx ->
+        val previous = updateFriend(userId) { ctx ->
             val newState = when {
                 location.isNullOrEmpty() || location == "offline" -> FriendState.OFFLINE
                 location == "private" -> FriendState.ACTIVE
@@ -191,12 +197,15 @@ class FriendRepository @Inject constructor(
             }
             ctx.copy(
                 state = newState,
-                ref = user ?: ctx.ref,
+                ref = (user ?: ctx.ref)?.copy(location = location),
                 name = user?.displayName ?: ctx.name,
                 pendingOffline = false,
             )
         }
         if (user != null) userRepository.cacheUser(user)
+
+        val previousLocation = previous.ref?.location ?: ""
+        val displayName = user?.displayName ?: previous.name
 
         // Only write GPS feed for actual world locations, not "private" or "offline"
         if (!location.isNullOrEmpty() && location != "offline" && location != "private" && location != previousLocation) {
@@ -204,35 +213,40 @@ class FriendRepository @Inject constructor(
         }
     }
 
-    private fun handleFriendAdd(event: PipelineEvent.FriendAdd) {
+    private suspend fun handleFriendAdd(event: PipelineEvent.FriendAdd) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"])
-        val current = _friends.value.toMutableMap()
-        current[userId] = FriendContext(
-            id = userId,
-            name = user?.displayName ?: userId,
-            state = FriendState.OFFLINE,
-            ref = user,
-        )
-        _friends.value = current
+        updateFriend(userId) {
+            FriendContext(
+                id = userId,
+                name = user?.displayName ?: userId,
+                state = FriendState.OFFLINE,
+                ref = user,
+            )
+        }
     }
 
-    private fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
+    private suspend fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
-        val current = _friends.value.toMutableMap()
-        current.remove(userId)
-        _friends.value = current
+        friendsMutex.withLock {
+            val current = _friends.value.toMutableMap()
+            current.remove(userId)
+            _friends.value = current
+        }
     }
 
-    private fun updateFriend(userId: String, update: (FriendContext) -> FriendContext) {
-        val current = _friends.value.toMutableMap()
-        val existing = current[userId] ?: FriendContext(
-            id = userId, name = userId, state = FriendState.OFFLINE,
-        )
-        current[userId] = update(existing)
-        _friends.value = current
+    private suspend fun updateFriend(userId: String, update: (FriendContext) -> FriendContext): FriendContext {
+        return friendsMutex.withLock {
+            val current = _friends.value.toMutableMap()
+            val existing = current[userId] ?: FriendContext(
+                id = userId, name = userId, state = FriendState.OFFLINE,
+            )
+            current[userId] = update(existing)
+            _friends.value = current
+            existing
+        }
     }
 
     private fun tryDecodeUser(element: kotlinx.serialization.json.JsonElement?): VrcUser? {
