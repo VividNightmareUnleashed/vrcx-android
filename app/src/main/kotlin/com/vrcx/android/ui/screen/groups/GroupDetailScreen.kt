@@ -1,5 +1,6 @@
 package com.vrcx.android.ui.screen.groups
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
+import com.vrcx.android.ui.components.VrcxCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
@@ -42,6 +43,9 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
 import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.repository.GroupRepository
+import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.components.LoadingState
+import com.vrcx.android.ui.components.ErrorState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,13 +72,21 @@ class GroupDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    init {
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    init { loadGroup() }
+
+    fun loadGroup() {
         viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
             try {
                 _group.value = groupRepository.getGroup(groupId)
                 _members.value = groupRepository.getGroupMembers(groupId)
                 _instances.value = groupRepository.getGroupInstances(groupId)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load group"
             } finally {
                 _isLoading.value = false
             }
@@ -83,28 +95,32 @@ class GroupDetailViewModel @Inject constructor(
 }
 
 @Composable
-fun GroupDetailScreen(viewModel: GroupDetailViewModel = hiltViewModel()) {
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+fun GroupDetailScreen(viewModel: GroupDetailViewModel = hiltViewModel(), onUserClick: (String) -> Unit = {}, onBack: () -> Unit = {}) {
     val group by viewModel.group.collectAsState()
     val members by viewModel.members.collectAsState()
     val instances by viewModel.instances.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    if (isLoading) {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    val g = group ?: run {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("Group not found")
-        }
-        return
-    }
-
     Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = group?.name ?: "Group", onBack = onBack)
+
+        if (isLoading) {
+            LoadingState()
+            return
+        }
+
+        if (error != null && group == null) {
+            ErrorState(error ?: "Failed to load group", onRetry = { viewModel.loadGroup() })
+            return
+        }
+
+        val g = group ?: run {
+            ErrorState("Group not found")
+            return
+        }
         // Banner
         if (g.bannerUrl.isNotEmpty()) {
             AsyncImage(model = g.bannerUrl, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(3f).clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)), contentScale = ContentScale.Crop)
@@ -137,7 +153,7 @@ fun GroupDetailScreen(viewModel: GroupDetailViewModel = hiltViewModel()) {
         when (selectedTab) {
             0 -> LazyColumn(Modifier.fillMaxSize()) {
                 items(members, key = { it.id }) { member ->
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { onUserClick(member.userId) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(model = member.user?.currentAvatarThumbnailImageUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(12.dp))
                         Column {
@@ -149,7 +165,7 @@ fun GroupDetailScreen(viewModel: GroupDetailViewModel = hiltViewModel()) {
             }
             1 -> LazyColumn(Modifier.fillMaxSize()) {
                 items(instances, key = { it.instanceId }) { instance ->
-                    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    VrcxCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                         Column(Modifier.padding(16.dp)) {
                             Text(instance.world?.name ?: instance.location, style = MaterialTheme.typography.bodyLarge)
                             Text("${instance.memberCount} members", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

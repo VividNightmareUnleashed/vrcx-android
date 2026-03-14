@@ -9,6 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -37,26 +41,45 @@ fun UserAvatar(
     status: String? = null,
     state: FriendState = FriendState.ONLINE,
     size: Dp = 48.dp,
+    showStatusDot: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
-        AsyncImage(
-            model = imageUrl,
-            contentDescription = null,
-            modifier = Modifier
-                .size(size)
-                .clip(CircleShape)
-                .background(Color.Gray.copy(alpha = 0.3f)),
-            contentScale = ContentScale.Crop,
-        )
-        // Status indicator dot
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .align(Alignment.BottomEnd)
-                .clip(CircleShape)
-                .background(statusColor(status, state))
-                .border(2.dp, Color.White, CircleShape),
-        )
+        if (imageUrl.isNullOrEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(size)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(size * 0.6f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(size)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        if (showStatusDot) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(statusColor(status, state))
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+            )
+        }
     }
 }

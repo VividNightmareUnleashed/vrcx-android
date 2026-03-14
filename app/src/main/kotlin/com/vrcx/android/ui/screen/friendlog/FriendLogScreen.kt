@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.Icon
@@ -28,6 +29,8 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
 import com.vrcx.android.data.repository.AuthRepository
+import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.data.repository.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -53,16 +56,16 @@ class FriendLogViewModel @Inject constructor(
 }
 
 @Composable
-fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel()) {
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
     val history by viewModel.history.collectAsState()
 
-    if (history.isEmpty()) {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("No friend log history", style = MaterialTheme.typography.bodyLarge)
-            Text("History will appear as friends are added/removed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    } else {
-        LazyColumn(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Friend Log", onBack = onBack)
+        if (history.isEmpty()) {
+            EmptyState(message = "No friend log history", icon = Icons.Outlined.History, subtitle = "History will appear as friends are added/removed")
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
             items(history, key = { it.id }) { entry ->
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -77,6 +80,7 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel()) {
                     }
                 }
             }
+        }
         }
     }
 }

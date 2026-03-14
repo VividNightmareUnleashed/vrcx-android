@@ -12,6 +12,7 @@ data class Group(
     val description: String = "",
     val discriminator: String = "",
     val galleries: List<GroupGallery> = emptyList(),
+    val groupId: String = "",
     val iconId: String = "",
     val iconUrl: String = "",
     val id: String = "",

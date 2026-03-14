@@ -95,7 +95,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
             ) { innerPadding ->
                 VrcxNavGraph(
                     navController = navController,
-                    modifier = Modifier.padding(innerPadding),
+                    modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
                 )
             }
         } else {

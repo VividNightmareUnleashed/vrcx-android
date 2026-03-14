@@ -23,7 +23,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -48,13 +48,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.TrustRankBadge
+import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.statusColor
+import com.vrcx.android.ui.components.ErrorState
+import com.vrcx.android.ui.components.LoadingState
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun UserDetailScreen(
     viewModel: UserDetailViewModel = hiltViewModel(),
+    onBack: () -> Unit = {},
 ) {
     val user by viewModel.user.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -68,21 +74,14 @@ fun UserDetailScreen(
         }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+    Scaffold(
+        topBar = { VrcxDetailTopBar(title = user?.displayName ?: "User", onBack = onBack) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
         if (isLoading && user == null) {
-            Column(
-                Modifier.fillMaxSize().padding(padding),
-                Arrangement.Center, Alignment.CenterHorizontally,
-            ) {
-                CircularProgressIndicator()
-            }
+            LoadingState(Modifier.padding(padding))
         } else if (user == null) {
-            Column(
-                Modifier.fillMaxSize().padding(padding),
-                Arrangement.Center, Alignment.CenterHorizontally,
-            ) {
-                Text("User not found", style = MaterialTheme.typography.bodyLarge)
-            }
+            ErrorState("User not found", onRetry = { viewModel.loadUser() }, modifier = Modifier.padding(padding))
         } else {
             val u = user!!
             Column(
@@ -92,13 +91,11 @@ fun UserDetailScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp),
             ) {
-                // Profile header
                 ProfileHeader(u)
                 Spacer(Modifier.height(16.dp))
 
-                // Bio
                 if (u.bio.isNotBlank()) {
-                    Card(Modifier.fillMaxWidth()) {
+                    VrcxCard {
                         Column(Modifier.padding(16.dp)) {
                             Text("Bio", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(4.dp))
@@ -108,9 +105,8 @@ fun UserDetailScreen(
                     Spacer(Modifier.height(12.dp))
                 }
 
-                // Location
                 if (!u.location.isNullOrEmpty() && u.location != "offline" && u.location != "private") {
-                    Card(Modifier.fillMaxWidth()) {
+                    VrcxCard {
                         Column(Modifier.padding(16.dp)) {
                             Text("Location", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(4.dp))
@@ -120,8 +116,7 @@ fun UserDetailScreen(
                     Spacer(Modifier.height(12.dp))
                 }
 
-                // Info
-                Card(Modifier.fillMaxWidth()) {
+                VrcxCard {
                     Column(Modifier.padding(16.dp)) {
                         Text("Info", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(8.dp))
@@ -137,7 +132,6 @@ fun UserDetailScreen(
                 }
                 Spacer(Modifier.height(16.dp))
 
-                // Actions
                 Text("Actions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

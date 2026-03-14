@@ -1,37 +1,28 @@
 package com.vrcx.android.ui.screen.search
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil3.compose.AsyncImage
+import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.UserListItem
+import com.vrcx.android.ui.components.VrcxSearchBar
+import com.vrcx.android.ui.components.VrcxTopBar
+import com.vrcx.android.ui.components.WorldListItem
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -43,15 +34,17 @@ fun SearchScreen(
     val worlds by viewModel.worlds.collectAsState()
     val avatars by viewModel.avatars.collectAsState()
     val groups by viewModel.groups.collectAsState()
+    val hasSearched by viewModel.hasSearched.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val error by viewModel.error.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = viewModel::updateQuery,
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            placeholder = { Text("Search VRChat") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true,
+        VrcxTopBar(title = "Search")
+
+        VrcxSearchBar(
+            query = query,
+            onQueryChange = viewModel::updateQuery,
+            placeholder = "Search VRChat",
         )
 
         TabRow(selectedTabIndex = selectedTab.ordinal) {
@@ -64,62 +57,66 @@ fun SearchScreen(
             }
         }
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            when (selectedTab) {
-                SearchTab.USERS -> items(users, key = { it.id }) { user ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onUserClick(user.id) }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = user.currentAvatarThumbnailImageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop,
+        val isEmpty = when (selectedTab) {
+            SearchTab.USERS -> users.isEmpty()
+            SearchTab.WORLDS -> worlds.isEmpty()
+            SearchTab.AVATARS -> avatars.isEmpty()
+            SearchTab.GROUPS -> groups.isEmpty()
+        }
+
+        if (isSearching) {
+            com.vrcx.android.ui.components.LoadingState()
+        } else if (error != null) {
+            com.vrcx.android.ui.components.ErrorState(
+                message = error ?: "Search failed",
+                onRetry = { viewModel.selectTab(selectedTab) },
+            )
+        } else if (isEmpty) {
+            if (!hasSearched) {
+                EmptyState(
+                    message = "Search VRChat",
+                    icon = Icons.Outlined.Search,
+                    subtitle = "Find users, worlds, avatars, and groups",
+                )
+            } else {
+                EmptyState(
+                    message = "No results found",
+                    icon = Icons.Outlined.SearchOff,
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                when (selectedTab) {
+                    SearchTab.USERS -> items(users, key = { it.id }) { user ->
+                        UserListItem(
+                            avatarUrl = user.currentAvatarThumbnailImageUrl,
+                            displayName = user.displayName,
+                            subtitle = user.statusDescription,
+                            tags = user.tags,
+                            onClick = { onUserClick(user.id) },
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(user.displayName, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(user.statusDescription, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
                     }
-                }
-                SearchTab.WORLDS -> items(worlds, key = { it.id }) { world ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = world.thumbnailImageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop,
+                    SearchTab.WORLDS -> items(worlds, key = { it.id }) { world ->
+                        WorldListItem(
+                            thumbnailUrl = world.thumbnailImageUrl,
+                            name = world.name,
+                            authorName = world.authorName,
+                            occupants = world.occupants,
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(world.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                            Text("by ${world.authorName} | ${world.occupants} online", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                     }
-                }
-                SearchTab.AVATARS -> items(avatars, key = { it.id }) { avatar ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(model = avatar.thumbnailImageUrl, contentDescription = null, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(avatar.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                            Text("by ${avatar.authorName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    SearchTab.AVATARS -> items(avatars, key = { it.id }) { avatar ->
+                        WorldListItem(
+                            thumbnailUrl = avatar.thumbnailImageUrl,
+                            name = avatar.name,
+                            authorName = avatar.authorName,
+                        )
                     }
-                }
-                SearchTab.GROUPS -> items(groups, key = { it.id }) { group ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(model = group.iconUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(group.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                            Text("${group.memberCount} members", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    SearchTab.GROUPS -> items(groups, key = { it.id }) { group ->
+                        WorldListItem(
+                            thumbnailUrl = group.iconUrl,
+                            name = group.name,
+                            authorName = "${group.memberCount} members",
+                        )
                     }
                 }
             }

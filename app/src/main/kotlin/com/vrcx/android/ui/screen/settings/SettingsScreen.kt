@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -31,6 +32,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -57,10 +59,12 @@ class SettingsViewModel @Inject constructor(
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onNavigateToCredits: () -> Unit = {},
+    onBack: () -> Unit = {},
 ) {
     val themeMode by viewModel.themeMode.collectAsState()
     val dynamicColors by viewModel.dynamicColors.collectAsState()
@@ -69,7 +73,9 @@ fun SettingsScreen(
     val notifyInvite by viewModel.notifyInvite.collectAsState()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Settings", onBack = onBack)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Appearance", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
 
@@ -115,6 +121,7 @@ fun SettingsScreen(
             Spacer(Modifier.size(12.dp))
             Text("Credits", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         }
     }
 }

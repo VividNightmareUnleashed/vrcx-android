@@ -41,6 +41,8 @@ fun VrcxBottomBar(navController: NavController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    if (currentRoute !in VrcxRoutes.tabRoutes) return
+
     NavigationBar {
         bottomNavItems.forEach { item ->
             val selected = currentRoute == item.route

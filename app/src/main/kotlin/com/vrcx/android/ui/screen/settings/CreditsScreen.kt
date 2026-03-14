@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,21 +26,26 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.vrcx.android.R
+import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.theme.AnthropicDark
 import com.vrcx.android.ui.theme.AnthropicLight
 import com.vrcx.android.ui.theme.AnthropicMidGray
 import com.vrcx.android.ui.theme.AnthropicOrange
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun CreditsScreen() {
+fun CreditsScreen(onBack: () -> Unit = {}) {
     val uriHandler = LocalUriHandler.current
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Credits", onBack = onBack)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
         // App header
         Text("VRCX Android", style = MaterialTheme.typography.headlineMedium)
         Text(
@@ -53,7 +57,7 @@ fun CreditsScreen() {
         Spacer(Modifier.height(24.dp))
 
         // Original VRCX credit
-        Card(Modifier.fillMaxWidth()) {
+        VrcxCard {
             Column(Modifier.padding(16.dp)) {
                 Text("Based on VRCX", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
@@ -88,8 +92,7 @@ fun CreditsScreen() {
         Spacer(Modifier.height(16.dp))
 
         // Developer credit
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+        VrcxCard(
             onClick = { uriHandler.openUri("https://x.com/AyaDreamsOfYou") },
         ) {
             Column(Modifier.padding(16.dp)) {
@@ -144,6 +147,7 @@ fun CreditsScreen() {
                     tint = AnthropicMidGray,
                 )
             }
+        }
         }
     }
 }

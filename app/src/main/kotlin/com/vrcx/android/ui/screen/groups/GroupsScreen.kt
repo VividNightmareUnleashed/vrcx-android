@@ -1,5 +1,7 @@
 package com.vrcx.android.ui.screen.groups
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,8 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GroupRepository
+import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -52,16 +56,17 @@ class GroupsViewModel @Inject constructor(
 }
 
 @Composable
-fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (String) -> Unit = {}) {
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (String) -> Unit = {}, onBack: () -> Unit = {}) {
     val groups by viewModel.groups.collectAsState()
-    if (groups.isEmpty()) {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("No groups", style = MaterialTheme.typography.bodyLarge)
-        }
-    } else {
-        LazyColumn(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Groups", onBack = onBack)
+        if (groups.isEmpty()) {
+            EmptyState(message = "No groups", icon = Icons.Outlined.Group, subtitle = "Join groups in VRChat to see them here")
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
             items(groups, key = { it.id }) { group ->
-                Row(Modifier.fillMaxWidth().clickable { onGroupClick(group.id) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable { onGroupClick(group.groupId.ifEmpty { group.id }) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(model = group.iconUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
                     Spacer(Modifier.width(12.dp))
                     Column {
@@ -70,6 +75,7 @@ fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (St
                     }
                 }
             }
+        }
         }
     }
 }

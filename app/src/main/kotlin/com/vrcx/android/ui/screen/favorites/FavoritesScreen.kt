@@ -1,13 +1,14 @@
 package com.vrcx.android.ui.screen.favorites
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -26,6 +27,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.repository.FavoriteRepository
+import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -45,12 +49,14 @@ class FavoritesViewModel @Inject constructor(
 }
 
 @Composable
-fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel()) {
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
     val favorites by viewModel.favorites.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Friends", "Worlds", "Avatars")
 
     Column(modifier = Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Favorites", onBack = onBack)
         TabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
                 Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(title) })
@@ -59,13 +65,11 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel()) {
         val type = listOf("friend", "world", "avatar")[selectedTab]
         val filtered = favorites.filter { it.type == type }
         if (filtered.isEmpty()) {
-            Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-                Text("No ${tabs[selectedTab].lowercase()} favorites", style = MaterialTheme.typography.bodyLarge)
-            }
+            EmptyState(message = "No ${tabs[selectedTab].lowercase()} favorites", icon = Icons.Outlined.FavoriteBorder)
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(filtered, key = { it.id }) { fav ->
-                    Card(Modifier.fillMaxWidth()) {
+                    VrcxCard {
                         Column(Modifier.padding(16.dp)) {
                             Text(fav.favoriteId, style = MaterialTheme.typography.bodyMedium)
                             Text("Group: ${fav.tags.joinToString()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -7,8 +7,10 @@ import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
+import com.vrcx.android.data.repository.FriendRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,7 +25,34 @@ import javax.inject.Inject
 class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    fun refresh() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            _error.value = null
+            try {
+                friendRepository.loadFriendsList()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to refresh"
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    val userAvatarUrls: StateFlow<Map<String, String>> = friendRepository.friends.map { friends ->
+        friends.values.mapNotNull { f ->
+            f.ref?.currentAvatarThumbnailImageUrl?.let { url -> f.id to url }
+        }.toMap()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val userId = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user?.id ?: ""
@@ -67,4 +96,5 @@ class FeedViewModel @Inject constructor(
         if (current.contains(filter)) current.remove(filter) else current.add(filter)
         _activeFilters.value = current
     }
+
 }

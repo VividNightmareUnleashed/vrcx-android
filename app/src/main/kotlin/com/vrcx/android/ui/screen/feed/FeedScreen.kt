@@ -1,5 +1,6 @@
 package com.vrcx.android.ui.screen.feed
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -8,18 +9,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.DynamicFeed
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,9 +28,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.UserAvatar
+import com.vrcx.android.ui.components.VrcxTopBar
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel = hiltViewModel(),
@@ -38,8 +43,12 @@ fun FeedScreen(
 ) {
     val entries by viewModel.feedEntries.collectAsState()
     val filters by viewModel.activeFilters.collectAsState()
+    val avatarUrls by viewModel.userAvatarUrls.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
+        VrcxTopBar(title = "Feed")
+
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -57,18 +66,26 @@ fun FeedScreen(
 
         val filteredEntries = entries.filter { filters.contains(it.type) }
 
-        if (filteredEntries.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text("No feed entries yet", style = MaterialTheme.typography.bodyLarge)
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filteredEntries, key = { "${it.type}_${it.id}" }) { entry ->
-                    FeedItem(entry = entry)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (filteredEntries.isEmpty()) {
+                EmptyState(
+                    message = "No feed entries yet",
+                    icon = Icons.Outlined.DynamicFeed,
+                    subtitle = "Activity from your friends will appear here",
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(filteredEntries, key = { "${it.type}_${it.id}" }) { entry ->
+                        FeedItem(
+                            entry = entry,
+                            avatarUrl = entry.thumbnailUrl.ifEmpty { avatarUrls[entry.userId] },
+                            onClick = { onUserClick(entry.userId) },
+                        )
+                    }
                 }
             }
         }
@@ -76,20 +93,19 @@ fun FeedScreen(
 }
 
 @Composable
-private fun FeedItem(entry: FeedEntry) {
+private fun FeedItem(entry: FeedEntry, avatarUrl: String?, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = when (entry.type) {
-                "gps" -> Icons.Default.LocationOn
-                else -> Icons.Default.Person
-            },
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+        UserAvatar(
+            imageUrl = avatarUrl,
+            state = if (entry.type == "offline") FriendState.OFFLINE else FriendState.ONLINE,
+            size = 40.dp,
+            showStatusDot = false,
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -99,7 +115,6 @@ private fun FeedItem(entry: FeedEntry) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = when (entry.type) {
                     "gps" -> "Moved to ${entry.details}"
@@ -116,5 +131,10 @@ private fun FeedItem(entry: FeedEntry) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Text(
+            text = relativeTime(entry.createdAt),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

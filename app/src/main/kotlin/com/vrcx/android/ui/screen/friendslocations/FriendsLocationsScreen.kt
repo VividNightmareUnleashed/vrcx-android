@@ -1,6 +1,8 @@
 package com.vrcx.android.ui.screen.friendslocations
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,10 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FriendRepository
+import androidx.compose.foundation.clickable
+import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
+import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,32 +61,27 @@ class FriendsLocationsViewModel @Inject constructor(
             }
             .sortedByDescending { it.friends.size }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Need viewModelScope
-    private val viewModelScope get() = (this as ViewModel).let {
-        val field = ViewModel::class.java.getDeclaredMethod("getViewModelScope")
-        field.invoke(this) as kotlinx.coroutines.CoroutineScope
-    }
 }
 
 @Composable
-fun FriendsLocationsScreen(viewModel: FriendsLocationsViewModel = hiltViewModel()) {
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+fun FriendsLocationsScreen(viewModel: FriendsLocationsViewModel = hiltViewModel(), onUserClick: (String) -> Unit = {}, onBack: () -> Unit = {}) {
     val groups by viewModel.locationGroups.collectAsState()
 
-    if (groups.isEmpty()) {
-        Column(Modifier.fillMaxSize(), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("No friends in public instances", style = MaterialTheme.typography.bodyLarge)
-        }
-    } else {
-        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-            items(groups, key = { it.location }) { group ->
-                Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Friends Locations", onBack = onBack)
+        if (groups.isEmpty()) {
+            EmptyState(message = "No friends in public instances", icon = Icons.Outlined.LocationOn, subtitle = "Friends in joinable instances will appear here")
+        } else {
+            LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                items(groups, key = { it.location }) { group ->
+                    VrcxCard {
                     Column(Modifier.padding(16.dp)) {
                         Text("${group.friends.size} friends", style = MaterialTheme.typography.titleSmall)
                         Text(group.location.split(":").first(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
                         group.friends.forEach { friend ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().clickable { onUserClick(friend.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 UserAvatar(imageUrl = friend.ref?.currentAvatarThumbnailImageUrl, status = friend.ref?.status, state = friend.state, size = 32.dp)
                                 Spacer(Modifier.width(8.dp))
                                 Text(friend.name, style = MaterialTheme.typography.bodyMedium)
@@ -89,6 +90,7 @@ fun FriendsLocationsScreen(viewModel: FriendsLocationsViewModel = hiltViewModel(
                     }
                 }
             }
+        }
         }
     }
 }

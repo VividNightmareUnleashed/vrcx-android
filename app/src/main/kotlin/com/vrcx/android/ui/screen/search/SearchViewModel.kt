@@ -44,6 +44,12 @@ class SearchViewModel @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
+    private val _hasSearched = MutableStateFlow(false)
+    val hasSearched: StateFlow<Boolean> = _hasSearched.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     private var searchJob: Job? = null
 
     fun updateQuery(query: String) {
@@ -66,6 +72,7 @@ class SearchViewModel @Inject constructor(
 
     private suspend fun search() {
         _isSearching.value = true
+        _error.value = null
         try {
             val q = _query.value
             when (_selectedTab.value) {
@@ -74,9 +81,11 @@ class SearchViewModel @Inject constructor(
                 SearchTab.AVATARS -> _avatars.value = searchRepository.searchAvatars(q)
                 SearchTab.GROUPS -> _groups.value = searchRepository.searchGroups(q)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Search failed"
         } finally {
             _isSearching.value = false
+            _hasSearched.value = true
         }
     }
 }

@@ -67,6 +67,7 @@ class FriendsViewModel @Inject constructor(
             _isRefreshing.value = true
             try {
                 friendRepository.loadFriendsList()
+            } catch (_: Exception) {
             } finally {
                 _isRefreshing.value = false
             }

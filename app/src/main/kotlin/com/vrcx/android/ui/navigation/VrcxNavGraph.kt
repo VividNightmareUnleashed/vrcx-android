@@ -1,5 +1,12 @@
 package com.vrcx.android.ui.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
@@ -50,48 +57,214 @@ object VrcxRoutes {
     fun userDetail(userId: String) = "user_detail/$userId"
     fun groupDetail(groupId: String) = "group_detail/$groupId"
     fun avatarDetail(avatarId: String) = "avatar_detail/$avatarId"
+
+    val tabRoutes = setOf(FEED, FRIENDS, SEARCH, NOTIFICATIONS, PROFILE)
 }
+
+private const val FADE_DURATION = 300
+private const val SLIDE_DURATION = 350
+
+private val tabEnterTransition: EnterTransition = fadeIn(tween(FADE_DURATION))
+private val tabExitTransition: ExitTransition = fadeOut(tween(FADE_DURATION))
+
+private val subScreenEnterTransition: EnterTransition =
+    slideInHorizontally(tween(SLIDE_DURATION)) { it } + fadeIn(tween(SLIDE_DURATION))
+private val subScreenExitTransition: ExitTransition =
+    fadeOut(tween(SLIDE_DURATION))
+private val subScreenPopEnterTransition: EnterTransition =
+    fadeIn(tween(SLIDE_DURATION))
+private val subScreenPopExitTransition: ExitTransition =
+    slideOutHorizontally(tween(SLIDE_DURATION)) { it } + fadeOut(tween(SLIDE_DURATION))
 
 @Composable
 fun VrcxNavGraph(
     navController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
+    val onBack: () -> Unit = { navController.popBackStack() }
+
     NavHost(
         navController = navController,
         startDestination = VrcxRoutes.FEED,
         modifier = modifier,
     ) {
-        composable(VrcxRoutes.FEED) {
+        // Tab routes — crossfade
+        composable(
+            VrcxRoutes.FEED,
+            enterTransition = { tabEnterTransition },
+            exitTransition = { tabExitTransition },
+            popEnterTransition = { tabEnterTransition },
+            popExitTransition = { tabExitTransition },
+        ) {
             FeedScreen(onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
         }
-        composable(VrcxRoutes.FRIENDS) {
+        composable(
+            VrcxRoutes.FRIENDS,
+            enterTransition = { tabEnterTransition },
+            exitTransition = { tabExitTransition },
+            popEnterTransition = { tabEnterTransition },
+            popExitTransition = { tabExitTransition },
+        ) {
             FriendsScreen(onFriendClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
         }
-        composable(VrcxRoutes.SEARCH) {
+        composable(
+            VrcxRoutes.SEARCH,
+            enterTransition = { tabEnterTransition },
+            exitTransition = { tabExitTransition },
+            popEnterTransition = { tabEnterTransition },
+            popExitTransition = { tabExitTransition },
+        ) {
             SearchScreen(onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
         }
-        composable(VrcxRoutes.NOTIFICATIONS) { NotificationsScreen() }
-        composable(VrcxRoutes.PROFILE) {
+        composable(
+            VrcxRoutes.NOTIFICATIONS,
+            enterTransition = { tabEnterTransition },
+            exitTransition = { tabExitTransition },
+            popEnterTransition = { tabEnterTransition },
+            popExitTransition = { tabExitTransition },
+        ) {
+            NotificationsScreen()
+        }
+        composable(
+            VrcxRoutes.PROFILE,
+            enterTransition = { tabEnterTransition },
+            exitTransition = { tabExitTransition },
+            popEnterTransition = { tabEnterTransition },
+            popExitTransition = { tabExitTransition },
+        ) {
             ProfileScreen(onNavigate = { route -> navController.navigate(route) })
         }
-        composable(VrcxRoutes.FAVORITES) { FavoritesScreen() }
-        composable(VrcxRoutes.GROUPS) {
-            GroupsScreen(onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) })
+
+        // Sub-screen routes — slide
+        composable(
+            VrcxRoutes.FAVORITES,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            FavoritesScreen(onBack = onBack)
         }
-        composable(VrcxRoutes.MY_AVATARS) { MyAvatarsScreen() }
-        composable(VrcxRoutes.GALLERY) { GalleryScreen() }
-        composable(VrcxRoutes.CHARTS) { ChartsScreen() }
-        composable(VrcxRoutes.MODERATION) { ModerationScreen() }
-        composable(VrcxRoutes.SETTINGS) {
-            SettingsScreen(onNavigateToCredits = { navController.navigate(VrcxRoutes.CREDITS) })
+        composable(
+            VrcxRoutes.GROUPS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            GroupsScreen(
+                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+                onBack = onBack,
+            )
         }
-        composable(VrcxRoutes.CREDITS) { CreditsScreen() }
-        composable(VrcxRoutes.FRIENDS_LOCATIONS) { FriendsLocationsScreen() }
-        composable(VrcxRoutes.FRIEND_LOG) { FriendLogScreen() }
-        composable(VrcxRoutes.USER_DETAIL) { UserDetailScreen() }
-        composable(VrcxRoutes.GROUP_DETAIL) { GroupDetailScreen() }
-        composable(VrcxRoutes.AVATAR_DETAIL) { PlaceholderScreen("Avatar Detail") }
+        composable(
+            VrcxRoutes.MY_AVATARS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            MyAvatarsScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.GALLERY,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            GalleryScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.CHARTS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            ChartsScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.MODERATION,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            ModerationScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.SETTINGS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            SettingsScreen(
+                onNavigateToCredits = { navController.navigate(VrcxRoutes.CREDITS) },
+                onBack = onBack,
+            )
+        }
+        composable(
+            VrcxRoutes.CREDITS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            CreditsScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.FRIENDS_LOCATIONS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            FriendsLocationsScreen(
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onBack = onBack,
+            )
+        }
+        composable(
+            VrcxRoutes.FRIEND_LOG,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            FriendLogScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.USER_DETAIL,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            UserDetailScreen(onBack = onBack)
+        }
+        composable(
+            VrcxRoutes.GROUP_DETAIL,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            GroupDetailScreen(
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onBack = onBack,
+            )
+        }
+        composable(
+            VrcxRoutes.AVATAR_DETAIL,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            PlaceholderScreen("Avatar Detail")
+        }
     }
 }
 
