@@ -8,9 +8,13 @@ import kotlinx.serialization.json.JsonElement
 data class GalleryImage(
     @SerialName("created_at") val createdAt: String = "",
     val id: String = "",
+    val name: String = "",
     val ownerId: String = "",
+    val tags: List<String> = emptyList(),
     val versions: List<GalleryImageVersion> = emptyList(),
 )
+
+fun GalleryImage.imageUrl(): String? = versions.lastOrNull()?.file?.url
 
 @Serializable
 data class GalleryImageVersion(
@@ -27,10 +31,28 @@ data class GalleryFile(
     val category: String = "",
     val fileName: String = "",
     val md5: String = "",
-    val sizeInBytes: Int = 0,
+    val sizeInBytes: Long = 0,
     val status: String = "",
     val uploadId: String = "",
     val url: String = "",
+)
+
+@Serializable
+data class VrcPrint(
+    val id: String = "",
+    val ownerId: String = "",
+    val authorId: String = "",
+    val authorName: String = "",
+    val worldId: String = "",
+    val worldName: String = "",
+    val note: String = "",
+    val files: PrintFiles = PrintFiles(),
+    @SerialName("created_at") val createdAt: String = "",
+)
+
+@Serializable
+data class PrintFiles(
+    val image: String = "",
 )
 
 @Serializable
@@ -41,6 +63,12 @@ data class InventoryItem(
     val expiresAfterUse: Boolean = false,
     val quantity: Int = 0,
     val usesLeft: Int = 0,
+    val name: String = "",
+    val description: String = "",
+    val imageUrl: String = "",
+    val itemType: String = "",
+    val flags: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: String = "",
 )
 
 @Serializable
