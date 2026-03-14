@@ -56,7 +56,7 @@ class NotificationHelper(private val context: Context) {
         val notification = Notification.Builder(context, channel)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()

@@ -176,7 +176,7 @@ class WebSocketForegroundService : Service() {
         return Notification.Builder(this, CHANNEL_SERVICE)
             .setContentTitle("VRCX")
             .setContentText("Connected to VRChat")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
