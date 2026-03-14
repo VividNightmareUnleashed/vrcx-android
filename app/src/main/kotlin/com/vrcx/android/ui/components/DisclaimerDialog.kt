@@ -21,14 +21,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
@@ -36,12 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.vrcx.android.ui.theme.AnthropicDark
+import com.vrcx.android.ui.theme.AnthropicLight
+import com.vrcx.android.ui.theme.AnthropicMidGray
+import com.vrcx.android.ui.theme.AnthropicOrange
 import kotlinx.coroutines.delay
-
-private val AnthropicDark = Color(0xFF141413)
-private val AnthropicLight = Color(0xFFFAF9F5)
-private val AnthropicMidGray = Color(0xFFB0AEA5)
-private val AnthropicOrange = Color(0xFFD97757)
 
 @Composable
 fun DisclaimerDialog(

@@ -25,3 +25,9 @@ val VrcxTertiary = Color(0xFF7D5260)
 val VrcxPrimaryDark = Color(0xFFD0BCFF)
 val VrcxSecondaryDark = Color(0xFFCCC2DC)
 val VrcxTertiaryDark = Color(0xFFEFB8C8)
+
+// Anthropic brand colors
+val AnthropicDark = Color(0xFF141413)
+val AnthropicLight = Color(0xFFFAF9F5)
+val AnthropicMidGray = Color(0xFFB0AEA5)
+val AnthropicOrange = Color(0xFFD97757)

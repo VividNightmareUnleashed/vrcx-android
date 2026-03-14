@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.gif.AnimatedImageDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -20,6 +21,7 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
         )
         return ImageLoader.Builder(context)
             .components {
+                add(AnimatedImageDecoder.Factory())
                 add(OkHttpNetworkFetcherFactory(callFactory = { entryPoint.okHttpClient() }))
             }
             .build()

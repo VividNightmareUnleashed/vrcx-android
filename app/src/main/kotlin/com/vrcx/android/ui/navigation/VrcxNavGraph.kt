@@ -24,6 +24,7 @@ import com.vrcx.android.ui.screen.notifications.NotificationsScreen
 import com.vrcx.android.ui.screen.profile.ProfileScreen
 import com.vrcx.android.ui.screen.profile.UserDetailScreen
 import com.vrcx.android.ui.screen.search.SearchScreen
+import com.vrcx.android.ui.screen.settings.CreditsScreen
 import com.vrcx.android.ui.screen.settings.SettingsScreen
 
 object VrcxRoutes {
@@ -44,6 +45,7 @@ object VrcxRoutes {
     const val CHARTS = "charts"
     const val MODERATION = "moderation"
     const val SETTINGS = "settings"
+    const val CREDITS = "credits"
 
     fun userDetail(userId: String) = "user_detail/$userId"
     fun groupDetail(groupId: String) = "group_detail/$groupId"
@@ -81,7 +83,10 @@ fun VrcxNavGraph(
         composable(VrcxRoutes.GALLERY) { GalleryScreen() }
         composable(VrcxRoutes.CHARTS) { ChartsScreen() }
         composable(VrcxRoutes.MODERATION) { ModerationScreen() }
-        composable(VrcxRoutes.SETTINGS) { SettingsScreen() }
+        composable(VrcxRoutes.SETTINGS) {
+            SettingsScreen(onNavigateToCredits = { navController.navigate(VrcxRoutes.CREDITS) })
+        }
+        composable(VrcxRoutes.CREDITS) { CreditsScreen() }
         composable(VrcxRoutes.FRIENDS_LOCATIONS) { FriendsLocationsScreen() }
         composable(VrcxRoutes.FRIEND_LOG) { FriendLogScreen() }
         composable(VrcxRoutes.USER_DETAIL) { UserDetailScreen() }
