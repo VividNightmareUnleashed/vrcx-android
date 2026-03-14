@@ -1,0 +1,158 @@
+package com.vrcx.android.data.repository
+
+import com.vrcx.android.data.api.AuthApi
+import com.vrcx.android.data.api.AuthInterceptor
+import com.vrcx.android.data.api.CookieJarImpl
+import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.api.model.TwoFactorAuthRequest
+import com.vrcx.android.data.preferences.VrcxPreferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import javax.inject.Inject
+import javax.inject.Singleton
+
+sealed class AuthState {
+    data object NotLoggedIn : AuthState()
+    data object LoggingIn : AuthState()
+    data class RequiresTwoFactor(val methods: List<String>) : AuthState()
+    data class LoggedIn(val user: CurrentUser) : AuthState()
+    data class Error(val message: String) : AuthState()
+}
+
+@Singleton
+class AuthRepository @Inject constructor(
+    private val authApi: AuthApi,
+    private val authInterceptor: AuthInterceptor,
+    private val cookieJar: CookieJarImpl,
+    private val preferences: VrcxPreferences,
+    private val json: Json,
+) {
+    private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
+    val authState: StateFlow<AuthState> = _authState.asStateFlow()
+
+    private var _currentUser: CurrentUser? = null
+    val currentUser: CurrentUser? get() = _currentUser
+
+    private var _authToken: String? = null
+    val authToken: String? get() = _authToken
+
+    suspend fun login(username: String, password: String) {
+        try {
+            _authState.value = AuthState.LoggingIn
+            authInterceptor.setBasicAuth(username, password)
+
+            val response = authApi.getCurrentUser()
+            val jsonObj = response.jsonObject
+
+            // Check if 2FA is required
+            if (jsonObj.containsKey("requiresTwoFactorAuth")) {
+                val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
+                    ?.map { it.jsonPrimitive.content }
+                    ?: emptyList()
+                authInterceptor.clearBasicAuth()
+                _authState.value = AuthState.RequiresTwoFactor(methods)
+                return
+            }
+
+            // Full login successful
+            val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
+            onLoginSuccess(user)
+        } catch (e: Exception) {
+            authInterceptor.clearBasicAuth()
+            _authState.value = AuthState.Error(e.message ?: "Login failed")
+        }
+    }
+
+    suspend fun verifyTotp(code: String) {
+        try {
+            _authState.value = AuthState.LoggingIn
+            // Recovery codes (OTP) are 8 digits and need a hyphen at position 4
+            val formattedCode = if (code.length == 8 && code.all { it.isDigit() }) {
+                "${code.substring(0, 4)}-${code.substring(4)}"
+            } else {
+                code
+            }
+            val result = authApi.verifyTotp(TwoFactorAuthRequest(formattedCode))
+            if (result.verified) {
+                fetchCurrentUser()
+            } else {
+                _authState.value = AuthState.Error("Verification failed")
+            }
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error(e.message ?: "Verification failed")
+        }
+    }
+
+    suspend fun verifyEmailOtp(code: String) {
+        try {
+            _authState.value = AuthState.LoggingIn
+            val result = authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
+            if (result.verified) {
+                fetchCurrentUser()
+            } else {
+                _authState.value = AuthState.Error("Verification failed")
+            }
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error(e.message ?: "Verification failed")
+        }
+    }
+
+    suspend fun fetchCurrentUser() {
+        try {
+            val response = authApi.getCurrentUser()
+            val jsonObj = response.jsonObject
+            if (jsonObj.containsKey("requiresTwoFactorAuth")) {
+                val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
+                    ?.map { it.jsonPrimitive.content }
+                    ?: emptyList()
+                _authState.value = AuthState.RequiresTwoFactor(methods)
+                return
+            }
+            val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
+            onLoginSuccess(user)
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error(e.message ?: "Failed to fetch user")
+        }
+    }
+
+    suspend fun fetchAuthToken() {
+        try {
+            val token = authApi.getAuthToken()
+            _authToken = token.token
+        } catch (e: Exception) {
+            // Token fetch failed, WebSocket won't connect
+        }
+    }
+
+    suspend fun tryResumeSession() {
+        try {
+            val cookie = cookieJar.getAuthCookie()
+            if (cookie != null) {
+                _authState.value = AuthState.LoggingIn
+                fetchCurrentUser()
+            }
+        } catch (_: Exception) {
+            _authState.value = AuthState.NotLoggedIn
+        }
+    }
+
+    suspend fun logout() {
+        _currentUser = null
+        _authToken = null
+        authInterceptor.clearBasicAuth()
+        cookieJar.clearAll()
+        _authState.value = AuthState.NotLoggedIn
+    }
+
+    private suspend fun onLoginSuccess(user: CurrentUser) {
+        _currentUser = user
+        _authState.value = AuthState.LoggedIn(user)
+        preferences.setLastUserId(user.id)
+        fetchAuthToken()
+    }
+}
