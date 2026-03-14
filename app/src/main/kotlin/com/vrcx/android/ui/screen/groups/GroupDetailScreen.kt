@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
@@ -145,7 +146,12 @@ fun GroupDetailScreen(viewModel: GroupDetailViewModel = hiltViewModel(), onUserC
         }
 
         // Tabs
-        TabRow(selectedTabIndex = selectedTab) {
+        val isWallpaperActive = LocalWallpaperActive.current
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+        ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Members (${members.size})") })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Instances (${instances.size})") })
         }

@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @Composable
 fun VrcxCard(
@@ -16,8 +17,10 @@ fun VrcxCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val isWallpaperActive = LocalWallpaperActive.current
     val colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            .let { if (isWallpaperActive) it.copy(alpha = 0.82f) else it },
     )
     if (onClick != null) {
         Card(

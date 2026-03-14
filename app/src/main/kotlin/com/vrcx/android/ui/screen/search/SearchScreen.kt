@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.Tab
@@ -21,6 +22,7 @@ import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxSearchBar
 import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.components.WorldListItem
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +49,12 @@ fun SearchScreen(
             placeholder = "Search VRChat",
         )
 
-        TabRow(selectedTabIndex = selectedTab.ordinal) {
+        val isWallpaperActive = LocalWallpaperActive.current
+        TabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+        ) {
             SearchTab.entries.forEach { tab ->
                 Tab(
                     selected = selectedTab == tab,

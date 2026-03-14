@@ -55,6 +55,8 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.statusColor
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
+import com.vrcx.android.ui.theme.LocalWallpaperActive
+import androidx.compose.ui.graphics.Color
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +76,9 @@ fun UserDetailScreen(
         }
     }
 
+    val isWallpaperActive = LocalWallpaperActive.current
     Scaffold(
+        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = { VrcxDetailTopBar(title = user?.displayName ?: "User", onBack = onBack) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->

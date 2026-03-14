@@ -34,6 +34,7 @@ import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.repository.ModerationRepository
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -56,7 +57,12 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Moderation", onBack = onBack)
-        TabRow(selectedTabIndex = selectedTab) {
+        val isWallpaperActive = LocalWallpaperActive.current
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+        ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Blocked") })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Muted") })
         }

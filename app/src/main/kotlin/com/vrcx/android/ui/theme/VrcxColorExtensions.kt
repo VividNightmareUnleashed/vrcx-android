@@ -51,6 +51,7 @@ data class VrcxColors(
 }
 
 val LocalVrcxColors = staticCompositionLocalOf { VrcxColors() }
+val LocalWallpaperActive = staticCompositionLocalOf { false }
 
 val MaterialTheme.vrcxColors: VrcxColors
     @Composable

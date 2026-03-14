@@ -1,6 +1,12 @@
 package com.vrcx.android.ui.screen.settings
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,9 +20,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -27,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -57,6 +66,10 @@ class SettingsViewModel @Inject constructor(
     fun setNotifyFriendOffline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_OFFLINE, v) } }
     fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
+
+    val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    fun setWallpaperUri(uri: String?) { viewModelScope.launch { preferences.setWallpaperUri(uri) } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +85,20 @@ fun SettingsScreen(
     val notifyOffline by viewModel.notifyFriendOffline.collectAsState()
     val notifyInvite by viewModel.notifyInvite.collectAsState()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
+    val wallpaperUri by viewModel.wallpaperUri.collectAsState()
+
+    val context = LocalContext.current
+    val wallpaperPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) { }
+        viewModel.setWallpaperUri(uri.toString())
+    }
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Settings", onBack = onBack)
@@ -95,6 +122,27 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
 
         SettingToggle("Dynamic Colors", "Use Material You colors", dynamicColors, viewModel::setDynamicColors)
+
+        Spacer(Modifier.height(12.dp))
+        Text("Wallpaper", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            if (wallpaperUri != null) "Custom wallpaper set" else "No wallpaper",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = {
+                wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) {
+                Text(if (wallpaperUri != null) "Change Wallpaper" else "Set Wallpaper")
+            }
+            if (wallpaperUri != null) {
+                OutlinedButton(onClick = { viewModel.setWallpaperUri(null) }) {
+                    Text("Remove")
+                }
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
         Text("Notifications", style = MaterialTheme.typography.titleMedium)

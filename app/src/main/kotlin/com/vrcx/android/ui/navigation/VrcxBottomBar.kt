@@ -12,12 +12,14 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 
@@ -43,7 +45,11 @@ fun VrcxBottomBar(navController: NavController) {
 
     if (currentRoute !in VrcxRoutes.tabRoutes) return
 
-    NavigationBar {
+    val isWallpaperActive = LocalWallpaperActive.current
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer
+            .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+    ) {
         bottomNavItems.forEach { item ->
             val selected = currentRoute == item.route
             NavigationBarItem(

@@ -30,6 +30,7 @@ import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -57,7 +58,12 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () 
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Favorites", onBack = onBack)
-        TabRow(selectedTabIndex = selectedTab) {
+        val isWallpaperActive = LocalWallpaperActive.current
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+        ) {
             tabs.forEachIndexed { index, title ->
                 Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(title) })
             }

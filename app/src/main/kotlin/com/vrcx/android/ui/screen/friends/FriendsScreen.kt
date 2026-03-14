@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -20,6 +21,7 @@ import com.vrcx.android.ui.components.VrcxSearchBar
 import com.vrcx.android.ui.components.VrcxTopBar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +40,12 @@ fun FriendsScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Friends")
 
-        TabRow(selectedTabIndex = selectedTab.ordinal) {
+        val isWallpaperActive = LocalWallpaperActive.current
+        TabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
+        ) {
             Tab(
                 selected = selectedTab == FriendsTab.ONLINE,
                 onClick = { viewModel.selectTab(FriendsTab.ONLINE) },

@@ -13,6 +13,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,13 +23,17 @@ fun VrcxTopBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val isWallpaperActive = LocalWallpaperActive.current
+    val topBarColor = MaterialTheme.colorScheme.surface
+        .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it }
     TopAppBar(
         title = { Text(title) },
         modifier = modifier,
         actions = actions,
         scrollBehavior = scrollBehavior,
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = topBarColor,
+            scrolledContainerColor = topBarColor,
         ),
     )
 }
@@ -42,6 +47,9 @@ fun VrcxDetailTopBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val isWallpaperActive = LocalWallpaperActive.current
+    val topBarColor = MaterialTheme.colorScheme.surface
+        .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it }
     TopAppBar(
         title = { Text(title) },
         modifier = modifier,
@@ -53,7 +61,8 @@ fun VrcxDetailTopBar(
         actions = actions,
         scrollBehavior = scrollBehavior,
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = topBarColor,
+            scrolledContainerColor = topBarColor,
         ),
     )
 }

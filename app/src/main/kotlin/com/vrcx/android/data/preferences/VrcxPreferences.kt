@@ -44,6 +44,11 @@ class VrcxPreferences @Inject constructor(
     suspend fun setThemeMode(mode: String) = dataStore.edit { it[THEME_MODE] = mode }
     suspend fun setDynamicColors(enabled: Boolean) = dataStore.edit { it[DYNAMIC_COLORS] = enabled }
 
+    val wallpaperUri: Flow<String?> = dataStore.data.map { it[WALLPAPER_URI] }
+    suspend fun setWallpaperUri(uri: String?) = dataStore.edit {
+        if (uri != null) it[WALLPAPER_URI] = uri else it.remove(WALLPAPER_URI)
+    }
+
     // General
     val maxFeedSize: Flow<Int> = dataStore.data.map { it[MAX_FEED_SIZE] ?: 1000 }
     val autoLogin: Flow<Boolean> = dataStore.data.map { it[AUTO_LOGIN] ?: false }
@@ -57,8 +62,10 @@ class VrcxPreferences @Inject constructor(
 
     suspend fun clear() = dataStore.edit { prefs ->
         val disclaimerValue = prefs[DISCLAIMER_ACCEPTED]
+        val wallpaperValue = prefs[WALLPAPER_URI]
         prefs.clear()
         if (disclaimerValue != null) prefs[DISCLAIMER_ACCEPTED] = disclaimerValue
+        if (wallpaperValue != null) prefs[WALLPAPER_URI] = wallpaperValue
     }
 
     companion object {
@@ -74,5 +81,6 @@ class VrcxPreferences @Inject constructor(
         val MAX_FEED_SIZE = intPreferencesKey("max_feed_size")
         val AUTO_LOGIN = booleanPreferencesKey("auto_login")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
+        val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
     }
 }

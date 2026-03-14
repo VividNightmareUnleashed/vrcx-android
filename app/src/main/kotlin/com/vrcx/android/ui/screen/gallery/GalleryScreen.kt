@@ -76,6 +76,7 @@ import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,7 +123,9 @@ fun GalleryScreen(
         }
     }
 
+    val isWallpaperActive = LocalWallpaperActive.current
     Scaffold(
+        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             if (selectedTab != GalleryTab.INVENTORY && !isLoading) {
@@ -189,6 +192,8 @@ fun GalleryScreen(
             ScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 edgePadding = 16.dp,
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
             ) {
                 GalleryTab.entries.forEachIndexed { index, tab ->
                     Tab(
