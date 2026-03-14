@@ -56,6 +56,7 @@ class WebSocketForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var currentAuthToken: String? = null
+    private var isForegroundMode = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -67,19 +68,28 @@ class WebSocketForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startWebSocket()
+            ACTION_START -> {
+                isForegroundMode = true
+                startWebSocket(foreground = true)
+            }
+            ACTION_START_NON_FOREGROUND -> {
+                isForegroundMode = false
+                startWebSocket(foreground = false)
+            }
             ACTION_STOP -> {
                 webSocket?.disconnect()
                 webSocket = null
                 stopSelf()
             }
         }
-        return START_STICKY
+        return if (isForegroundMode) START_STICKY else START_NOT_STICKY
     }
 
-    private fun startWebSocket() {
-        // Must call startForeground immediately to avoid crash on Android 12+
-        startForeground(NOTIFICATION_ID, createServiceNotification())
+    private fun startWebSocket(foreground: Boolean = true) {
+        if (foreground) {
+            // Must call startForeground immediately to avoid crash on Android 12+
+            startForeground(NOTIFICATION_ID, createServiceNotification())
+        }
 
         // Prevent duplicate connections
         if (webSocket != null) return
@@ -90,7 +100,9 @@ class WebSocketForegroundService : Service() {
         }
         currentAuthToken = token
 
-        acquireWakeLock()
+        if (foreground) {
+            acquireWakeLock()
+        }
 
         // Set owner user ID for feed entries
         friendRepository.ownerUserId = authRepository.currentUser?.id ?: ""
@@ -231,6 +243,7 @@ class WebSocketForegroundService : Service() {
 
     companion object {
         const val ACTION_START = "com.vrcx.android.START_WEBSOCKET"
+        const val ACTION_START_NON_FOREGROUND = "com.vrcx.android.START_WEBSOCKET_NON_FOREGROUND"
         const val ACTION_STOP = "com.vrcx.android.STOP_WEBSOCKET"
         const val NOTIFICATION_ID = 1
         const val CHANNEL_SERVICE = "vrcx_service"
@@ -245,6 +258,13 @@ class WebSocketForegroundService : Service() {
                 action = ACTION_START
             }
             context.startForegroundService(intent)
+        }
+
+        fun startNonForeground(context: Context) {
+            val intent = Intent(context, WebSocketForegroundService::class.java).apply {
+                action = ACTION_START_NON_FOREGROUND
+            }
+            context.startService(intent)
         }
 
         fun stop(context: Context) {

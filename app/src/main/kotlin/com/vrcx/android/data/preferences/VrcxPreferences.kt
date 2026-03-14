@@ -56,6 +56,9 @@ class VrcxPreferences @Inject constructor(
     suspend fun setMaxFeedSize(size: Int) = dataStore.edit { it[MAX_FEED_SIZE] = size }
     suspend fun setAutoLogin(enabled: Boolean) = dataStore.edit { it[AUTO_LOGIN] = enabled }
 
+    val backgroundServiceEnabled: Flow<Boolean> = dataStore.data.map { it[BACKGROUND_SERVICE_ENABLED] ?: true }
+    suspend fun setBackgroundServiceEnabled(enabled: Boolean) = dataStore.edit { it[BACKGROUND_SERVICE_ENABLED] = enabled }
+
     // Disclaimer
     val disclaimerAccepted: Flow<Boolean> = dataStore.data.map { it[DISCLAIMER_ACCEPTED] ?: false }
     suspend fun setDisclaimerAccepted(accepted: Boolean) = dataStore.edit { it[DISCLAIMER_ACCEPTED] = accepted }
@@ -63,9 +66,11 @@ class VrcxPreferences @Inject constructor(
     suspend fun clear() = dataStore.edit { prefs ->
         val disclaimerValue = prefs[DISCLAIMER_ACCEPTED]
         val wallpaperValue = prefs[WALLPAPER_URI]
+        val backgroundServiceValue = prefs[BACKGROUND_SERVICE_ENABLED]
         prefs.clear()
         if (disclaimerValue != null) prefs[DISCLAIMER_ACCEPTED] = disclaimerValue
         if (wallpaperValue != null) prefs[WALLPAPER_URI] = wallpaperValue
+        if (backgroundServiceValue != null) prefs[BACKGROUND_SERVICE_ENABLED] = backgroundServiceValue
     }
 
     companion object {
@@ -82,5 +87,6 @@ class VrcxPreferences @Inject constructor(
         val AUTO_LOGIN = booleanPreferencesKey("auto_login")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
+        val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
     }
 }

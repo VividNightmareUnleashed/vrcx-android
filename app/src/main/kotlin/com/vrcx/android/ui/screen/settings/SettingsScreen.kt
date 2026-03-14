@@ -70,6 +70,12 @@ class SettingsViewModel @Inject constructor(
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     fun setWallpaperUri(uri: String?) { viewModelScope.launch { preferences.setWallpaperUri(uri) } }
+
+    val backgroundServiceEnabled: StateFlow<Boolean> = preferences.backgroundServiceEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    fun setBackgroundServiceEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setBackgroundServiceEnabled(enabled) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,6 +92,7 @@ fun SettingsScreen(
     val notifyInvite by viewModel.notifyInvite.collectAsState()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
+    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
 
     val context = LocalContext.current
     val wallpaperPicker = rememberLauncherForActivityResult(
@@ -143,6 +150,16 @@ fun SettingsScreen(
                 }
             }
         }
+
+        Spacer(Modifier.height(24.dp))
+        Text("General", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        SettingToggle(
+            "Background Service",
+            "Keep WebSocket connected when app is in background",
+            backgroundServiceEnabled,
+            viewModel::setBackgroundServiceEnabled,
+        )
 
         Spacer(Modifier.height(24.dp))
         Text("Notifications", style = MaterialTheme.typography.titleMedium)

@@ -10,11 +10,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +37,7 @@ import com.vrcx.android.ui.screen.login.LoginViewModel
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import com.vrcx.android.ui.theme.VrcxTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -53,6 +58,8 @@ class VrcxAppViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val backgroundServiceEnabled: StateFlow<Boolean> = preferences.backgroundServiceEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     fun acceptDisclaimer() {
         viewModelScope.launch { preferences.setDisclaimerAccepted(true) }
@@ -93,16 +100,36 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
         val loginViewModel: LoginViewModel = hiltViewModel()
         val authState by loginViewModel.authState.collectAsState()
         val isLoggedIn = authState is AuthState.LoggedIn
+        val backgroundServiceEnabled by appViewModel.backgroundServiceEnabled.collectAsState()
 
         LaunchedEffect(Unit) {
             loginViewModel.tryResumeSession()
         }
 
-        LaunchedEffect(isLoggedIn) {
+        LaunchedEffect(isLoggedIn, backgroundServiceEnabled) {
             if (isLoggedIn) {
-                kotlinx.coroutines.delay(1000)
-                WebSocketForegroundService.start(context)
+                WebSocketForegroundService.stop(context)
+                delay(1000)
+                if (backgroundServiceEnabled) {
+                    WebSocketForegroundService.start(context)
+                } else {
+                    WebSocketForegroundService.startNonForeground(context)
+                }
             }
+        }
+
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner, isLoggedIn, backgroundServiceEnabled) {
+            if (!isLoggedIn || backgroundServiceEnabled) return@DisposableEffect onDispose {}
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_STOP -> WebSocketForegroundService.stop(context)
+                    Lifecycle.Event.ON_START -> WebSocketForegroundService.startNonForeground(context)
+                    else -> {}
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
         if (isLoggedIn) {
