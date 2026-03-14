@@ -13,19 +13,19 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FeedDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertGps(entry: FeedGpsEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertStatus(entry: FeedStatusEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertBio(entry: FeedBioEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAvatar(entry: FeedAvatarEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOnlineOffline(entry: FeedOnlineOfflineEntity)
 
     @Query("SELECT * FROM feed_gps WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")

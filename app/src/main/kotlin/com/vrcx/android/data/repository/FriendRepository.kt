@@ -27,6 +27,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,6 +41,8 @@ class FriendRepository @Inject constructor(
     var ownerUserId: String = ""
     private val scope = CoroutineScope(Dispatchers.IO)
     private val OFFLINE_DELAY_MS = 5000L
+    private val DEDUP_WINDOW_MS = 10_000L
+    private val recentFeedWrites = ConcurrentHashMap<String, Long>()
 
     private val friendsMutex = Mutex()
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
@@ -52,6 +55,7 @@ class FriendRepository @Inject constructor(
     val offlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.OFFLINE } }
 
     suspend fun loadFriendsList() {
+        recentFeedWrites.clear()
         // Fetch online friends
         val onlineFriends = BulkPaginator.fetchAll(pageSize = 100) { offset, count ->
             friendApi.getFriends(n = count, offset = offset, offline = false)
@@ -157,27 +161,25 @@ class FriendRepository @Inject constructor(
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"]) ?: return
-        val previous = _friends.value[userId]?.ref
 
-        if (previous != null) {
-            // Status change (skip offline transitions — handled by online/offline events)
-            if ((user.status != previous.status || user.statusDescription != previous.statusDescription)
-                && user.status != "offline" && previous.status != "offline") {
-                writeFeedStatus(userId, user.displayName, user.status, user.statusDescription, previous.status, previous.statusDescription)
-            }
-            // Bio change (skip if either is empty — initial load artifact)
-            if (user.bio != previous.bio && user.bio.isNotEmpty() && previous.bio.isNotEmpty()) {
-                writeFeedBio(userId, user.displayName, user.bio, previous.bio)
-            }
-            // Avatar change
-            if (user.currentAvatarThumbnailImageUrl != previous.currentAvatarThumbnailImageUrl
-                && user.currentAvatarThumbnailImageUrl.isNotEmpty()) {
-                writeFeedAvatar(userId, user.displayName, user.currentAvatarImageUrl, user.currentAvatarThumbnailImageUrl, previous.currentAvatarImageUrl, previous.currentAvatarThumbnailImageUrl)
-            }
-        }
-
+        val previous = updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
         userRepository.cacheUser(user)
-        updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
+
+        val prevRef = previous.ref ?: return
+        // Status change (skip offline transitions — handled by online/offline events)
+        if ((user.status != prevRef.status || user.statusDescription != prevRef.statusDescription)
+            && user.status != "offline" && prevRef.status != "offline") {
+            writeFeedStatus(userId, user.displayName, user.status, user.statusDescription, prevRef.status, prevRef.statusDescription)
+        }
+        // Bio change (skip if either is empty — initial load artifact)
+        if (user.bio != prevRef.bio && user.bio.isNotEmpty() && prevRef.bio.isNotEmpty()) {
+            writeFeedBio(userId, user.displayName, user.bio, prevRef.bio)
+        }
+        // Avatar change
+        if (user.currentAvatarThumbnailImageUrl != prevRef.currentAvatarThumbnailImageUrl
+            && user.currentAvatarThumbnailImageUrl.isNotEmpty()) {
+            writeFeedAvatar(userId, user.displayName, user.currentAvatarImageUrl, user.currentAvatarThumbnailImageUrl, prevRef.currentAvatarImageUrl, prevRef.currentAvatarThumbnailImageUrl)
+        }
     }
 
     private suspend fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
@@ -257,8 +259,27 @@ class FriendRepository @Inject constructor(
         }
     }
 
+    private fun shouldWriteFeed(key: String): Boolean {
+        val now = System.currentTimeMillis()
+        var allowed = false
+        recentFeedWrites.compute(key) { _, lastWrite ->
+            if (lastWrite != null && now - lastWrite < DEDUP_WINDOW_MS) {
+                allowed = false
+                lastWrite
+            } else {
+                allowed = true
+                now
+            }
+        }
+        if (allowed && recentFeedWrites.size > 500) {
+            recentFeedWrites.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
+        }
+        return allowed
+    }
+
     private fun writeFeedOnlineOffline(userId: String, displayName: String, type: String, location: String) {
         if (ownerUserId.isEmpty()) return
+        if (!shouldWriteFeed("onoff:$userId:$type")) return
         scope.launch {
             feedRepository.insertOnlineOffline(
                 FeedOnlineOfflineEntity(
@@ -278,6 +299,7 @@ class FriendRepository @Inject constructor(
 
     private fun writeFeedGps(userId: String, displayName: String, location: String, worldName: String, previousLocation: String) {
         if (ownerUserId.isEmpty()) return
+        if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
             feedRepository.insertGps(
                 FeedGpsEntity(
@@ -297,6 +319,7 @@ class FriendRepository @Inject constructor(
 
     private fun writeFeedStatus(userId: String, displayName: String, status: String, statusDescription: String, previousStatus: String, previousStatusDescription: String) {
         if (ownerUserId.isEmpty()) return
+        if (!shouldWriteFeed("status:$userId:$status:$statusDescription")) return
         scope.launch {
             feedRepository.insertStatus(
                 FeedStatusEntity(
@@ -315,6 +338,7 @@ class FriendRepository @Inject constructor(
 
     private fun writeFeedBio(userId: String, displayName: String, bio: String, previousBio: String) {
         if (ownerUserId.isEmpty()) return
+        if (!shouldWriteFeed("bio:$userId:${bio.hashCode()}")) return
         scope.launch {
             feedRepository.insertBio(
                 FeedBioEntity(
@@ -331,6 +355,7 @@ class FriendRepository @Inject constructor(
 
     private fun writeFeedAvatar(userId: String, displayName: String, imageUrl: String, thumbnailUrl: String, previousImageUrl: String, previousThumbnailUrl: String) {
         if (ownerUserId.isEmpty()) return
+        if (!shouldWriteFeed("avatar:$userId:$thumbnailUrl")) return
         scope.launch {
             feedRepository.insertAvatar(
                 FeedAvatarEntity(
