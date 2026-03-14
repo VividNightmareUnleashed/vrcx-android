@@ -7,15 +7,20 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
+import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.websocket.PipelineEvent
 import com.vrcx.android.data.websocket.VRChatWebSocket
+import com.vrcx.android.data.websocket.WebSocketState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -24,23 +29,33 @@ import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class WebSocketForegroundService : Service() {
+    private val TAG = "WebSocketForegroundService"
 
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var friendRepository: FriendRepository
     @Inject lateinit var feedRepository: FeedRepository
     @Inject lateinit var json: Json
     @Inject lateinit var okHttpClient: OkHttpClient
+    @Inject lateinit var preferences: VrcxPreferences
+
+    @Volatile private var prefNotifyOnline = true
+    @Volatile private var prefNotifyOffline = false
+    @Volatile private var prefNotifyInvite = true
+    @Volatile private var prefNotifyFriendRequest = true
 
     private var webSocket: VRChatWebSocket? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var notificationHelper: NotificationHelper? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var currentAuthToken: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -53,7 +68,11 @@ class WebSocketForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startWebSocket()
-            ACTION_STOP -> stopSelf()
+            ACTION_STOP -> {
+                webSocket?.disconnect()
+                webSocket = null
+                stopSelf()
+            }
         }
         return START_STICKY
     }
@@ -69,11 +88,36 @@ class WebSocketForegroundService : Service() {
             stopSelf()
             return
         }
+        currentAuthToken = token
 
         acquireWakeLock()
 
         // Set owner user ID for feed entries
         friendRepository.ownerUserId = authRepository.currentUser?.id ?: ""
+
+        // Observe notification preferences
+        serviceScope.launch {
+            combine(
+                preferences.notifyFriendOnline,
+                preferences.notifyFriendOffline,
+                preferences.notifyInvite,
+                preferences.notifyFriendRequest,
+            ) { online, offline, invite, friendReq ->
+                prefNotifyOnline = online
+                prefNotifyOffline = offline
+                prefNotifyInvite = invite
+                prefNotifyFriendRequest = friendReq
+            }.collect {}
+        }
+
+        // Dispatch offline notifications after 5-second confirmation delay
+        serviceScope.launch {
+            friendRepository.confirmedOfflineEvents.collect { (_, name) ->
+                if (prefNotifyOffline) {
+                    notificationHelper?.notifyFriendOffline(name)
+                }
+            }
+        }
 
         webSocket = VRChatWebSocket(json, okHttpClient).also { ws ->
             ws.connect(token)
@@ -85,9 +129,36 @@ class WebSocketForegroundService : Service() {
                 }
             }
         }
+
+        registerNetworkCallback()
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.d(TAG, "Network available")
+                val ws = webSocket ?: return
+                val token = currentAuthToken ?: return
+                if (ws.state.value != WebSocketState.CONNECTED) {
+                    ws.reconnectNow(token)
+                }
+            }
+
+            override fun onLost(network: Network) {
+                Log.d(TAG, "Network lost")
+            }
+        }
+        networkCallback = callback
+        cm.registerDefaultNetworkCallback(callback)
     }
 
     override fun onDestroy() {
+        networkCallback?.let {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.unregisterNetworkCallback(it)
+            networkCallback = null
+        }
         serviceScope.cancel()
         webSocket?.disconnect()
         webSocket = null
@@ -128,22 +199,18 @@ class WebSocketForegroundService : Service() {
         val helper = notificationHelper ?: return
         when (event) {
             is PipelineEvent.FriendOnline -> {
+                if (!prefNotifyOnline) return
                 val name = event.content?.jsonObject?.get("user")?.jsonObject?.get("displayName")?.jsonPrimitive?.content
                     ?: friendRepository.friends.value[event.content?.jsonObject?.get("userId")?.jsonPrimitive?.content]?.name
                     ?: return
                 helper.notifyFriendOnline(name)
             }
-            is PipelineEvent.FriendOffline -> {
-                val userId = event.content?.jsonObject?.get("userId")?.jsonPrimitive?.content ?: return
-                val name = friendRepository.friends.value[userId]?.name ?: return
-                helper.notifyFriendOffline(name)
-            }
             is PipelineEvent.Notification -> {
                 val type = event.content?.jsonObject?.get("type")?.jsonPrimitive?.content
                 val sender = event.content?.jsonObject?.get("senderUsername")?.jsonPrimitive?.content ?: "Someone"
                 when (type) {
-                    "friendRequest" -> helper.notifyFriendRequest(sender)
-                    "invite", "requestInvite" -> helper.notifyInvite(sender)
+                    "friendRequest" -> if (prefNotifyFriendRequest) helper.notifyFriendRequest(sender)
+                    "invite", "requestInvite" -> if (prefNotifyInvite) helper.notifyInvite(sender)
                 }
             }
             else -> {}
@@ -153,7 +220,7 @@ class WebSocketForegroundService : Service() {
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vrcx:websocket").apply {
-            acquire(10 * 60 * 1000L) // 10 minutes, renewed on reconnect
+            acquire()
         }
     }
 

@@ -61,6 +61,6 @@ class NotificationHelper(private val context: Context) {
             .setAutoCancel(true)
             .build()
 
-        notificationManager.notify(notificationId.getAndIncrement(), notification)
+        notificationManager.notify(notificationId.getAndUpdate { (it + 1 - 100) % 10000 + 100 }, notification)
     }
 }

@@ -38,14 +38,22 @@ class FeedViewModel @Inject constructor(
         combine(
             feedRepository.getGpsFeed(uid),
             feedRepository.getStatusFeed(uid),
+            feedRepository.getBioFeed(uid),
+            feedRepository.getAvatarFeed(uid),
             feedRepository.getOnlineOfflineFeed(uid),
-        ) { gps, status, onlineOffline ->
+        ) { gps, status, bio, avatar, onlineOffline ->
             val entries = mutableListOf<FeedEntry>()
             gps.forEach {
                 entries.add(FeedEntry(it.id, "gps", it.userId, it.displayName, it.worldName, it.previousLocation, it.createdAt))
             }
             status.forEach {
                 entries.add(FeedEntry(it.id, "status", it.userId, it.displayName, "${it.status}: ${it.statusDescription}", "${it.previousStatus}: ${it.previousStatusDescription}", it.createdAt))
+            }
+            bio.forEach {
+                entries.add(FeedEntry(it.id, "bio", it.userId, it.displayName, it.bio, it.previousBio, it.createdAt))
+            }
+            avatar.forEach {
+                entries.add(FeedEntry(it.id, "avatar", it.userId, it.displayName, it.avatarName.ifEmpty { "Avatar changed" }, "", it.createdAt, it.currentAvatarThumbnailImageUrl))
             }
             onlineOffline.forEach {
                 entries.add(FeedEntry(it.id, it.type, it.userId, it.displayName, it.worldName, "", it.createdAt))

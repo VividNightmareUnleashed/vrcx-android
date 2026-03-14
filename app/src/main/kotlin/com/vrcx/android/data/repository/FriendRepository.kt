@@ -3,6 +3,8 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.db.entity.FeedAvatarEntity
+import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
 import com.vrcx.android.data.db.entity.FeedStatusEntity
@@ -12,8 +14,11 @@ import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -36,6 +41,9 @@ class FriendRepository @Inject constructor(
 
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
     val friends: StateFlow<Map<String, FriendContext>> = _friends.asStateFlow()
+
+    private val _confirmedOfflineEvents = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 16)
+    val confirmedOfflineEvents: SharedFlow<Pair<String, String>> = _confirmedOfflineEvents.asSharedFlow()
 
     val onlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.ONLINE } }
     val offlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.OFFLINE } }
@@ -117,6 +125,7 @@ class FriendRepository @Inject constructor(
             if (current?.pendingOffline == true) {
                 updateFriend(userId) { it.copy(state = FriendState.OFFLINE, pendingOffline = false) }
                 writeFeedOnlineOffline(userId, displayName, "offline", "")
+                _confirmedOfflineEvents.emit(userId to displayName)
             }
         }
     }
@@ -139,11 +148,28 @@ class FriendRepository @Inject constructor(
     private fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
-        val user = tryDecodeUser(content["user"])
-        if (user != null) {
-            userRepository.cacheUser(user)
-            updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
+        val user = tryDecodeUser(content["user"]) ?: return
+        val previous = _friends.value[userId]?.ref
+
+        if (previous != null) {
+            // Status change (skip offline transitions — handled by online/offline events)
+            if ((user.status != previous.status || user.statusDescription != previous.statusDescription)
+                && user.status != "offline" && previous.status != "offline") {
+                writeFeedStatus(userId, user.displayName, user.status, user.statusDescription, previous.status, previous.statusDescription)
+            }
+            // Bio change (skip if either is empty — initial load artifact)
+            if (user.bio != previous.bio && user.bio.isNotEmpty() && previous.bio.isNotEmpty()) {
+                writeFeedBio(userId, user.displayName, user.bio, previous.bio)
+            }
+            // Avatar change
+            if (user.currentAvatarThumbnailImageUrl != previous.currentAvatarThumbnailImageUrl
+                && user.currentAvatarThumbnailImageUrl.isNotEmpty()) {
+                writeFeedAvatar(userId, user.displayName, user.currentAvatarImageUrl, user.currentAvatarThumbnailImageUrl, previous.currentAvatarImageUrl, previous.currentAvatarThumbnailImageUrl)
+            }
         }
+
+        userRepository.cacheUser(user)
+        updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
     }
 
     private fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
@@ -249,6 +275,58 @@ class FriendRepository @Inject constructor(
                     previousLocation = previousLocation,
                     time = "",
                     groupName = "",
+                    createdAt = java.time.Instant.now().toString(),
+                )
+            )
+        }
+    }
+
+    private fun writeFeedStatus(userId: String, displayName: String, status: String, statusDescription: String, previousStatus: String, previousStatusDescription: String) {
+        if (ownerUserId.isEmpty()) return
+        scope.launch {
+            feedRepository.insertStatus(
+                FeedStatusEntity(
+                    ownerUserId = ownerUserId,
+                    userId = userId,
+                    displayName = displayName,
+                    status = status,
+                    statusDescription = statusDescription,
+                    previousStatus = previousStatus,
+                    previousStatusDescription = previousStatusDescription,
+                    createdAt = java.time.Instant.now().toString(),
+                )
+            )
+        }
+    }
+
+    private fun writeFeedBio(userId: String, displayName: String, bio: String, previousBio: String) {
+        if (ownerUserId.isEmpty()) return
+        scope.launch {
+            feedRepository.insertBio(
+                FeedBioEntity(
+                    ownerUserId = ownerUserId,
+                    userId = userId,
+                    displayName = displayName,
+                    bio = bio,
+                    previousBio = previousBio,
+                    createdAt = java.time.Instant.now().toString(),
+                )
+            )
+        }
+    }
+
+    private fun writeFeedAvatar(userId: String, displayName: String, imageUrl: String, thumbnailUrl: String, previousImageUrl: String, previousThumbnailUrl: String) {
+        if (ownerUserId.isEmpty()) return
+        scope.launch {
+            feedRepository.insertAvatar(
+                FeedAvatarEntity(
+                    ownerUserId = ownerUserId,
+                    userId = userId,
+                    displayName = displayName,
+                    currentAvatarImageUrl = imageUrl,
+                    currentAvatarThumbnailImageUrl = thumbnailUrl,
+                    previousCurrentAvatarImageUrl = previousImageUrl,
+                    previousCurrentAvatarThumbnailImageUrl = previousThumbnailUrl,
                     createdAt = java.time.Instant.now().toString(),
                 )
             )

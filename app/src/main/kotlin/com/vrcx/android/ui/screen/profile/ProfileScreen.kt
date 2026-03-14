@@ -44,7 +44,10 @@ import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.ui.components.TrustRankBadge
+import android.content.Context
+import com.vrcx.android.service.WebSocketForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -56,13 +59,17 @@ import javax.inject.Inject
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val currentUser: StateFlow<CurrentUser?> = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun logout() {
-        viewModelScope.launch { authRepository.logout() }
+        viewModelScope.launch {
+            authRepository.logout()
+            WebSocketForegroundService.stop(context)
+        }
     }
 }
 
