@@ -21,10 +21,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("VRCX_KEYSTORE_FILE") ?: "release-keystore.jks")
+            storePassword = System.getenv("VRCX_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("VRCX_KEY_ALIAS") ?: "vrcx-android"
+            keyPassword = System.getenv("VRCX_KEYSTORE_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
