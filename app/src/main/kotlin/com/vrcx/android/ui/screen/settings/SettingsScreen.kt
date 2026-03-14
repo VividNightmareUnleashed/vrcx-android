@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +43,7 @@ class SettingsViewModel @Inject constructor(
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
     fun setNotifyFriendOnline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_ONLINE, v) } }
     fun setNotifyFriendOffline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_OFFLINE, v) } }
@@ -49,6 +53,7 @@ class SettingsViewModel @Inject constructor(
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+    val themeMode by viewModel.themeMode.collectAsState()
     val dynamicColors by viewModel.dynamicColors.collectAsState()
     val notifyOnline by viewModel.notifyFriendOnline.collectAsState()
     val notifyOffline by viewModel.notifyFriendOffline.collectAsState()
@@ -58,6 +63,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("Appearance", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
+
+        Text("Theme", style = MaterialTheme.typography.bodyLarge)
+        Text("Choose light, dark, or system default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf("system" to "System", "light" to "Light", "dark" to "Dark")
+                .forEachIndexed { index, (value, label) ->
+                    SegmentedButton(
+                        selected = themeMode == value,
+                        onClick = { viewModel.setThemeMode(value) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
+                    ) { Text(label) }
+                }
+        }
+        Spacer(Modifier.height(8.dp))
+
         SettingToggle("Dynamic Colors", "Use Material You colors", dynamicColors, viewModel::setDynamicColors)
 
         Spacer(Modifier.height(24.dp))
