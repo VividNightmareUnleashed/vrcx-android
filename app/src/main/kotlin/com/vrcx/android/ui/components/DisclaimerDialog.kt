@@ -79,6 +79,14 @@ fun DisclaimerDialog(
         }
     }
 
+    val independence = remember {
+        buildAnnotatedString {
+            withStyle(bodyStyle.copy(fontWeight = FontWeight.Bold)) {
+                append("This project is independent and not affiliated with the VRCX Team.")
+            }
+        }
+    }
+
     val noGuarantee = remember {
         buildAnnotatedString {
             withStyle(bodyStyle.copy(color = AnthropicMidGray, fontSize = 13.sp)) {
@@ -116,6 +124,10 @@ fun DisclaimerDialog(
                 Spacer(Modifier.height(16.dp))
 
                 Text(text = aiDisclosure, lineHeight = 22.sp)
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(text = independence, lineHeight = 22.sp)
 
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = AnthropicMidGray.copy(alpha = 0.3f))
