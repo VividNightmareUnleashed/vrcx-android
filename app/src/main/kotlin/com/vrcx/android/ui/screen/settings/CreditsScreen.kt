@@ -107,11 +107,6 @@ fun CreditsScreen(onBack: () -> Unit = {}) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    "Main Developer",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 

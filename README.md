@@ -13,8 +13,6 @@ A native Android companion app for VRChat — track friends, browse worlds, mana
 
 VRCX Android is a mobile companion app that brings the core functionality of the desktop [VRCX](https://github.com/vrcx-team/VRCX) to your Android device. It connects directly to the VRChat API and WebSocket pipeline to give you real-time visibility into your VRChat social circle without needing a PC.
 
-**This is not an official VRChat product.** It is not affiliated with or endorsed by VRChat Inc.
-
 ## Features
 
 - **Friends list** — See who's online, their current world, platform (PC/Quest/iOS), and status. Sort by name, last seen, or trust rank. Filter by VIP.
@@ -90,7 +88,7 @@ export VRCX_KEYSTORE_PASSWORD='YOUR_PASSWORD'
 
 **Developer** — [AyaDreamsOfYou](https://x.com/AyaDreamsOfYou)
 
-**Inspired by** [VRCX](https://github.com/vrcx-team/VRCX) — the open-source VRChat companion app for desktop. This project is independent and not affiliated with the VRCX Team.
+**Inspired by** [VRCX](https://github.com/vrcx-team/VRCX) — the open-source VRChat companion app for desktop.
 
 **Built with** [Claude](https://claude.ai) by Anthropic.
 
