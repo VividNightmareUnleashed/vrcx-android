@@ -84,15 +84,13 @@ export VRCX_KEYSTORE_PASSWORD='YOUR_PASSWORD'
 - **Images**: Coil 3 (with GIF support)
 - **Charts**: Vico
 
-## Credits
+## Credits & Disclaimer
 
 **Developer** — [AyaDreamsOfYou](https://x.com/AyaDreamsOfYou)
 
 **Inspired by** [VRCX](https://github.com/vrcx-team/VRCX) — the open-source VRChat companion app for desktop.
 
 **Built with** [Claude](https://claude.ai) by Anthropic.
-
-## Disclaimer
 
 This is an independent project. It is **not affiliated with or endorsed by the [VRCX Team](https://github.com/vrcx-team/VRCX) or VRChat Inc.** "VRChat" is a trademark of VRChat Inc. Use of the VRChat API is subject to the [VRChat Terms of Service](https://hello.vrchat.com/legal).
 
