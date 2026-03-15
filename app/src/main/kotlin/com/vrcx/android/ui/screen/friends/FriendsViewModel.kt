@@ -79,6 +79,15 @@ class FriendsViewModel @Inject constructor(
     fun updateSearch(query: String) { _searchQuery.value = query }
     fun setSortOption(option: FriendsSortOption) { _sortOption.value = option }
     fun toggleVipOnly() { _vipOnly.value = !_vipOnly.value }
+    fun toggleFriendNotify(friendUserId: String) {
+        viewModelScope.launch {
+            try {
+                friendRepository.toggleFriendNotify(friendUserId)
+            } catch (e: Exception) {
+                android.util.Log.e("FriendsViewModel", "Failed to toggle notify for $friendUserId", e)
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {

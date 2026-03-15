@@ -53,12 +53,9 @@ class WebSocketForegroundService : Service() {
     @Inject lateinit var okHttpClient: OkHttpClient
     @Inject lateinit var preferences: VrcxPreferences
 
-    @Volatile private var prefNotifyOnline = true
-    @Volatile private var prefNotifyOffline = false
     @Volatile private var prefNotifyInvite = true
     @Volatile private var prefNotifyFriendRequest = true
-    @Volatile private var prefNotifyLocation = false
-    @Volatile private var prefNotifyStatus = false
+    @Volatile private var notifyEnabledFriendIds: Set<String> = emptySet()
 
     private var webSocket: VRChatWebSocket? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -119,29 +116,28 @@ class WebSocketForegroundService : Service() {
         friendRepository.ownerUserId = userId
         groupRepository.ownerUserId = userId
 
-        // Observe notification preferences
+        // Observe global notification preferences (invites + friend requests)
         serviceScope.launch {
             combine(
-                preferences.notifyFriendOnline,
-                preferences.notifyFriendOffline,
                 preferences.notifyInvite,
                 preferences.notifyFriendRequest,
-                preferences.notifyFriendLocation,
-                preferences.notifyFriendStatus,
-            ) { values ->
-                prefNotifyOnline = values[0]
-                prefNotifyOffline = values[1]
-                prefNotifyInvite = values[2]
-                prefNotifyFriendRequest = values[3]
-                prefNotifyLocation = values[4]
-                prefNotifyStatus = values[5]
+            ) { invite: Boolean, friendReq: Boolean ->
+                prefNotifyInvite = invite
+                prefNotifyFriendRequest = friendReq
             }.collect {}
+        }
+
+        // Observe per-friend notification enabled set
+        serviceScope.launch {
+            friendRepository.observeNotifyEnabledIds(userId).collect { ids ->
+                notifyEnabledFriendIds = ids
+            }
         }
 
         // Dispatch offline notifications after 5-second confirmation delay
         serviceScope.launch {
-            friendRepository.confirmedOfflineEvents.collect { (_, name) ->
-                if (prefNotifyOffline) {
+            friendRepository.confirmedOfflineEvents.collect { (userId, name) ->
+                if (userId in notifyEnabledFriendIds) {
                     notificationHelper?.notifyFriendOffline(name)
                 }
             }
@@ -261,9 +257,11 @@ class WebSocketForegroundService : Service() {
         val helper = notificationHelper ?: return
         when (event) {
             is PipelineEvent.FriendOnline -> {
-                if (!prefNotifyOnline) return
-                val name = event.content?.jsonObject?.get("user")?.jsonObject?.get("displayName")?.jsonPrimitive?.content
-                    ?: friendRepository.friends.value[event.content?.jsonObject?.get("userId")?.jsonPrimitive?.content]?.name
+                val content = event.content?.jsonObject ?: return
+                val userId = content["userId"]?.jsonPrimitive?.content ?: return
+                if (userId !in notifyEnabledFriendIds) return
+                val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content
+                    ?: friendRepository.friends.value[userId]?.name
                     ?: return
                 helper.notifyFriendOnline(name)
             }
@@ -276,20 +274,21 @@ class WebSocketForegroundService : Service() {
                 }
             }
             is PipelineEvent.FriendLocation -> {
-                if (!prefNotifyLocation) return
                 val content = event.content?.jsonObject ?: return
+                val userId = content["userId"]?.jsonPrimitive?.content ?: return
+                if (userId !in notifyEnabledFriendIds) return
                 val location = content["location"]?.jsonPrimitive?.content ?: return
                 if (location == "offline" || location == "private" || location.isEmpty()) return
                 val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content
-                    ?: friendRepository.friends.value[content["userId"]?.jsonPrimitive?.content]?.name
+                    ?: friendRepository.friends.value[userId]?.name
                     ?: return
                 val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: ""
                 helper.notifyFriendLocation(name, worldName)
             }
             is PipelineEvent.FriendUpdate -> {
-                if (!prefNotifyStatus) return
                 val content = event.content?.jsonObject ?: return
                 val userId = content["userId"]?.jsonPrimitive?.content ?: return
+                if (userId !in notifyEnabledFriendIds) return
                 val newStatus = content["user"]?.jsonObject?.get("status")?.jsonPrimitive?.content ?: return
                 val previous = friendRepository.friends.value[userId]?.ref ?: return
                 if (newStatus != previous.status) {

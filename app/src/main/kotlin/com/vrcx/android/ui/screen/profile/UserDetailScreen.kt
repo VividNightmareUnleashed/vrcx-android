@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -89,6 +91,7 @@ fun UserDetailScreen(
     val userWorlds by viewModel.userWorlds.collectAsState()
     val isFavorited by viewModel.isFavorited.collectAsState()
     val memo by viewModel.memo.collectAsState()
+    val notifyEnabled by viewModel.notifyEnabled.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -134,7 +137,7 @@ fun UserDetailScreen(
                 }
 
                 when (selectedTab) {
-                    0 -> InfoTab(u, memo, viewModel, onWorldClick)
+                    0 -> InfoTab(u, memo, notifyEnabled, viewModel, onWorldClick)
                     1 -> GroupsTab(userGroups, onGroupClick)
                     2 -> WorldsTab(userWorlds, onWorldClick)
                 }
@@ -148,6 +151,7 @@ fun UserDetailScreen(
 private fun InfoTab(
     u: VrcUser,
     memo: String?,
+    notifyEnabled: Boolean,
     viewModel: UserDetailViewModel,
     onWorldClick: (String) -> Unit,
 ) {
@@ -220,6 +224,15 @@ private fun InfoTab(
         Spacer(Modifier.height(8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (u.isFriend) {
+                FilledTonalButton(onClick = { viewModel.toggleNotify() }) {
+                    Icon(
+                        if (notifyEnabled) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsOff,
+                        null,
+                        Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (notifyEnabled) "Notifications On" else "Notifications Off")
+                }
                 OutlinedButton(onClick = { viewModel.unfriend() }) {
                     Icon(Icons.Default.PersonRemove, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Unfriend")
                 }

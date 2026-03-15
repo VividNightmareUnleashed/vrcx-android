@@ -55,21 +55,13 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
     val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
-    val notifyFriendOnline: StateFlow<Boolean> = preferences.notifyFriendOnline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val notifyFriendOffline: StateFlow<Boolean> = preferences.notifyFriendOffline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val notifyFriendLocation: StateFlow<Boolean> = preferences.notifyFriendLocation.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val notifyFriendStatus: StateFlow<Boolean> = preferences.notifyFriendStatus.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
-    fun setNotifyFriendOnline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_ONLINE, v) } }
-    fun setNotifyFriendOffline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_OFFLINE, v) } }
     fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
-    fun setNotifyFriendLocation(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_LOCATION, v) } }
-    fun setNotifyFriendStatus(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_STATUS, v) } }
 
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -91,8 +83,6 @@ fun SettingsScreen(
 ) {
     val themeMode by viewModel.themeMode.collectAsState()
     val dynamicColors by viewModel.dynamicColors.collectAsState()
-    val notifyOnline by viewModel.notifyFriendOnline.collectAsState()
-    val notifyOffline by viewModel.notifyFriendOffline.collectAsState()
     val notifyInvite by viewModel.notifyInvite.collectAsState()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
@@ -168,15 +158,14 @@ fun SettingsScreen(
         Spacer(Modifier.height(24.dp))
         Text("Notifications", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        SettingToggle("Friend Online", "Notify when friends come online", notifyOnline, viewModel::setNotifyFriendOnline)
-        SettingToggle("Friend Offline", "Notify when friends go offline", notifyOffline, viewModel::setNotifyFriendOffline)
         SettingToggle("Invites", "Notify on invite received", notifyInvite, viewModel::setNotifyInvite)
         SettingToggle("Friend Requests", "Notify on friend request", notifyFriendRequest, viewModel::setNotifyFriendRequest)
-
-        val notifyFriendLocation by viewModel.notifyFriendLocation.collectAsState()
-        val notifyFriendStatus by viewModel.notifyFriendStatus.collectAsState()
-        SettingToggle("Friend Location", "Notify on friend location change", notifyFriendLocation, viewModel::setNotifyFriendLocation)
-        SettingToggle("Friend Status", "Notify on friend status change", notifyFriendStatus, viewModel::setNotifyFriendStatus)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Per-friend notifications can be enabled from each friend's profile",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Spacer(Modifier.height(24.dp))
         Text("About", style = MaterialTheme.typography.titleMedium)

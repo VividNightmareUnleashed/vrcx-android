@@ -12,6 +12,7 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.MemoDao
 import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.entity.MemoEntity
@@ -19,6 +20,7 @@ import com.vrcx.android.data.db.entity.NoteEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FavoriteRepository
+import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +42,8 @@ class UserDetailViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val noteDao: NoteDao,
     private val memoDao: MemoDao,
+    private val friendNotifyDao: FriendNotifyDao,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
 
     val userId: String = savedStateHandle.get<String>("userId") ?: ""
@@ -68,6 +72,9 @@ class UserDetailViewModel @Inject constructor(
     private val _memo = MutableStateFlow<String?>(null)
     val memo: StateFlow<String?> = _memo.asStateFlow()
 
+    private val _notifyEnabled = MutableStateFlow(false)
+    val notifyEnabled: StateFlow<Boolean> = _notifyEnabled.asStateFlow()
+
     private var favoriteEntryId: String? = null
 
     init { loadUser() }
@@ -87,6 +94,9 @@ class UserDetailViewModel @Inject constructor(
                 if (ownerUserId.isNotEmpty()) {
                     val memoEntity = memoDao.getMemo("$ownerUserId:$userId")
                     _memo.value = memoEntity?.memo
+                    // Check notification enabled state
+                    val notifyEntity = friendNotifyDao.get("$ownerUserId:$userId")
+                    _notifyEnabled.value = notifyEntity != null
                 }
             } catch (e: Exception) {
                 _message.value = "Failed to load user: ${e.message}"
@@ -181,6 +191,18 @@ class UserDetailViewModel @Inject constructor(
                 ))
                 _memo.value = text
                 _message.value = "Memo saved"
+            } catch (e: Exception) {
+                _message.value = "Failed: ${e.message}"
+            }
+        }
+    }
+
+    fun toggleNotify() {
+        viewModelScope.launch {
+            try {
+                val newState = friendRepository.toggleFriendNotify(userId)
+                _notifyEnabled.value = newState
+                _message.value = if (newState) "Notifications enabled" else "Notifications disabled"
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
             }

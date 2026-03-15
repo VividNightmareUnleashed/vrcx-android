@@ -11,6 +11,7 @@ import com.vrcx.android.data.db.entity.CacheAvatarEntity
 import com.vrcx.android.data.db.entity.CacheWorldEntity
 import com.vrcx.android.data.db.entity.FavoriteAvatarEntity
 import com.vrcx.android.data.db.entity.FavoriteFriendEntity
+import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.db.entity.FavoriteWorldEntity
 import com.vrcx.android.data.db.entity.MemoEntity
 import com.vrcx.android.data.db.entity.ModerationEntity
@@ -156,4 +157,22 @@ interface AvatarTagDao {
 
     @Query("DELETE FROM avatar_tags WHERE ownerUserId = :userId AND avatarId = :avatarId AND tag = :tag")
     suspend fun delete(userId: String, avatarId: String, tag: String)
+}
+
+@Dao
+interface FriendNotifyDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: FriendNotifyEntity)
+
+    @Query("DELETE FROM friend_notify WHERE compositeId = :compositeId")
+    suspend fun delete(compositeId: String)
+
+    @Query("SELECT * FROM friend_notify WHERE compositeId = :compositeId")
+    suspend fun get(compositeId: String): FriendNotifyEntity?
+
+    @Query("SELECT friendUserId FROM friend_notify WHERE ownerUserId = :ownerUserId")
+    fun getEnabledFriendIds(ownerUserId: String): Flow<List<String>>
+
+    @Query("SELECT friendUserId FROM friend_notify WHERE ownerUserId = :ownerUserId")
+    suspend fun getEnabledFriendIdsSnapshot(ownerUserId: String): List<String>
 }

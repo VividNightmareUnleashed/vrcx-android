@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import com.vrcx.android.data.db.converter.Converters
 import com.vrcx.android.data.db.dao.AvatarHistoryDao
 import com.vrcx.android.data.db.dao.AvatarTagDao
+import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.CacheDao
 import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.dao.FeedDao
@@ -27,6 +28,7 @@ import com.vrcx.android.data.db.entity.FeedAvatarEntity
 import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
+import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.db.entity.FeedStatusEntity
 import com.vrcx.android.data.db.entity.FriendLogCurrentEntity
 import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
@@ -64,8 +66,9 @@ import com.vrcx.android.data.db.entity.WorldMemoEntity
         WorldMemoEntity::class,
         AvatarMemoEntity::class,
         AvatarTagEntity::class,
+        FriendNotifyEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -81,4 +84,5 @@ abstract class VrcxDatabase : RoomDatabase() {
     abstract fun favoriteLocalDao(): FavoriteLocalDao
     abstract fun memoDao(): MemoDao
     abstract fun avatarTagDao(): AvatarTagDao
+    abstract fun friendNotifyDao(): FriendNotifyDao
 }

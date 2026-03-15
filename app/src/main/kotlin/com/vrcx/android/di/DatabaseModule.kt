@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.vrcx.android.data.db.VrcxDatabase
 import com.vrcx.android.data.db.dao.AvatarHistoryDao
 import com.vrcx.android.data.db.dao.AvatarTagDao
+import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.CacheDao
 import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.dao.FeedDao
@@ -45,6 +46,7 @@ object DatabaseModule {
     @Provides fun provideFavoriteLocalDao(db: VrcxDatabase): FavoriteLocalDao = db.favoriteLocalDao()
     @Provides fun provideMemoDao(db: VrcxDatabase): MemoDao = db.memoDao()
     @Provides fun provideAvatarTagDao(db: VrcxDatabase): AvatarTagDao = db.avatarTagDao()
+    @Provides fun provideFriendNotifyDao(db: VrcxDatabase): FriendNotifyDao = db.friendNotifyDao()
 
     @Provides
     @Singleton

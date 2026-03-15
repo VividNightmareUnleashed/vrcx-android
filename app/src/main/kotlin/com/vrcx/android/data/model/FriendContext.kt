@@ -11,4 +11,5 @@ data class FriendContext(
     val ref: VrcUser? = null,
     val isVIP: Boolean = false,
     val pendingOffline: Boolean = false,
+    val notifyEnabled: Boolean = false,
 )

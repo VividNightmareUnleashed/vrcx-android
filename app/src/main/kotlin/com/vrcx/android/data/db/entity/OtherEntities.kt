@@ -153,3 +153,13 @@ data class AvatarTagEntity(
     val tag: String = "",
     val color: String = "",
 )
+
+@Entity(
+    tableName = "friend_notify",
+    indices = [Index(value = ["ownerUserId"])],
+)
+data class FriendNotifyEntity(
+    @PrimaryKey val compositeId: String = "", // ownerUserId:friendUserId
+    val ownerUserId: String = "",
+    val friendUserId: String = "",
+)

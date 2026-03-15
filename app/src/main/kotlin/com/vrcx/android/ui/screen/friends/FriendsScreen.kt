@@ -1,13 +1,17 @@
 package com.vrcx.android.ui.screen.friends
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.DropdownMenu
@@ -134,15 +138,45 @@ fun FriendsScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(friends, key = { it.id }) { friend ->
-                        UserListItem(
-                            avatarUrl = friend.ref?.currentAvatarThumbnailImageUrl,
-                            displayName = friend.name,
-                            subtitle = friend.ref?.statusDescription ?: "",
-                            tags = friend.ref?.tags ?: emptyList(),
-                            status = friend.ref?.status,
-                            state = friend.state,
-                            onClick = { onFriendClick(friend.id) },
-                        )
+                        var showMenu by remember { mutableStateOf(false) }
+                        Box {
+                            UserListItem(
+                                avatarUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                                displayName = friend.name,
+                                subtitle = friend.ref?.statusDescription ?: "",
+                                tags = friend.ref?.tags ?: emptyList(),
+                                status = friend.ref?.status,
+                                state = friend.state,
+                                onClick = { onFriendClick(friend.id) },
+                                onLongClick = { showMenu = true },
+                                trailing = if (friend.notifyEnabled) {{
+                                    Icon(
+                                        Icons.Outlined.NotificationsActive,
+                                        contentDescription = "Notifications enabled",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }} else null,
+                            )
+                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(if (friend.notifyEnabled) "Disable Notifications" else "Enable Notifications")
+                                    },
+                                    onClick = {
+                                        viewModel.toggleFriendNotify(friend.id)
+                                        showMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (friend.notifyEnabled) Icons.Outlined.NotificationsOff
+                                            else Icons.Outlined.NotificationsActive,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }

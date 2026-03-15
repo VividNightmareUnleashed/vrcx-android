@@ -26,10 +26,6 @@ class VrcxPreferences @Inject constructor(
     suspend fun setLastUserId(userId: String) = dataStore.edit { it[LAST_USER_ID] = userId }
 
     // Notification settings
-    val notifyFriendOnline: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_ONLINE] ?: true }
-    val notifyFriendOffline: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_OFFLINE] ?: false }
-    val notifyFriendLocation: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_LOCATION] ?: false }
-    val notifyFriendStatus: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_STATUS] ?: false }
     val notifyInvite: Flow<Boolean> = dataStore.data.map { it[NOTIFY_INVITE] ?: true }
     val notifyFriendRequest: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_REQUEST] ?: true }
 
@@ -75,10 +71,6 @@ class VrcxPreferences @Inject constructor(
 
     companion object {
         val LAST_USER_ID = stringPreferencesKey("last_user_id")
-        val NOTIFY_FRIEND_ONLINE = booleanPreferencesKey("notify_friend_online")
-        val NOTIFY_FRIEND_OFFLINE = booleanPreferencesKey("notify_friend_offline")
-        val NOTIFY_FRIEND_LOCATION = booleanPreferencesKey("notify_friend_location")
-        val NOTIFY_FRIEND_STATUS = booleanPreferencesKey("notify_friend_status")
         val NOTIFY_INVITE = booleanPreferencesKey("notify_invite")
         val NOTIFY_FRIEND_REQUEST = booleanPreferencesKey("notify_friend_request")
         val THEME_MODE = stringPreferencesKey("theme_mode")

@@ -3,7 +3,9 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.entity.FeedAvatarEntity
+import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
@@ -14,6 +16,7 @@ import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -37,6 +40,7 @@ class FriendRepository @Inject constructor(
     private val userRepository: UserRepository,
     private val feedRepository: FeedRepository,
     private val favoriteRepository: FavoriteRepository,
+    private val friendNotifyDao: FriendNotifyDao,
     private val json: Json,
 ) {
     var ownerUserId: String = ""
@@ -45,6 +49,7 @@ class FriendRepository @Inject constructor(
     private val DEDUP_WINDOW_MS = 10_000L
     private val recentFeedWrites = ConcurrentHashMap<String, Long>()
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _notifyEnabledIds = MutableStateFlow<Set<String>>(emptySet())
 
     private val friendsMutex = Mutex()
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
@@ -105,6 +110,52 @@ class FriendRepository @Inject constructor(
                 }
             }
         } catch (_: Exception) {}
+
+        // Load notification-enabled friend IDs
+        try {
+            if (ownerUserId.isNotEmpty()) {
+                val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerUserId)
+                _notifyEnabledIds.value = enabledIds.toSet()
+                if (_notifyEnabledIds.value.isNotEmpty()) {
+                    _friends.value = _friends.value.mapValues { (id, ctx) ->
+                        ctx.copy(notifyEnabled = id in _notifyEnabledIds.value)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun toggleFriendNotify(friendUserId: String): Boolean {
+        if (ownerUserId.isEmpty()) return false
+        val compositeId = "$ownerUserId:$friendUserId"
+        val existing = friendNotifyDao.get(compositeId)
+        val newEnabled: Boolean
+        if (existing != null) {
+            friendNotifyDao.delete(compositeId)
+            newEnabled = false
+        } else {
+            friendNotifyDao.insert(FriendNotifyEntity(
+                compositeId = compositeId,
+                ownerUserId = ownerUserId,
+                friendUserId = friendUserId,
+            ))
+            newEnabled = true
+        }
+        _notifyEnabledIds.value = if (newEnabled) {
+            _notifyEnabledIds.value + friendUserId
+        } else {
+            _notifyEnabledIds.value - friendUserId
+        }
+        friendsMutex.withLock {
+            val current = _friends.value.toMutableMap()
+            current[friendUserId]?.let { current[friendUserId] = it.copy(notifyEnabled = newEnabled) }
+            _friends.value = current
+        }
+        return newEnabled
+    }
+
+    fun observeNotifyEnabledIds(ownerUserId: String): Flow<Set<String>> {
+        return friendNotifyDao.getEnabledFriendIds(ownerUserId).map { it.toSet() }
     }
 
     suspend fun handleEvent(event: PipelineEvent) {
@@ -288,6 +339,7 @@ class FriendRepository @Inject constructor(
                 state = FriendState.OFFLINE,
                 ref = user,
                 isVIP = userId in _favoriteFriendIds.value,
+                notifyEnabled = userId in _notifyEnabledIds.value,
             )
         }
     }
@@ -307,6 +359,8 @@ class FriendRepository @Inject constructor(
             val current = _friends.value.toMutableMap()
             val existing = current[userId] ?: FriendContext(
                 id = userId, name = userId, state = FriendState.OFFLINE,
+                isVIP = userId in _favoriteFriendIds.value,
+                notifyEnabled = userId in _notifyEnabledIds.value,
             )
             current[userId] = update(existing)
             _friends.value = current
