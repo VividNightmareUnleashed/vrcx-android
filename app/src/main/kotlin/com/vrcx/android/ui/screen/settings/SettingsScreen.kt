@@ -20,9 +20,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -30,9 +32,14 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,11 +47,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -52,6 +64,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferences: VrcxPreferences,
+    private val profilePicCacheManager: ProfilePicCacheManager,
+    private val friendRepository: FriendRepository,
 ) : ViewModel() {
     val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
@@ -67,10 +81,52 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     fun setWallpaperUri(uri: String?) { viewModelScope.launch { preferences.setWallpaperUri(uri) } }
 
+    val wallpaperScaleMode: StateFlow<String> = preferences.wallpaperScaleMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "crop")
+    fun setWallpaperScaleMode(mode: String) { viewModelScope.launch { preferences.setWallpaperScaleMode(mode) } }
+
     val backgroundServiceEnabled: StateFlow<Boolean> = preferences.backgroundServiceEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     fun setBackgroundServiceEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setBackgroundServiceEnabled(enabled) }
+    }
+
+    // Profile picture cache
+    private val _cacheSizeText = MutableStateFlow("")
+    val cacheSizeText: StateFlow<String> = _cacheSizeText.asStateFlow()
+
+    private val _cacheAllProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val cacheAllProgress: StateFlow<Pair<Int, Int>?> = _cacheAllProgress.asStateFlow()
+
+    fun refreshCacheSize() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bytes = profilePicCacheManager.getCacheSizeBytes()
+            _cacheSizeText.value = formatBytes(bytes)
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    }
+
+    fun clearProfilePicCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            profilePicCacheManager.clearCache()
+            refreshCacheSize()
+        }
+    }
+
+    fun cacheAllFriends() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val friends = friendRepository.friends.value
+            profilePicCacheManager.cacheAllFriends(friends) { completed, total ->
+                _cacheAllProgress.value = completed to total
+            }
+            _cacheAllProgress.value = null
+            refreshCacheSize()
+        }
     }
 }
 
@@ -86,7 +142,13 @@ fun SettingsScreen(
     val notifyInvite by viewModel.notifyInvite.collectAsState()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
+    val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsState()
     val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
+    val cacheSizeText by viewModel.cacheSizeText.collectAsState()
+    val cacheAllProgress by viewModel.cacheAllProgress.collectAsState()
+    var showCacheAllDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 
     val context = LocalContext.current
     val wallpaperPicker = rememberLauncherForActivityResult(
@@ -144,6 +206,22 @@ fun SettingsScreen(
                 }
             }
         }
+        if (wallpaperUri != null) {
+            Spacer(Modifier.height(12.dp))
+            Text("Scale Mode", style = MaterialTheme.typography.bodyLarge)
+            Text("How the wallpaper image is scaled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(4.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf("crop" to "Crop", "fit" to "Fit", "fill_width" to "Fill W", "fill_height" to "Fill H")
+                    .forEachIndexed { index, (value, label) ->
+                        SegmentedButton(
+                            selected = wallpaperScaleMode == value,
+                            onClick = { viewModel.setWallpaperScaleMode(value) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
+                        ) { Text(label) }
+                    }
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
         Text("General", style = MaterialTheme.typography.titleMedium)
@@ -154,6 +232,37 @@ fun SettingsScreen(
             backgroundServiceEnabled,
             viewModel::setBackgroundServiceEnabled,
         )
+
+        Spacer(Modifier.height(24.dp))
+        Text("Storage", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text("Profile Picture Cache", style = MaterialTheme.typography.bodyLarge)
+        Text("Cached: $cacheSizeText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        if (cacheAllProgress != null) {
+            val (completed, total) = cacheAllProgress!!
+            Text("Caching: $completed / $total", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { if (total > 0) completed.toFloat() / total else 0f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(
+                onClick = { showCacheAllDialog = true },
+                enabled = cacheAllProgress == null,
+            ) {
+                Text("Cache All Friends")
+            }
+            OutlinedButton(
+                onClick = { viewModel.clearProfilePicCache() },
+                enabled = cacheAllProgress == null,
+            ) {
+                Text("Clear Cache")
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
         Text("Notifications", style = MaterialTheme.typography.titleMedium)
@@ -185,6 +294,27 @@ fun SettingsScreen(
             Text("Credits", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        }
+
+        if (showCacheAllDialog) {
+            AlertDialog(
+                onDismissRequest = { showCacheAllDialog = false },
+                title = { Text("Cache All Friends' Pictures") },
+                text = {
+                    Text("This will download profile pictures for all your friends. " +
+                         "Depending on how many friends you have, this may consume significant " +
+                         "mobile data and storage. Continue?")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showCacheAllDialog = false
+                        viewModel.cacheAllFriends()
+                    }) { Text("Cache All") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCacheAllDialog = false }) { Text("Cancel") }
+                },
+            )
         }
     }
 }

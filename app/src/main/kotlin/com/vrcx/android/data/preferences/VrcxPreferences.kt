@@ -45,6 +45,9 @@ class VrcxPreferences @Inject constructor(
         if (uri != null) it[WALLPAPER_URI] = uri else it.remove(WALLPAPER_URI)
     }
 
+    val wallpaperScaleMode: Flow<String> = dataStore.data.map { it[WALLPAPER_SCALE_MODE] ?: "crop" }
+    suspend fun setWallpaperScaleMode(mode: String) = dataStore.edit { it[WALLPAPER_SCALE_MODE] = mode }
+
     // General
     val maxFeedSize: Flow<Int> = dataStore.data.map { it[MAX_FEED_SIZE] ?: 1000 }
     val autoLogin: Flow<Boolean> = dataStore.data.map { it[AUTO_LOGIN] ?: false }
@@ -62,10 +65,12 @@ class VrcxPreferences @Inject constructor(
     suspend fun clear() = dataStore.edit { prefs ->
         val disclaimerValue = prefs[DISCLAIMER_ACCEPTED]
         val wallpaperValue = prefs[WALLPAPER_URI]
+        val wallpaperScaleModeValue = prefs[WALLPAPER_SCALE_MODE]
         val backgroundServiceValue = prefs[BACKGROUND_SERVICE_ENABLED]
         prefs.clear()
         if (disclaimerValue != null) prefs[DISCLAIMER_ACCEPTED] = disclaimerValue
         if (wallpaperValue != null) prefs[WALLPAPER_URI] = wallpaperValue
+        if (wallpaperScaleModeValue != null) prefs[WALLPAPER_SCALE_MODE] = wallpaperScaleModeValue
         if (backgroundServiceValue != null) prefs[BACKGROUND_SERVICE_ENABLED] = backgroundServiceValue
     }
 
@@ -79,6 +84,7 @@ class VrcxPreferences @Inject constructor(
         val AUTO_LOGIN = booleanPreferencesKey("auto_login")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
+        val WALLPAPER_SCALE_MODE = stringPreferencesKey("wallpaper_scale_mode")
         val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
         val SAVED_USERNAME = stringPreferencesKey("saved_username")
         val SAVED_PASSWORD = stringPreferencesKey("saved_password")

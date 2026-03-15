@@ -58,6 +58,8 @@ class VrcxAppViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val wallpaperScaleMode: StateFlow<String> = preferences.wallpaperScaleMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "crop")
     val backgroundServiceEnabled: StateFlow<Boolean> = preferences.backgroundServiceEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
@@ -77,7 +79,14 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
     }
 
     val wallpaperUri by appViewModel.wallpaperUri.collectAsState()
+    val wallpaperScaleMode by appViewModel.wallpaperScaleMode.collectAsState()
     val isWallpaperActive = wallpaperUri != null
+    val wallpaperContentScale = when (wallpaperScaleMode) {
+        "fit" -> ContentScale.Fit
+        "fill_width" -> ContentScale.FillWidth
+        "fill_height" -> ContentScale.FillHeight
+        else -> ContentScale.Crop
+    }
 
     VrcxTheme(darkTheme = darkTheme, dynamicColor = dynamicColors) {
         CompositionLocalProvider(LocalWallpaperActive provides isWallpaperActive) {
@@ -143,7 +152,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
                             model = parsedUri,
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
+                            contentScale = wallpaperContentScale,
                         )
                     }
                 }

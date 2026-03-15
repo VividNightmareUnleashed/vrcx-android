@@ -17,11 +17,13 @@ import com.vrcx.android.data.db.dao.MemoDao
 import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.entity.MemoEntity
 import com.vrcx.android.data.db.entity.NoteEntity
+import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
+import kotlinx.coroutines.Dispatchers
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +46,7 @@ class UserDetailViewModel @Inject constructor(
     private val memoDao: MemoDao,
     private val friendNotifyDao: FriendNotifyDao,
     private val friendRepository: FriendRepository,
+    private val profilePicCacheManager: ProfilePicCacheManager,
 ) : ViewModel() {
 
     val userId: String = savedStateHandle.get<String>("userId") ?: ""
@@ -97,6 +100,14 @@ class UserDetailViewModel @Inject constructor(
                     // Check notification enabled state
                     val notifyEntity = friendNotifyDao.get("$ownerUserId:$userId")
                     _notifyEnabled.value = notifyEntity != null
+                }
+                // Cache profile picture to disk
+                viewModelScope.launch(Dispatchers.IO) {
+                    val u = _user.value ?: return@launch
+                    val imageUrl = u.profilePicOverride.ifEmpty { u.currentAvatarThumbnailImageUrl }
+                    if (imageUrl.isNotEmpty()) {
+                        try { profilePicCacheManager.cacheImage(imageUrl) } catch (_: Exception) {}
+                    }
                 }
             } catch (e: Exception) {
                 _message.value = "Failed to load user: ${e.message}"

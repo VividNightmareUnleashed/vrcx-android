@@ -6,6 +6,8 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.vrcx.android.data.cache.ProfilePicCacheInterceptor
+import com.vrcx.android.data.cache.ProfilePicCacheManager
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -21,6 +23,7 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
         )
         return ImageLoader.Builder(context)
             .components {
+                add(ProfilePicCacheInterceptor(entryPoint.profilePicCacheManager()))
                 add(AnimatedImageDecoder.Factory())
                 add(OkHttpNetworkFetcherFactory(callFactory = { entryPoint.okHttpClient() }))
             }
@@ -32,4 +35,5 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
 @InstallIn(SingletonComponent::class)
 interface ImageLoaderEntryPoint {
     fun okHttpClient(): OkHttpClient
+    fun profilePicCacheManager(): ProfilePicCacheManager
 }
