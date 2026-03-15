@@ -1,6 +1,7 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.InstanceApi
+import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Instance
 import com.vrcx.android.data.api.model.World
@@ -19,6 +20,7 @@ class WorldRepository @Inject constructor(
     private val instanceApi: InstanceApi,
     private val cacheDao: CacheDao,
     private val json: Json,
+    private val dedup: RequestDeduplicator,
 ) {
     private val worldCache = ConcurrentHashMap<String, World>()
 
@@ -34,8 +36,8 @@ class WorldRepository @Inject constructor(
             } catch (_: Exception) {}
         }
 
-        // Fetch from API
-        val world = worldApi.getWorld(worldId)
+        // Fetch from API (deduplicated)
+        val world = dedup.dedupGet("world:$worldId") { worldApi.getWorld(worldId) }
         worldCache[worldId] = world
         try {
             cacheDao.insertWorld(CacheWorldEntity(

@@ -1,5 +1,6 @@
 package com.vrcx.android.data.api
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -16,12 +17,14 @@ object BulkPaginator {
      *
      * @param pageSize Number of items per page (default 100)
      * @param maxPages Maximum number of pages to fetch (safety limit)
+     * @param delayBetweenPagesMs Delay between page fetches to avoid rate limiting (default 150ms)
      * @param fetcher Suspend function that takes (offset, count) and returns a list of items
      * @return Flow emitting each page of results
      */
     fun <T> paginate(
         pageSize: Int = 100,
         maxPages: Int = 100,
+        delayBetweenPagesMs: Long = 150L,
         fetcher: suspend (offset: Int, count: Int) -> List<T>,
     ): Flow<List<T>> = flow {
         var offset = 0
@@ -37,6 +40,7 @@ object BulkPaginator {
             }
             offset += results.size
             page++
+            delay(delayBetweenPagesMs)
         }
     }
 
@@ -46,10 +50,11 @@ object BulkPaginator {
     suspend fun <T> fetchAll(
         pageSize: Int = 100,
         maxPages: Int = 100,
+        delayBetweenPagesMs: Long = 150L,
         fetcher: suspend (offset: Int, count: Int) -> List<T>,
     ): List<T> {
         val allItems = mutableListOf<T>()
-        paginate(pageSize, maxPages, fetcher).collect { page ->
+        paginate(pageSize, maxPages, delayBetweenPagesMs, fetcher).collect { page ->
             allItems.addAll(page)
         }
         return allItems

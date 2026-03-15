@@ -3,6 +3,7 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
+import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.preferences.VrcxPreferences
@@ -32,6 +33,7 @@ class AuthRepository @Inject constructor(
     private val cookieJar: CookieJarImpl,
     private val preferences: VrcxPreferences,
     private val json: Json,
+    private val dedup: RequestDeduplicator,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -147,6 +149,7 @@ class AuthRepository @Inject constructor(
         _authToken = null
         authInterceptor.clearBasicAuth()
         cookieJar.clearAll()
+        dedup.clearCache()
         _authState.value = AuthState.NotLoggedIn
     }
 

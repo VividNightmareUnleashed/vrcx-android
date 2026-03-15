@@ -1,5 +1,6 @@
 package com.vrcx.android.data.repository
 
+import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.VrcUser
 import kotlinx.serialization.json.JsonElement
@@ -10,6 +11,7 @@ import javax.inject.Singleton
 @Singleton
 class UserRepository @Inject constructor(
     private val userApi: UserApi,
+    private val dedup: RequestDeduplicator,
 ) {
     private val cachedUsers = ConcurrentHashMap<String, VrcUser>()
 
@@ -25,7 +27,7 @@ class UserRepository @Inject constructor(
         if (!forceRefresh) {
             cachedUsers[userId]?.let { return it }
         }
-        val user = userApi.getUser(userId)
+        val user = dedup.dedupGet("user:$userId") { userApi.getUser(userId) }
         cacheUser(user)
         return user
     }

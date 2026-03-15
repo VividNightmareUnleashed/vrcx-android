@@ -36,12 +36,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
-import com.vrcx.android.data.api.UserApi
-import com.vrcx.android.data.api.WorldApi
-import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.model.Favorite
+import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.UserRepository
+import com.vrcx.android.data.repository.WorldRepository
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
@@ -66,9 +66,9 @@ data class ResolvedFavorite(
 class FavoritesViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
     private val friendRepository: FriendRepository,
-    private val userApi: UserApi,
-    private val worldApi: WorldApi,
-    private val avatarApi: AvatarApi,
+    private val userRepository: UserRepository,
+    private val worldRepository: WorldRepository,
+    private val avatarRepository: AvatarRepository,
 ) : ViewModel() {
     private val _resolvedFavorites = MutableStateFlow<List<ResolvedFavorite>>(emptyList())
     val resolvedFavorites: StateFlow<List<ResolvedFavorite>> = _resolvedFavorites.asStateFlow()
@@ -101,16 +101,16 @@ class FavoritesViewModel @Inject constructor(
                         if (cachedFriend != null) {
                             result.add(ResolvedFavorite(fav, cachedFriend.name, cachedFriend.ref?.currentAvatarThumbnailImageUrl ?: "", cachedFriend.ref?.statusDescription ?: ""))
                         } else {
-                            val user = userApi.getUser(fav.favoriteId)
+                            val user = userRepository.getUser(fav.favoriteId)
                             result.add(ResolvedFavorite(fav, user.displayName, user.currentAvatarThumbnailImageUrl, user.statusDescription))
                         }
                     }
                     "world" -> {
-                        val world = worldApi.getWorld(fav.favoriteId)
+                        val world = worldRepository.getWorld(fav.favoriteId)
                         result.add(ResolvedFavorite(fav, world.name, world.thumbnailImageUrl, "by ${world.authorName}"))
                     }
                     "avatar" -> {
-                        val avatar = avatarApi.getAvatar(fav.favoriteId)
+                        val avatar = avatarRepository.getAvatar(fav.favoriteId)
                         result.add(ResolvedFavorite(fav, avatar.name, avatar.thumbnailImageUrl, "by ${avatar.authorName}"))
                     }
                     else -> result.add(ResolvedFavorite(fav, fav.favoriteId))

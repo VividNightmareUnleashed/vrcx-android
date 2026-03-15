@@ -2,6 +2,9 @@ package com.vrcx.android.data.api
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -56,6 +59,27 @@ class RequestDeduplicator {
      */
     fun removePending(url: String) {
         pendingRequests.remove(url)
+    }
+
+    /**
+     * Deduplicate a GET request: checks failure cache, serializes concurrent
+     * requests to the same key via mutex, and caches 404/403 failures.
+     */
+    suspend fun <T> dedupGet(key: String, block: suspend () -> T): T {
+        getCachedFailure(key)?.let { code ->
+            throw HttpException(
+                Response.error<Any>(code, "".toResponseBody(null))
+            )
+        }
+        val mutex = getMutex(key)
+        return mutex.withLock {
+            try {
+                block()
+            } catch (e: HttpException) {
+                cacheFailure(key, e.code())
+                throw e
+            }
+        }
     }
 
     fun clearCache() {

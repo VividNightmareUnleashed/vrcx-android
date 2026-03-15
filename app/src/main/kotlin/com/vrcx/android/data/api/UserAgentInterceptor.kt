@@ -1,5 +1,6 @@
 package com.vrcx.android.data.api
 
+import com.vrcx.android.BuildConfig
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -12,6 +13,6 @@ class UserAgentInterceptor : Interceptor {
     }
 
     companion object {
-        const val USER_AGENT = "VRCX-Android/1.0.0"
+        val USER_AGENT = "VRCX-Android/${BuildConfig.VERSION_NAME} https://github.com/VividNightmareUnleashed/vrcx-android"
     }
 }
