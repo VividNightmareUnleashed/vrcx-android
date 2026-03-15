@@ -81,6 +81,19 @@ class GalleryRepository @Inject constructor(
         }
     }
 
+    suspend fun handleContentRefresh(contentType: String, userId: String) {
+        try {
+            when (contentType) {
+                "gallery" -> loadGallery()
+                "icon" -> loadIcons()
+                "emoji" -> loadEmojis()
+                "sticker" -> loadStickers()
+                "print", "prints" -> loadPrints(userId)
+                "inventory" -> loadInventory()
+            }
+        } catch (_: Exception) {}
+    }
+
     suspend fun deleteFile(fileId: String) {
         galleryApi.deleteFile(fileId)
     }

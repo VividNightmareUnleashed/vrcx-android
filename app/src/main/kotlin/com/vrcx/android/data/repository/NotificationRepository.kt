@@ -3,15 +3,35 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.NotificationApi
 import com.vrcx.android.data.api.model.VrcNotification
 import com.vrcx.android.data.api.model.NotificationV2
+import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class UnifiedNotification(
+    val id: String,
+    val type: String,
+    val senderUserId: String,
+    val senderUsername: String,
+    val message: String,
+    val title: String,
+    val createdAt: String,
+    val seen: Boolean,
+    val isV2: Boolean,
+    val responses: List<String>,
+)
 
 @Singleton
 class NotificationRepository @Inject constructor(
     private val notificationApi: NotificationApi,
+    private val json: Json,
 ) {
     private val _notifications = MutableStateFlow<List<VrcNotification>>(emptyList())
     val notifications: StateFlow<List<VrcNotification>> = _notifications.asStateFlow()
@@ -21,6 +41,38 @@ class NotificationRepository @Inject constructor(
 
     val unseenCount = MutableStateFlow(0)
 
+    val unifiedNotifications = combine(_notifications, _notificationsV2) { v1, v2 ->
+        val fromV1 = v1.map { n ->
+            UnifiedNotification(
+                id = n.id,
+                type = n.type,
+                senderUserId = n.senderUserId,
+                senderUsername = n.senderUsername,
+                message = n.message,
+                title = "",
+                createdAt = n.createdAt,
+                seen = n.seen,
+                isV2 = false,
+                responses = emptyList(),
+            )
+        }
+        val fromV2 = v2.map { n ->
+            UnifiedNotification(
+                id = n.id,
+                type = n.type,
+                senderUserId = n.senderUserId,
+                senderUsername = n.senderUsername,
+                message = n.message,
+                title = n.title,
+                createdAt = n.createdAt,
+                seen = n.seen,
+                isV2 = true,
+                responses = n.responses,
+            )
+        }
+        (fromV1 + fromV2).sortedByDescending { it.createdAt }
+    }
+
     suspend fun loadNotifications() {
         try {
             val v1 = notificationApi.getNotifications()
@@ -29,6 +81,103 @@ class NotificationRepository @Inject constructor(
             _notificationsV2.value = v2
             unseenCount.value = v1.count { !it.seen } + v2.count { !it.seen }
         } catch (_: Exception) {}
+    }
+
+    fun handleEvent(event: PipelineEvent) {
+        when (event) {
+            is PipelineEvent.Notification -> handleV1Notification(event)
+            is PipelineEvent.NotificationV2 -> handleV2Notification(event)
+            is PipelineEvent.NotificationV2Delete -> handleV2Delete(event)
+            is PipelineEvent.NotificationV2Update -> handleV2Update(event)
+            is PipelineEvent.SeeNotification -> handleSee(event)
+            is PipelineEvent.HideNotification -> handleHide(event)
+            is PipelineEvent.ResponseNotification -> handleResponse(event)
+            else -> {}
+        }
+    }
+
+    private fun handleV1Notification(event: PipelineEvent.Notification) {
+        val notif = try {
+            event.content?.let { json.decodeFromJsonElement(VrcNotification.serializer(), it) }
+        } catch (_: Exception) { null } ?: return
+        _notifications.value = _notifications.value.filter { it.id != notif.id } + notif
+        recalculateUnseenCount()
+    }
+
+    private fun handleV2Notification(event: PipelineEvent.NotificationV2) {
+        val notif = try {
+            event.content?.let { json.decodeFromJsonElement(NotificationV2.serializer(), it) }
+        } catch (_: Exception) { null } ?: return
+        val existing = _notificationsV2.value.indexOfFirst { it.id == notif.id }
+        _notificationsV2.value = if (existing >= 0) {
+            _notificationsV2.value.toMutableList().also { it[existing] = notif }
+        } else {
+            _notificationsV2.value + notif
+        }
+        recalculateUnseenCount()
+    }
+
+    private fun handleV2Delete(event: PipelineEvent.NotificationV2Delete) {
+        val ids = try {
+            event.content?.jsonObject?.get("ids")?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.content }
+                ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+        _notificationsV2.value = _notificationsV2.value.filter { it.id !in ids }
+        _notifications.value = _notifications.value.filter { it.id !in ids }
+        recalculateUnseenCount()
+    }
+
+    private fun handleV2Update(event: PipelineEvent.NotificationV2Update) {
+        val obj = event.content?.jsonObject ?: return
+        val id = obj["id"]?.jsonPrimitive?.content ?: return
+        val updatesJson = obj["updates"]?.jsonObject ?: return
+        _notificationsV2.value = _notificationsV2.value.map { existing ->
+            if (existing.id == id) {
+                // Merge only fields present in the update, preserving existing values
+                existing.copy(
+                    seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: existing.seen,
+                    message = updatesJson["message"]?.jsonPrimitive?.content ?: existing.message,
+                    title = updatesJson["title"]?.jsonPrimitive?.content ?: existing.title,
+                    type = updatesJson["type"]?.jsonPrimitive?.content ?: existing.type,
+                )
+            } else existing
+        }
+        recalculateUnseenCount()
+    }
+
+    private fun handleSee(event: PipelineEvent.SeeNotification) {
+        val id = event.content?.jsonPrimitive?.content ?: return
+        markSeen(id)
+    }
+
+    private fun handleHide(event: PipelineEvent.HideNotification) {
+        val id = event.content?.jsonPrimitive?.content ?: return
+        _notifications.value = _notifications.value.filter { it.id != id }
+        _notificationsV2.value = _notificationsV2.value.filter { it.id != id }
+        recalculateUnseenCount()
+    }
+
+    private fun handleResponse(event: PipelineEvent.ResponseNotification) {
+        val id = event.content?.jsonObject?.get("notificationId")?.jsonPrimitive?.content ?: return
+        _notifications.value = _notifications.value.filter { it.id != id }
+        _notificationsV2.value = _notificationsV2.value.filter { it.id != id }
+        recalculateUnseenCount()
+    }
+
+    private fun markSeen(id: String) {
+        _notifications.value = _notifications.value.map {
+            if (it.id == id) it.copy(seen = true) else it
+        }
+        _notificationsV2.value = _notificationsV2.value.map {
+            if (it.id == id) it.copy(seen = true) else it
+        }
+        recalculateUnseenCount()
+    }
+
+    private fun recalculateUnseenCount() {
+        unseenCount.value = _notifications.value.count { !it.seen } +
+            _notificationsV2.value.count { !it.seen }
     }
 
     suspend fun acceptFriendRequest(notificationId: String) {
@@ -43,8 +192,39 @@ class NotificationRepository @Inject constructor(
 
     suspend fun seeNotification(notificationId: String) {
         notificationApi.seeNotification(notificationId)
-        _notifications.value = _notifications.value.map {
-            if (it.id == notificationId) it.copy(seen = true) else it
+        markSeen(notificationId)
+    }
+
+    suspend fun acceptInvite(notificationId: String, isV2: Boolean) {
+        if (isV2) {
+            notificationApi.sendNotificationResponse(notificationId, mapOf("responseType" to "accept"))
+        } else {
+            notificationApi.acceptFriendRequest(notificationId)
         }
+        removeFromLists(notificationId)
+    }
+
+    suspend fun declineInvite(notificationId: String, isV2: Boolean) {
+        if (isV2) {
+            notificationApi.hideNotificationV2(notificationId)
+        } else {
+            notificationApi.hideNotification(notificationId)
+        }
+        removeFromLists(notificationId)
+    }
+
+    suspend fun hideUnified(notificationId: String, isV2: Boolean) {
+        if (isV2) {
+            notificationApi.hideNotificationV2(notificationId)
+        } else {
+            notificationApi.hideNotification(notificationId)
+        }
+        removeFromLists(notificationId)
+    }
+
+    private fun removeFromLists(notificationId: String) {
+        _notifications.value = _notifications.value.filter { it.id != notificationId }
+        _notificationsV2.value = _notificationsV2.value.filter { it.id != notificationId }
+        recalculateUnseenCount()
     }
 }

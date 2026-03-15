@@ -59,6 +59,8 @@ class SettingsViewModel @Inject constructor(
     val notifyFriendOffline: StateFlow<Boolean> = preferences.notifyFriendOffline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val notifyFriendLocation: StateFlow<Boolean> = preferences.notifyFriendLocation.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val notifyFriendStatus: StateFlow<Boolean> = preferences.notifyFriendStatus.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
@@ -66,6 +68,8 @@ class SettingsViewModel @Inject constructor(
     fun setNotifyFriendOffline(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_OFFLINE, v) } }
     fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
+    fun setNotifyFriendLocation(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_LOCATION, v) } }
+    fun setNotifyFriendStatus(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_STATUS, v) } }
 
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -169,10 +173,15 @@ fun SettingsScreen(
         SettingToggle("Invites", "Notify on invite received", notifyInvite, viewModel::setNotifyInvite)
         SettingToggle("Friend Requests", "Notify on friend request", notifyFriendRequest, viewModel::setNotifyFriendRequest)
 
+        val notifyFriendLocation by viewModel.notifyFriendLocation.collectAsState()
+        val notifyFriendStatus by viewModel.notifyFriendStatus.collectAsState()
+        SettingToggle("Friend Location", "Notify on friend location change", notifyFriendLocation, viewModel::setNotifyFriendLocation)
+        SettingToggle("Friend Status", "Notify on friend status change", notifyFriendStatus, viewModel::setNotifyFriendStatus)
+
         Spacer(Modifier.height(24.dp))
         Text("About", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        Text("VRCX Android v1.0.0", style = MaterialTheme.typography.bodyMedium)
+        Text("VRCX Android v${com.vrcx.android.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
         Text("VRChat Companion App", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         Row(

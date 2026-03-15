@@ -36,6 +36,7 @@ class FriendRepository @Inject constructor(
     private val friendApi: FriendApi,
     private val userRepository: UserRepository,
     private val feedRepository: FeedRepository,
+    private val favoriteRepository: FavoriteRepository,
     private val json: Json,
 ) {
     var ownerUserId: String = ""
@@ -43,6 +44,7 @@ class FriendRepository @Inject constructor(
     private val OFFLINE_DELAY_MS = 5000L
     private val DEDUP_WINDOW_MS = 10_000L
     private val recentFeedWrites = ConcurrentHashMap<String, Long>()
+    private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
 
     private val friendsMutex = Mutex()
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
@@ -87,6 +89,22 @@ class FriendRepository @Inject constructor(
             }
         }
         _friends.value = friendMap
+
+        // Load favorite friend IDs and set isVIP
+        try {
+            if (favoriteRepository.favorites.value.isEmpty()) {
+                favoriteRepository.loadFavorites(type = "friend")
+            }
+            _favoriteFriendIds.value = favoriteRepository.favorites.value
+                .filter { it.type == "friend" }
+                .map { it.favoriteId }
+                .toSet()
+            if (_favoriteFriendIds.value.isNotEmpty()) {
+                _friends.value = _friends.value.mapValues { (id, ctx) ->
+                    ctx.copy(isVIP = id in _favoriteFriendIds.value)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     suspend fun handleEvent(event: PipelineEvent) {
@@ -108,10 +126,23 @@ class FriendRepository @Inject constructor(
         val user = tryDecodeUser(content["user"])
         val displayName = user?.displayName ?: _friends.value[userId]?.name ?: userId
         val location = content["location"]?.jsonPrimitive?.content ?: ""
+        val travelingToLocation = content["travelingToLocation"]?.jsonPrimitive?.content
+        val platform = content["platform"]?.jsonPrimitive?.content
+        val instanceId = parseInstanceId(location)
+        val travelingToWorld = travelingToLocation?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
+        val travelingToInstance = parseInstanceId(travelingToLocation)
         updateFriend(userId) { ctx ->
             ctx.copy(
                 state = FriendState.ONLINE,
-                ref = (user ?: ctx.ref)?.copy(location = location),
+                ref = (user ?: ctx.ref)?.copy(
+                    location = location,
+                    travelingToLocation = travelingToLocation,
+                    travelingToWorld = travelingToWorld,
+                    travelingToInstance = travelingToInstance,
+                    instanceId = instanceId,
+                    platform = platform,
+                    state = "online",
+                ),
                 name = user?.displayName ?: ctx.name,
                 pendingOffline = false,
             )
@@ -130,7 +161,17 @@ class FriendRepository @Inject constructor(
             delay(OFFLINE_DELAY_MS)
             val previous = updateFriend(userId) { ctx ->
                 if (ctx.pendingOffline) {
-                    ctx.copy(state = FriendState.OFFLINE, pendingOffline = false)
+                    ctx.copy(
+                        state = FriendState.OFFLINE,
+                        pendingOffline = false,
+                        ref = ctx.ref?.copy(
+                            location = "offline",
+                            travelingToLocation = "offline",
+                            travelingToWorld = "offline",
+                            travelingToInstance = "offline",
+                            instanceId = "offline",
+                        ),
+                    )
                 } else {
                     ctx
                 }
@@ -144,12 +185,22 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendActive(event: PipelineEvent.FriendActive) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        // VRChat API uses "userid" (lowercase d) for friend-active events
+        val userId = content["userId"]?.jsonPrimitive?.content
+            ?: content["userid"]?.jsonPrimitive?.content ?: return
         val user = tryDecodeUser(content["user"])
+        val platform = content["platform"]?.jsonPrimitive?.content
         updateFriend(userId) { ctx ->
             ctx.copy(
                 state = FriendState.ACTIVE,
-                ref = user ?: ctx.ref,
+                ref = (user ?: ctx.ref)?.copy(
+                    location = "offline",
+                    travelingToLocation = "offline",
+                    travelingToWorld = "offline",
+                    travelingToInstance = "offline",
+                    instanceId = "offline",
+                    platform = platform,
+                ),
                 name = user?.displayName ?: ctx.name,
                 pendingOffline = false,
             )
@@ -190,6 +241,10 @@ class FriendRepository @Inject constructor(
         val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content
             ?: content["worldName"]?.jsonPrimitive?.content
             ?: ""
+        val travelingToLocation = content["travelingToLocation"]?.jsonPrimitive?.content
+        val instanceId = parseInstanceId(location)
+        val travelingToWorld = travelingToLocation?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
+        val travelingToInstance = parseInstanceId(travelingToLocation)
 
         val previous = updateFriend(userId) { ctx ->
             val newState = when {
@@ -199,7 +254,14 @@ class FriendRepository @Inject constructor(
             }
             ctx.copy(
                 state = newState,
-                ref = (user ?: ctx.ref)?.copy(location = location),
+                ref = (user ?: ctx.ref)?.copy(
+                    location = location,
+                    travelingToLocation = travelingToLocation,
+                    travelingToWorld = travelingToWorld,
+                    travelingToInstance = travelingToInstance,
+                    instanceId = instanceId,
+                    state = "online",
+                ),
                 name = user?.displayName ?: ctx.name,
                 pendingOffline = false,
             )
@@ -225,6 +287,7 @@ class FriendRepository @Inject constructor(
                 name = user?.displayName ?: userId,
                 state = FriendState.OFFLINE,
                 ref = user,
+                isVIP = userId in _favoriteFriendIds.value,
             )
         }
     }
@@ -257,6 +320,13 @@ class FriendRepository @Inject constructor(
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** Extracts instanceId from a VRChat location string (format: "worldId:instanceId"). */
+    private fun parseInstanceId(location: String?): String? {
+        if (location.isNullOrEmpty() || location == "offline" || location == "private") return null
+        val colonIndex = location.indexOf(':')
+        return if (colonIndex >= 0) location.substring(colonIndex + 1) else null
     }
 
     private fun shouldWriteFeed(key: String): Boolean {

@@ -34,4 +34,24 @@ class ModerationRepository @Inject constructor(
         playerModerationApi.deletePlayerModeration(moderationId)
         _moderations.value = _moderations.value.filter { it.id != moderationId }
     }
+
+    suspend fun interactOn(userId: String) {
+        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "interactOn"))
+        loadModerations()
+    }
+
+    suspend fun interactOff(userId: String) {
+        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "interactOff"))
+        loadModerations()
+    }
+
+    suspend fun showAvatar(userId: String) {
+        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "showAvatar"))
+        loadModerations()
+    }
+
+    suspend fun hideAvatar(userId: String) {
+        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "hideAvatar"))
+        loadModerations()
+    }
 }

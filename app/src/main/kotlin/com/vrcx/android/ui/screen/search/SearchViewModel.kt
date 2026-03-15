@@ -23,6 +23,8 @@ class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
 ) : ViewModel() {
 
+    private val PAGE_SIZE = 10
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -50,10 +52,17 @@ class SearchViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _currentOffset = MutableStateFlow(0)
+    val currentOffset: StateFlow<Int> = _currentOffset.asStateFlow()
+
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
     private var searchJob: Job? = null
 
     fun updateQuery(query: String) {
         _query.value = query
+        _currentOffset.value = 0
         searchJob?.cancel()
         if (query.length >= 2) {
             searchJob = viewModelScope.launch {
@@ -65,9 +74,20 @@ class SearchViewModel @Inject constructor(
 
     fun selectTab(tab: SearchTab) {
         _selectedTab.value = tab
+        _currentOffset.value = 0
         if (_query.value.length >= 2) {
             viewModelScope.launch { search() }
         }
+    }
+
+    fun nextPage() {
+        _currentOffset.value += PAGE_SIZE
+        viewModelScope.launch { search() }
+    }
+
+    fun previousPage() {
+        _currentOffset.value = (_currentOffset.value - PAGE_SIZE).coerceAtLeast(0)
+        viewModelScope.launch { search() }
     }
 
     private suspend fun search() {
@@ -75,11 +95,28 @@ class SearchViewModel @Inject constructor(
         _error.value = null
         try {
             val q = _query.value
+            val offset = _currentOffset.value
             when (_selectedTab.value) {
-                SearchTab.USERS -> _users.value = searchRepository.searchUsers(q)
-                SearchTab.WORLDS -> _worlds.value = searchRepository.searchWorlds(q)
-                SearchTab.AVATARS -> _avatars.value = searchRepository.searchAvatars(q)
-                SearchTab.GROUPS -> _groups.value = searchRepository.searchGroups(q)
+                SearchTab.USERS -> {
+                    val results = searchRepository.searchUsers(q, n = PAGE_SIZE, offset = offset)
+                    _users.value = results
+                    _hasMore.value = results.size >= PAGE_SIZE
+                }
+                SearchTab.WORLDS -> {
+                    val results = searchRepository.searchWorlds(q, n = PAGE_SIZE, offset = offset)
+                    _worlds.value = results
+                    _hasMore.value = results.size >= PAGE_SIZE
+                }
+                SearchTab.AVATARS -> {
+                    val results = searchRepository.searchAvatars(q, n = PAGE_SIZE, offset = offset)
+                    _avatars.value = results
+                    _hasMore.value = results.size >= PAGE_SIZE
+                }
+                SearchTab.GROUPS -> {
+                    val results = searchRepository.searchGroups(q, n = PAGE_SIZE, offset = offset)
+                    _groups.value = results
+                    _hasMore.value = results.size >= PAGE_SIZE
+                }
             }
         } catch (e: Exception) {
             _error.value = e.message ?: "Search failed"

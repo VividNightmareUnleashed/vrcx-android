@@ -6,6 +6,7 @@ import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -147,6 +148,33 @@ class AuthRepository @Inject constructor(
         authInterceptor.clearBasicAuth()
         cookieJar.clearAll()
         _authState.value = AuthState.NotLoggedIn
+    }
+
+    fun handleEvent(event: PipelineEvent) {
+        when (event) {
+            is PipelineEvent.UserUpdate -> {
+                val userJson = event.content?.jsonObject?.get("user") ?: return
+                try {
+                    val user = json.decodeFromJsonElement(CurrentUser.serializer(), userJson)
+                    _currentUser = user
+                    _authState.value = AuthState.LoggedIn(user)
+                } catch (_: Exception) {}
+            }
+            is PipelineEvent.UserLocation -> {
+                val content = event.content?.jsonObject ?: return
+                val userId = content["userId"]?.jsonPrimitive?.content ?: return
+                val current = _currentUser ?: return
+                if (userId != current.id) return
+                val location = content["location"]?.jsonPrimitive?.content
+                val travelingToLocation = content["travelingToLocation"]?.jsonPrimitive?.content
+                _currentUser = current.copy(
+                    location = location,
+                    travelingToLocation = travelingToLocation,
+                )
+                _authState.value = AuthState.LoggedIn(_currentUser!!)
+            }
+            else -> {}
+        }
     }
 
     private suspend fun onLoginSuccess(user: CurrentUser) {

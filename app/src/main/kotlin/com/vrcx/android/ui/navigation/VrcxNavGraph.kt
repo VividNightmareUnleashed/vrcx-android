@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.vrcx.android.ui.screen.avatars.AvatarDetailScreen
 import com.vrcx.android.ui.screen.avatars.MyAvatarsScreen
 import com.vrcx.android.ui.screen.charts.ChartsScreen
 import com.vrcx.android.ui.screen.favorites.FavoritesScreen
@@ -33,6 +34,7 @@ import com.vrcx.android.ui.screen.profile.UserDetailScreen
 import com.vrcx.android.ui.screen.search.SearchScreen
 import com.vrcx.android.ui.screen.settings.CreditsScreen
 import com.vrcx.android.ui.screen.settings.SettingsScreen
+import com.vrcx.android.ui.screen.world.WorldDetailScreen
 
 object VrcxRoutes {
     const val FEED = "feed"
@@ -48,6 +50,7 @@ object VrcxRoutes {
     const val USER_DETAIL = "user_detail/{userId}"
     const val MY_AVATARS = "my_avatars"
     const val AVATAR_DETAIL = "avatar_detail/{avatarId}"
+    const val WORLD_DETAIL = "world_detail/{worldId}"
     const val GALLERY = "gallery"
     const val CHARTS = "charts"
     const val MODERATION = "moderation"
@@ -57,6 +60,7 @@ object VrcxRoutes {
     fun userDetail(userId: String) = "user_detail/$userId"
     fun groupDetail(groupId: String) = "group_detail/$groupId"
     fun avatarDetail(avatarId: String) = "avatar_detail/$avatarId"
+    fun worldDetail(worldId: String) = "world_detail/$worldId"
 
     val tabRoutes = setOf(FEED, FRIENDS, SEARCH, NOTIFICATIONS, PROFILE)
 }
@@ -114,7 +118,12 @@ fun VrcxNavGraph(
             popEnterTransition = { tabEnterTransition },
             popExitTransition = { tabExitTransition },
         ) {
-            SearchScreen(onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
+            SearchScreen(
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+            )
         }
         composable(
             VrcxRoutes.NOTIFICATIONS,
@@ -164,7 +173,10 @@ fun VrcxNavGraph(
             popEnterTransition = { subScreenPopEnterTransition },
             popExitTransition = { subScreenPopExitTransition },
         ) {
-            MyAvatarsScreen(onBack = onBack)
+            MyAvatarsScreen(
+                onBack = onBack,
+                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+            )
         }
         composable(
             VrcxRoutes.GALLERY,
@@ -223,6 +235,7 @@ fun VrcxNavGraph(
         ) {
             FriendsLocationsScreen(
                 onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
                 onBack = onBack,
             )
         }
@@ -242,7 +255,11 @@ fun VrcxNavGraph(
             popEnterTransition = { subScreenPopEnterTransition },
             popExitTransition = { subScreenPopExitTransition },
         ) {
-            UserDetailScreen(onBack = onBack)
+            UserDetailScreen(
+                onBack = onBack,
+                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+            )
         }
         composable(
             VrcxRoutes.GROUP_DETAIL,
@@ -263,7 +280,22 @@ fun VrcxNavGraph(
             popEnterTransition = { subScreenPopEnterTransition },
             popExitTransition = { subScreenPopExitTransition },
         ) {
-            PlaceholderScreen("Avatar Detail")
+            AvatarDetailScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+            )
+        }
+        composable(
+            VrcxRoutes.WORLD_DETAIL,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            WorldDetailScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+            )
         }
     }
 }

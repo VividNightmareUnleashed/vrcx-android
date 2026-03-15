@@ -2,7 +2,6 @@ package com.vrcx.android.ui.screen.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
@@ -34,6 +33,15 @@ class FeedViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _vipOnly = MutableStateFlow(false)
+    val vipOnly: StateFlow<Boolean> = _vipOnly.asStateFlow()
+
+    private val _feedLimit = MutableStateFlow(100)
+    val feedLimit: StateFlow<Int> = _feedLimit.asStateFlow()
+
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
@@ -48,6 +56,10 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    fun updateSearch(query: String) { _searchQuery.value = query }
+    fun toggleVipOnly() { _vipOnly.value = !_vipOnly.value }
+    fun loadMore() { _feedLimit.value += 100 }
+
     val userAvatarUrls: StateFlow<Map<String, String>> = friendRepository.friends.map { friends ->
         friends.values.mapNotNull { f ->
             f.ref?.currentAvatarThumbnailImageUrl?.let { url -> f.id to url }
@@ -61,7 +73,11 @@ class FeedViewModel @Inject constructor(
     private val _activeFilters = MutableStateFlow(setOf("gps", "status", "bio", "avatar", "online", "offline"))
     val activeFilters: StateFlow<Set<String>> = _activeFilters.asStateFlow()
 
-    val feedEntries: StateFlow<List<FeedEntry>> = userId.flatMapLatest { uid ->
+    private val vipFriendIds: StateFlow<Set<String>> = friendRepository.friends.map { friends ->
+        friends.values.filter { it.isVIP }.map { it.id }.toSet()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    private val allEntries: StateFlow<List<FeedEntry>> = userId.flatMapLatest { uid ->
         if (uid.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedEntry>())
 
         combine(
@@ -91,10 +107,36 @@ class FeedViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val feedEntries: StateFlow<List<FeedEntry>> = combine(
+        allEntries,
+        _activeFilters,
+        _searchQuery,
+        _vipOnly,
+        vipFriendIds,
+        _feedLimit,
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val entries = values[0] as List<FeedEntry>
+        val filters = values[1] as Set<*>
+        val query = values[2] as String
+        val vip = values[3] as Boolean
+        val vipIds = values[4] as Set<*>
+        val limit = values[5] as Int
+
+        entries
+            .filter { it.type in filters }
+            .filter { entry ->
+                if (query.isBlank()) true
+                else entry.displayName.contains(query, ignoreCase = true) ||
+                    entry.details.contains(query, ignoreCase = true)
+            }
+            .filter { if (vip) it.userId in vipIds else true }
+            .take(limit)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun toggleFilter(filter: String) {
         val current = _activeFilters.value.toMutableSet()
         if (current.contains(filter)) current.remove(filter) else current.add(filter)
         _activeFilters.value = current
     }
-
 }

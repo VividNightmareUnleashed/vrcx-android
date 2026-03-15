@@ -46,6 +46,22 @@ class NotificationHelper(private val context: Context) {
         )
     }
 
+    fun notifyFriendLocation(displayName: String, worldName: String) {
+        post(
+            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            title = displayName,
+            text = if (worldName.isNotEmpty()) "joined $worldName" else "changed location",
+        )
+    }
+
+    fun notifyFriendStatusChange(displayName: String, newStatus: String) {
+        post(
+            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            title = displayName,
+            text = "changed status to $newStatus",
+        )
+    }
+
     private fun post(channel: String, title: String, text: String) {
         val pendingIntent = PendingIntent.getActivity(
             context, 0,

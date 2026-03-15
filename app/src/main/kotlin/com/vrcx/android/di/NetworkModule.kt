@@ -5,6 +5,7 @@ import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.AvatarApi
+import com.vrcx.android.data.api.AvatarModerationApi
 import com.vrcx.android.data.api.ErrorInterceptor
 import com.vrcx.android.data.api.FavoriteApi
 import com.vrcx.android.data.api.FriendApi
@@ -12,6 +13,7 @@ import com.vrcx.android.data.api.GalleryApi
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.InstanceApi
 import com.vrcx.android.data.api.InventoryApi
+import com.vrcx.android.data.api.InviteMessageApi
 import com.vrcx.android.data.api.NotificationApi
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.RequestDeduplicator
@@ -141,4 +143,12 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideInventoryApi(retrofit: Retrofit): InventoryApi = retrofit.create(InventoryApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideInviteMessageApi(retrofit: Retrofit): InviteMessageApi = retrofit.create(InviteMessageApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAvatarModerationApi(retrofit: Retrofit): AvatarModerationApi = retrofit.create(AvatarModerationApi::class.java)
 }

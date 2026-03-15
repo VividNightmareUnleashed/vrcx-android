@@ -15,9 +15,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DynamicFeed
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -33,6 +36,7 @@ import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
+import com.vrcx.android.ui.components.VrcxSearchBar
 import com.vrcx.android.ui.components.VrcxTopBar
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -45,16 +49,35 @@ fun FeedScreen(
     val filters by viewModel.activeFilters.collectAsState()
     val avatarUrls by viewModel.userAvatarUrls.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val vipOnly by viewModel.vipOnly.collectAsState()
+    val feedLimit by viewModel.feedLimit.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Feed")
 
+        // Search bar
+        VrcxSearchBar(
+            query = searchQuery,
+            onQueryChange = { viewModel.updateSearch(it) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+
+        // Filter chips
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // VIP chip
+            FilterChip(
+                selected = vipOnly,
+                onClick = { viewModel.toggleVipOnly() },
+                label = { Text("VIP") },
+                leadingIcon = if (vipOnly) {{ Icon(Icons.Outlined.Star, contentDescription = null, Modifier.padding(0.dp)) }} else null,
+            )
+            // Type chips
             listOf("gps", "status", "bio", "avatar", "online", "offline").forEach { filter ->
                 FilterChip(
                     selected = filters.contains(filter),
@@ -64,14 +87,12 @@ fun FeedScreen(
             }
         }
 
-        val filteredEntries = entries.filter { filters.contains(it.type) }
-
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (filteredEntries.isEmpty()) {
+            if (entries.isEmpty()) {
                 EmptyState(
                     message = "No feed entries yet",
                     icon = Icons.Outlined.DynamicFeed,
@@ -79,12 +100,21 @@ fun FeedScreen(
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filteredEntries, key = { "${it.type}_${it.id}" }) { entry ->
+                    items(entries, key = { "${it.type}_${it.id}" }) { entry ->
                         FeedItem(
                             entry = entry,
                             avatarUrl = entry.thumbnailUrl.ifEmpty { avatarUrls[entry.userId] },
                             onClick = { onUserClick(entry.userId) },
                         )
+                    }
+                    // Load More button
+                    if (entries.size >= feedLimit) {
+                        item {
+                            OutlinedButton(
+                                onClick = { viewModel.loadMore() },
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            ) { Text("Load More") }
+                        }
                     }
                 }
             }

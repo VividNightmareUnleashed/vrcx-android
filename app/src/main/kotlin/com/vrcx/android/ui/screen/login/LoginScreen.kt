@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.repository.AuthState
@@ -93,12 +96,18 @@ fun LoginScreen(
                     )
                 }
                 else -> {
+                    val passwordVisible by viewModel.passwordVisible.collectAsState()
+                    val rememberMe by viewModel.rememberMe.collectAsState()
                     LoginCard(
                         username = username,
                         password = password,
                         isLoading = authState is AuthState.LoggingIn,
+                        passwordVisible = passwordVisible,
+                        rememberMe = rememberMe,
                         onUsernameChange = viewModel::updateUsername,
                         onPasswordChange = viewModel::updatePassword,
+                        onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
+                        onToggleRememberMe = viewModel::toggleRememberMe,
                         onLogin = viewModel::login,
                     )
                 }
@@ -112,8 +121,12 @@ private fun LoginCard(
     username: String,
     password: String,
     isLoading: Boolean,
+    passwordVisible: Boolean = false,
+    rememberMe: Boolean = false,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
+    onTogglePasswordVisibility: () -> Unit = {},
+    onToggleRememberMe: () -> Unit = {},
     onLogin: () -> Unit,
 ) {
     Card(
@@ -142,7 +155,12 @@ private fun LoginCard(
                 label = { Text("Password") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = onTogglePasswordVisibility) {
+                        Text(if (passwordVisible) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done,
@@ -150,6 +168,16 @@ private fun LoginCard(
                 keyboardActions = KeyboardActions(onDone = { onLogin() }),
                 enabled = !isLoading,
             )
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = rememberMe,
+                    onCheckedChange = { onToggleRememberMe() },
+                )
+                Text("Remember me", style = MaterialTheme.typography.bodyMedium)
+            }
             Button(
                 onClick = onLogin,
                 modifier = Modifier.fillMaxWidth(),

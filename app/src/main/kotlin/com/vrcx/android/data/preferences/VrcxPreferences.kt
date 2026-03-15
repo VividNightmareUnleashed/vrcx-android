@@ -88,5 +88,24 @@ class VrcxPreferences @Inject constructor(
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
         val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
+        val SAVED_USERNAME = stringPreferencesKey("saved_username")
+        val SAVED_PASSWORD = stringPreferencesKey("saved_password")
+    }
+
+    val savedUsername: Flow<String?> = dataStore.data.map { it[SAVED_USERNAME] }
+    val savedPassword: Flow<String?> = dataStore.data.map { it[SAVED_PASSWORD] }
+
+    suspend fun setSavedCredentials(username: String, password: String) {
+        dataStore.edit {
+            it[SAVED_USERNAME] = username
+            it[SAVED_PASSWORD] = password
+        }
+    }
+
+    suspend fun clearSavedCredentials() {
+        dataStore.edit {
+            it.remove(SAVED_USERNAME)
+            it.remove(SAVED_PASSWORD)
+        }
     }
 }

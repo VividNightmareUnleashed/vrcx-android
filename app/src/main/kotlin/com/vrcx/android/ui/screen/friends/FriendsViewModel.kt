@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class FriendsTab { ONLINE, ACTIVE, OFFLINE }
+enum class FriendsSortOption { NAME, LAST_SEEN, TRUST_RANK }
 
 @HiltViewModel
 class FriendsViewModel @Inject constructor(
@@ -31,11 +32,19 @@ class FriendsViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val _sortOption = MutableStateFlow(FriendsSortOption.NAME)
+    val sortOption: StateFlow<FriendsSortOption> = _sortOption.asStateFlow()
+
+    private val _vipOnly = MutableStateFlow(false)
+    val vipOnly: StateFlow<Boolean> = _vipOnly.asStateFlow()
+
     val filteredFriends: StateFlow<List<FriendContext>> = combine(
         friendRepository.friends,
         _selectedTab,
         _searchQuery,
-    ) { friends, tab, query ->
+        _sortOption,
+        _vipOnly,
+    ) { friends, tab, query, sort, vip ->
         val targetState = when (tab) {
             FriendsTab.ONLINE -> FriendState.ONLINE
             FriendsTab.ACTIVE -> FriendState.ACTIVE
@@ -44,7 +53,14 @@ class FriendsViewModel @Inject constructor(
         friends.values
             .filter { it.state == targetState }
             .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-            .sortedBy { it.name.lowercase() }
+            .filter { if (vip) it.isVIP else true }
+            .let { list ->
+                when (sort) {
+                    FriendsSortOption.NAME -> list.sortedBy { it.name.lowercase() }
+                    FriendsSortOption.LAST_SEEN -> list.sortedByDescending { it.ref?.lastLogin ?: "" }
+                    FriendsSortOption.TRUST_RANK -> list.sortedBy { trustLevelPriority(it.ref?.tags ?: emptyList()) }
+                }
+            }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val onlineCount: StateFlow<Int> = friendRepository.friends.combine(MutableStateFlow(Unit)) { friends, _ ->
@@ -61,6 +77,8 @@ class FriendsViewModel @Inject constructor(
 
     fun selectTab(tab: FriendsTab) { _selectedTab.value = tab }
     fun updateSearch(query: String) { _searchQuery.value = query }
+    fun setSortOption(option: FriendsSortOption) { _sortOption.value = option }
+    fun toggleVipOnly() { _vipOnly.value = !_vipOnly.value }
 
     fun refresh() {
         viewModelScope.launch {
@@ -76,5 +94,16 @@ class FriendsViewModel @Inject constructor(
 
     init {
         refresh()
+    }
+}
+
+fun trustLevelPriority(tags: List<String>): Int {
+    return when {
+        tags.contains("system_trust_legend") -> 0
+        tags.contains("system_trust_veteran") -> 1
+        tags.contains("system_trust_trusted") -> 2
+        tags.contains("system_trust_known") -> 3
+        tags.contains("system_trust_basic") -> 4
+        else -> 5
     }
 }
