@@ -228,7 +228,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
         SettingToggle(
             "Background Service",
-            "Keep WebSocket connected when app is in background",
+            "Keep WebSocket connected in the background when Android allows it (newer Android versions may require reopening the app after reboot)",
             backgroundServiceEnabled,
             viewModel::setBackgroundServiceEnabled,
         )

@@ -1,6 +1,7 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.NotificationV2
+import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.VrcNotification
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
@@ -33,19 +34,19 @@ interface NotificationApi {
     @PUT("auth/user/notifications/{notificationId}/hide")
     suspend fun hideNotification(@Path("notificationId") notificationId: String): JsonElement
 
-    @PUT("notifications/{notificationId}/see")
+    @POST("notifications/{notificationId}/see")
     suspend fun seeNotificationV2(@Path("notificationId") notificationId: String): JsonElement
 
-    @PUT("notifications/{notificationId}/hide")
+    @DELETE("notifications/{notificationId}")
     suspend fun hideNotificationV2(@Path("notificationId") notificationId: String): JsonElement
 
-    @POST("auth/user/notifications/{notificationId}/accept")
+    @PUT("auth/user/notifications/{notificationId}/accept")
     suspend fun acceptFriendRequest(@Path("notificationId") notificationId: String): JsonElement
 
     @POST("notifications/{notificationId}/respond")
     suspend fun sendNotificationResponse(
         @Path("notificationId") notificationId: String,
-        @Body body: Map<String, String>,
+        @Body body: NotificationResponse,
     ): JsonElement
 
     @POST("invite/{userId}")
