@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="sharedpref" path="vrcx_cookies.xml" />
+    <exclude domain="file" path="vrcx_secure_secrets.json" />
+</full-backup-content>

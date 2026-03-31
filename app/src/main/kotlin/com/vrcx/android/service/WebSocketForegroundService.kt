@@ -7,8 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -31,6 +33,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.CoroutineScope
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
@@ -64,6 +67,7 @@ class WebSocketForegroundService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var currentAuthToken: String? = null
     private var isForegroundMode = false
+    private var startupJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -84,12 +88,26 @@ class WebSocketForegroundService : Service() {
                 startWebSocket(foreground = false)
             }
             ACTION_STOP -> {
+                startupJob?.cancel()
+                startupJob = null
                 webSocket?.disconnect()
                 webSocket = null
                 stopSelf()
             }
         }
         return if (isForegroundMode) START_STICKY else START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            fgsType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0
+        ) {
+            Log.w(TAG, "Foreground service dataSync timeout reached, stopping service")
+            webSocket?.disconnect()
+            webSocket = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+        }
     }
 
     private fun startWebSocket(foreground: Boolean = true) {
@@ -99,69 +117,87 @@ class WebSocketForegroundService : Service() {
         }
 
         // Prevent duplicate connections
-        if (webSocket != null) return
+        if (webSocket != null || startupJob?.isActive == true) return
 
-        val token = authRepository.authToken ?: run {
-            stopSelf()
-            return
-        }
-        currentAuthToken = token
-
-        if (foreground) {
-            acquireWakeLock()
-        }
-
-        // Set owner user ID for feed entries and group events
-        val userId = authRepository.currentUser?.id ?: ""
-        friendRepository.ownerUserId = userId
-        groupRepository.ownerUserId = userId
-
-        // Observe global notification preferences (invites + friend requests)
-        serviceScope.launch {
-            combine(
-                preferences.notifyInvite,
-                preferences.notifyFriendRequest,
-            ) { invite: Boolean, friendReq: Boolean ->
-                prefNotifyInvite = invite
-                prefNotifyFriendRequest = friendReq
-            }.collect {}
-        }
-
-        // Observe per-friend notification enabled set
-        serviceScope.launch {
-            friendRepository.observeNotifyEnabledIds(userId).collect { ids ->
-                notifyEnabledFriendIds = ids
-            }
-        }
-
-        // Dispatch offline notifications after 5-second confirmation delay
-        serviceScope.launch {
-            friendRepository.confirmedOfflineEvents.collect { (userId, name) ->
-                if (userId in notifyEnabledFriendIds) {
-                    notificationHelper?.notifyFriendOffline(name)
+        startupJob = serviceScope.launch {
+            try {
+                if (!authRepository.ensureSessionReady()) {
+                    if (foreground) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    }
+                    stopSelf()
+                    return@launch
                 }
-            }
-        }
 
-        webSocket = VRChatWebSocket(json, okHttpClient).also { ws ->
-            ws.connect(token)
-            // Route WebSocket events to repositories + notifications
-            serviceScope.launch {
-                ws.events.collect { event ->
-                    friendRepository.handleEvent(event)
-                    notificationRepository.handleEvent(event)
-                    authRepository.handleEvent(event)
-                    groupRepository.handleEvent(event)
-                    handleInstanceAndContentEvents(event)
-                    dispatchNotification(event)
+                val token = authRepository.authToken ?: run {
+                    if (foreground) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    }
+                    stopSelf()
+                    return@launch
                 }
+                currentAuthToken = token
+
+                if (foreground) {
+                    acquireWakeLock()
+                }
+
+                // Set owner user ID for feed entries and group events
+                val userId = authRepository.currentUser?.id ?: ""
+                friendRepository.ownerUserId = userId
+                groupRepository.ownerUserId = userId
+
+                // Observe global notification preferences (invites + friend requests)
+                serviceScope.launch {
+                    combine(
+                        preferences.notifyInvite,
+                        preferences.notifyFriendRequest,
+                    ) { invite: Boolean, friendReq: Boolean ->
+                        prefNotifyInvite = invite
+                        prefNotifyFriendRequest = friendReq
+                    }.collect {}
+                }
+
+                // Observe per-friend notification enabled set
+                serviceScope.launch {
+                    friendRepository.observeNotifyEnabledIds(userId).collect { ids ->
+                        notifyEnabledFriendIds = ids
+                    }
+                }
+
+                // Dispatch offline notifications after 5-second confirmation delay
+                serviceScope.launch {
+                    friendRepository.confirmedOfflineEvents.collect { (offlineUserId, name) ->
+                        if (offlineUserId in notifyEnabledFriendIds) {
+                            notificationHelper?.notifyFriendOffline(name)
+                        }
+                    }
+                }
+
+                webSocket = VRChatWebSocket(json, okHttpClient).also { ws ->
+                    ws.connect(token)
+                    // Route WebSocket events to repositories + notifications
+                    serviceScope.launch {
+                        ws.events.collect { event ->
+                            friendRepository.handleEvent(event)
+                            notificationRepository.handleEvent(event)
+                            authRepository.handleEvent(event)
+                            groupRepository.handleEvent(event)
+                            handleInstanceAndContentEvents(event)
+                            dispatchNotification(event)
+                        }
+                    }
+                }
+
+                registerNetworkCallback()
+            } finally {
+                startupJob = null
             }
         }
-
-        registerNetworkCallback()
     }
 
     private fun registerNetworkCallback() {
+        if (networkCallback != null) return
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
@@ -188,6 +224,7 @@ class WebSocketForegroundService : Service() {
             networkCallback = null
         }
         serviceScope.cancel()
+        startupJob = null
         webSocket?.disconnect()
         webSocket = null
         releaseWakeLock()
@@ -323,26 +360,41 @@ class WebSocketForegroundService : Service() {
         const val CHANNEL_INVITES = "vrcx_invites"
         const val CHANNEL_FRIEND_REQUEST = "vrcx_friend_request"
         const val CHANNEL_GENERAL = "vrcx_general"
+        private const val SERVICE_LOG_TAG = "WebSocketForegroundSvc"
 
-        fun start(context: Context) {
+        fun start(context: Context): Boolean {
             val intent = Intent(context, WebSocketForegroundService::class.java).apply {
                 action = ACTION_START
             }
-            context.startForegroundService(intent)
+            return runCatching {
+                context.startForegroundService(intent)
+                true
+            }.getOrElse {
+                Log.w(SERVICE_LOG_TAG, "Unable to start foreground websocket service", it)
+                false
+            }
         }
 
-        fun startNonForeground(context: Context) {
+        fun startNonForeground(context: Context): Boolean {
             val intent = Intent(context, WebSocketForegroundService::class.java).apply {
                 action = ACTION_START_NON_FOREGROUND
             }
-            context.startService(intent)
+            return runCatching {
+                context.startService(intent)
+                true
+            }.getOrElse {
+                Log.w(SERVICE_LOG_TAG, "Unable to start non-foreground websocket service", it)
+                false
+            }
         }
 
-        fun stop(context: Context) {
-            val intent = Intent(context, WebSocketForegroundService::class.java).apply {
-                action = ACTION_STOP
+        fun stop(context: Context): Boolean {
+            return runCatching {
+                context.stopService(Intent(context, WebSocketForegroundService::class.java))
+            }.getOrElse {
+                Log.w(SERVICE_LOG_TAG, "Unable to stop websocket service", it)
+                false
             }
-            context.startService(intent)
         }
     }
 }

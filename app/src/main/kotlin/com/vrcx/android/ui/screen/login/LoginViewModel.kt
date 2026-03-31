@@ -5,18 +5,22 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.data.security.SavedCredentials
+import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val preferences: VrcxPreferences,
+    private val secureSecretsStore: SecureSecretsStore,
 ) : ViewModel() {
 
     val authState: StateFlow<AuthState> = authRepository.authState
@@ -37,13 +41,20 @@ class LoginViewModel @Inject constructor(
     val rememberMe: StateFlow<Boolean> = _rememberMe.asStateFlow()
 
     init {
-        // Load saved credentials
         viewModelScope.launch {
-            val savedUser = preferences.savedUsername.first()
-            val savedPass = preferences.savedPassword.first()
-            if (!savedUser.isNullOrEmpty() && !savedPass.isNullOrEmpty()) {
-                _username.value = savedUser
-                _password.value = savedPass
+            val savedCredentials = withContext(Dispatchers.IO) {
+                secureSecretsStore.getSavedCredentials() ?: preferences.getLegacySavedCredentials()?.let { legacy ->
+                    secureSecretsStore.saveSavedCredentials(legacy.first, legacy.second)
+                    preferences.clearLegacySavedCredentials()
+                    SavedCredentials(
+                        username = legacy.first,
+                        password = legacy.second,
+                    )
+                }
+            }
+            if (savedCredentials != null) {
+                _username.value = savedCredentials.username
+                _password.value = savedCredentials.password
                 _rememberMe.value = true
             }
         }
@@ -58,11 +69,16 @@ class LoginViewModel @Inject constructor(
     fun login() {
         viewModelScope.launch {
             authRepository.login(_username.value, _password.value)
-            // Save credentials after successful login if remember me is checked
             if (_rememberMe.value && authRepository.authState.value is AuthState.LoggedIn) {
-                preferences.setSavedCredentials(_username.value, _password.value)
+                withContext(Dispatchers.IO) {
+                    secureSecretsStore.saveSavedCredentials(_username.value, _password.value)
+                    preferences.clearLegacySavedCredentials()
+                }
             } else if (!_rememberMe.value) {
-                preferences.clearSavedCredentials()
+                withContext(Dispatchers.IO) {
+                    secureSecretsStore.clearSavedCredentials()
+                    preferences.clearLegacySavedCredentials()
+                }
             }
         }
     }
@@ -75,9 +91,16 @@ class LoginViewModel @Inject constructor(
                 authRepository.verifyTotp(_twoFactorCode.value)
             }
             _twoFactorCode.value = ""
-            // Save credentials after 2FA success
             if (_rememberMe.value && authRepository.authState.value is AuthState.LoggedIn) {
-                preferences.setSavedCredentials(_username.value, _password.value)
+                withContext(Dispatchers.IO) {
+                    secureSecretsStore.saveSavedCredentials(_username.value, _password.value)
+                    preferences.clearLegacySavedCredentials()
+                }
+            } else if (!_rememberMe.value) {
+                withContext(Dispatchers.IO) {
+                    secureSecretsStore.clearSavedCredentials()
+                    preferences.clearLegacySavedCredentials()
+                }
             }
         }
     }

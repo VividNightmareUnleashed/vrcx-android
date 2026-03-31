@@ -207,6 +207,13 @@ private fun TwoFactorCard(
     var useEmail by remember { mutableStateOf(false) }
     val hasEmail = methods.contains("emailOtp")
     val hasTotp = methods.contains("totp") || methods.contains("otp")
+    val label = if (useEmail) "6-digit email code" else "Authenticator or recovery code"
+    val helperText = if (useEmail) {
+        "Enter the code sent to your email"
+    } else {
+        "Enter your 6-digit authenticator code or 8-digit recovery code"
+    }
+    val isValidCode = isTwoFactorCodeValid(code, useEmail)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -220,13 +227,13 @@ private fun TwoFactorCard(
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = if (useEmail) "Enter the code sent to your email" else "Enter your authenticator code",
+                text = helperText,
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedTextField(
                 value = code,
-                onValueChange = { if (it.length <= 6) onCodeChange(it) },
-                label = { Text("6-digit code") },
+                onValueChange = { onCodeChange(normalizeTwoFactorCode(it)) },
+                label = { Text(label) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(
@@ -238,7 +245,7 @@ private fun TwoFactorCard(
             Button(
                 onClick = { onSubmit(useEmail) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = code.length == 6,
+                enabled = isValidCode,
             ) {
                 Text("Verify")
             }
@@ -254,5 +261,24 @@ private fun TwoFactorCard(
                 }
             }
         }
+    }
+}
+
+private fun normalizeTwoFactorCode(input: String): String {
+    return buildString {
+        input.forEach { char ->
+            if (char.isDigit() || char == '-') {
+                append(char)
+            }
+        }
+    }.take(9)
+}
+
+private fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
+    val digitsOnly = code.filter(Char::isDigit)
+    return if (useEmail) {
+        digitsOnly.length == 6
+    } else {
+        digitsOnly.length == 6 || digitsOnly.length == 8
     }
 }

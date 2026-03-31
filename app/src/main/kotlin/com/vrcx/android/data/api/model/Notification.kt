@@ -18,6 +18,14 @@ data class VrcNotification(
 )
 
 @Serializable
+data class NotificationAction(
+    val type: String = "",
+    val text: String = "",
+    val data: String = "",
+    val icon: String = "",
+)
+
+@Serializable
 data class NotificationV2(
     val id: String = "",
     val version: Int = 0,
@@ -32,7 +40,7 @@ data class NotificationV2(
     val title: String = "",
     val message: String = "",
     val seen: Boolean = false,
-    val responses: List<String> = emptyList(),
+    val responses: List<NotificationAction> = emptyList(),
     val responseData: JsonElement? = null,
     val expiresAt: String = "",
     val expiryAfterSeen: Int? = null,

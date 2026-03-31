@@ -2,18 +2,23 @@ package com.vrcx.android.data.api
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.vrcx.android.data.security.SecureSecretsStore
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
-class CookieJarImpl(context: Context) : CookieJar {
+class CookieJarImpl(
+    context: Context,
+    private val secureSecretsStore: SecureSecretsStore,
+) : CookieJar {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("vrcx_cookies", Context.MODE_PRIVATE)
     private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
 
     init {
-        loadFromPrefs()
+        loadFromSecureStore()
+        migrateLegacyPrefsIfNeeded()
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -41,6 +46,7 @@ class CookieJarImpl(context: Context) : CookieJar {
 
     fun clearAll() {
         cookieStore.clear()
+        secureSecretsStore.replaceCookiesByHost(emptyMap())
         prefs.edit().clear().apply()
     }
 
@@ -53,24 +59,50 @@ class CookieJarImpl(context: Context) : CookieJar {
     }
 
     private fun persistToPrefs() {
-        val editor = prefs.edit()
-        editor.clear()
-        cookieStore.forEach { (host, cookies) ->
-            val serialized = cookies.joinToString("|") { serializeCookie(it) }
-            editor.putString(host, serialized)
+        val serializedCookies = cookieStore.mapValues { (_, cookies) ->
+            cookies.joinToString("|") { serializeCookie(it) }
         }
-        editor.apply()
+        secureSecretsStore.replaceCookiesByHost(serializedCookies)
     }
 
-    private fun loadFromPrefs() {
-        prefs.all.forEach { (host, value) ->
-            if (value is String && value.isNotEmpty()) {
+    private fun loadFromSecureStore() {
+        secureSecretsStore.getCookiesByHost().forEach { (host, value) ->
+            if (value.isNotEmpty()) {
                 val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
                 if (cookies.isNotEmpty()) {
                     cookieStore[host] = cookies.toMutableList()
                 }
             }
         }
+    }
+
+    private fun migrateLegacyPrefsIfNeeded() {
+        if (cookieStore.isNotEmpty()) {
+            prefs.edit().clear().apply()
+            return
+        }
+
+        val legacyCookies = prefs.all.mapNotNull { (host, value) ->
+            val serialized = value as? String ?: return@mapNotNull null
+            if (serialized.isBlank()) {
+                null
+            } else {
+                host to serialized
+            }
+        }.toMap()
+
+        if (legacyCookies.isEmpty()) {
+            return
+        }
+
+        legacyCookies.forEach { (host, value) ->
+            val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
+            if (cookies.isNotEmpty()) {
+                cookieStore[host] = cookies.toMutableList()
+            }
+        }
+        persistToPrefs()
+        prefs.edit().clear().apply()
     }
 
     private fun serializeCookie(cookie: Cookie): String {

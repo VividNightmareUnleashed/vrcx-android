@@ -19,6 +19,10 @@ android {
         versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
     }
 
     signingConfigs {
@@ -54,6 +58,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 
     applicationVariants.all {
@@ -106,6 +114,7 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
+    implementation(libs.security.crypto)
 
     // Image loading
     implementation(libs.coil.compose)
@@ -117,4 +126,12 @@ dependencies {
 
     // Charts
     implementation(libs.vico.compose.m3)
+
+    // Testing
+    testImplementation(libs.junit4)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.room.testing)
 }

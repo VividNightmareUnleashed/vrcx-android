@@ -20,6 +20,7 @@ import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.UserAgentInterceptor
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -51,8 +52,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideCookieJar(@ApplicationContext context: Context): CookieJarImpl {
-        return CookieJarImpl(context)
+    fun provideCookieJar(
+        @ApplicationContext context: Context,
+        secureSecretsStore: SecureSecretsStore,
+    ): CookieJarImpl {
+        return CookieJarImpl(context, secureSecretsStore)
     }
 
     @Provides

@@ -132,6 +132,22 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun ensureSessionReady(): Boolean {
+        if (_currentUser != null && !_authToken.isNullOrBlank() && _authState.value is AuthState.LoggedIn) {
+            return true
+        }
+
+        if (_currentUser == null) {
+            tryResumeSession()
+        }
+
+        if (_currentUser != null && _authToken.isNullOrBlank()) {
+            fetchAuthToken()
+        }
+
+        return _currentUser != null && !_authToken.isNullOrBlank() && _authState.value is AuthState.LoggedIn
+    }
+
     suspend fun tryResumeSession() {
         try {
             val cookie = cookieJar.getAuthCookie()

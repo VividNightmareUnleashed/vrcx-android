@@ -60,12 +60,34 @@ class NotificationsViewModel @Inject constructor(
         _selectedTypes.value = if (type in current) current - type else current + type
     }
 
-    fun accept(notificationId: String, isV2: Boolean) {
-        viewModelScope.launch { notificationRepository.acceptInvite(notificationId, isV2) }
+    fun performPrimaryAction(notification: UnifiedNotification) {
+        viewModelScope.launch {
+            runCatching {
+                notificationRepository.performPrimaryAction(notification)
+            }.onFailure { error ->
+                _error.value = error.message ?: "Failed to handle notification"
+            }
+        }
     }
 
-    fun hide(notificationId: String, isV2: Boolean) {
-        viewModelScope.launch { notificationRepository.hideUnified(notificationId, isV2) }
+    fun respond(notification: UnifiedNotification, responseType: String) {
+        viewModelScope.launch {
+            runCatching {
+                notificationRepository.respondToNotification(notification, responseType)
+            }.onFailure { error ->
+                _error.value = error.message ?: "Failed to respond to notification"
+            }
+        }
+    }
+
+    fun hide(notification: UnifiedNotification) {
+        viewModelScope.launch {
+            runCatching {
+                notificationRepository.hideUnified(notification.id, notification.isV2)
+            }.onFailure { error ->
+                _error.value = error.message ?: "Failed to dismiss notification"
+            }
+        }
     }
 
     fun refresh() {

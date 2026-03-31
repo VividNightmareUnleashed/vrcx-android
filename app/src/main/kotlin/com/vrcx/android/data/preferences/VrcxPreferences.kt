@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -86,21 +87,24 @@ class VrcxPreferences @Inject constructor(
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
         val WALLPAPER_SCALE_MODE = stringPreferencesKey("wallpaper_scale_mode")
         val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
-        val SAVED_USERNAME = stringPreferencesKey("saved_username")
-        val SAVED_PASSWORD = stringPreferencesKey("saved_password")
+        private val SAVED_USERNAME = stringPreferencesKey("saved_username")
+        private val SAVED_PASSWORD = stringPreferencesKey("saved_password")
     }
 
-    val savedUsername: Flow<String?> = dataStore.data.map { it[SAVED_USERNAME] }
-    val savedPassword: Flow<String?> = dataStore.data.map { it[SAVED_PASSWORD] }
-
-    suspend fun setSavedCredentials(username: String, password: String) {
-        dataStore.edit {
-            it[SAVED_USERNAME] = username
-            it[SAVED_PASSWORD] = password
+    suspend fun getLegacySavedCredentials(): Pair<String, String>? {
+        val prefs = dataStore.data.map { data ->
+            val username = data[SAVED_USERNAME]
+            val password = data[SAVED_PASSWORD]
+            if (username.isNullOrEmpty() || password.isNullOrEmpty()) {
+                null
+            } else {
+                username to password
+            }
         }
+        return prefs.map { it }.firstOrNull()
     }
 
-    suspend fun clearSavedCredentials() {
+    suspend fun clearLegacySavedCredentials() {
         dataStore.edit {
             it.remove(SAVED_USERNAME)
             it.remove(SAVED_PASSWORD)

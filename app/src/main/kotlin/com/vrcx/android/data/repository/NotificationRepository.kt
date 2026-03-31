@@ -1,6 +1,9 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.NotificationApi
+import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.data.api.model.NotificationAction
+import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.VrcNotification
 import com.vrcx.android.data.api.model.NotificationV2
 import com.vrcx.android.data.websocket.PipelineEvent
@@ -25,12 +28,19 @@ data class UnifiedNotification(
     val createdAt: String,
     val seen: Boolean,
     val isV2: Boolean,
-    val responses: List<String>,
+    val responses: List<NotificationAction>,
+)
+
+private data class InviteContext(
+    val location: String,
+    val worldName: String,
 )
 
 @Singleton
 class NotificationRepository @Inject constructor(
     private val notificationApi: NotificationApi,
+    private val authRepository: AuthRepository,
+    private val worldApi: WorldApi,
     private val json: Json,
 ) {
     private val _notifications = MutableStateFlow<List<VrcNotification>>(emptyList())
@@ -74,13 +84,11 @@ class NotificationRepository @Inject constructor(
     }
 
     suspend fun loadNotifications() {
-        try {
-            val v1 = notificationApi.getNotifications()
-            _notifications.value = v1
-            val v2 = notificationApi.getNotificationsV2()
-            _notificationsV2.value = v2
-            unseenCount.value = v1.count { !it.seen } + v2.count { !it.seen }
-        } catch (_: Exception) {}
+        val v1 = notificationApi.getNotifications()
+        _notifications.value = v1
+        val v2 = notificationApi.getNotificationsV2()
+        _notificationsV2.value = v2
+        unseenCount.value = v1.count { !it.seen } + v2.count { !it.seen }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -195,13 +203,73 @@ class NotificationRepository @Inject constructor(
         markSeen(notificationId)
     }
 
+    suspend fun sendInviteToUser(userId: String) {
+        notificationApi.sendInvite(userId, createInvitePayload())
+    }
+
     suspend fun acceptInvite(notificationId: String, isV2: Boolean) {
-        if (isV2) {
-            notificationApi.sendNotificationResponse(notificationId, mapOf("responseType" to "accept"))
+        val notification = if (isV2) {
+            _notificationsV2.value.firstOrNull { it.id == notificationId }?.let { n ->
+                UnifiedNotification(
+                    id = n.id,
+                    type = n.type,
+                    senderUserId = n.senderUserId,
+                    senderUsername = n.senderUsername,
+                    message = n.message,
+                    title = n.title,
+                    createdAt = n.createdAt,
+                    seen = n.seen,
+                    isV2 = true,
+                    responses = n.responses,
+                )
+            }
         } else {
-            notificationApi.acceptFriendRequest(notificationId)
+            _notifications.value.firstOrNull { it.id == notificationId }?.let { n ->
+                UnifiedNotification(
+                    id = n.id,
+                    type = n.type,
+                    senderUserId = n.senderUserId,
+                    senderUsername = n.senderUsername,
+                    message = n.message,
+                    title = "",
+                    createdAt = n.createdAt,
+                    seen = n.seen,
+                    isV2 = false,
+                    responses = emptyList(),
+                )
+            }
+        } ?: return
+        performPrimaryAction(notification)
+    }
+
+    suspend fun performPrimaryAction(notification: UnifiedNotification) {
+        when {
+            notification.isV2 -> {
+                val primaryResponse = notification.responses.firstOrNull() ?: return
+                respondToNotification(notification, primaryResponse.type)
+            }
+            notification.type == "friendRequest" -> {
+                acceptFriendRequest(notification.id)
+                removeFromLists(notification.id)
+            }
+            notification.type == "requestInvite" -> {
+                acceptRequestInvite(notification)
+                removeFromLists(notification.id)
+            }
         }
-        removeFromLists(notificationId)
+    }
+
+    suspend fun respondToNotification(notification: UnifiedNotification, responseType: String) {
+        if (!notification.isV2) return
+        val response = notification.responses.firstOrNull { it.type == responseType } ?: return
+        notificationApi.sendNotificationResponse(
+            notification.id,
+            NotificationResponse(
+                responseType = response.type,
+                responseData = response.data,
+            ),
+        )
+        removeFromLists(notification.id)
     }
 
     suspend fun declineInvite(notificationId: String, isV2: Boolean) {
@@ -220,6 +288,46 @@ class NotificationRepository @Inject constructor(
             notificationApi.hideNotification(notificationId)
         }
         removeFromLists(notificationId)
+    }
+
+    private suspend fun acceptRequestInvite(notification: UnifiedNotification) {
+        sendInviteToUser(notification.senderUserId)
+        notificationApi.hideNotification(notification.id)
+    }
+
+    private suspend fun createInvitePayload(): Map<String, @JvmSuppressWildcards Any> {
+        val context = resolveInviteContext()
+        return mapOf(
+            "instanceId" to context.location,
+            "worldId" to context.location,
+            "worldName" to context.worldName,
+            "rsvp" to true,
+        )
+    }
+
+    private suspend fun resolveInviteContext(): InviteContext {
+        val currentUser = authRepository.currentUser
+            ?: error("Current user is not available")
+        val currentLocation = when (currentUser.location) {
+            "traveling" -> currentUser.travelingToLocation
+            else -> currentUser.location
+        } ?: error("You must be in a world to send invites")
+
+        if (
+            currentLocation.isBlank() ||
+            currentLocation == "offline" ||
+            currentLocation == "private" ||
+            currentLocation == "traveling"
+        ) {
+            error("You must be in a world to send invites")
+        }
+
+        val worldId = currentLocation.substringBefore(":")
+        val worldName = runCatching { worldApi.getWorld(worldId).name }.getOrDefault(worldId)
+        return InviteContext(
+            location = currentLocation,
+            worldName = worldName,
+        )
     }
 
     private fun removeFromLists(notificationId: String) {

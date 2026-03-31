@@ -1,7 +1,6 @@
 package com.vrcx.android.data.api
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
 import retrofit2.Response
@@ -23,7 +22,7 @@ class RequestDeduplicator {
     )
 
     private val failureCache = ConcurrentHashMap<String, FailureEntry>()
-    private val pendingRequests = ConcurrentHashMap<String, Mutex>()
+    private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<Any?>>()
 
     /**
      * Check if a URL has a cached failure (404/403) within the cache window.
@@ -48,37 +47,38 @@ class RequestDeduplicator {
     }
 
     /**
-     * Get or create a mutex for a URL to deduplicate concurrent requests.
-     */
-    fun getMutex(url: String): Mutex {
-        return pendingRequests.getOrPut(url) { Mutex() }
-    }
-
-    /**
-     * Remove the pending request mutex after completion.
-     */
-    fun removePending(url: String) {
-        pendingRequests.remove(url)
-    }
-
-    /**
      * Deduplicate a GET request: checks failure cache, serializes concurrent
-     * requests to the same key via mutex, and caches 404/403 failures.
+     * requests to the same key via a shared in-flight result, and caches
+     * 404/403 failures.
      */
+    @Suppress("UNCHECKED_CAST")
     suspend fun <T> dedupGet(key: String, block: suspend () -> T): T {
         getCachedFailure(key)?.let { code ->
             throw HttpException(
                 Response.error<Any>(code, "".toResponseBody(null))
             )
         }
-        val mutex = getMutex(key)
-        return mutex.withLock {
-            try {
-                block()
-            } catch (e: HttpException) {
-                cacheFailure(key, e.code())
-                throw e
+
+        val newRequest = CompletableDeferred<Any?>()
+        val existingRequest = pendingRequests.putIfAbsent(key, newRequest)
+        val request = existingRequest ?: newRequest
+
+        if (existingRequest != null) {
+            return request.await() as T
+        }
+
+        try {
+            val result = block()
+            newRequest.complete(result)
+            return result
+        } catch (t: Throwable) {
+            if (t is HttpException) {
+                cacheFailure(key, t.code())
             }
+            newRequest.completeExceptionally(t)
+            throw t
+        } finally {
+            pendingRequests.remove(key, newRequest)
         }
     }
 

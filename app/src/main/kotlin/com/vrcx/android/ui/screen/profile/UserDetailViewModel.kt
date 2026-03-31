@@ -22,6 +22,7 @@ import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.repository.UserRepository
 import kotlinx.coroutines.Dispatchers
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,6 +41,7 @@ class UserDetailViewModel @Inject constructor(
     private val groupApi: GroupApi,
     private val worldApi: WorldApi,
     private val notificationApi: NotificationApi,
+    private val notificationRepository: NotificationRepository,
     private val favoriteRepository: FavoriteRepository,
     private val authRepository: AuthRepository,
     private val noteDao: NoteDao,
@@ -175,14 +177,7 @@ class UserDetailViewModel @Inject constructor(
     fun sendInvite() {
         viewModelScope.launch {
             try {
-                val location = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.location
-                if (location.isNullOrEmpty() || location == "offline" || location == "private") {
-                    _message.value = "You must be in a world to send invites"
-                    return@launch
-                }
-                val worldId = location.substringBefore(":")
-                val instanceId = location.substringAfter(":")
-                notificationApi.sendInvite(userId, mapOf("instanceId" to instanceId, "worldId" to worldId))
+                notificationRepository.sendInviteToUser(userId)
                 _message.value = "Invite sent"
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
