@@ -62,6 +62,14 @@ class NotificationHelper(private val context: Context) {
         )
     }
 
+    fun notifyGeneral(title: String, text: String) {
+        post(
+            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            title = title,
+            text = text,
+        )
+    }
+
     private fun post(channel: String, title: String, text: String) {
         val pendingIntent = PendingIntent.getActivity(
             context, 0,

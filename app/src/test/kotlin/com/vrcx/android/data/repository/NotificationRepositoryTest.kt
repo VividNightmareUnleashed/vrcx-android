@@ -6,13 +6,19 @@ import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.NotificationAction
 import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.websocket.PipelineEvent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -163,6 +169,45 @@ class NotificationRepositoryTest {
             org.junit.Assert.assertEquals("wrld_dest:inst_dest~region(us)", payload["worldId"])
             org.junit.Assert.assertEquals("Destination World", payload["worldName"])
             org.junit.Assert.assertEquals(true, payload["rsvp"])
+        }
+    }
+
+    @Test
+    fun `instance closed events become local notifications`() {
+        runBlocking {
+            repository.handleEvent(
+                PipelineEvent.InstanceClosed(
+                    buildJsonObject {
+                        put("instanceLocation", "wrld_123:inst_456")
+                    }
+                )
+            )
+
+            val notifications = repository.unifiedNotifications.first()
+            val notification = notifications.first()
+            assertEquals("instance.closed", notification.type)
+            assertEquals("Instance Closed", notification.title)
+            assertEquals("wrld_123:inst_456", notification.message)
+        }
+    }
+
+    @Test
+    fun `dismissing local notifications does not call remote hide endpoints`() {
+        runBlocking {
+            repository.handleEvent(
+                PipelineEvent.InstanceClosed(
+                    buildJsonObject {
+                        put("instanceLocation", "wrld_123:inst_456")
+                    }
+                )
+            )
+            val notification = repository.unifiedNotifications.first().first()
+
+            repository.hideUnified(notification.id, isV2 = false)
+
+            verify(notificationApi, never()).hideNotification(notification.id)
+            verify(notificationApi, never()).hideNotificationV2(notification.id)
+            org.junit.Assert.assertEquals(emptyList<UnifiedNotification>(), repository.localNotifications.value)
         }
     }
 }

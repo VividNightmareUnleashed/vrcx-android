@@ -19,6 +19,12 @@ interface FriendLogDao {
     @Query("SELECT * FROM friend_log_current WHERE ownerUserId = :userId")
     suspend fun getCurrentFriends(userId: String): List<FriendLogCurrentEntity>
 
+    @Query("SELECT * FROM friend_log_current WHERE odUserId = :compositeId LIMIT 1")
+    suspend fun getCurrent(compositeId: String): FriendLogCurrentEntity?
+
+    @Query("SELECT MAX(friendNumber) FROM friend_log_current WHERE ownerUserId = :userId")
+    suspend fun getMaxFriendNumber(userId: String): Int?
+
     @Query("SELECT * FROM friend_log_history WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
     fun getHistory(userId: String, limit: Int = 100): Flow<List<FriendLogHistoryEntity>>
 

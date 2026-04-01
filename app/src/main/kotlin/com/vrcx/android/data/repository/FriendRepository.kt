@@ -3,13 +3,16 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.entity.FeedAvatarEntity
-import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
 import com.vrcx.android.data.db.entity.FeedStatusEntity
+import com.vrcx.android.data.db.entity.FriendLogCurrentEntity
+import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
+import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.websocket.PipelineEvent
@@ -30,6 +33,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,12 +41,22 @@ import javax.inject.Singleton
 @Singleton
 class FriendRepository @Inject constructor(
     private val friendApi: FriendApi,
+    private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
     private val feedRepository: FeedRepository,
     private val favoriteRepository: FavoriteRepository,
+    private val friendLogDao: FriendLogDao,
     private val friendNotifyDao: FriendNotifyDao,
     private val json: Json,
 ) {
+    private data class FriendLogSnapshot(
+        val compositeId: String,
+        val userId: String,
+        val displayName: String,
+        val trustLevel: String,
+        val friendNumber: Int,
+    )
+
     var ownerUserId: String = ""
     private val scope = CoroutineScope(Dispatchers.IO)
     private val OFFLINE_DELAY_MS = 5000L
@@ -62,6 +76,7 @@ class FriendRepository @Inject constructor(
     val offlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.OFFLINE } }
 
     suspend fun loadFriendsList() {
+        ensureOwnerUserId()
         recentFeedWrites.clear()
         // Fetch online friends
         val onlineFriends = BulkPaginator.fetchAll(pageSize = 100) { offset, count ->
@@ -94,6 +109,7 @@ class FriendRepository @Inject constructor(
             }
         }
         _friends.value = friendMap
+        syncFriendLog(friendMap)
 
         // Load favorite friend IDs and set isVIP
         try {
@@ -266,6 +282,12 @@ class FriendRepository @Inject constructor(
 
         val previous = updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
         userRepository.cacheUser(user)
+        syncFriendLogCurrent(
+            previous = previous,
+            userId = userId,
+            displayName = user.displayName,
+            tags = user.tags,
+        )
 
         val prevRef = previous.ref ?: return
         // Status change (skip offline transitions — handled by online/offline events)
@@ -342,11 +364,13 @@ class FriendRepository @Inject constructor(
                 notifyEnabled = userId in _notifyEnabledIds.value,
             )
         }
+        syncFriendAdded(userId, user)
     }
 
     private suspend fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
         val content = event.content?.jsonObject ?: return
         val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        syncFriendRemoved(userId)
         friendsMutex.withLock {
             val current = _friends.value.toMutableMap()
             current.remove(userId)
@@ -381,6 +405,308 @@ class FriendRepository @Inject constructor(
         if (location.isNullOrEmpty() || location == "offline" || location == "private") return null
         val colonIndex = location.indexOf(':')
         return if (colonIndex >= 0) location.substring(colonIndex + 1) else null
+    }
+
+    private fun ensureOwnerUserId(): String {
+        if (ownerUserId.isNotEmpty()) {
+            return ownerUserId
+        }
+        ownerUserId = authRepository.currentUser?.id.orEmpty()
+        return ownerUserId
+    }
+
+    private suspend fun syncFriendLog(friendMap: Map<String, FriendContext>) {
+        val ownerId = ensureOwnerUserId()
+        if (ownerId.isEmpty()) return
+
+        val currentEntries = friendLogDao.getCurrentFriends(ownerId)
+        val currentByCompositeId = currentEntries.associateBy { it.odUserId }
+        if (currentEntries.isEmpty()) {
+            friendMap.values.forEach { ctx ->
+                friendLogDao.insertCurrent(
+                    createCurrentEntry(
+                        ownerId = ownerId,
+                        userId = ctx.id,
+                        displayName = ctx.ref?.displayName ?: ctx.name,
+                        tags = ctx.ref?.tags ?: emptyList(),
+                        friendNumber = 0,
+                    )
+                )
+            }
+            return
+        }
+
+        var nextFriendNumber = (currentEntries.maxOfOrNull { it.friendNumber } ?: 0) + 1
+        val seenCompositeIds = mutableSetOf<String>()
+
+        friendMap.values.forEach { ctx ->
+            val compositeId = compositeId(ownerId, ctx.id)
+            val existing = currentByCompositeId[compositeId]
+            val displayName = ctx.ref?.displayName ?: ctx.name
+            val trustLevel = trustLevelLabel(ctx.ref?.tags ?: emptyList())
+            seenCompositeIds += compositeId
+
+            if (existing == null) {
+                val snapshot = FriendLogSnapshot(
+                    compositeId = compositeId,
+                    userId = ctx.id,
+                    displayName = displayName,
+                    trustLevel = trustLevel,
+                    friendNumber = nextFriendNumber++,
+                )
+                insertFriendHistory(ownerId, "Friend", snapshot)
+                friendLogDao.insertCurrent(snapshot.toCurrentEntry(ownerId))
+                return@forEach
+            }
+
+            if (existing.odDisplayName != displayName && existing.odDisplayName.isNotBlank()) {
+                insertFriendHistory(
+                    ownerId = ownerId,
+                    type = "DisplayName",
+                    snapshot = FriendLogSnapshot(
+                        compositeId = compositeId,
+                        userId = ctx.id,
+                        displayName = displayName,
+                        trustLevel = trustLevel,
+                        friendNumber = existing.friendNumber,
+                    ),
+                    previousDisplayName = existing.odDisplayName,
+                )
+            }
+
+            if (existing.trustLevel != trustLevel &&
+                existing.trustLevel.isNotBlank() &&
+                trustLevel.isNotBlank()
+            ) {
+                insertFriendHistory(
+                    ownerId = ownerId,
+                    type = "TrustLevel",
+                    snapshot = FriendLogSnapshot(
+                        compositeId = compositeId,
+                        userId = ctx.id,
+                        displayName = displayName,
+                        trustLevel = trustLevel,
+                        friendNumber = existing.friendNumber,
+                    ),
+                    previousTrustLevel = existing.trustLevel,
+                )
+            }
+
+            if (existing.odDisplayName != displayName || existing.trustLevel != trustLevel) {
+                friendLogDao.insertCurrent(
+                    createCurrentEntry(
+                        ownerId = ownerId,
+                        userId = ctx.id,
+                        displayName = displayName,
+                        tags = ctx.ref?.tags ?: emptyList(),
+                        friendNumber = existing.friendNumber,
+                    )
+                )
+            }
+        }
+
+        currentEntries
+            .filter { it.odUserId !in seenCompositeIds }
+            .forEach { missing ->
+                insertFriendHistory(
+                    ownerId = ownerId,
+                    type = "Unfriend",
+                    snapshot = FriendLogSnapshot(
+                        compositeId = missing.odUserId,
+                        userId = missing.odUserId.substringAfter(':', missing.odUserId),
+                        displayName = missing.odDisplayName,
+                        trustLevel = missing.trustLevel,
+                        friendNumber = missing.friendNumber,
+                    ),
+                )
+                friendLogDao.deleteCurrent(missing.odUserId)
+            }
+    }
+
+    private suspend fun syncFriendCurrent(
+        userId: String,
+        displayName: String,
+        tags: List<String>,
+    ) {
+        val ownerId = ensureOwnerUserId()
+        if (ownerId.isEmpty()) return
+
+        val compositeId = compositeId(ownerId, userId)
+        val existing = friendLogDao.getCurrent(compositeId)
+        val trustLevel = trustLevelLabel(tags)
+        if (existing == null) {
+            friendLogDao.insertCurrent(
+                createCurrentEntry(
+                    ownerId = ownerId,
+                    userId = userId,
+                    displayName = displayName,
+                    tags = tags,
+                    friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
+                )
+            )
+            return
+        }
+
+        if (existing.odDisplayName == displayName && existing.trustLevel == trustLevel) {
+            return
+        }
+
+        if (existing.odDisplayName != displayName && existing.odDisplayName.isNotBlank()) {
+            insertFriendHistory(
+                ownerId = ownerId,
+                type = "DisplayName",
+                snapshot = FriendLogSnapshot(
+                    compositeId = compositeId,
+                    userId = userId,
+                    displayName = displayName,
+                    trustLevel = trustLevel,
+                    friendNumber = existing.friendNumber,
+                ),
+                previousDisplayName = existing.odDisplayName,
+            )
+        }
+
+        if (existing.trustLevel != trustLevel &&
+            existing.trustLevel.isNotBlank() &&
+            trustLevel.isNotBlank()
+        ) {
+            insertFriendHistory(
+                ownerId = ownerId,
+                type = "TrustLevel",
+                snapshot = FriendLogSnapshot(
+                    compositeId = compositeId,
+                    userId = userId,
+                    displayName = displayName,
+                    trustLevel = trustLevel,
+                    friendNumber = existing.friendNumber,
+                ),
+                previousTrustLevel = existing.trustLevel,
+            )
+        }
+
+        friendLogDao.insertCurrent(
+            createCurrentEntry(
+                ownerId = ownerId,
+                userId = userId,
+                displayName = displayName,
+                tags = tags,
+                friendNumber = existing.friendNumber,
+            )
+        )
+    }
+
+    private suspend fun syncFriendLogCurrent(
+        previous: FriendContext,
+        userId: String,
+        displayName: String,
+        tags: List<String>,
+    ) {
+        val previousDisplayName = previous.ref?.displayName ?: previous.name
+        val previousTrustLevel = trustLevelLabel(previous.ref?.tags ?: emptyList())
+        if (previousDisplayName == displayName && previousTrustLevel == trustLevelLabel(tags)) {
+            return
+        }
+        syncFriendCurrent(userId, displayName, tags)
+    }
+
+    private suspend fun syncFriendAdded(userId: String, user: VrcUser?) {
+        val ownerId = ensureOwnerUserId()
+        if (ownerId.isEmpty()) return
+
+        val compositeId = compositeId(ownerId, userId)
+        if (friendLogDao.getCurrent(compositeId) != null) {
+            return
+        }
+
+        val snapshot = FriendLogSnapshot(
+            compositeId = compositeId,
+            userId = userId,
+            displayName = user?.displayName ?: userId,
+            trustLevel = trustLevelLabel(user?.tags ?: emptyList()),
+            friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
+        )
+        insertFriendHistory(ownerId, "Friend", snapshot)
+        friendLogDao.insertCurrent(snapshot.toCurrentEntry(ownerId))
+    }
+
+    private suspend fun syncFriendRemoved(userId: String) {
+        val ownerId = ensureOwnerUserId()
+        if (ownerId.isEmpty()) return
+
+        val compositeId = compositeId(ownerId, userId)
+        val existing = friendLogDao.getCurrent(compositeId) ?: return
+        insertFriendHistory(
+            ownerId = ownerId,
+            type = "Unfriend",
+            snapshot = FriendLogSnapshot(
+                compositeId = compositeId,
+                userId = userId,
+                displayName = existing.odDisplayName,
+                trustLevel = existing.trustLevel,
+                friendNumber = existing.friendNumber,
+            ),
+        )
+        friendLogDao.deleteCurrent(compositeId)
+    }
+
+    private suspend fun insertFriendHistory(
+        ownerId: String,
+        type: String,
+        snapshot: FriendLogSnapshot,
+        previousDisplayName: String = "",
+        previousTrustLevel: String = "",
+    ) {
+        friendLogDao.insertHistory(
+            FriendLogHistoryEntity(
+                ownerUserId = ownerId,
+                type = type,
+                odUserId = snapshot.compositeId,
+                displayName = snapshot.displayName,
+                previousDisplayName = previousDisplayName,
+                trustLevel = snapshot.trustLevel,
+                previousTrustLevel = previousTrustLevel,
+                friendNumber = snapshot.friendNumber,
+                createdAt = Instant.now().toString(),
+            )
+        )
+    }
+
+    private fun createCurrentEntry(
+        ownerId: String,
+        userId: String,
+        displayName: String,
+        tags: List<String>,
+        friendNumber: Int,
+    ): FriendLogCurrentEntity {
+        return FriendLogCurrentEntity(
+            odUserId = compositeId(ownerId, userId),
+            ownerUserId = ownerId,
+            odDisplayName = displayName,
+            trustLevel = trustLevelLabel(tags),
+            friendNumber = friendNumber,
+        )
+    }
+
+    private fun FriendLogSnapshot.toCurrentEntry(ownerId: String): FriendLogCurrentEntity {
+        return FriendLogCurrentEntity(
+            odUserId = compositeId,
+            ownerUserId = ownerId,
+            odDisplayName = displayName,
+            trustLevel = trustLevel,
+            friendNumber = friendNumber,
+        )
+    }
+
+    private fun compositeId(ownerId: String, userId: String): String = "$ownerId:$userId"
+
+    private fun trustLevelLabel(tags: List<String>): String {
+        return when {
+            tags.contains("system_trust_legend") || tags.contains("system_trust_veteran") -> "Trusted User"
+            tags.contains("system_trust_trusted") -> "Known User"
+            tags.contains("system_trust_known") -> "User"
+            tags.contains("system_trust_basic") -> "New User"
+            else -> "Visitor"
+        }
     }
 
     private fun shouldWriteFeed(key: String): Boolean {

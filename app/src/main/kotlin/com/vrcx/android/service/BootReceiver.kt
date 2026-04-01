@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.vrcx.android.data.preferences.VrcxPreferences
-import com.vrcx.android.data.preferences.dataStore
 import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
@@ -23,16 +22,17 @@ class BootReceiver : BroadcastReceiver() {
             val hasAuth = secureSecretsStore.hasAuthCookie() || hasLegacyAuth
             if (!hasAuth) return
 
+            val bgEnabled = runBlocking {
+                VrcxPreferences(context).backgroundServiceEnabled.first()
+            }
+            if (!bgEnabled) return
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                BootReconnectWorker.enqueue(context)
                 return
             }
 
-            val bgEnabled = runBlocking {
-                context.dataStore.data.first()[VrcxPreferences.BACKGROUND_SERVICE_ENABLED] ?: true
-            }
-            if (bgEnabled) {
-                WebSocketForegroundService.start(context)
-            }
+            WebSocketForegroundService.start(context)
         }
     }
 }

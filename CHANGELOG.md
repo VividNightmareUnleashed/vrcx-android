@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0] - 2026-04-01
+
+### Improved
+
+- **Session restore** — Auth cookies and remembered session state now live in secure storage and are restored before background WebSocket startup, making process-death recovery much more reliable
+- **Notifications inbox** — Notification V2 actions, invite/request handling, and inbox loading are more resilient when the app resumes from a cold start or a failed fetch
+- **Request deduplication** — Concurrent GET requests now share a true in-flight result instead of serially rerunning the same network call
+- **Boot reconnect** — Reboot restore now checks both secure and legacy auth state and uses a WorkManager reconnect path on Android 15+ when the background service setting is enabled
+- **Local notifications** — Instance-closed notifications are tracked locally and can be dismissed without calling remote hide endpoints
+- **Regression coverage** — Added tests for recovery-code OTP routing and local instance-closed notifications
+
+### Fixed
+
+- **Recovery code login** — Eight-digit recovery codes now work end to end from the login flow and use the dedicated VRChat OTP verification endpoint instead of the authenticator-code endpoint
+- **Friend Log parity** — Friend Log now backfills current friends on sync and records friend, unfriend, display-name, and trust-level changes as they happen
+- **Friend status alerts** — Status change notifications now compare against the pre-update friend state so they fire reliably again
+- **Notification parity** — Notification V2 events and instance-closed events now surface through the Android notification flow instead of being silently dropped
+
 ## [1.1.0] - 2026-03-15
 
 ### New

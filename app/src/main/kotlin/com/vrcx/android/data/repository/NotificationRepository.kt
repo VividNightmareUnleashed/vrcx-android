@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,9 +50,12 @@ class NotificationRepository @Inject constructor(
     private val _notificationsV2 = MutableStateFlow<List<NotificationV2>>(emptyList())
     val notificationsV2: StateFlow<List<NotificationV2>> = _notificationsV2.asStateFlow()
 
+    private val _localNotifications = MutableStateFlow<List<UnifiedNotification>>(emptyList())
+    val localNotifications: StateFlow<List<UnifiedNotification>> = _localNotifications.asStateFlow()
+
     val unseenCount = MutableStateFlow(0)
 
-    val unifiedNotifications = combine(_notifications, _notificationsV2) { v1, v2 ->
+    val unifiedNotifications = combine(_notifications, _notificationsV2, _localNotifications) { v1, v2, local ->
         val fromV1 = v1.map { n ->
             UnifiedNotification(
                 id = n.id,
@@ -80,7 +84,7 @@ class NotificationRepository @Inject constructor(
                 responses = n.responses,
             )
         }
-        (fromV1 + fromV2).sortedByDescending { it.createdAt }
+        (fromV1 + fromV2 + local).sortedByDescending { it.createdAt }
     }
 
     suspend fun loadNotifications() {
@@ -88,7 +92,7 @@ class NotificationRepository @Inject constructor(
         _notifications.value = v1
         val v2 = notificationApi.getNotificationsV2()
         _notificationsV2.value = v2
-        unseenCount.value = v1.count { !it.seen } + v2.count { !it.seen }
+        recalculateUnseenCount()
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -100,6 +104,7 @@ class NotificationRepository @Inject constructor(
             is PipelineEvent.SeeNotification -> handleSee(event)
             is PipelineEvent.HideNotification -> handleHide(event)
             is PipelineEvent.ResponseNotification -> handleResponse(event)
+            is PipelineEvent.InstanceClosed -> handleInstanceClosed(event)
             else -> {}
         }
     }
@@ -140,17 +145,27 @@ class NotificationRepository @Inject constructor(
         val obj = event.content?.jsonObject ?: return
         val id = obj["id"]?.jsonPrimitive?.content ?: return
         val updatesJson = obj["updates"]?.jsonObject ?: return
-        _notificationsV2.value = _notificationsV2.value.map { existing ->
-            if (existing.id == id) {
-                // Merge only fields present in the update, preserving existing values
-                existing.copy(
-                    seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: existing.seen,
-                    message = updatesJson["message"]?.jsonPrimitive?.content ?: existing.message,
-                    title = updatesJson["title"]?.jsonPrimitive?.content ?: existing.title,
-                    type = updatesJson["type"]?.jsonPrimitive?.content ?: existing.type,
-                )
-            } else existing
+        val existing = _notificationsV2.value.firstOrNull { it.id == id }
+        val updated = if (existing != null) {
+            existing.copy(
+                seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: existing.seen,
+                message = updatesJson["message"]?.jsonPrimitive?.content ?: existing.message,
+                title = updatesJson["title"]?.jsonPrimitive?.content ?: existing.title,
+                type = updatesJson["type"]?.jsonPrimitive?.content ?: existing.type,
+            )
+        } else {
+            NotificationV2(
+                id = id,
+                seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
+                message = updatesJson["message"]?.jsonPrimitive?.content.orEmpty(),
+                title = updatesJson["title"]?.jsonPrimitive?.content.orEmpty(),
+                type = updatesJson["type"]?.jsonPrimitive?.content.orEmpty(),
+                createdAt = Instant.now().toString(),
+                updatedAt = Instant.now().toString(),
+            )
         }
+        _notificationsV2.value = _notificationsV2.value
+            .filter { it.id != id } + updated
         recalculateUnseenCount()
     }
 
@@ -163,6 +178,7 @@ class NotificationRepository @Inject constructor(
         val id = event.content?.jsonPrimitive?.content ?: return
         _notifications.value = _notifications.value.filter { it.id != id }
         _notificationsV2.value = _notificationsV2.value.filter { it.id != id }
+        _localNotifications.value = _localNotifications.value.filter { it.id != id }
         recalculateUnseenCount()
     }
 
@@ -170,6 +186,25 @@ class NotificationRepository @Inject constructor(
         val id = event.content?.jsonObject?.get("notificationId")?.jsonPrimitive?.content ?: return
         _notifications.value = _notifications.value.filter { it.id != id }
         _notificationsV2.value = _notificationsV2.value.filter { it.id != id }
+        _localNotifications.value = _localNotifications.value.filter { it.id != id }
+        recalculateUnseenCount()
+    }
+
+    private fun handleInstanceClosed(event: PipelineEvent.InstanceClosed) {
+        val location = event.content?.jsonObject?.get("instanceLocation")?.jsonPrimitive?.content.orEmpty()
+        val notification = UnifiedNotification(
+            id = "local:instance.closed:${Instant.now()}",
+            type = "instance.closed",
+            senderUserId = "",
+            senderUsername = "System",
+            message = location.ifBlank { "A queued instance closed" },
+            title = "Instance Closed",
+            createdAt = Instant.now().toString(),
+            seen = false,
+            isV2 = false,
+            responses = emptyList(),
+        )
+        _localNotifications.value = listOf(notification) + _localNotifications.value
         recalculateUnseenCount()
     }
 
@@ -180,12 +215,16 @@ class NotificationRepository @Inject constructor(
         _notificationsV2.value = _notificationsV2.value.map {
             if (it.id == id) it.copy(seen = true) else it
         }
+        _localNotifications.value = _localNotifications.value.map {
+            if (it.id == id) it.copy(seen = true) else it
+        }
         recalculateUnseenCount()
     }
 
     private fun recalculateUnseenCount() {
         unseenCount.value = _notifications.value.count { !it.seen } +
-            _notificationsV2.value.count { !it.seen }
+            _notificationsV2.value.count { !it.seen } +
+            _localNotifications.value.count { !it.seen }
     }
 
     suspend fun acceptFriendRequest(notificationId: String) {
@@ -282,6 +321,10 @@ class NotificationRepository @Inject constructor(
     }
 
     suspend fun hideUnified(notificationId: String, isV2: Boolean) {
+        if (notificationId.startsWith("local:")) {
+            removeFromLists(notificationId)
+            return
+        }
         if (isV2) {
             notificationApi.hideNotificationV2(notificationId)
         } else {
@@ -333,6 +376,7 @@ class NotificationRepository @Inject constructor(
     private fun removeFromLists(notificationId: String) {
         _notifications.value = _notifications.value.filter { it.id != notificationId }
         _notificationsV2.value = _notificationsV2.value.filter { it.id != notificationId }
+        _localNotifications.value = _localNotifications.value.filter { it.id != notificationId }
         recalculateUnseenCount()
     }
 }

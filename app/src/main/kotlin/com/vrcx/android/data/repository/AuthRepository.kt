@@ -74,13 +74,18 @@ class AuthRepository @Inject constructor(
     suspend fun verifyTotp(code: String) {
         try {
             _authState.value = AuthState.LoggingIn
+            val digitsOnly = code.filter(Char::isDigit)
             // Recovery codes (OTP) are 8 digits and need a hyphen at position 4
-            val formattedCode = if (code.length == 8 && code.all { it.isDigit() }) {
-                "${code.substring(0, 4)}-${code.substring(4)}"
+            val formattedCode = if (digitsOnly.length == 8) {
+                "${digitsOnly.substring(0, 4)}-${digitsOnly.substring(4)}"
             } else {
-                code
+                digitsOnly.ifEmpty { code }
             }
-            val result = authApi.verifyTotp(TwoFactorAuthRequest(formattedCode))
+            val result = if (digitsOnly.length == 8) {
+                authApi.verifyOtp(TwoFactorAuthRequest(formattedCode))
+            } else {
+                authApi.verifyTotp(TwoFactorAuthRequest(formattedCode))
+            }
             if (result.verified) {
                 fetchCurrentUser()
             } else {

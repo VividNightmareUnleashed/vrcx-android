@@ -31,3 +31,8 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# AndroidX Security / Tink annotation stubs referenced only at compile time
+-dontwarn com.google.errorprone.annotations.CanIgnoreReturnValue
+-dontwarn com.google.errorprone.annotations.CheckReturnValue
+-dontwarn com.google.errorprone.annotations.Immutable
