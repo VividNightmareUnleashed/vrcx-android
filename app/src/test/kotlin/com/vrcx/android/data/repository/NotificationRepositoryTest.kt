@@ -133,6 +133,22 @@ class NotificationRepositoryTest {
     }
 
     @Test
+    fun `invite response uses legacy endpoint and clears notification`() {
+        runBlocking {
+            repository.sendInviteResponse(
+                notificationId = "noty_invite",
+                responseSlot = 3,
+            )
+
+            val payloadCaptor = argumentCaptor<Map<String, Any>>()
+            verify(notificationApi).sendInviteResponse(eq("noty_invite"), payloadCaptor.capture())
+            verify(notificationApi).hideNotification("noty_invite")
+            assertEquals(3, payloadCaptor.firstValue["responseSlot"])
+            assertEquals(true, payloadCaptor.firstValue["rsvp"])
+        }
+    }
+
+    @Test
     fun `loadNotifications propagates fetch failures`() {
         runBlocking {
             whenever(notificationApi.getNotifications()).thenThrow(IllegalStateException("boom"))

@@ -3,11 +3,13 @@ package com.vrcx.android.ui.screen.profile
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.NotificationApi
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.VrcUser
@@ -30,12 +32,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Instant
 import javax.inject.Inject
+
+private object UserDetailTab {
+    const val INFO = 0
+    const val MUTUALS = 1
+    const val GROUPS = 2
+    const val WORLDS = 3
+    const val AVATARS = 4
+}
 
 @HiltViewModel
 class UserDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val userRepository: UserRepository,
+    private val avatarApi: AvatarApi,
     private val friendApi: FriendApi,
     private val playerModerationApi: PlayerModerationApi,
     private val groupApi: GroupApi,
@@ -71,14 +83,26 @@ class UserDetailViewModel @Inject constructor(
     private val _userWorlds = MutableStateFlow<List<World>>(emptyList())
     val userWorlds: StateFlow<List<World>> = _userWorlds.asStateFlow()
 
+    private val _mutualFriends = MutableStateFlow<List<VrcUser>>(emptyList())
+    val mutualFriends: StateFlow<List<VrcUser>> = _mutualFriends.asStateFlow()
+
+    private val _userAvatars = MutableStateFlow<List<Avatar>>(emptyList())
+    val userAvatars: StateFlow<List<Avatar>> = _userAvatars.asStateFlow()
+
     private val _isFavorited = MutableStateFlow(false)
     val isFavorited: StateFlow<Boolean> = _isFavorited.asStateFlow()
 
     private val _memo = MutableStateFlow<String?>(null)
     val memo: StateFlow<String?> = _memo.asStateFlow()
 
+    private val _note = MutableStateFlow<String?>(null)
+    val note: StateFlow<String?> = _note.asStateFlow()
+
     private val _notifyEnabled = MutableStateFlow(false)
     val notifyEnabled: StateFlow<Boolean> = _notifyEnabled.asStateFlow()
+
+    private val _isTabLoading = MutableStateFlow(false)
+    val isTabLoading: StateFlow<Boolean> = _isTabLoading.asStateFlow()
 
     private var favoriteEntryId: String? = null
 
@@ -88,7 +112,8 @@ class UserDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                _user.value = userRepository.getUser(userId, forceRefresh = true)
+                val resolvedUser = userRepository.getUser(userId, forceRefresh = true)
+                _user.value = resolvedUser
                 // Check favorite status
                 val favs = favoriteRepository.favorites.value
                 val fav = favs.firstOrNull { it.type == "friend" && it.favoriteId == userId }
@@ -99,6 +124,20 @@ class UserDetailViewModel @Inject constructor(
                 if (ownerUserId.isNotEmpty()) {
                     val memoEntity = memoDao.getMemo("$ownerUserId:$userId")
                     _memo.value = memoEntity?.memo
+                    val noteEntity = noteDao.get("$ownerUserId:$userId")
+                    _note.value = resolvedUser.note?.takeIf { it.isNotBlank() } ?: noteEntity?.note
+                    if (!resolvedUser.note.isNullOrBlank()) {
+                        noteDao.insert(
+                            NoteEntity(
+                                compositeId = "$ownerUserId:$userId",
+                                ownerUserId = ownerUserId,
+                                odUserId = "$ownerUserId:$userId",
+                                displayName = resolvedUser.displayName,
+                                note = resolvedUser.note,
+                                createdAt = Instant.now().toString(),
+                            )
+                        )
+                    }
                     // Check notification enabled state
                     val notifyEntity = friendNotifyDao.get("$ownerUserId:$userId")
                     _notifyEnabled.value = notifyEntity != null
@@ -122,24 +161,66 @@ class UserDetailViewModel @Inject constructor(
     fun selectTab(tab: Int) {
         _selectedTab.value = tab
         when (tab) {
-            1 -> if (_userGroups.value.isEmpty()) loadGroups()
-            2 -> if (_userWorlds.value.isEmpty()) loadWorlds()
+            UserDetailTab.MUTUALS -> if (_mutualFriends.value.isEmpty()) loadMutualFriends()
+            UserDetailTab.GROUPS -> if (_userGroups.value.isEmpty()) loadGroups()
+            UserDetailTab.WORLDS -> if (_userWorlds.value.isEmpty()) loadWorlds()
+            UserDetailTab.AVATARS -> if (_userAvatars.value.isEmpty()) loadAvatars()
+        }
+    }
+
+    private fun loadMutualFriends() {
+        viewModelScope.launch {
+            _isTabLoading.value = true
+            try {
+                _mutualFriends.value = userRepository.getMutualFriends(userId)
+            } catch (e: Exception) {
+                _message.value = "Failed to load mutual friends: ${e.message}"
+            } finally {
+                _isTabLoading.value = false
+            }
         }
     }
 
     private fun loadGroups() {
         viewModelScope.launch {
+            _isTabLoading.value = true
             try {
                 _userGroups.value = groupApi.getUserGroups(userId)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _message.value = "Failed to load groups: ${e.message}"
+            } finally {
+                _isTabLoading.value = false
+            }
         }
     }
 
     private fun loadWorlds() {
         viewModelScope.launch {
+            _isTabLoading.value = true
             try {
                 _userWorlds.value = worldApi.getWorlds(user = userId)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                _message.value = "Failed to load worlds: ${e.message}"
+            } finally {
+                _isTabLoading.value = false
+            }
+        }
+    }
+
+    private fun loadAvatars() {
+        viewModelScope.launch {
+            _isTabLoading.value = true
+            try {
+                _userAvatars.value = avatarApi.getAvatars(
+                    user = userId,
+                    releaseStatus = "all",
+                    n = 100,
+                )
+            } catch (e: Exception) {
+                _message.value = "Failed to load avatars: ${e.message}"
+            } finally {
+                _isTabLoading.value = false
+            }
         }
     }
 
@@ -185,6 +266,30 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
+    fun saveNote(text: String) {
+        viewModelScope.launch {
+            try {
+                val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
+                userRepository.saveUserNote(userId, text)
+                noteDao.insert(
+                    NoteEntity(
+                        compositeId = "$ownerUserId:$userId",
+                        ownerUserId = ownerUserId,
+                        odUserId = "$ownerUserId:$userId",
+                        displayName = _user.value?.displayName.orEmpty(),
+                        note = text,
+                        createdAt = Instant.now().toString(),
+                    )
+                )
+                _note.value = text
+                _user.value = _user.value?.copy(note = text)
+                _message.value = if (text.isBlank()) "Note cleared" else "Note saved"
+            } catch (e: Exception) {
+                _message.value = "Failed: ${e.message}"
+            }
+        }
+    }
+
     fun saveMemo(text: String) {
         viewModelScope.launch {
             try {
@@ -193,7 +298,7 @@ class UserDetailViewModel @Inject constructor(
                     odUserId = "$ownerUserId:$userId",
                     ownerUserId = ownerUserId,
                     memo = text,
-                    editedAt = java.time.Instant.now().toString(),
+                    editedAt = Instant.now().toString(),
                 ))
                 _memo.value = text
                 _message.value = "Memo saved"
@@ -209,6 +314,17 @@ class UserDetailViewModel @Inject constructor(
                 val newState = friendRepository.toggleFriendNotify(userId)
                 _notifyEnabled.value = newState
                 _message.value = if (newState) "Notifications enabled" else "Notifications disabled"
+            } catch (e: Exception) {
+                _message.value = "Failed: ${e.message}"
+            }
+        }
+    }
+
+    fun sendBoop() {
+        viewModelScope.launch {
+            try {
+                userRepository.sendBoop(userId)
+                _message.value = "Boop sent"
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
             }

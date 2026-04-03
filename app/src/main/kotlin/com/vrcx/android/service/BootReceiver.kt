@@ -28,7 +28,7 @@ class BootReceiver : BroadcastReceiver() {
             if (!bgEnabled) return
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-                BootReconnectWorker.enqueue(context)
+                BootReconnectWorker.cancel(context)
                 return
             }
 
