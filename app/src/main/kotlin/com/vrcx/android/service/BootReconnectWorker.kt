@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -31,6 +32,11 @@ class BootReconnectWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            // Android 15 no longer allows dataSync foreground services from BOOT_COMPLETED.
+            return Result.success()
+        }
+
         val preferences = VrcxPreferences(applicationContext)
         if (!preferences.backgroundServiceEnabled.first()) {
             return Result.success()
@@ -72,7 +78,11 @@ class BootReconnectWorker(
             .setOngoing(true)
             .build()
 
-        return ForegroundInfo(WORKER_NOTIFICATION_ID, notification)
+        return ForegroundInfo(
+            WORKER_NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
     }
 
     private fun ensureNotificationChannel() {
@@ -106,6 +116,10 @@ class BootReconnectWorker(
                 ExistingWorkPolicy.REPLACE,
                 request,
             )
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
         }
     }
 }

@@ -257,8 +257,10 @@ fun VrcxNavGraph(
         ) {
             UserDetailScreen(
                 onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
                 onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
                 onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
             )
         }
         composable(

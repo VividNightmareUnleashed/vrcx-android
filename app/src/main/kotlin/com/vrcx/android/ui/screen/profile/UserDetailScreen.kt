@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.ui.components.EmptyState
@@ -70,28 +72,43 @@ import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.TrustRankBadge
+import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
+
+private object UserDetailTabs {
+    const val INFO = 0
+    const val MUTUALS = 1
+    const val GROUPS = 2
+    const val WORLDS = 3
+    const val AVATARS = 4
+}
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun UserDetailScreen(
     viewModel: UserDetailViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
+    onUserClick: (String) -> Unit = {},
     onWorldClick: (String) -> Unit = {},
     onGroupClick: (String) -> Unit = {},
+    onAvatarClick: (String) -> Unit = {},
 ) {
     val user by viewModel.user.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val message by viewModel.message.collectAsState()
     val selectedTab by viewModel.selectedTab.collectAsState()
+    val mutualFriends by viewModel.mutualFriends.collectAsState()
     val userGroups by viewModel.userGroups.collectAsState()
     val userWorlds by viewModel.userWorlds.collectAsState()
+    val userAvatars by viewModel.userAvatars.collectAsState()
     val isFavorited by viewModel.isFavorited.collectAsState()
     val memo by viewModel.memo.collectAsState()
+    val note by viewModel.note.collectAsState()
     val notifyEnabled by viewModel.notifyEnabled.collectAsState()
+    val isTabLoading by viewModel.isTabLoading.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -131,15 +148,58 @@ fun UserDetailScreen(
 
                 // Tabs
                 TabRow(selectedTabIndex = selectedTab) {
-                    Tab(selected = selectedTab == 0, onClick = { viewModel.selectTab(0) }, text = { Text("Info") })
-                    Tab(selected = selectedTab == 1, onClick = { viewModel.selectTab(1) }, text = { Text("Groups") })
-                    Tab(selected = selectedTab == 2, onClick = { viewModel.selectTab(2) }, text = { Text("Worlds") })
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.INFO,
+                        onClick = { viewModel.selectTab(UserDetailTabs.INFO) },
+                        text = { Text("Info") },
+                    )
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.MUTUALS,
+                        onClick = { viewModel.selectTab(UserDetailTabs.MUTUALS) },
+                        text = { Text("Mutuals") },
+                    )
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.GROUPS,
+                        onClick = { viewModel.selectTab(UserDetailTabs.GROUPS) },
+                        text = { Text("Groups") },
+                    )
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.WORLDS,
+                        onClick = { viewModel.selectTab(UserDetailTabs.WORLDS) },
+                        text = { Text("Worlds") },
+                    )
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.AVATARS,
+                        onClick = { viewModel.selectTab(UserDetailTabs.AVATARS) },
+                        text = { Text("Avatars") },
+                    )
                 }
 
                 when (selectedTab) {
-                    0 -> InfoTab(u, memo, notifyEnabled, viewModel, onWorldClick)
-                    1 -> GroupsTab(userGroups, onGroupClick)
-                    2 -> WorldsTab(userWorlds, onWorldClick)
+                    UserDetailTabs.INFO -> InfoTab(
+                        u = u,
+                        note = note,
+                        memo = memo,
+                        notifyEnabled = notifyEnabled,
+                        viewModel = viewModel,
+                        onWorldClick = onWorldClick,
+                    )
+                    UserDetailTabs.MUTUALS -> {
+                        if (isTabLoading && mutualFriends.isEmpty()) LoadingState()
+                        else MutualFriendsTab(mutualFriends, onUserClick)
+                    }
+                    UserDetailTabs.GROUPS -> {
+                        if (isTabLoading && userGroups.isEmpty()) LoadingState()
+                        else GroupsTab(userGroups, onGroupClick)
+                    }
+                    UserDetailTabs.WORLDS -> {
+                        if (isTabLoading && userWorlds.isEmpty()) LoadingState()
+                        else WorldsTab(userWorlds, onWorldClick)
+                    }
+                    UserDetailTabs.AVATARS -> {
+                        if (isTabLoading && userAvatars.isEmpty()) LoadingState()
+                        else AvatarsTab(userAvatars, onAvatarClick)
+                    }
                 }
             }
         }
@@ -150,11 +210,13 @@ fun UserDetailScreen(
 @Composable
 private fun InfoTab(
     u: VrcUser,
+    note: String?,
     memo: String?,
     notifyEnabled: Boolean,
     viewModel: UserDetailViewModel,
     onWorldClick: (String) -> Unit,
 ) {
+    var showNoteDialog by remember { mutableStateOf(false) }
     var showMemoDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -192,10 +254,23 @@ private fun InfoTab(
                 InfoRow("Platform", u.lastPlatform)
                 if (u.dateJoined.isNotEmpty()) InfoRow("Joined", u.dateJoined)
                 if (u.lastLogin.isNotEmpty()) InfoRow("Last Login", u.lastLogin.take(10))
-                if (!u.note.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Note", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(u.note ?: "", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // VRChat note
+        VrcxCard {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("VRChat Note", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        note?.ifBlank { "No note set" } ?: "No note set",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (note.isNullOrBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = { showNoteDialog = true }) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "Edit VRChat note")
                 }
             }
         }
@@ -236,6 +311,9 @@ private fun InfoTab(
                 OutlinedButton(onClick = { viewModel.unfriend() }) {
                     Icon(Icons.Default.PersonRemove, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Unfriend")
                 }
+                OutlinedButton(onClick = { viewModel.sendBoop() }) {
+                    Text("Boop")
+                }
             } else {
                 FilledTonalButton(onClick = { viewModel.sendFriendRequest() }) {
                     Icon(Icons.Default.PersonAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Add Friend")
@@ -262,6 +340,29 @@ private fun InfoTab(
         }
     }
 
+    if (showNoteDialog) {
+        var noteText by remember { mutableStateOf(note ?: "") }
+        AlertDialog(
+            onDismissRequest = { showNoteDialog = false },
+            title = { Text("Edit VRChat Note") },
+            text = {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 5,
+                    placeholder = { Text("Write a note synced to your VRChat account...") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.saveNote(noteText); showNoteDialog = false }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoteDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     // Memo edit dialog
     if (showMemoDialog) {
         var memoText by remember { mutableStateOf(memo ?: "") }
@@ -284,6 +385,27 @@ private fun InfoTab(
                 TextButton(onClick = { showMemoDialog = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun MutualFriendsTab(mutualFriends: List<VrcUser>, onUserClick: (String) -> Unit) {
+    if (mutualFriends.isEmpty()) {
+        EmptyState(message = "No mutual friends")
+    } else {
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(mutualFriends, key = { it.id }) { mutual ->
+                UserListItem(
+                    avatarUrl = mutual.profilePicOverride.ifEmpty { mutual.currentAvatarThumbnailImageUrl }.ifBlank { null },
+                    displayName = mutual.displayName,
+                    subtitle = mutual.statusDescription.ifBlank { mutual.status },
+                    tags = mutual.tags,
+                    status = mutual.status,
+                    state = mutualFriendState(mutual),
+                    onClick = { onUserClick(mutual.id) },
+                )
+            }
+        }
     }
 }
 
@@ -337,6 +459,43 @@ private fun WorldsTab(worlds: List<com.vrcx.android.data.api.model.World>, onWor
 }
 
 @Composable
+private fun AvatarsTab(avatars: List<Avatar>, onAvatarClick: (String) -> Unit) {
+    if (avatars.isEmpty()) {
+        EmptyState(message = "No avatars")
+    } else {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(avatars, key = { it.id }) { avatar ->
+                VrcxCard(onClick = { onAvatarClick(avatar.id) }) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = avatar.thumbnailImageUrl.ifEmpty { avatar.imageUrl },
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(avatar.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                avatar.releaseStatus.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProfileHeader(user: VrcUser) {
     val imageUrl = user.profilePicOverride.ifEmpty { user.currentAvatarThumbnailImageUrl }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -370,3 +529,10 @@ private fun InfoRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+private fun mutualFriendState(user: VrcUser): FriendState =
+    when {
+        user.location.isNullOrBlank() || user.location == "offline" -> FriendState.OFFLINE
+        user.location == "private" || user.state.equals("active", ignoreCase = true) -> FriendState.ACTIVE
+        else -> FriendState.ONLINE
+    }

@@ -246,6 +246,18 @@ class NotificationRepository @Inject constructor(
         notificationApi.sendInvite(userId, createInvitePayload())
     }
 
+    suspend fun sendInviteResponse(notificationId: String, responseSlot: Int) {
+        notificationApi.sendInviteResponse(
+            notificationId = notificationId,
+            body = mapOf(
+                "responseSlot" to responseSlot,
+                "rsvp" to true,
+            ),
+        )
+        notificationApi.hideNotification(notificationId)
+        removeFromLists(notificationId)
+    }
+
     suspend fun acceptInvite(notificationId: String, isV2: Boolean) {
         val notification = if (isV2) {
             _notificationsV2.value.firstOrNull { it.id == notificationId }?.let { n ->

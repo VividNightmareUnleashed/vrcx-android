@@ -9,17 +9,24 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -27,6 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.repository.NotificationCategoryFilter
+import com.vrcx.android.data.repository.notificationTypeLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
@@ -43,23 +52,38 @@ fun NotificationsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val error by viewModel.error.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
     val selectedTypes by viewModel.selectedTypes.collectAsState()
-    val allTypes by viewModel.allTypes.collectAsState()
+    val categoryCounts by viewModel.categoryCounts.collectAsState()
+    val visibleTypes by viewModel.visibleTypes.collectAsState()
+    val inviteResponseDialog by viewModel.inviteResponseDialog.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Notifications")
 
+        if (categoryCounts.isNotEmpty()) {
+            TabRow(selectedTabIndex = NotificationCategoryFilter.entries.indexOf(selectedCategory)) {
+                categoryCounts.forEach { item ->
+                    Tab(
+                        selected = item.filter == selectedCategory,
+                        onClick = { viewModel.selectCategory(item.filter) },
+                        text = { Text("${item.filter.label} (${item.count})") },
+                    )
+                }
+            }
+        }
+
         // Type filter chips
-        if (allTypes.isNotEmpty()) {
+        if (visibleTypes.isNotEmpty()) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                allTypes.forEach { type ->
+                visibleTypes.forEach { type ->
                     FilterChip(
                         selected = type in selectedTypes,
                         onClick = { viewModel.toggleTypeFilter(type) },
-                        label = { Text(type.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) },
+                        label = { Text(notificationTypeLabel(type), style = MaterialTheme.typography.labelSmall) },
                     )
                 }
             }
@@ -80,7 +104,12 @@ fun NotificationsScreen(
                     EmptyState(
                         message = "No notifications",
                         icon = Icons.Outlined.Notifications,
-                        subtitle = "Friend requests and invites will appear here",
+                        subtitle = when (selectedCategory) {
+                            NotificationCategoryFilter.ALL -> "Friend requests, invites, and system updates will appear here"
+                            NotificationCategoryFilter.FRIEND -> "Friend requests, invites, and boops will appear here"
+                            NotificationCategoryFilter.GROUP -> "Group announcements and moderation updates will appear here"
+                            NotificationCategoryFilter.OTHER -> "System and activity updates will appear here"
+                        },
                     )
                 } else {
                     LazyColumn(
@@ -92,7 +121,7 @@ fun NotificationsScreen(
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text(
-                                            text = notification.type.replaceFirstChar { it.uppercase() },
+                                            text = notificationTypeLabel(notification.type),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
@@ -109,10 +138,12 @@ fun NotificationsScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                         )
                                     }
-                                    Text(
-                                        text = "From: ${notification.senderUsername}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
+                                    if (notification.senderUsername.isNotBlank()) {
+                                        Text(
+                                            text = "From: ${notification.senderUsername}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    }
                                     if (notification.message.isNotBlank()) {
                                         Text(
                                             text = notification.message,
@@ -129,7 +160,7 @@ fun NotificationsScreen(
                                             notification.isV2 -> {
                                                 notification.responses.forEach { response ->
                                                     val label = response.text.ifBlank {
-                                                        response.type.replaceFirstChar { it.uppercase() }
+                                                        notificationTypeLabel(response.type)
                                                     }
                                                     FilledTonalButton(
                                                         onClick = { viewModel.respond(notification, response.type) },
@@ -143,9 +174,17 @@ fun NotificationsScreen(
                                                     Text("Accept")
                                                 }
                                             }
+                                            notification.type == "invite" -> {
+                                                FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
+                                                    Text("Respond")
+                                                }
+                                            }
                                             notification.type == "requestInvite" -> {
                                                 FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
                                                     Text("Invite")
+                                                }
+                                                OutlinedButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
+                                                    Text("Respond")
                                                 }
                                             }
                                         }
@@ -160,5 +199,69 @@ fun NotificationsScreen(
                 }
             }
         }
+    }
+
+    inviteResponseDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissInviteResponseDialog,
+            title = { Text(dialog.title) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Choose a saved response message to send back.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    when {
+                        dialog.isLoading -> {
+                            Text("Loading saved messages...")
+                        }
+                        dialog.templates.isEmpty() -> {
+                            Text("No saved messages are available for this response type.")
+                        }
+                        else -> {
+                            dialog.templates.forEach { template ->
+                                OutlinedButton(
+                                    onClick = { viewModel.sendInviteResponse(template) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        Text(
+                                            text = "Slot ${template.slot}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Text(
+                                            text = template.message.ifBlank { "Empty message" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.refreshInviteResponseDialog() },
+                    enabled = !dialog.isLoading,
+                ) {
+                    Text("Refresh")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissInviteResponseDialog) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }

@@ -56,5 +56,14 @@ interface NotificationApi {
     ): JsonElement
 
     @POST("requestInvite/{userId}")
-    suspend fun sendRequestInvite(@Path("userId") userId: String): JsonElement
+    suspend fun sendRequestInvite(
+        @Path("userId") userId: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any> = emptyMap(),
+    ): JsonElement
+
+    @POST("invite/{notificationId}/response")
+    suspend fun sendInviteResponse(
+        @Path("notificationId") notificationId: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any>,
+    ): JsonElement
 }
