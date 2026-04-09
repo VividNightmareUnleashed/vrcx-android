@@ -109,7 +109,13 @@ class FavoriteRepository @Inject constructor(
     }
 
     suspend fun addFavorite(type: String, favoriteId: String, tags: List<String> = emptyList()): Favorite {
-        val resolvedTags = if (tags.isNotEmpty()) tags else getPreferredFavoriteTags(type)
+        val resolvedTags = if (tags.isNotEmpty()) {
+            tags
+        } else {
+            runCatching { getPreferredFavoriteTags(type) }
+                .getOrElse { defaultFavoriteTags(type) }
+                .ifEmpty { defaultFavoriteTags(type) }
+        }
         val favorite = favoriteApi.addFavorite(
             com.vrcx.android.data.api.model.FavoriteAddRequest(type, favoriteId, resolvedTags)
         )
@@ -164,6 +170,10 @@ class FavoriteRepository @Inject constructor(
             .filter { it.type == type }
             .map { it.name }
         return (savedNames + generatedNames).distinct()
+    }
+
+    private fun defaultFavoriteTags(type: String): List<String> {
+        return listOfNotNull(DEFAULT_FAVORITE_TAGS[type])
     }
 
     fun getLocalFriends(userId: String) = favoriteLocalDao.getFriends(userId)

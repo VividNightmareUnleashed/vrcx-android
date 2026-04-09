@@ -77,17 +77,41 @@ class GroupRepository @Inject constructor(
     }
 
     suspend fun joinGroup(groupId: String): Group {
+        val currentGroup = findKnownGroup(groupId)
         groupApi.joinGroup(groupId)
-        return refreshGroup(groupId)
+        return runCatching { refreshGroup(groupId) }
+            .getOrElse {
+                val optimisticMembershipStatus = inferJoinedMembershipStatus(currentGroup)
+                val optimisticGroup = buildOptimisticGroup(
+                    groupId = groupId,
+                    previousGroup = currentGroup,
+                    membershipStatus = optimisticMembershipStatus,
+                )
+                if (optimisticMembershipStatus == "member") {
+                    _userGroups.value = if (_userGroups.value.any { it.matchesGroupId(groupId) }) {
+                        _userGroups.value.map { group ->
+                            if (group.matchesGroupId(groupId)) optimisticGroup else group
+                        }
+                    } else {
+                        _userGroups.value + optimisticGroup
+                    }
+                }
+                optimisticGroup
+            }
     }
 
     suspend fun leaveGroup(groupId: String): Group {
+        val currentGroup = findKnownGroup(groupId)
         groupApi.leaveGroup(groupId)
-        val updated = refreshGroup(groupId)
-        if (!isJoinedGroup(updated)) {
-            _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
-        }
-        return updated
+        return runCatching { refreshGroup(groupId) }
+            .getOrElse {
+                _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
+                buildOptimisticGroup(
+                    groupId = groupId,
+                    previousGroup = currentGroup,
+                    membershipStatus = "",
+                )
+            }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -158,6 +182,46 @@ class GroupRepository @Inject constructor(
         return group.myMember?.membershipStatus
             ?.takeIf { it.isNotBlank() }
             ?: group.membershipStatus
+    }
+
+    private fun inferJoinedMembershipStatus(group: Group?): String {
+        return when {
+            group == null -> "requested"
+            membershipStatus(group) == "invited" -> "member"
+            group.privacy.equals("public", ignoreCase = true) -> "member"
+            else -> "requested"
+        }
+    }
+
+    private fun findKnownGroup(groupId: String): Group? {
+        return groupCache[groupId]
+            ?: groupCache.values.firstOrNull { it.matchesGroupId(groupId) }
+            ?: _userGroups.value.firstOrNull { it.matchesGroupId(groupId) }
+    }
+
+    private fun buildOptimisticGroup(
+        groupId: String,
+        previousGroup: Group?,
+        membershipStatus: String,
+    ): Group {
+        val baseGroup = previousGroup ?: Group(
+            id = groupId,
+            groupId = groupId,
+        )
+        val optimisticMember = when {
+            baseGroup.myMember != null -> baseGroup.myMember.copy(membershipStatus = membershipStatus)
+            membershipStatus.isBlank() -> null
+            else -> GroupMember(
+                groupId = baseGroup.groupId.ifEmpty { baseGroup.id.ifEmpty { groupId } },
+                membershipStatus = membershipStatus,
+            )
+        }
+        return baseGroup.copy(
+            membershipStatus = membershipStatus,
+            myMember = optimisticMember,
+        ).also { optimisticGroup ->
+            groupCache[groupId] = optimisticGroup
+        }
     }
 
     private fun Group.matchesGroupId(groupId: String): Boolean {

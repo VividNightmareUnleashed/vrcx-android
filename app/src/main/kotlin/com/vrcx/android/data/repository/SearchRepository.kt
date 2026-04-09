@@ -125,7 +125,12 @@ class SearchRepository @Inject constructor(
             is JsonObject -> parsed["avatars"]?.jsonArray ?: return emptyList()
             else -> return emptyList()
         }
-        return items.mapNotNull(::remoteAvatarFromJson)
+        val avatarsById = linkedMapOf<String, Avatar>()
+        items.forEach { element ->
+            val avatar = remoteAvatarFromJson(element) ?: return@forEach
+            avatarsById.putIfAbsent(avatar.id, avatar)
+        }
+        return avatarsById.values.toList()
     }
 
     private fun remoteAvatarFromJson(element: JsonElement): Avatar? {
