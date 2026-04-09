@@ -18,9 +18,12 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Edit
@@ -170,6 +173,10 @@ fun ProfileScreen(
 
                 Spacer(Modifier.height(16.dp))
 
+                NavItem(Icons.Default.Home, "Dashboard") { onNavigate("dashboard") }
+                NavItem(Icons.Default.History, "Game Log") { onNavigate("game_log") }
+                NavItem(Icons.Default.ViewList, "Player List") { onNavigate("player_list") }
+                NavItem(Icons.Default.Build, "Tools") { onNavigate("tools") }
                 NavItem(Icons.Default.Favorite, "Favorites") { onNavigate("favorites") }
                 NavItem(Icons.Default.Group, "Groups") { onNavigate("groups") }
                 NavItem(Icons.Default.Person, "My Avatars") { onNavigate("my_avatars") }

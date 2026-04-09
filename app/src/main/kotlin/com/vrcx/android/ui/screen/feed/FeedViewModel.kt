@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
@@ -25,6 +26,7 @@ class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
     private val friendRepository: FriendRepository,
+    preferences: VrcxPreferences,
 ) : ViewModel() {
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -42,6 +44,17 @@ class FeedViewModel @Inject constructor(
     private val _feedLimit = MutableStateFlow(100)
     val feedLimit: StateFlow<Int> = _feedLimit.asStateFlow()
 
+    private val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
+
+    init {
+        viewModelScope.launch {
+            maxFeedSize.collect { maxSize ->
+                _feedLimit.value = _feedLimit.value.coerceAtMost(maxSize)
+            }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
@@ -58,7 +71,9 @@ class FeedViewModel @Inject constructor(
 
     fun updateSearch(query: String) { _searchQuery.value = query }
     fun toggleVipOnly() { _vipOnly.value = !_vipOnly.value }
-    fun loadMore() { _feedLimit.value += 100 }
+    fun loadMore() {
+        _feedLimit.value = (_feedLimit.value + 100).coerceAtMost(maxFeedSize.value)
+    }
 
     val userAvatarUrls: StateFlow<Map<String, String>> = friendRepository.friends.map { friends ->
         friends.values.mapNotNull { f ->
@@ -77,15 +92,21 @@ class FeedViewModel @Inject constructor(
         friends.values.filter { it.isVIP }.map { it.id }.toSet()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
-    private val allEntries: StateFlow<List<FeedEntry>> = userId.flatMapLatest { uid ->
+    private val queryLimit: StateFlow<Int> = combine(_feedLimit, maxFeedSize) { currentLimit, maxLimit ->
+        currentLimit.coerceAtMost(maxLimit)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
+
+    private val allEntries: StateFlow<List<FeedEntry>> = combine(userId, queryLimit) { uid, limit ->
+        uid to limit
+    }.flatMapLatest { (uid, limit) ->
         if (uid.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedEntry>())
 
         combine(
-            feedRepository.getGpsFeed(uid),
-            feedRepository.getStatusFeed(uid),
-            feedRepository.getBioFeed(uid),
-            feedRepository.getAvatarFeed(uid),
-            feedRepository.getOnlineOfflineFeed(uid),
+            feedRepository.getGpsFeed(uid, limit),
+            feedRepository.getStatusFeed(uid, limit),
+            feedRepository.getBioFeed(uid, limit),
+            feedRepository.getAvatarFeed(uid, limit),
+            feedRepository.getOnlineOfflineFeed(uid, limit),
         ) { gps, status, bio, avatar, onlineOffline ->
             val entries = mutableListOf<FeedEntry>()
             gps.forEach {
@@ -133,6 +154,12 @@ class FeedViewModel @Inject constructor(
             .filter { if (vip) it.userId in vipIds else true }
             .take(limit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val canLoadMore: StateFlow<Boolean> = combine(feedEntries, allEntries, _feedLimit, maxFeedSize) { visibleEntries, allLoadedEntries, currentLimit, maxLimit ->
+        visibleEntries.size >= currentLimit &&
+            allLoadedEntries.size >= currentLimit &&
+            currentLimit < maxLimit
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun toggleFilter(filter: String) {
         val current = _activeFilters.value.toMutableSet()

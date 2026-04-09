@@ -25,11 +25,11 @@ data class FeedEntry(
 class FeedRepository @Inject constructor(
     private val feedDao: FeedDao,
 ) {
-    fun getGpsFeed(userId: String): Flow<List<FeedGpsEntity>> = feedDao.getGpsFeed(userId)
-    fun getStatusFeed(userId: String): Flow<List<FeedStatusEntity>> = feedDao.getStatusFeed(userId)
-    fun getBioFeed(userId: String): Flow<List<FeedBioEntity>> = feedDao.getBioFeed(userId)
-    fun getAvatarFeed(userId: String): Flow<List<FeedAvatarEntity>> = feedDao.getAvatarFeed(userId)
-    fun getOnlineOfflineFeed(userId: String): Flow<List<FeedOnlineOfflineEntity>> = feedDao.getOnlineOfflineFeed(userId)
+    fun getGpsFeed(userId: String, limit: Int): Flow<List<FeedGpsEntity>> = feedDao.getGpsFeed(userId, limit)
+    fun getStatusFeed(userId: String, limit: Int): Flow<List<FeedStatusEntity>> = feedDao.getStatusFeed(userId, limit)
+    fun getBioFeed(userId: String, limit: Int): Flow<List<FeedBioEntity>> = feedDao.getBioFeed(userId, limit)
+    fun getAvatarFeed(userId: String, limit: Int): Flow<List<FeedAvatarEntity>> = feedDao.getAvatarFeed(userId, limit)
+    fun getOnlineOfflineFeed(userId: String, limit: Int): Flow<List<FeedOnlineOfflineEntity>> = feedDao.getOnlineOfflineFeed(userId, limit)
 
     suspend fun insertGps(entry: FeedGpsEntity) = feedDao.insertGps(entry)
     suspend fun insertStatus(entry: FeedStatusEntity) = feedDao.insertStatus(entry)

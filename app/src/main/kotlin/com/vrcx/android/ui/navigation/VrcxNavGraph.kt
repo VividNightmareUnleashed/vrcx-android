@@ -19,26 +19,34 @@ import androidx.navigation.compose.composable
 import com.vrcx.android.ui.screen.avatars.AvatarDetailScreen
 import com.vrcx.android.ui.screen.avatars.MyAvatarsScreen
 import com.vrcx.android.ui.screen.charts.ChartsScreen
+import com.vrcx.android.ui.screen.dashboard.DashboardScreen
 import com.vrcx.android.ui.screen.favorites.FavoritesScreen
 import com.vrcx.android.ui.screen.feed.FeedScreen
 import com.vrcx.android.ui.screen.friendlog.FriendLogScreen
 import com.vrcx.android.ui.screen.friends.FriendsScreen
 import com.vrcx.android.ui.screen.friendslocations.FriendsLocationsScreen
+import com.vrcx.android.ui.screen.gamelog.GameLogScreen
 import com.vrcx.android.ui.screen.gallery.GalleryScreen
 import com.vrcx.android.ui.screen.groups.GroupDetailScreen
 import com.vrcx.android.ui.screen.groups.GroupsScreen
 import com.vrcx.android.ui.screen.moderation.ModerationScreen
 import com.vrcx.android.ui.screen.notifications.NotificationsScreen
+import com.vrcx.android.ui.screen.playerlist.PlayerListScreen
 import com.vrcx.android.ui.screen.profile.ProfileScreen
 import com.vrcx.android.ui.screen.profile.UserDetailScreen
 import com.vrcx.android.ui.screen.search.SearchScreen
 import com.vrcx.android.ui.screen.settings.CreditsScreen
 import com.vrcx.android.ui.screen.settings.SettingsScreen
+import com.vrcx.android.ui.screen.tools.ToolsScreen
 import com.vrcx.android.ui.screen.world.WorldDetailScreen
 
 object VrcxRoutes {
     const val FEED = "feed"
     const val FRIENDS = "friends"
+    const val DASHBOARD = "dashboard"
+    const val GAME_LOG = "game_log"
+    const val PLAYER_LIST = "player_list"
+    const val TOOLS = "tools"
     const val FRIENDS_LOCATIONS = "friends_locations"
     const val FRIEND_LOG = "friend_log"
     const val SEARCH = "search"
@@ -145,6 +153,54 @@ fun VrcxNavGraph(
         }
 
         // Sub-screen routes — slide
+        composable(
+            VrcxRoutes.DASHBOARD,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            DashboardScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+            )
+        }
+        composable(
+            VrcxRoutes.GAME_LOG,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            GameLogScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+            )
+        }
+        composable(
+            VrcxRoutes.PLAYER_LIST,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            PlayerListScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+            )
+        }
+        composable(
+            VrcxRoutes.TOOLS,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            ToolsScreen(
+                onBack = onBack,
+                onOpenRoute = { navController.navigate(it) },
+            )
+        }
         composable(
             VrcxRoutes.FAVORITES,
             enterTransition = { subScreenEnterTransition },

@@ -1,18 +1,30 @@
+# Android and Gradle
 *.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/app/build
-/captures
-.externalNativeBuild
-.cxx
+.gradle/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
 local.properties
+.gradle-user-home/
+
+# IDE and OS files
+.idea/
+.DS_Store
+
+# Local agent tooling
+.claude/
+.codex
 CLAUDE.md
 AGENTS.md
 AI_GUIDE.md
+
+# Secrets and signing material
 *.jks
+*.keystore
 keystore.properties
 .env
+
+# Local reference checkout
 reference/

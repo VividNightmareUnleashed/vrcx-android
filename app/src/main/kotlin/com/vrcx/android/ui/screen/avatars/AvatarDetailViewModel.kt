@@ -36,18 +36,21 @@ class AvatarDetailViewModel @Inject constructor(
     private val _isFavorited = MutableStateFlow(false)
     val isFavorited: StateFlow<Boolean> = _isFavorited.asStateFlow()
 
-    init { loadAvatar() }
+    private var favoriteEntryId: String? = null
+
+    init {
+        observeFavoriteStatus()
+        loadAvatar()
+    }
 
     fun loadAvatar() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
+                favoriteRepository.loadFavorites(type = "avatar")
                 val a = avatarRepository.getAvatar(avatarId)
                 _avatar.value = a
-                _isFavorited.value = favoriteRepository.favorites.value.any {
-                    it.type == "avatar" && it.favoriteId == avatarId
-                }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load avatar"
             } finally {
@@ -70,18 +73,12 @@ class AvatarDetailViewModel @Inject constructor(
     fun toggleFavorite() {
         viewModelScope.launch {
             try {
-                if (_isFavorited.value) {
-                    val fav = favoriteRepository.favorites.value.firstOrNull {
-                        it.type == "avatar" && it.favoriteId == avatarId
-                    }
-                    if (fav != null) {
-                        favoriteRepository.deleteFavorite(fav.id)
-                        _isFavorited.value = false
-                        _message.value = "Removed from favorites"
-                    }
+                favoriteRepository.loadFavorites(type = "avatar")
+                if (_isFavorited.value && favoriteEntryId != null) {
+                    favoriteRepository.deleteFavorite(favoriteEntryId!!)
+                    _message.value = "Removed from favorites"
                 } else {
-                    favoriteRepository.addFavorite("avatar", avatarId, listOf("avatars1"))
-                    _isFavorited.value = true
+                    favoriteRepository.addFavorite("avatar", avatarId)
                     _message.value = "Added to favorites"
                 }
             } catch (e: Exception) {
@@ -91,4 +88,16 @@ class AvatarDetailViewModel @Inject constructor(
     }
 
     fun clearMessage() { _message.value = null }
+
+    private fun observeFavoriteStatus() {
+        viewModelScope.launch {
+            favoriteRepository.favorites.collect { favorites ->
+                val favorite = favorites.firstOrNull {
+                    it.type == "avatar" && it.favoriteId == avatarId
+                }
+                favoriteEntryId = favorite?.id
+                _isFavorited.value = favorite != null
+            }
+        }
+    }
 }

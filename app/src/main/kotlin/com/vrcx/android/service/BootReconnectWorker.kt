@@ -32,13 +32,15 @@ class BootReconnectWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        val notificationHelper = NotificationHelper(applicationContext)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            // Android 15 no longer allows dataSync foreground services from BOOT_COMPLETED.
+            notificationHelper.notifyBootReconnectRequired()
             return Result.success()
         }
 
         val preferences = VrcxPreferences(applicationContext)
         if (!preferences.backgroundServiceEnabled.first()) {
+            notificationHelper.cancelBootReconnectRequired()
             return Result.success()
         }
 
@@ -49,9 +51,11 @@ class BootReconnectWorker(
             json = Json { ignoreUnknownKeys = true },
         )
         if (!secureSecretsStore.hasAuthCookie() && !hasLegacyAuth) {
+            notificationHelper.cancelBootReconnectRequired()
             return Result.success()
         }
 
+        notificationHelper.cancelBootReconnectRequired()
         setForeground(createForegroundInfo())
         return if (WebSocketForegroundService.start(applicationContext)) {
             Result.success()

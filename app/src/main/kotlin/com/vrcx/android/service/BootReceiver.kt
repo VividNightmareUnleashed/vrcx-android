@@ -3,7 +3,6 @@ package com.vrcx.android.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.hilt.android.AndroidEntryPoint
@@ -27,12 +26,7 @@ class BootReceiver : BroadcastReceiver() {
             }
             if (!bgEnabled) return
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-                BootReconnectWorker.cancel(context)
-                return
-            }
-
-            WebSocketForegroundService.start(context)
+            BootReconnectWorker.enqueue(context)
         }
     }
 }

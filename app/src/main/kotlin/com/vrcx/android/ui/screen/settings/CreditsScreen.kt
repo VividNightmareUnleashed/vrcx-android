@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.vrcx.android.BuildConfig
 import com.vrcx.android.R
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
@@ -49,7 +50,7 @@ fun CreditsScreen(onBack: () -> Unit = {}) {
         // App header
         Text("VRCX Android", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "v1.0.0",
+            "v${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

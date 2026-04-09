@@ -70,7 +70,20 @@ class NotificationHelper(private val context: Context) {
         )
     }
 
-    private fun post(channel: String, title: String, text: String) {
+    fun notifyBootReconnectRequired() {
+        post(
+            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            title = "Open VRCX to reconnect",
+            text = "Android 15 requires reopening the app after reboot before the background connection can resume.",
+            notificationId = BOOT_RECONNECT_NOTIFICATION_ID,
+        )
+    }
+
+    fun cancelBootReconnectRequired() {
+        notificationManager.cancel(BOOT_RECONNECT_NOTIFICATION_ID)
+    }
+
+    private fun post(channel: String, title: String, text: String, notificationId: Int? = null) {
         val pendingIntent = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java),
@@ -85,6 +98,13 @@ class NotificationHelper(private val context: Context) {
             .setAutoCancel(true)
             .build()
 
-        notificationManager.notify(notificationId.getAndUpdate { (it + 1 - 100) % 10000 + 100 }, notification)
+        notificationManager.notify(
+            notificationId ?: this.notificationId.getAndUpdate { (it + 1 - 100) % 10000 + 100 },
+            notification,
+        )
+    }
+
+    companion object {
+        const val BOOT_RECONNECT_NOTIFICATION_ID = 99
     }
 }

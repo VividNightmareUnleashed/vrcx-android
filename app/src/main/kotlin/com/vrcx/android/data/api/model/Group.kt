@@ -103,6 +103,12 @@ data class GroupPost(
 )
 
 @Serializable
+data class GroupPostsResponse(
+    val posts: List<GroupPost> = emptyList(),
+    val total: Int = 0,
+)
+
+@Serializable
 data class GroupInstance(
     val instanceId: String = "",
     val location: String = "",

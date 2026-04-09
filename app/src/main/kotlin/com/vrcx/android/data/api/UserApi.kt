@@ -20,6 +20,7 @@ interface UserApi {
         @Query("n") n: Int = 10,
         @Query("offset") offset: Int = 0,
         @Query("search") search: String? = null,
+        @Query("customFields") customFields: String? = null,
         @Query("sort") sort: String? = null,
         @Query("order") order: String? = null,
     ): List<UserSearchResult>
