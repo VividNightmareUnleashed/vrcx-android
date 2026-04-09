@@ -34,6 +34,12 @@ class FavoriteRepository @Inject constructor(
     private val _favoriteLimits = MutableStateFlow<FavoriteLimits?>(null)
     val favoriteLimits: StateFlow<FavoriteLimits?> = _favoriteLimits.asStateFlow()
 
+    suspend fun clearRuntimeState() {
+        favoriteMutex.withLock {
+            resetRuntimeStateLocked()
+        }
+    }
+
     suspend fun loadFavorites(type: String? = null, forceRefresh: Boolean = false) {
         val requestedTypes = if (type == null) DEFAULT_FAVORITE_TYPES else listOf(type)
         val typesToLoad = favoriteMutex.withLock {
@@ -173,5 +179,14 @@ class FavoriteRepository @Inject constructor(
         )
         private const val FAVORITES_PAGE_SIZE = 100
         private const val FAVORITE_GROUPS_PAGE_SIZE = 50
+    }
+
+    private fun resetRuntimeStateLocked() {
+        loadedFavoriteTypes.clear()
+        favoriteGroupsLoaded = false
+        favoriteLimitsLoaded = false
+        _favorites.value = emptyList()
+        _favoriteGroups.value = emptyList()
+        _favoriteLimits.value = null
     }
 }

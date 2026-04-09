@@ -34,6 +34,7 @@ class AuthRepository @Inject constructor(
     private val preferences: VrcxPreferences,
     private val json: Json,
     private val dedup: RequestDeduplicator,
+    private val favoriteRepository: FavoriteRepository,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -166,6 +167,7 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun logout() {
+        favoriteRepository.clearRuntimeState()
         _currentUser = null
         _authToken = null
         authInterceptor.clearBasicAuth()
@@ -202,6 +204,7 @@ class AuthRepository @Inject constructor(
     }
 
     private suspend fun onLoginSuccess(user: CurrentUser) {
+        favoriteRepository.clearRuntimeState()
         _currentUser = user
         _authState.value = AuthState.LoggedIn(user)
         preferences.setLastUserId(user.id)

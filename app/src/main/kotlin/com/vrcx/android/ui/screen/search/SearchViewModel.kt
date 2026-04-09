@@ -37,6 +37,7 @@ class SearchViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val pageSize = 10
+    private val worldSourcePageSize = 50
     private var remoteAvatarResults: List<Avatar> = emptyList()
     private var searchJob: Job? = null
 
@@ -93,6 +94,11 @@ class SearchViewModel @Inject constructor(
 
     private val _avatarProviderUrl = MutableStateFlow("")
     val avatarProviderUrl: StateFlow<String> = _avatarProviderUrl.asStateFlow()
+
+    private data class WorldPageResult(
+        val items: List<World>,
+        val hasMore: Boolean,
+    )
 
     fun updateQuery(query: String) {
         _query.value = query
@@ -246,23 +252,9 @@ class SearchViewModel @Inject constructor(
                     _hasMore.value = results.size >= pageSize
                 }
                 SearchTab.WORLDS -> {
-                    val results = searchRepository.searchWorlds(
-                        query = q,
-                        n = pageSize,
-                        offset = offset,
-                        mode = _worldMode.value.name.lowercase(),
-                        includeLabs = _includeWorldLabs.value,
-                        tag = _worldTag.value,
-                    )
-                    _worlds.value = if (_worldMode.value == WorldSearchMode.SEARCH || q.isBlank()) {
-                        results
-                    } else {
-                        results.filter {
-                            it.name.contains(q, ignoreCase = true) ||
-                                it.authorName.contains(q, ignoreCase = true)
-                        }
-                    }
-                    _hasMore.value = results.size >= pageSize
+                    val result = loadWorldPage(query = q, offset = offset)
+                    _worlds.value = result.items
+                    _hasMore.value = result.hasMore
                 }
                 SearchTab.AVATARS -> {
                     if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
@@ -306,5 +298,59 @@ class SearchViewModel @Inject constructor(
             }
             SearchTab.GROUPS -> _groups.value = emptyList()
         }
+    }
+
+    private suspend fun loadWorldPage(query: String, offset: Int): WorldPageResult {
+        val mode = _worldMode.value.name.lowercase()
+        val tag = _worldTag.value
+        val includeLabs = _includeWorldLabs.value
+
+        if (_worldMode.value == WorldSearchMode.SEARCH || query.isBlank()) {
+            val results = searchRepository.searchWorlds(
+                query = query,
+                n = pageSize,
+                offset = offset,
+                mode = mode,
+                includeLabs = includeLabs,
+                tag = tag,
+            )
+            return WorldPageResult(
+                items = results,
+                hasMore = results.size >= pageSize,
+            )
+        }
+
+        val targetMatchCount = offset + pageSize + 1
+        val matchedResults = mutableListOf<World>()
+        var sourceOffset = 0
+
+        while (matchedResults.size < targetMatchCount) {
+            val results = searchRepository.searchWorlds(
+                query = query,
+                n = worldSourcePageSize,
+                offset = sourceOffset,
+                mode = mode,
+                includeLabs = includeLabs,
+                tag = tag,
+            )
+            if (results.isEmpty()) {
+                break
+            }
+
+            matchedResults += results.filter { world ->
+                world.name.contains(query, ignoreCase = true) ||
+                    world.authorName.contains(query, ignoreCase = true)
+            }
+
+            sourceOffset += results.size
+            if (results.size < worldSourcePageSize) {
+                break
+            }
+        }
+
+        return WorldPageResult(
+            items = matchedResults.drop(offset).take(pageSize),
+            hasMore = matchedResults.size > offset + pageSize,
+        )
     }
 }
