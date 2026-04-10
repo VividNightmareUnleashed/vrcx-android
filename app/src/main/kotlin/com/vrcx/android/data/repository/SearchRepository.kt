@@ -8,6 +8,8 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.GroupSearchResult
 import com.vrcx.android.data.api.model.UserSearchResult
 import com.vrcx.android.data.api.model.World
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -16,6 +18,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -30,6 +33,16 @@ class SearchRepository @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val json: Json,
 ) {
+    private val remoteAvatarClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .cookieJar(CookieJar.NO_COOKIES)
+            .apply {
+                interceptors().clear()
+                networkInterceptors().clear()
+            }
+            .build()
+    }
+
     suspend fun searchUsers(
         query: String,
         n: Int = 10,
@@ -93,11 +106,13 @@ class SearchRepository @Inject constructor(
             .header("Referer", "https://vrcx.app")
             .build()
 
-        return okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            val body = response.body?.string().orEmpty()
-            if (body.isBlank()) return emptyList()
-            parseRemoteAvatars(body)
+        return withContext(Dispatchers.IO) {
+            remoteAvatarClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string().orEmpty()
+                if (body.isBlank()) return@withContext emptyList()
+                parseRemoteAvatars(body)
+            }
         }
     }
 
