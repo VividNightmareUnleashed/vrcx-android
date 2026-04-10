@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1] - 2026-04-10
+
+### Improved
+
+- **Release transparency** — Added a local `.env`-driven release evidence flow that signs the APK, computes its SHA-256, and builds a VirusTotal report bundle for release publishing
+- **Release documentation** — Documented the signed-build and VirusTotal workflow so contributors can publish a verifiable APK hash and linked scan report with each release
+
 ## [1.4.0] - 2026-04-10
 
 ### New

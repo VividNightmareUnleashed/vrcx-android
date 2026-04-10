@@ -5,6 +5,7 @@
 A native Android companion app for VRChat — track friends, browse worlds, manage avatars, and get real-time notifications, all from your phone.
 
 [![Latest Release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=latest)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
+[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.4.1%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/f0c7ab25faffc9dee291c301edbf1db4e8dc68314ca004c90242a691b8786c0e)
 [![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
 
 </div>
@@ -38,6 +39,8 @@ VRCX Android is a mobile companion app that brings the core functionality of the
 
 Grab the latest APK from [Releases](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest).
 
+The current signed `1.4.1` sample is published at [VirusTotal](https://www.virustotal.com/gui/file/f0c7ab25faffc9dee291c301edbf1db4e8dc68314ca004c90242a691b8786c0e) with SHA-256 `f0c7ab25faffc9dee291c301edbf1db4e8dc68314ca004c90242a691b8786c0e`.
+
 Requires **Android 8.0** (API 26) or newer.
 
 ## Building from Source
@@ -66,12 +69,29 @@ keytool -genkeypair -v -keystore release-keystore.jks \
   -alias vrcx-android -storepass YOUR_PASSWORD -keypass YOUR_PASSWORD
 ```
 
-Then build:
+Then create a local `.env` file. You can start from `.env.example` and fill in the real values:
 
 ```bash
-export VRCX_KEYSTORE_PASSWORD='YOUR_PASSWORD'
+VRCX_KEYSTORE_PASSWORD='YOUR_PASSWORD'
+VRCX_KEY_ALIAS='vrcx-android'
+VIRUSTOTAL_API_KEY='YOUR_VIRUSTOTAL_API_KEY'
+```
+
+If you only want the signed APK, Gradle still works directly:
+
+```bash
 ./gradlew assembleRelease
 ```
+
+If you want the signed APK plus a VirusTotal evidence bundle for release notes, run:
+
+```bash
+python scripts/release_sign_and_scan.py
+```
+
+That command loads `.env`, builds the signed release APK, computes its SHA-256, looks up or uploads the APK to VirusTotal, and writes two files under `build/release-evidence/`: a JSON payload with the raw evidence and a Markdown snippet you can paste into a GitHub release.
+
+The Markdown report includes the APK SHA-256, a VirusTotal report link, scan verdict counts, and any contacted domains VirusTotal observed during analysis. If your VirusTotal plan supports private scanning, you can also set `VIRUSTOTAL_PRIVATE_SCANNING=true` and `VIRUSTOTAL_ENABLE_INTERNET=true` in `.env` to request internet-enabled sandbox evidence for the domain list.
 
 ## Tech Stack
 
