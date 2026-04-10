@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.4.0] - 2026-04-10
+
+### New
+
+- **Dashboard** — Added a new dashboard view for checking your recent VRChat activity and friend-related feed data in one place
+- **Game Log** — Added a dedicated game-log screen for browsing feed-backed history with the same account-aware data used elsewhere in the app
+- **Player List** — Added a player-list utility screen from Profile for quickly reaching another common desktop-style workflow on Android
+- **Tools screen** — Added a new tools hub with quick links to utility screens and an ID jump flow for opening users, worlds, avatars, and groups directly
+- **Group posts** — Group detail now shows group posts in addition to core group metadata, making groups feel much more complete in the Android client
+
+### Improved
+
+- **Search** — User search now supports bio-based search and last-login sorting, world search supports mode and tag filtering, and avatar search supports remote provider sources
+- **Remote avatar providers** — Remote avatar searches now deduplicate duplicate provider results and report provider failures more clearly instead of silently behaving like a zero-result search
+- **Favorites** — Favorite loading is more complete and more resilient, with better preferred-tag selection and safer fallback behavior when favorite metadata endpoints are temporarily unavailable
+- **Group membership flows** — Joining and leaving groups is now more reliable when refresh requests fail after the mutation succeeds, so the app no longer gets stuck showing guessed membership state
+- **Feed-backed screens** — Feed and log style views now respect a configurable feed-history limit from Settings, making it easier to trade history depth for a lighter local dataset
+- **Profile shortcuts** — Profile now exposes the new utility screens directly, which makes the expanded app surface much easier to discover
+- **Credits and version display** — The credits screen now reports the real app version from the build instead of a hardcoded string
+
+### Fixed
+
+- **Cross-account favorites cache** — In-memory favorites state is cleared correctly across auth session changes, preventing favorite data from bleeding between accounts in the same process
+- **Filtered world pagination** — World filtering no longer strands matching results on later backend pages when browsing non-search world modes
+- **Remote avatar error states** — Invalid provider URLs, empty responses, malformed JSON, and HTTP failures now surface as actionable errors instead of a misleading `No results found`
+- **Group detail cache correctness** — A failed follow-up refresh after join or leave no longer poisons the cached group record, so later visits refetch the authoritative server state
+- **Android 15 reboot behavior** — Reboot handling now favors a clear reopen notification path that better matches current Android background-execution rules
+- **Favorites fallback behavior** — Adding a favorite no longer depends on every metadata lookup succeeding before the request can be sent
+- **Regression coverage** — Added repository-level tests for group membership cache invalidation and remote avatar provider failure handling
+
 ## [1.3.0] - 2026-04-01
 
 ### Improved
