@@ -27,6 +27,20 @@ data class VrcxColors(
     val warning: Color = VrcxWarning,
     val info: Color = VrcxInfo,
 
+    // Desktop-inspired shell colors
+    val shellGradientStart: Color = Color(0xFF0A0A0A),
+    val shellGradientEnd: Color = Color(0xFF0A0A0A),
+    val panelBackground: Color = Color(0xFF0A0A0A),
+    val panelElevated: Color = Color(0xFF0A0A0A),
+    val panelHover: Color = Color(0xFF262626),
+    val panelBorder: Color = Color(0xFF262626),
+    val panelMuted: Color = Color(0xFFA1A1A1),
+    val fieldBackground: Color = Color(0xFF262626),
+    val focusRing: Color = Color(0xFF525252),
+    val navActive: Color = Color(0xFF262626),
+    val navActiveContent: Color = Color(0xFFFAFAFA),
+    val navInactiveContent: Color = Color(0xFFA1A1A1),
+
     // Shimmer
     val shimmerBase: Color = Color(0xFF2A2A3C),
     val shimmerHighlight: Color = Color(0xFF3A3A50),

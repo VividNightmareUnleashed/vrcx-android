@@ -45,7 +45,7 @@ fun DisclaimerDialog(
     onAccept: () -> Unit,
     onExit: () -> Unit,
 ) {
-    var countdown by remember { mutableIntStateOf(5) }
+    var countdown by remember { mutableIntStateOf(1) }
     val acceptEnabled = countdown <= 0
 
     LaunchedEffect(Unit) {

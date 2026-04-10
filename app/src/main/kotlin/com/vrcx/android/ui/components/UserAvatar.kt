@@ -23,6 +23,7 @@ import com.vrcx.android.ui.theme.StatusBusy
 import com.vrcx.android.ui.theme.StatusJoinMe
 import com.vrcx.android.ui.theme.StatusOffline
 import com.vrcx.android.ui.theme.StatusOnline
+import com.vrcx.android.ui.theme.vrcxColors
 
 fun statusColor(status: String?, state: FriendState): Color {
     if (state == FriendState.OFFLINE) return StatusOffline
@@ -44,20 +45,22 @@ fun UserAvatar(
     showStatusDot: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val vrcxColors = MaterialTheme.vrcxColors
+
     Box(modifier = modifier) {
         if (imageUrl.isNullOrEmpty()) {
             Box(
                 modifier = Modifier
                     .size(size)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(vrcxColors.panelHover),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Default.Person,
                     contentDescription = null,
                     modifier = Modifier.size(size * 0.6f),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = vrcxColors.panelMuted,
                 )
             }
         } else {
@@ -67,7 +70,7 @@ fun UserAvatar(
                 modifier = Modifier
                     .size(size)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(vrcxColors.panelHover),
                 contentScale = ContentScale.Crop,
             )
         }
@@ -78,7 +81,7 @@ fun UserAvatar(
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
                     .background(statusColor(status, state))
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                    .border(2.dp, vrcxColors.panelBackground, CircleShape),
             )
         }
     }

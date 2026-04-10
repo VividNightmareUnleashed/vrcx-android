@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,7 +38,8 @@ fun TrustRankBadge(tags: List<String>, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
             text = label,
