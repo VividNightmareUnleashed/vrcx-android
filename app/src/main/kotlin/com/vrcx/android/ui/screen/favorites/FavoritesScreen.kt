@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import android.util.Log
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
@@ -81,19 +80,21 @@ class FavoritesViewModel @Inject constructor(
             try {
                 favoriteRepository.loadFavorites()
                 favoriteRepository.loadFavoriteGroups()
-                Log.d("FavoritesVM", "Loaded ${favoriteRepository.favorites.value.size} favorites")
-                resolveEntities()
+                favoriteRepository.favorites.collect { favorites ->
+                    resolveEntities(favorites)
+                }
             } catch (e: Exception) {
-                Log.e("FavoritesVM", "Failed to load favorites: ${e.message}")
+                _resolvedFavorites.value = emptyList()
             }
             _isLoading.value = false
         }
     }
 
-    private suspend fun resolveEntities() {
+    private suspend fun resolveEntities(favorites: List<Favorite>) {
+        _isLoading.value = true
         val result = mutableListOf<ResolvedFavorite>()
         val friends = friendRepository.friends.value
-        for (fav in favoriteRepository.favorites.value) {
+        for (fav in favorites) {
             try {
                 when (fav.type) {
                     "friend" -> {
@@ -116,12 +117,11 @@ class FavoritesViewModel @Inject constructor(
                     else -> result.add(ResolvedFavorite(fav, fav.favoriteId))
                 }
             } catch (e: Exception) {
-                Log.d("FavoritesVM", "Failed to resolve ${fav.type} ${fav.favoriteId}: ${e.message}")
                 result.add(ResolvedFavorite(fav, fav.favoriteId))
             }
         }
         _resolvedFavorites.value = result
-        Log.d("FavoritesVM", "Resolved ${result.size} favorites")
+        _isLoading.value = false
     }
 
     fun unfavorite(favoriteId: String) {

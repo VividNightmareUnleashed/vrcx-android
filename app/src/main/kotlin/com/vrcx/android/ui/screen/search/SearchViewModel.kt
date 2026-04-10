@@ -8,22 +8,38 @@ import com.vrcx.android.data.api.model.UserSearchResult
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.SearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 enum class SearchTab { USERS, WORLDS, AVATARS, GROUPS }
+
+enum class WorldSearchMode {
+    SEARCH,
+    ACTIVE,
+    RECENT,
+    FAVORITES,
+    MINE,
+}
+
+enum class AvatarSearchSource {
+    VRCHAT,
+    REMOTE,
+}
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
 ) : ViewModel() {
 
-    private val PAGE_SIZE = 10
+    private val pageSize = 10
+    private val worldSourcePageSize = 50
+    private var remoteAvatarResults: List<Avatar> = emptyList()
+    private var searchJob: Job? = null
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -58,64 +74,208 @@ class SearchViewModel @Inject constructor(
     private val _hasMore = MutableStateFlow(false)
     val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
 
-    private var searchJob: Job? = null
+    private val _searchUsersByBio = MutableStateFlow(false)
+    val searchUsersByBio: StateFlow<Boolean> = _searchUsersByBio.asStateFlow()
+
+    private val _sortUsersByLastLogin = MutableStateFlow(false)
+    val sortUsersByLastLogin: StateFlow<Boolean> = _sortUsersByLastLogin.asStateFlow()
+
+    private val _worldMode = MutableStateFlow(WorldSearchMode.SEARCH)
+    val worldMode: StateFlow<WorldSearchMode> = _worldMode.asStateFlow()
+
+    private val _includeWorldLabs = MutableStateFlow(false)
+    val includeWorldLabs: StateFlow<Boolean> = _includeWorldLabs.asStateFlow()
+
+    private val _worldTag = MutableStateFlow("")
+    val worldTag: StateFlow<String> = _worldTag.asStateFlow()
+
+    private val _avatarSearchSource = MutableStateFlow(AvatarSearchSource.VRCHAT)
+    val avatarSearchSource: StateFlow<AvatarSearchSource> = _avatarSearchSource.asStateFlow()
+
+    private val _avatarProviderUrl = MutableStateFlow("")
+    val avatarProviderUrl: StateFlow<String> = _avatarProviderUrl.asStateFlow()
+
+    private data class WorldPageResult(
+        val items: List<World>,
+        val hasMore: Boolean,
+    )
 
     fun updateQuery(query: String) {
         _query.value = query
         _currentOffset.value = 0
-        searchJob?.cancel()
-        if (query.length >= 2) {
-            searchJob = viewModelScope.launch {
-                delay(300) // Debounce
-                search()
-            }
-        }
+        debounceSearch()
     }
 
     fun selectTab(tab: SearchTab) {
         _selectedTab.value = tab
         _currentOffset.value = 0
-        if (_query.value.length >= 2) {
-            viewModelScope.launch { search() }
-        }
+        scheduleSearch(immediate = true)
+    }
+
+    fun setSearchUsersByBio(enabled: Boolean) {
+        _searchUsersByBio.value = enabled
+        _currentOffset.value = 0
+        scheduleSearch(immediate = true)
+    }
+
+    fun setSortUsersByLastLogin(enabled: Boolean) {
+        _sortUsersByLastLogin.value = enabled
+        _currentOffset.value = 0
+        scheduleSearch(immediate = true)
+    }
+
+    fun setWorldMode(mode: WorldSearchMode) {
+        _worldMode.value = mode
+        _currentOffset.value = 0
+        scheduleSearch(immediate = true)
+    }
+
+    fun setIncludeWorldLabs(enabled: Boolean) {
+        _includeWorldLabs.value = enabled
+        _currentOffset.value = 0
+        scheduleSearch(immediate = true)
+    }
+
+    fun setWorldTag(tag: String) {
+        _worldTag.value = tag
+        _currentOffset.value = 0
+        debounceSearch()
+    }
+
+    fun setAvatarSearchSource(source: AvatarSearchSource) {
+        _avatarSearchSource.value = source
+        _currentOffset.value = 0
+        remoteAvatarResults = emptyList()
+        scheduleSearch(immediate = true)
+    }
+
+    fun setAvatarProviderUrl(url: String) {
+        _avatarProviderUrl.value = url
+        _currentOffset.value = 0
+        remoteAvatarResults = emptyList()
+        debounceSearch()
     }
 
     fun nextPage() {
-        _currentOffset.value += PAGE_SIZE
-        viewModelScope.launch { search() }
+        _currentOffset.value += pageSize
+        scheduleSearch(immediate = true, useRemoteAvatarCache = true)
     }
 
     fun previousPage() {
-        _currentOffset.value = (_currentOffset.value - PAGE_SIZE).coerceAtLeast(0)
-        viewModelScope.launch { search() }
+        _currentOffset.value = (_currentOffset.value - pageSize).coerceAtLeast(0)
+        scheduleSearch(immediate = true, useRemoteAvatarCache = true)
     }
 
-    private suspend fun search() {
+    fun retry() {
+        scheduleSearch(immediate = true)
+    }
+
+    private fun debounceSearch() {
+        scheduleSearch(immediate = false)
+    }
+
+    private fun scheduleSearch(immediate: Boolean, useRemoteAvatarCache: Boolean = false) {
+        searchJob?.cancel()
+        val validationError = validateSearchState()
+        if (validationError != null) {
+            clearCurrentResults()
+            _error.value = validationError
+            _hasSearched.value = false
+            _hasMore.value = false
+            return
+        }
+        if (!isSearchReady()) {
+            clearCurrentResults()
+            _error.value = null
+            _hasSearched.value = false
+            _hasMore.value = false
+            return
+        }
+
+        if (immediate) {
+            searchJob = viewModelScope.launch {
+                search(useRemoteAvatarCache = useRemoteAvatarCache)
+            }
+        } else {
+            searchJob = viewModelScope.launch {
+                delay(300)
+                search()
+            }
+        }
+    }
+
+    private fun isSearchReady(): Boolean {
+        val trimmedQuery = _query.value.trim()
+        return when (_selectedTab.value) {
+            SearchTab.USERS -> trimmedQuery.length >= 2
+            SearchTab.WORLDS -> _worldMode.value != WorldSearchMode.SEARCH || trimmedQuery.length >= 2 || _worldTag.value.isNotBlank()
+            SearchTab.AVATARS -> {
+                if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
+                    trimmedQuery.length >= 3 && _avatarProviderUrl.value.isNotBlank()
+                } else {
+                    trimmedQuery.length >= 2
+                }
+            }
+            SearchTab.GROUPS -> trimmedQuery.length >= 2
+        }
+    }
+
+    private fun validateSearchState(): String? {
+        return if (
+            _selectedTab.value == SearchTab.AVATARS &&
+            _avatarSearchSource.value == AvatarSearchSource.REMOTE &&
+            _query.value.trim().length >= 3 &&
+            _avatarProviderUrl.value.isBlank()
+        ) {
+            "Enter a remote avatar provider URL to search that source."
+        } else {
+            null
+        }
+    }
+
+    private suspend fun search(useRemoteAvatarCache: Boolean = false) {
         _isSearching.value = true
         _error.value = null
         try {
-            val q = _query.value
+            val q = _query.value.trim()
             val offset = _currentOffset.value
             when (_selectedTab.value) {
                 SearchTab.USERS -> {
-                    val results = searchRepository.searchUsers(q, n = PAGE_SIZE, offset = offset)
+                    val results = searchRepository.searchUsers(
+                        query = q,
+                        n = pageSize,
+                        offset = offset,
+                        searchByBio = _searchUsersByBio.value,
+                        sortByLastLogin = _sortUsersByLastLogin.value,
+                    )
                     _users.value = results
-                    _hasMore.value = results.size >= PAGE_SIZE
+                    _hasMore.value = results.size >= pageSize
                 }
                 SearchTab.WORLDS -> {
-                    val results = searchRepository.searchWorlds(q, n = PAGE_SIZE, offset = offset)
-                    _worlds.value = results
-                    _hasMore.value = results.size >= PAGE_SIZE
+                    val result = loadWorldPage(query = q, offset = offset)
+                    _worlds.value = result.items
+                    _hasMore.value = result.hasMore
                 }
                 SearchTab.AVATARS -> {
-                    val results = searchRepository.searchAvatars(q, n = PAGE_SIZE, offset = offset)
-                    _avatars.value = results
-                    _hasMore.value = results.size >= PAGE_SIZE
+                    if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
+                        if (!useRemoteAvatarCache || remoteAvatarResults.isEmpty()) {
+                            remoteAvatarResults = searchRepository.searchRemoteAvatars(
+                                query = q,
+                                providerUrl = _avatarProviderUrl.value.trim(),
+                            )
+                        }
+                        _avatars.value = remoteAvatarResults.drop(offset).take(pageSize)
+                        _hasMore.value = offset + pageSize < remoteAvatarResults.size
+                    } else {
+                        val results = searchRepository.searchAvatars(q, n = pageSize, offset = offset)
+                        _avatars.value = results
+                        _hasMore.value = results.size >= pageSize
+                    }
                 }
                 SearchTab.GROUPS -> {
-                    val results = searchRepository.searchGroups(q, n = PAGE_SIZE, offset = offset)
+                    val results = searchRepository.searchGroups(q, n = pageSize, offset = offset)
                     _groups.value = results
-                    _hasMore.value = results.size >= PAGE_SIZE
+                    _hasMore.value = results.size >= pageSize
                 }
             }
         } catch (e: Exception) {
@@ -124,5 +284,73 @@ class SearchViewModel @Inject constructor(
             _isSearching.value = false
             _hasSearched.value = true
         }
+    }
+
+    private fun clearCurrentResults() {
+        when (_selectedTab.value) {
+            SearchTab.USERS -> _users.value = emptyList()
+            SearchTab.WORLDS -> _worlds.value = emptyList()
+            SearchTab.AVATARS -> {
+                _avatars.value = emptyList()
+                if (_avatarSearchSource.value != AvatarSearchSource.REMOTE) {
+                    remoteAvatarResults = emptyList()
+                }
+            }
+            SearchTab.GROUPS -> _groups.value = emptyList()
+        }
+    }
+
+    private suspend fun loadWorldPage(query: String, offset: Int): WorldPageResult {
+        val mode = _worldMode.value.name.lowercase()
+        val tag = _worldTag.value
+        val includeLabs = _includeWorldLabs.value
+
+        if (_worldMode.value == WorldSearchMode.SEARCH || query.isBlank()) {
+            val results = searchRepository.searchWorlds(
+                query = query,
+                n = pageSize,
+                offset = offset,
+                mode = mode,
+                includeLabs = includeLabs,
+                tag = tag,
+            )
+            return WorldPageResult(
+                items = results,
+                hasMore = results.size >= pageSize,
+            )
+        }
+
+        val targetMatchCount = offset + pageSize + 1
+        val matchedResults = mutableListOf<World>()
+        var sourceOffset = 0
+
+        while (matchedResults.size < targetMatchCount) {
+            val results = searchRepository.searchWorlds(
+                query = query,
+                n = worldSourcePageSize,
+                offset = sourceOffset,
+                mode = mode,
+                includeLabs = includeLabs,
+                tag = tag,
+            )
+            if (results.isEmpty()) {
+                break
+            }
+
+            matchedResults += results.filter { world ->
+                world.name.contains(query, ignoreCase = true) ||
+                    world.authorName.contains(query, ignoreCase = true)
+            }
+
+            sourceOffset += results.size
+            if (results.size < worldSourcePageSize) {
+                break
+            }
+        }
+
+        return WorldPageResult(
+            items = matchedResults.drop(offset).take(pageSize),
+            hasMore = matchedResults.size > offset + pageSize,
+        )
     }
 }

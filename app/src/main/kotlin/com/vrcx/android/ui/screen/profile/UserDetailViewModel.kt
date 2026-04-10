@@ -106,19 +106,18 @@ class UserDetailViewModel @Inject constructor(
 
     private var favoriteEntryId: String? = null
 
-    init { loadUser() }
+    init {
+        observeFavoriteStatus()
+        loadUser()
+    }
 
     fun loadUser() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                favoriteRepository.loadFavorites(type = "friend")
                 val resolvedUser = userRepository.getUser(userId, forceRefresh = true)
                 _user.value = resolvedUser
-                // Check favorite status
-                val favs = favoriteRepository.favorites.value
-                val fav = favs.firstOrNull { it.type == "friend" && it.favoriteId == userId }
-                _isFavorited.value = fav != null
-                favoriteEntryId = fav?.id
                 // Load memo
                 val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: ""
                 if (ownerUserId.isNotEmpty()) {
@@ -229,17 +228,25 @@ class UserDetailViewModel @Inject constructor(
             try {
                 if (_isFavorited.value && favoriteEntryId != null) {
                     favoriteRepository.deleteFavorite(favoriteEntryId!!)
-                    _isFavorited.value = false
-                    favoriteEntryId = null
                     _message.value = "Removed from favorites"
                 } else {
-                    val result = favoriteRepository.addFavorite("friend", userId, listOf("group_0"))
-                    _isFavorited.value = true
-                    favoriteEntryId = result.id
+                    favoriteRepository.addFavorite("friend", userId)
                     _message.value = "Added to favorites"
                 }
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
+            }
+        }
+    }
+
+    private fun observeFavoriteStatus() {
+        viewModelScope.launch {
+            favoriteRepository.favorites.collect { favorites ->
+                val favorite = favorites.firstOrNull {
+                    it.type == "friend" && it.favoriteId == userId
+                }
+                favoriteEntryId = favorite?.id
+                _isFavorited.value = favorite != null
             }
         }
     }

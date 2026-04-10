@@ -75,6 +75,18 @@ class FriendRepository @Inject constructor(
     val onlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.ONLINE } }
     val offlineFriendCount = _friends.map { m -> m.values.count { it.state == FriendState.OFFLINE } }
 
+    init {
+        scope.launch {
+            favoriteRepository.favorites.collect { favorites ->
+                _favoriteFriendIds.value = favorites
+                    .filter { it.type == "friend" }
+                    .map { it.favoriteId }
+                    .toSet()
+                applyFavoriteFlags()
+            }
+        }
+    }
+
     suspend fun loadFriendsList() {
         ensureOwnerUserId()
         recentFeedWrites.clear()
@@ -108,23 +120,11 @@ class FriendRepository @Inject constructor(
                 )
             }
         }
-        _friends.value = friendMap
+        _friends.value = decorateFriendMap(friendMap)
         syncFriendLog(friendMap)
 
-        // Load favorite friend IDs and set isVIP
         try {
-            if (favoriteRepository.favorites.value.isEmpty()) {
-                favoriteRepository.loadFavorites(type = "friend")
-            }
-            _favoriteFriendIds.value = favoriteRepository.favorites.value
-                .filter { it.type == "friend" }
-                .map { it.favoriteId }
-                .toSet()
-            if (_favoriteFriendIds.value.isNotEmpty()) {
-                _friends.value = _friends.value.mapValues { (id, ctx) ->
-                    ctx.copy(isVIP = id in _favoriteFriendIds.value)
-                }
-            }
+            favoriteRepository.loadFavorites(type = "friend")
         } catch (_: Exception) {}
 
         // Load notification-enabled friend IDs
@@ -132,11 +132,7 @@ class FriendRepository @Inject constructor(
             if (ownerUserId.isNotEmpty()) {
                 val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerUserId)
                 _notifyEnabledIds.value = enabledIds.toSet()
-                if (_notifyEnabledIds.value.isNotEmpty()) {
-                    _friends.value = _friends.value.mapValues { (id, ctx) ->
-                        ctx.copy(notifyEnabled = id in _notifyEnabledIds.value)
-                    }
-                }
+                _friends.value = decorateFriendMap(_friends.value)
             }
         } catch (_: Exception) {}
     }
@@ -386,10 +382,27 @@ class FriendRepository @Inject constructor(
                 isVIP = userId in _favoriteFriendIds.value,
                 notifyEnabled = userId in _notifyEnabledIds.value,
             )
-            current[userId] = update(existing)
+            current[userId] = decorateFriendContext(update(existing))
             _friends.value = current
             existing
         }
+    }
+
+    private suspend fun applyFavoriteFlags() {
+        friendsMutex.withLock {
+            _friends.value = decorateFriendMap(_friends.value)
+        }
+    }
+
+    private fun decorateFriendMap(friendMap: Map<String, FriendContext>): Map<String, FriendContext> {
+        return friendMap.mapValues { (_, ctx) -> decorateFriendContext(ctx) }
+    }
+
+    private fun decorateFriendContext(ctx: FriendContext): FriendContext {
+        return ctx.copy(
+            isVIP = ctx.id in _favoriteFriendIds.value,
+            notifyEnabled = ctx.id in _notifyEnabledIds.value,
+        )
     }
 
     private fun tryDecodeUser(element: kotlinx.serialization.json.JsonElement?): VrcUser? {

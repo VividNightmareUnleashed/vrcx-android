@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.vrcx.android.service.BootReconnectWorker
+import com.vrcx.android.service.NotificationHelper
 import com.vrcx.android.ui.VrcxApp
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -22,9 +23,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            BootReconnectWorker.cancel(this)
-        }
+        BootReconnectWorker.cancel(this)
+        NotificationHelper(this).cancelBootReconnectRequired()
         enableEdgeToEdge()
         requestNotificationPermission()
         setContent {

@@ -71,11 +71,13 @@ class SettingsViewModel @Inject constructor(
     val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
 
     fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
     fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
+    fun setMaxFeedSize(size: Int) { viewModelScope.launch { preferences.setMaxFeedSize(size) } }
 
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -144,6 +146,7 @@ fun SettingsScreen(
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
     val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsState()
     val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
+    val maxFeedSize by viewModel.maxFeedSize.collectAsState()
     val cacheSizeText by viewModel.cacheSizeText.collectAsState()
     val cacheAllProgress by viewModel.cacheAllProgress.collectAsState()
     var showCacheAllDialog by remember { mutableStateOf(false) }
@@ -232,6 +235,25 @@ fun SettingsScreen(
             backgroundServiceEnabled,
             viewModel::setBackgroundServiceEnabled,
         )
+        Spacer(Modifier.height(12.dp))
+        Text("Feed History", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Limit how many feed entries stay queryable for Feed and Game Log style views",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf(100, 250, 500, 1000).forEachIndexed { index, size ->
+                SegmentedButton(
+                    selected = maxFeedSize == size,
+                    onClick = { viewModel.setMaxFeedSize(size) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
+                ) {
+                    Text(size.toString())
+                }
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
         Text("Storage", style = MaterialTheme.typography.titleMedium)

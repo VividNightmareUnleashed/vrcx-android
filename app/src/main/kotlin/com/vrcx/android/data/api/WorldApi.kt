@@ -16,6 +16,8 @@ interface WorldApi {
         @Query("search") search: String? = null,
         @Query("sort") sort: String? = null,
         @Query("order") order: String? = null,
+        @Query("featured") featured: String? = null,
+        @Query("tag") tag: String? = null,
         @Query("user") user: String? = null,
         @Query("releaseStatus") releaseStatus: String? = null,
     ): List<World>
@@ -24,17 +26,20 @@ interface WorldApi {
     suspend fun getActiveWorlds(
         @Query("n") n: Int = 10,
         @Query("offset") offset: Int = 0,
+        @Query("tag") tag: String? = null,
     ): List<World>
 
     @GET("worlds/recent")
     suspend fun getRecentWorlds(
         @Query("n") n: Int = 10,
         @Query("offset") offset: Int = 0,
+        @Query("tag") tag: String? = null,
     ): List<World>
 
     @GET("worlds/favorites")
     suspend fun getFavoriteWorlds(
         @Query("n") n: Int = 10,
         @Query("offset") offset: Int = 0,
+        @Query("tag") tag: String? = null,
     ): List<World>
 }

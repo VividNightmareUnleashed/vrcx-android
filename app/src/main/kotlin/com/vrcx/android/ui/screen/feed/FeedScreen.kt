@@ -51,7 +51,7 @@ fun FeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val vipOnly by viewModel.vipOnly.collectAsState()
-    val feedLimit by viewModel.feedLimit.collectAsState()
+    val canLoadMore by viewModel.canLoadMore.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Feed")
@@ -108,7 +108,7 @@ fun FeedScreen(
                         )
                     }
                     // Load More button
-                    if (entries.size >= feedLimit) {
+                    if (canLoadMore) {
                         item {
                             OutlinedButton(
                                 onClick = { viewModel.loadMore() },

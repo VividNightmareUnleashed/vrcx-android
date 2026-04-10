@@ -2,6 +2,8 @@ package com.vrcx.android.ui.screen.search
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,12 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -32,7 +36,7 @@ import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -52,6 +56,13 @@ fun SearchScreen(
     val error by viewModel.error.collectAsState()
     val currentOffset by viewModel.currentOffset.collectAsState()
     val hasMore by viewModel.hasMore.collectAsState()
+    val searchUsersByBio by viewModel.searchUsersByBio.collectAsState()
+    val sortUsersByLastLogin by viewModel.sortUsersByLastLogin.collectAsState()
+    val worldMode by viewModel.worldMode.collectAsState()
+    val includeWorldLabs by viewModel.includeWorldLabs.collectAsState()
+    val worldTag by viewModel.worldTag.collectAsState()
+    val avatarSearchSource by viewModel.avatarSearchSource.collectAsState()
+    val avatarProviderUrl by viewModel.avatarProviderUrl.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Search")
@@ -59,7 +70,12 @@ fun SearchScreen(
         VrcxSearchBar(
             query = query,
             onQueryChange = viewModel::updateQuery,
-            placeholder = "Search VRChat",
+            placeholder = when (selectedTab) {
+                SearchTab.USERS -> "Search users"
+                SearchTab.WORLDS -> if (worldMode == WorldSearchMode.SEARCH) "Search worlds" else "Optional name filter"
+                SearchTab.AVATARS -> "Search avatars"
+                SearchTab.GROUPS -> "Search groups"
+            },
         )
 
         val isWallpaperActive = LocalWallpaperActive.current
@@ -77,6 +93,86 @@ fun SearchScreen(
             }
         }
 
+        when (selectedTab) {
+            SearchTab.USERS -> {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = searchUsersByBio,
+                        onClick = { viewModel.setSearchUsersByBio(!searchUsersByBio) },
+                        label = { Text("Bio") },
+                    )
+                    FilterChip(
+                        selected = sortUsersByLastLogin,
+                        onClick = { viewModel.setSortUsersByLastLogin(!sortUsersByLastLogin) },
+                        label = { Text("Last Login") },
+                    )
+                }
+            }
+            SearchTab.WORLDS -> {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    WorldSearchMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = worldMode == mode,
+                            onClick = { viewModel.setWorldMode(mode) },
+                            label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                    FilterChip(
+                        selected = includeWorldLabs,
+                        onClick = { viewModel.setIncludeWorldLabs(!includeWorldLabs) },
+                        label = { Text("Labs") },
+                    )
+                }
+                OutlinedTextField(
+                    value = worldTag,
+                    onValueChange = viewModel::setWorldTag,
+                    label = { Text("Category / tag") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            SearchTab.AVATARS -> {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AvatarSearchSource.entries.forEach { source ->
+                        FilterChip(
+                            selected = avatarSearchSource == source,
+                            onClick = { viewModel.setAvatarSearchSource(source) },
+                            label = { Text(source.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+                if (avatarSearchSource == AvatarSearchSource.REMOTE) {
+                    OutlinedTextField(
+                        value = avatarProviderUrl,
+                        onValueChange = viewModel::setAvatarProviderUrl,
+                        label = { Text("Provider URL") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            SearchTab.GROUPS -> Unit
+        }
+
         val isEmpty = when (selectedTab) {
             SearchTab.USERS -> users.isEmpty()
             SearchTab.WORLDS -> worlds.isEmpty()
@@ -89,14 +185,19 @@ fun SearchScreen(
         } else if (error != null) {
             com.vrcx.android.ui.components.ErrorState(
                 message = error ?: "Search failed",
-                onRetry = { viewModel.selectTab(selectedTab) },
+                onRetry = viewModel::retry,
             )
         } else if (isEmpty) {
             if (!hasSearched) {
                 EmptyState(
                     message = "Search VRChat",
                     icon = Icons.Outlined.Search,
-                    subtitle = "Find users, worlds, avatars, and groups",
+                    subtitle = when (selectedTab) {
+                        SearchTab.USERS -> "Search users by name or bio"
+                        SearchTab.WORLDS -> "Browse worlds, active worlds, favorites, and your own uploads"
+                        SearchTab.AVATARS -> "Search public avatars or a remote avatar provider"
+                        SearchTab.GROUPS -> "Find VRChat groups"
+                    },
                 )
             } else {
                 EmptyState(
@@ -142,26 +243,31 @@ fun SearchScreen(
                         )
                     }
                 }
-                // Pagination controls
                 if (hasSearched) {
                     item {
                         Row(
-                            Modifier.fillMaxWidth().padding(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             OutlinedButton(
-                                onClick = { viewModel.previousPage() },
+                                onClick = viewModel::previousPage,
                                 enabled = currentOffset > 0,
-                            ) { Text("Previous") }
+                            ) {
+                                Text("Previous")
+                            }
                             Text(
                                 "Page ${currentOffset / 10 + 1}",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             FilledTonalButton(
-                                onClick = { viewModel.nextPage() },
+                                onClick = viewModel::nextPage,
                                 enabled = hasMore,
-                            ) { Text("Next") }
+                            ) {
+                                Text("Next")
+                            }
                         }
                     }
                 }

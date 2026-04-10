@@ -4,6 +4,7 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
 import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
+import com.vrcx.android.data.api.model.GroupPostsResponse
 import com.vrcx.android.data.api.model.GroupSearchResult
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
@@ -44,10 +45,10 @@ interface GroupApi {
     @GET("groups/{groupId}/posts")
     suspend fun getGroupPosts(
         @Path("groupId") groupId: String,
-        @Query("n") n: Int = 10,
+        @Query("n") n: Int = 100,
         @Query("offset") offset: Int = 0,
         @Query("publicOnly") publicOnly: Boolean = false,
-    ): List<GroupPost>
+    ): GroupPostsResponse
 
     @POST("groups/{groupId}/join")
     suspend fun joinGroup(@Path("groupId") groupId: String): JsonElement
