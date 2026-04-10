@@ -18,7 +18,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
+import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxSearchBar
 import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.components.WorldListItem
@@ -133,15 +133,22 @@ fun SearchScreen(
                         label = { Text("Labs") },
                     )
                 }
-                OutlinedTextField(
-                    value = worldTag,
-                    onValueChange = viewModel::setWorldTag,
-                    label = { Text("Category / tag") },
-                    singleLine = true,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),
-                )
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "Category / tag",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    VrcxInputField(
+                        value = worldTag,
+                        onValueChange = viewModel::setWorldTag,
+                        placeholder = "Example: trendings or horror",
+                    )
+                }
             }
             SearchTab.AVATARS -> {
                 FlowRow(
@@ -159,15 +166,22 @@ fun SearchScreen(
                     }
                 }
                 if (avatarSearchSource == AvatarSearchSource.REMOTE) {
-                    OutlinedTextField(
-                        value = avatarProviderUrl,
-                        onValueChange = viewModel::setAvatarProviderUrl,
-                        label = { Text("Provider URL") },
-                        singleLine = true,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Provider URL",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        VrcxInputField(
+                            value = avatarProviderUrl,
+                            onValueChange = viewModel::setAvatarProviderUrl,
+                            placeholder = "https://example.com/avatars",
+                        )
+                    }
                 }
             }
             SearchTab.GROUPS -> Unit

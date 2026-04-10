@@ -67,8 +67,8 @@ class SettingsViewModel @Inject constructor(
     private val profilePicCacheManager: ProfilePicCacheManager,
     private val friendRepository: FriendRepository,
 ) : ViewModel() {
-    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
+    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "dark")
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)

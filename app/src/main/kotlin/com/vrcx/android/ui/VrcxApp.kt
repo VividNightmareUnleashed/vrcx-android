@@ -2,7 +2,9 @@ package com.vrcx.android.ui
 
 import android.app.Activity
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -16,9 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -26,16 +26,21 @@ import coil3.compose.AsyncImage
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.components.DisclaimerDialog
+import com.vrcx.android.ui.components.VrcxPanelSurface
 import com.vrcx.android.ui.navigation.VrcxBottomBar
 import com.vrcx.android.ui.navigation.VrcxNavGraph
 import com.vrcx.android.ui.screen.login.LoginScreen
 import com.vrcx.android.ui.screen.login.LoginViewModel
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import com.vrcx.android.ui.theme.VrcxTheme
+import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +48,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.dp
 import javax.inject.Inject
 
 @HiltViewModel
@@ -50,9 +56,9 @@ class VrcxAppViewModel @Inject constructor(
     private val preferences: VrcxPreferences,
 ) : ViewModel() {
     val themeMode: StateFlow<String> = preferences.themeMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "dark")
     val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val disclaimerAccepted: StateFlow<Boolean?> = preferences.disclaimerAccepted
         .map<Boolean, Boolean?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -92,6 +98,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
         CompositionLocalProvider(LocalWallpaperActive provides isWallpaperActive) {
         val disclaimerAccepted by appViewModel.disclaimerAccepted.collectAsState()
         val context = LocalContext.current
+        val vrcxColors = MaterialTheme.vrcxColors
 
         if (disclaimerAccepted == null) {
             return@CompositionLocalProvider
@@ -142,7 +149,18 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
         }
 
         if (isLoggedIn) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                vrcxColors.shellGradientStart,
+                                vrcxColors.shellGradientEnd,
+                            ),
+                        ),
+                    ),
+            ) {
                 if (wallpaperUri != null) {
                     val parsedUri = remember(wallpaperUri) {
                         try { Uri.parse(wallpaperUri) } catch (_: Exception) { null }
@@ -155,15 +173,33 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
                             contentScale = wallpaperContentScale,
                         )
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.42f)),
+                    )
                 }
                 Scaffold(
                     bottomBar = { VrcxBottomBar(navController) },
-                    containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
+                    containerColor = Color.Transparent,
+                    contentWindowInsets = WindowInsets(0),
                 ) { innerPadding ->
-                    VrcxNavGraph(
-                        navController = navController,
-                        modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
-                    )
+                    VrcxPanelSurface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = 8.dp,
+                                top = 8.dp,
+                                end = 8.dp,
+                                bottom = innerPadding.calculateBottomPadding() + 8.dp,
+                            ),
+                    ) {
+                        VrcxNavGraph(
+                            navController = navController,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
         } else {

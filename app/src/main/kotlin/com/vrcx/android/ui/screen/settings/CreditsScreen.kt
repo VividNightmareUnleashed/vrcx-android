@@ -1,5 +1,6 @@
 package com.vrcx.android.ui.screen.settings
 
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -32,7 +32,6 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.theme.AnthropicDark
 import com.vrcx.android.ui.theme.AnthropicLight
 import com.vrcx.android.ui.theme.AnthropicMidGray
-import com.vrcx.android.ui.theme.AnthropicOrange
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -63,7 +62,7 @@ fun CreditsScreen(onBack: () -> Unit = {}) {
                 Text("Based on VRCX", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "The original open-source VRChat companion app for desktop",
+                    "The original open-source VRChat companion app for desktop. VRCX is distributed under the MIT License.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -86,6 +85,43 @@ fun CreditsScreen(onBack: () -> Unit = {}) {
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.primary,
                     )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        VrcxCard {
+            Column(Modifier.padding(16.dp)) {
+                Text("MIT License Notice", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "If this Android app includes reused VRCX code or other substantial portions of the original project, the MIT notice belongs in the distributed app.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                SelectionContainer {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ) {
+                        Text(
+                            text = """
+                                MIT License
+
+                                Copyright (c) 2019-2026 pypy and individual contributors.
+
+                                Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+                                The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+                                THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+                            """.trimIndent(),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
                 }
             }
         }
@@ -117,7 +153,7 @@ fun CreditsScreen(onBack: () -> Unit = {}) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             onClick = { uriHandler.openUri("https://claude.ai") },
-            shape = RoundedCornerShape(12.dp),
+            shape = MaterialTheme.shapes.medium,
             color = AnthropicDark,
         ) {
             Row(

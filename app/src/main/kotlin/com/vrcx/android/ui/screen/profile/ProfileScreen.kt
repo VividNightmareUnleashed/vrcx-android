@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Block
@@ -33,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -48,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,7 +65,9 @@ import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.components.TrustRankBadge
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxTopBar
+import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -153,7 +158,7 @@ fun ProfileScreen(
                             TrustRankBadge(tags = u.tags)
                             Spacer(Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("${u.status}: ${u.statusDescription}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                Text("${u.status}: ${u.statusDescription}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.vrcxColors.panelMuted, modifier = Modifier.weight(1f))
                                 IconButton(onClick = { showStatusDialog = true }, modifier = Modifier.size(24.dp)) {
                                     Icon(Icons.Outlined.Edit, contentDescription = "Edit status", modifier = Modifier.size(16.dp))
                                 }
@@ -213,7 +218,14 @@ fun ProfileScreen(
                             }
                         }
                     }
-                    OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Description", style = MaterialTheme.typography.labelLarge)
+                        VrcxInputField(
+                            value = description,
+                            onValueChange = { description = it },
+                            placeholder = "Set a short status message",
+                        )
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { viewModel.saveStatus(status, description); showStatusDialog = false }) { Text("Save") } },
@@ -227,7 +239,15 @@ fun ProfileScreen(
         AlertDialog(
             onDismissRequest = { showBioDialog = false },
             title = { Text("Edit Bio") },
-            text = { OutlinedTextField(value = bio, onValueChange = { bio = it }, modifier = Modifier.fillMaxWidth(), maxLines = 8) },
+            text = {
+                VrcxInputField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    placeholder = "Tell people a bit about yourself",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                )
+            },
             confirmButton = { TextButton(onClick = { viewModel.saveBio(bio); showBioDialog = false }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { showBioDialog = false }) { Text("Cancel") } },
         )
@@ -236,12 +256,22 @@ fun ProfileScreen(
 
 @Composable
 private fun NavItem(icon: ImageVector, label: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.size(12.dp))
-            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    val vrcxColors = MaterialTheme.vrcxColors
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(vrcxColors.panelBackground)
+            .border(1.dp, vrcxColors.panelBorder, MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.size(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = vrcxColors.panelMuted)
     }
 }

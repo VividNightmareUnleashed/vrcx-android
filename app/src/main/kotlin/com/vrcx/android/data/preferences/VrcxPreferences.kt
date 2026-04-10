@@ -35,8 +35,8 @@ class VrcxPreferences @Inject constructor(
     }
 
     // Appearance
-    val themeMode: Flow<String> = dataStore.data.map { it[THEME_MODE] ?: "system" }
-    val dynamicColors: Flow<Boolean> = dataStore.data.map { it[DYNAMIC_COLORS] ?: true }
+    val themeMode: Flow<String> = dataStore.data.map { it[THEME_MODE] ?: "dark" }
+    val dynamicColors: Flow<Boolean> = dataStore.data.map { it[DYNAMIC_COLORS] ?: false }
 
     suspend fun setThemeMode(mode: String) = dataStore.edit { it[THEME_MODE] = mode }
     suspend fun setDynamicColors(enabled: Boolean) = dataStore.edit { it[DYNAMIC_COLORS] = enabled }
