@@ -27,6 +27,7 @@ class AuthRepositoryTest {
     private val cookieJar = mock<CookieJarImpl>()
     private val preferences = mock<VrcxPreferences>()
     private val dedup = mock<RequestDeduplicator>()
+    private val favoriteRepository = mock<FavoriteRepository>()
 
     private val repository = AuthRepository(
         authApi = authApi,
@@ -35,6 +36,7 @@ class AuthRepositoryTest {
         preferences = preferences,
         json = Json { ignoreUnknownKeys = true },
         dedup = dedup,
+        favoriteRepository = favoriteRepository,
     )
 
     @Test

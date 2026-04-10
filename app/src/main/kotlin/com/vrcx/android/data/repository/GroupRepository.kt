@@ -81,6 +81,7 @@ class GroupRepository @Inject constructor(
         groupApi.joinGroup(groupId)
         return runCatching { refreshGroup(groupId) }
             .getOrElse {
+                invalidateCachedGroup(groupId)
                 val optimisticMembershipStatus = inferJoinedMembershipStatus(currentGroup)
                 val optimisticGroup = buildOptimisticGroup(
                     groupId = groupId,
@@ -105,6 +106,7 @@ class GroupRepository @Inject constructor(
         groupApi.leaveGroup(groupId)
         return runCatching { refreshGroup(groupId) }
             .getOrElse {
+                invalidateCachedGroup(groupId)
                 _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
                 buildOptimisticGroup(
                     groupId = groupId,
@@ -199,6 +201,14 @@ class GroupRepository @Inject constructor(
             ?: _userGroups.value.firstOrNull { it.matchesGroupId(groupId) }
     }
 
+    private fun invalidateCachedGroup(groupId: String) {
+        val matchingKeys = groupCache.entries
+            .filter { (_, group) -> group.matchesGroupId(groupId) }
+            .map { (key, _) -> key }
+
+        matchingKeys.forEach { key -> groupCache.remove(key) }
+    }
+
     private fun buildOptimisticGroup(
         groupId: String,
         previousGroup: Group?,
@@ -219,9 +229,7 @@ class GroupRepository @Inject constructor(
         return baseGroup.copy(
             membershipStatus = membershipStatus,
             myMember = optimisticMember,
-        ).also { optimisticGroup ->
-            groupCache[groupId] = optimisticGroup
-        }
+        )
     }
 
     private fun Group.matchesGroupId(groupId: String): Boolean {

@@ -8,6 +8,7 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.GroupSearchResult
 import com.vrcx.android.data.api.model.UserSearchResult
 import com.vrcx.android.data.api.model.World
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -99,7 +100,7 @@ class SearchRepository @Inject constructor(
             ?.setQueryParameter("search", query)
             ?.setQueryParameter("n", "5000")
             ?.build()
-            ?: return emptyList()
+            ?: throw IllegalArgumentException("Enter a valid remote avatar provider URL.")
 
         val request = Request.Builder()
             .url(httpUrl)
@@ -108,9 +109,16 @@ class SearchRepository @Inject constructor(
 
         return withContext(Dispatchers.IO) {
             remoteAvatarClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext emptyList()
+                if (!response.isSuccessful) {
+                    throw IOException(
+                        "Remote avatar provider returned HTTP ${response.code}. " +
+                            "Check the provider URL and access requirements."
+                    )
+                }
                 val body = response.body?.string().orEmpty()
-                if (body.isBlank()) return@withContext emptyList()
+                if (body.isBlank()) {
+                    throw IOException("Remote avatar provider returned an empty response.")
+                }
                 parseRemoteAvatars(body)
             }
         }
@@ -134,16 +142,21 @@ class SearchRepository @Inject constructor(
     }
 
     private fun parseRemoteAvatars(body: String): List<Avatar> {
-        val parsed = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+        val parsed = runCatching { json.parseToJsonElement(body) }
+            .getOrElse { throw IOException("Remote avatar provider returned invalid JSON.") }
         val items = when (parsed) {
             is JsonArray -> parsed
-            is JsonObject -> parsed["avatars"]?.jsonArray ?: return emptyList()
-            else -> return emptyList()
+            is JsonObject -> parsed["avatars"]?.jsonArray
+                ?: throw IOException("Remote avatar provider returned an unsupported response format.")
+            else -> throw IOException("Remote avatar provider returned an unsupported response format.")
         }
         val avatarsById = linkedMapOf<String, Avatar>()
         items.forEach { element ->
             val avatar = remoteAvatarFromJson(element) ?: return@forEach
             avatarsById.putIfAbsent(avatar.id, avatar)
+        }
+        if (items.isNotEmpty() && avatarsById.isEmpty()) {
+            throw IOException("Remote avatar provider returned avatars in an unsupported format.")
         }
         return avatarsById.values.toList()
     }
