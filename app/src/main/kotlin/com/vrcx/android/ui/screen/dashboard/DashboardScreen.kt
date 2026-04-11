@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -28,6 +29,8 @@ import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.model.FriendContext
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -42,6 +45,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+
+data class DashboardActivityBreakdown(
+    val moves: Int = 0,
+    val statusChanges: Int = 0,
+    val avatarChanges: Int = 0,
+)
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -111,6 +120,25 @@ class DashboardViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val favoriteOnlineFriends: StateFlow<List<FriendContext>> = friendRepository.friends
+        .map { friends ->
+            friends.values
+                .filter { it.isVIP && it.state != FriendState.OFFLINE }
+                .sortedWith(compareBy<FriendContext>({ it.state != FriendState.ONLINE }, { it.name.lowercase() }))
+                .take(5)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activityBreakdown: StateFlow<DashboardActivityBreakdown> = recentEntries
+        .map { entries ->
+            DashboardActivityBreakdown(
+                moves = entries.count { it.type == "gps" },
+                statusChanges = entries.count { it.type == "status" },
+                avatarChanges = entries.count { it.type == "avatar" },
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardActivityBreakdown())
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -123,6 +151,8 @@ fun DashboardScreen(
     val currentUser by viewModel.currentUser.collectAsState()
     val friendCounts by viewModel.friendCounts.collectAsState()
     val recentEntries by viewModel.recentEntries.collectAsState()
+    val favoriteOnlineFriends by viewModel.favoriteOnlineFriends.collectAsState()
+    val activityBreakdown by viewModel.activityBreakdown.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -166,6 +196,85 @@ fun DashboardScreen(
                 DashboardMetric("Online", friendCounts.first, Modifier.weight(1f))
                 DashboardMetric("Active", friendCounts.second, Modifier.weight(1f))
                 DashboardMetric("Offline", friendCounts.third, Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DashboardMetric("Moves", activityBreakdown.moves, Modifier.weight(1f))
+                DashboardMetric("Status", activityBreakdown.statusChanges, Modifier.weight(1f))
+                DashboardMetric("Avatars", activityBreakdown.avatarChanges, Modifier.weight(1f))
+            }
+        }
+        item {
+            Text(
+                "Favorite Friends Online",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+        if (favoriteOnlineFriends.isEmpty()) {
+            item {
+                VrcxCard(Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        "No favorite friends are online right now.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            items(favoriteOnlineFriends, key = { "vip_${it.id}" }) { friend ->
+                VrcxCard(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .clickable { onUserClick(friend.id) },
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        UserAvatar(
+                            imageUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                            status = friend.ref?.status,
+                            state = friend.state,
+                            size = 40.dp,
+                        )
+                        Spacer(Modifier.size(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(friend.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                friend.ref?.statusDescription?.ifBlank {
+                                    when (friend.state) {
+                                        FriendState.ONLINE -> "Online"
+                                        FriendState.ACTIVE -> "Active"
+                                        FriendState.OFFLINE -> "Offline"
+                                    }
+                                } ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Text(
+                            when (friend.state) {
+                                FriendState.ONLINE -> "Online"
+                                FriendState.ACTIVE -> "Active"
+                                FriendState.OFFLINE -> "Offline"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
         }
         item {
