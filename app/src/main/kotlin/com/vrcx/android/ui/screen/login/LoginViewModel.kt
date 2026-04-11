@@ -9,6 +9,7 @@ import com.vrcx.android.data.security.SavedCredentials
 import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,23 +41,13 @@ class LoginViewModel @Inject constructor(
     private val _rememberMe = MutableStateFlow(false)
     val rememberMe: StateFlow<Boolean> = _rememberMe.asStateFlow()
 
+    private var cachedSavedCredentials: SavedCredentials? = null
+    private var savedCredentialsLoaded = false
+    private var autoLoginAttempted = false
+
     init {
         viewModelScope.launch {
-            val savedCredentials = withContext(Dispatchers.IO) {
-                secureSecretsStore.getSavedCredentials() ?: preferences.getLegacySavedCredentials()?.let { legacy ->
-                    secureSecretsStore.saveSavedCredentials(legacy.first, legacy.second)
-                    preferences.clearLegacySavedCredentials()
-                    SavedCredentials(
-                        username = legacy.first,
-                        password = legacy.second,
-                    )
-                }
-            }
-            if (savedCredentials != null) {
-                _username.value = savedCredentials.username
-                _password.value = savedCredentials.password
-                _rememberMe.value = true
-            }
+            ensureSavedCredentialsLoaded()
         }
     }
 
@@ -68,6 +59,7 @@ class LoginViewModel @Inject constructor(
 
     fun login() {
         viewModelScope.launch {
+            autoLoginAttempted = true
             authRepository.login(_username.value, _password.value)
             if (_rememberMe.value && authRepository.authState.value is AuthState.LoggedIn) {
                 withContext(Dispatchers.IO) {
@@ -105,9 +97,57 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    fun resendEmailCode() {
+        viewModelScope.launch {
+            if (_username.value.isBlank() || _password.value.isBlank()) {
+                return@launch
+            }
+            authRepository.login(_username.value, _password.value)
+        }
+    }
+
     fun tryResumeSession() {
         viewModelScope.launch {
             authRepository.tryResumeSession()
+            if (authRepository.authState.value !is AuthState.LoggedIn) {
+                maybeAutoLogin()
+            }
         }
+    }
+
+    private suspend fun ensureSavedCredentialsLoaded(): SavedCredentials? {
+        if (savedCredentialsLoaded) return cachedSavedCredentials
+
+        val savedCredentials = withContext(Dispatchers.IO) {
+            secureSecretsStore.getSavedCredentials() ?: preferences.getLegacySavedCredentials()?.let { legacy ->
+                secureSecretsStore.saveSavedCredentials(legacy.first, legacy.second)
+                preferences.clearLegacySavedCredentials()
+                SavedCredentials(
+                    username = legacy.first,
+                    password = legacy.second,
+                )
+            }
+        }
+
+        cachedSavedCredentials = savedCredentials
+        savedCredentialsLoaded = true
+
+        if (savedCredentials != null) {
+            _username.value = savedCredentials.username
+            _password.value = savedCredentials.password
+            _rememberMe.value = true
+        }
+
+        return savedCredentials
+    }
+
+    private suspend fun maybeAutoLogin() {
+        if (autoLoginAttempted) return
+        val savedCredentials = ensureSavedCredentialsLoaded() ?: return
+        val autoLoginEnabled = preferences.autoLogin.first()
+        if (!autoLoginEnabled) return
+
+        autoLoginAttempted = true
+        authRepository.login(savedCredentials.username, savedCredentials.password)
     }
 }

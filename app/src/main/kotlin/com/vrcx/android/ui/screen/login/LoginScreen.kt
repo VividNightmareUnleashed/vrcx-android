@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,6 +54,7 @@ fun LoginScreen(
     val password by viewModel.password.collectAsState()
     val twoFactorCode by viewModel.twoFactorCode.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(authState) {
         when (val state = authState) {
@@ -97,6 +99,7 @@ fun LoginScreen(
                         code = twoFactorCode,
                         onCodeChange = viewModel::updateTwoFactorCode,
                         onSubmit = viewModel::submitTwoFactor,
+                        onResendEmail = viewModel::resendEmailCode,
                     )
                 }
 
@@ -114,6 +117,8 @@ fun LoginScreen(
                         onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
                         onToggleRememberMe = viewModel::toggleRememberMe,
                         onLogin = viewModel::login,
+                        onOpenRegister = { uriHandler.openUri("https://vrchat.com/register") },
+                        onOpenForgotPassword = { uriHandler.openUri("https://vrchat.com/home/password/forgot") },
                     )
                 }
             }
@@ -133,6 +138,8 @@ private fun LoginCard(
     onTogglePasswordVisibility: () -> Unit = {},
     onToggleRememberMe: () -> Unit = {},
     onLogin: () -> Unit,
+    onOpenRegister: () -> Unit,
+    onOpenForgotPassword: () -> Unit,
 ) {
     VrcxCard {
         Column(
@@ -207,6 +214,17 @@ private fun LoginCard(
                     Text("Sign In")
                 }
             }
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextButton(onClick = onOpenRegister, enabled = !isLoading) {
+                    Text("Register")
+                }
+                TextButton(onClick = onOpenForgotPassword, enabled = !isLoading) {
+                    Text("Forgot Password")
+                }
+            }
         }
     }
 }
@@ -217,6 +235,7 @@ private fun TwoFactorCard(
     code: String,
     onCodeChange: (String) -> Unit,
     onSubmit: (useEmail: Boolean) -> Unit,
+    onResendEmail: () -> Unit,
 ) {
     var useEmail by remember { mutableStateOf(false) }
     val hasEmail = methods.contains("emailOtp")
@@ -269,6 +288,14 @@ private fun TwoFactorCard(
                         if (useEmail) "Use authenticator app instead"
                         else "Use email code instead",
                     )
+                }
+            }
+            if (hasEmail && useEmail) {
+                TextButton(
+                    onClick = onResendEmail,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Resend Email Code")
                 }
             }
         }
