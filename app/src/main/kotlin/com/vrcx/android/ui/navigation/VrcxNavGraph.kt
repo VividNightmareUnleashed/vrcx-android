@@ -208,7 +208,12 @@ fun VrcxNavGraph(
             popEnterTransition = { subScreenPopEnterTransition },
             popExitTransition = { subScreenPopExitTransition },
         ) {
-            FavoritesScreen(onBack = onBack)
+            FavoritesScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+            )
         }
         composable(
             VrcxRoutes.GROUPS,

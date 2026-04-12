@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,11 +32,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.Favorite
+import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
@@ -47,6 +51,7 @@ import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
+import coil3.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +64,14 @@ data class ResolvedFavorite(
     val name: String,
     val thumbnailUrl: String = "",
     val subtitle: String = "",
+    val groupTags: List<String> = emptyList(),
+)
+
+private data class FavoriteSection(
+    val key: String,
+    val title: String,
+    val visibility: String? = null,
+    val items: List<ResolvedFavorite>,
 )
 
 @HiltViewModel
@@ -72,10 +85,18 @@ class FavoritesViewModel @Inject constructor(
     private val _resolvedFavorites = MutableStateFlow<List<ResolvedFavorite>>(emptyList())
     val resolvedFavorites: StateFlow<List<ResolvedFavorite>> = _resolvedFavorites.asStateFlow()
 
+    private val _favoriteGroups = MutableStateFlow<List<FavoriteGroup>>(emptyList())
+    val favoriteGroups: StateFlow<List<FavoriteGroup>> = _favoriteGroups.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            favoriteRepository.favoriteGroups.collect { groups ->
+                _favoriteGroups.value = groups
+            }
+        }
         viewModelScope.launch {
             try {
                 favoriteRepository.loadFavorites()
@@ -100,24 +121,56 @@ class FavoritesViewModel @Inject constructor(
                     "friend" -> {
                         val cachedFriend = friends[fav.favoriteId]
                         if (cachedFriend != null) {
-                            result.add(ResolvedFavorite(fav, cachedFriend.name, cachedFriend.ref?.currentAvatarThumbnailImageUrl ?: "", cachedFriend.ref?.statusDescription ?: ""))
+                            result.add(
+                                ResolvedFavorite(
+                                    favorite = fav,
+                                    name = cachedFriend.name,
+                                    thumbnailUrl = cachedFriend.ref?.currentAvatarThumbnailImageUrl ?: "",
+                                    subtitle = cachedFriend.ref?.statusDescription ?: "",
+                                    groupTags = fav.tags,
+                                )
+                            )
                         } else {
                             val user = userRepository.getUser(fav.favoriteId)
-                            result.add(ResolvedFavorite(fav, user.displayName, user.currentAvatarThumbnailImageUrl, user.statusDescription))
+                            result.add(
+                                ResolvedFavorite(
+                                    favorite = fav,
+                                    name = user.displayName,
+                                    thumbnailUrl = user.currentAvatarThumbnailImageUrl,
+                                    subtitle = user.statusDescription,
+                                    groupTags = fav.tags,
+                                )
+                            )
                         }
                     }
                     "world" -> {
                         val world = worldRepository.getWorld(fav.favoriteId)
-                        result.add(ResolvedFavorite(fav, world.name, world.thumbnailImageUrl, "by ${world.authorName}"))
+                        result.add(
+                            ResolvedFavorite(
+                                favorite = fav,
+                                name = world.name,
+                                thumbnailUrl = world.thumbnailImageUrl,
+                                subtitle = world.authorName,
+                                groupTags = fav.tags,
+                            )
+                        )
                     }
                     "avatar" -> {
                         val avatar = avatarRepository.getAvatar(fav.favoriteId)
-                        result.add(ResolvedFavorite(fav, avatar.name, avatar.thumbnailImageUrl, "by ${avatar.authorName}"))
+                        result.add(
+                            ResolvedFavorite(
+                                favorite = fav,
+                                name = avatar.name,
+                                thumbnailUrl = avatar.thumbnailImageUrl,
+                                subtitle = avatar.authorName,
+                                groupTags = fav.tags,
+                            )
+                        )
                     }
-                    else -> result.add(ResolvedFavorite(fav, fav.favoriteId))
+                    else -> result.add(ResolvedFavorite(favorite = fav, name = fav.favoriteId, groupTags = fav.tags))
                 }
             } catch (e: Exception) {
-                result.add(ResolvedFavorite(fav, fav.favoriteId))
+                result.add(ResolvedFavorite(favorite = fav, name = fav.favoriteId, groupTags = fav.tags))
             }
         }
         _resolvedFavorites.value = result
@@ -136,8 +189,15 @@ class FavoritesViewModel @Inject constructor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
+fun FavoritesScreen(
+    viewModel: FavoritesViewModel = hiltViewModel(),
+    onBack: () -> Unit = {},
+    onUserClick: (String) -> Unit = {},
+    onWorldClick: (String) -> Unit = {},
+    onAvatarClick: (String) -> Unit = {},
+) {
     val resolvedFavorites by viewModel.resolvedFavorites.collectAsState()
+    val favoriteGroups by viewModel.favoriteGroups.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Friends", "Worlds", "Avatars")
@@ -157,6 +217,12 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () 
         }
         val type = listOf("friend", "world", "avatar")[selectedTab]
         val filtered = resolvedFavorites.filter { it.favorite.type == type }
+        val sections = remember(filtered, favoriteGroups, type) {
+            buildFavoriteSections(
+                favorites = filtered,
+                groups = favoriteGroups.filter { it.type == type },
+            )
+        }
 
         if (isLoading) {
             com.vrcx.android.ui.components.LoadingState()
@@ -164,39 +230,47 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () 
             EmptyState(message = "No ${tabs[selectedTab].lowercase()} favorites", icon = Icons.Outlined.FavoriteBorder)
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(filtered, key = { it.favorite.id }) { res ->
-                    when (res.favorite.type) {
-                        "friend" -> UserListItem(
-                            avatarUrl = res.thumbnailUrl.ifEmpty { null },
-                            displayName = res.name,
-                            subtitle = res.subtitle,
-                            trailing = {
+                item(key = "summary-$type") {
+                    Text(
+                        text = "${filtered.size} favorites${if (sections.size > 1) " across ${sections.size} groups" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                sections.forEach { section ->
+                    item(key = "header-${section.key}") {
+                        FavoriteSectionHeader(section = section)
+                    }
+                    items(section.items, key = { "${section.key}-${it.favorite.id}" }) { res ->
+                        when (res.favorite.type) {
+                            "friend" -> UserListItem(
+                                avatarUrl = res.thumbnailUrl.ifEmpty { null },
+                                displayName = res.name,
+                                subtitle = res.subtitle.ifBlank { "Tap to open profile" },
+                                onClick = { onUserClick(res.favorite.favoriteId) },
+                                trailing = {
+                                    IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
+                                        Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                            )
+                            "world" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                WorldListItem(
+                                    thumbnailUrl = res.thumbnailUrl,
+                                    name = res.name,
+                                    authorName = res.subtitle,
+                                    onClick = { onWorldClick(res.favorite.favoriteId) },
+                                    modifier = Modifier.weight(1f),
+                                )
                                 IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
                                     Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
                                 }
-                            },
-                        )
-                        "world" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                            WorldListItem(
-                                thumbnailUrl = res.thumbnailUrl,
-                                name = res.name,
-                                authorName = res.subtitle,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
-                                Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
                             }
-                        }
-                        else -> Row(verticalAlignment = Alignment.CenterVertically) {
-                            WorldListItem(
-                                thumbnailUrl = res.thumbnailUrl,
-                                name = res.name,
-                                authorName = res.subtitle,
-                                modifier = Modifier.weight(1f),
+                            else -> AvatarFavoriteItem(
+                                favorite = res,
+                                onClick = { onAvatarClick(res.favorite.favoriteId) },
+                                onUnfavorite = { pendingUnfavorite = res.favorite.id },
                             )
-                            IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
-                                Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
-                            }
                         }
                     }
                 }
@@ -214,3 +288,120 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () 
         )
     }
 }
+
+@Composable
+private fun FavoriteSectionHeader(section: FavoriteSection) {
+    Text(
+        text = buildString {
+            append(section.title)
+            section.visibility?.takeIf { it.isNotBlank() }?.let { visibility ->
+                append(" • ")
+                append(visibility.prettyVisibility())
+            }
+            append(" • ")
+            append(section.items.size)
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun AvatarFavoriteItem(
+    favorite: ResolvedFavorite,
+    onClick: () -> Unit,
+    onUnfavorite: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        VrcxCard(
+            onClick = onClick,
+            modifier = Modifier.weight(1f),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = favorite.thumbnailUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(favorite.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = favorite.subtitle.ifBlank { "Tap to open avatar" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        IconButton(onClick = onUnfavorite) {
+            Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+private fun buildFavoriteSections(
+    favorites: List<ResolvedFavorite>,
+    groups: List<FavoriteGroup>,
+): List<FavoriteSection> {
+    if (favorites.isEmpty()) return emptyList()
+
+    val groupMap = groups.associateBy { it.name }
+    val orderedTags = buildList {
+        groups.forEach { add(it.name) }
+        favorites.flatMap { it.groupTags }.distinct().forEach { tag ->
+            if (tag !in this) add(tag)
+        }
+    }
+
+    val sections = orderedTags.mapNotNull { tag ->
+        val sectionItems = favorites.filter { tag in it.groupTags }
+        if (sectionItems.isEmpty()) {
+            null
+        } else {
+            FavoriteSection(
+                key = tag,
+                title = groupMap[tag]?.displayName?.ifBlank { tag.prettyFavoriteGroupName() } ?: tag.prettyFavoriteGroupName(),
+                visibility = groupMap[tag]?.visibility,
+                items = sectionItems,
+            )
+        }
+    }.toMutableList()
+
+    val ungroupedItems = favorites.filter { it.groupTags.isEmpty() }
+    if (ungroupedItems.isNotEmpty()) {
+        sections.add(
+            FavoriteSection(
+                key = "__ungrouped",
+                title = "Ungrouped",
+                items = ungroupedItems,
+            )
+        )
+    }
+
+    return sections.ifEmpty {
+        listOf(
+            FavoriteSection(
+                key = "all",
+                title = "Favorites",
+                items = favorites,
+            )
+        )
+    }
+}
+
+private fun String.prettyFavoriteGroupName(): String =
+    when {
+        startsWith("group_") -> "Group ${substringAfter("group_").toIntOrNull()?.plus(1) ?: 1}"
+        startsWith("worlds") -> "Worlds ${substringAfter("worlds")}"
+        startsWith("avatars") -> "Avatars ${substringAfter("avatars")}"
+        else -> replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+
+private fun String.prettyVisibility(): String =
+    replace('-', ' ')
+        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }

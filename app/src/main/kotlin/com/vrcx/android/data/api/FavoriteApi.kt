@@ -40,6 +40,7 @@ interface FavoriteApi {
         @Query("n") n: Int = 100,
         @Query("offset") offset: Int = 0,
         @Query("type") type: String? = null,
+        @Query("ownerId") ownerId: String? = null,
     ): List<FavoriteGroup>
 
     @PUT("favorite/group/{type}/{groupName}/{userId}")
@@ -62,6 +63,8 @@ interface FavoriteApi {
         @Query("n") n: Int = 100,
         @Query("offset") offset: Int = 0,
         @Query("tag") tag: String? = null,
+        @Query("ownerId") ownerId: String? = null,
+        @Query("userId") userId: String? = null,
     ): List<World>
 
     @GET("avatars/favorites")

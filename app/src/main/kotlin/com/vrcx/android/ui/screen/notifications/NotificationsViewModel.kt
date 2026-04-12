@@ -95,12 +95,13 @@ class NotificationsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
-                notificationRepository.loadNotifications()
+                notificationRepository.restoreNotifications()
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load notifications"
+                _error.value = e.message ?: "Failed to restore notifications"
             } finally {
                 _isLoading.value = false
             }
+            refresh()
         }
     }
 

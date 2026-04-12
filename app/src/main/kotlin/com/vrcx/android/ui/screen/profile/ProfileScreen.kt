@@ -92,26 +92,51 @@ class ProfileViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    fun saveStatus(status: String, statusDescription: String) {
+    private fun updateCurrentUser(
+        payload: Map<String, Any>,
+        successMessage: String,
+    ) {
         viewModelScope.launch {
             try {
                 val uid = currentUser.value?.id ?: return@launch
-                userApi.saveCurrentUser(uid, mapOf("status" to status, "statusDescription" to statusDescription))
+                userApi.saveCurrentUser(uid, payload)
                 authRepository.fetchCurrentUser()
-                _message.value = "Status updated"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
+                _message.value = successMessage
+            } catch (e: Exception) {
+                _message.value = "Failed: ${e.message}"
+            }
         }
     }
 
+    fun saveStatus(status: String, statusDescription: String) {
+        updateCurrentUser(
+            payload = mapOf(
+                "status" to status,
+                "statusDescription" to statusDescription,
+            ),
+            successMessage = "Status updated",
+        )
+    }
+
     fun saveBio(bio: String) {
-        viewModelScope.launch {
-            try {
-                val uid = currentUser.value?.id ?: return@launch
-                userApi.saveCurrentUser(uid, mapOf("bio" to bio))
-                authRepository.fetchCurrentUser()
-                _message.value = "Bio updated"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
+        updateCurrentUser(
+            payload = mapOf("bio" to bio),
+            successMessage = "Bio updated",
+        )
+    }
+
+    fun savePronouns(pronouns: String) {
+        updateCurrentUser(
+            payload = mapOf("pronouns" to pronouns),
+            successMessage = "Pronouns updated",
+        )
+    }
+
+    fun clearHomeLocation() {
+        updateCurrentUser(
+            payload = mapOf("homeLocation" to ""),
+            successMessage = "Home location cleared",
+        )
     }
 
     fun clearMessage() { _message.value = null }
@@ -135,6 +160,7 @@ fun ProfileScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showStatusDialog by remember { mutableStateOf(false) }
     var showBioDialog by remember { mutableStateOf(false) }
+    var showPronounsDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
@@ -156,20 +182,41 @@ fun ProfileScreen(
                             Spacer(Modifier.height(8.dp))
                             Text(u.displayName, style = MaterialTheme.typography.titleLarge)
                             TrustRankBadge(tags = u.tags)
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("${u.status}: ${u.statusDescription}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.vrcxColors.panelMuted, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showStatusDialog = true }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Outlined.Edit, contentDescription = "Edit status", modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.height(12.dp))
+                            ProfileEditableRow(
+                                label = "Status",
+                                value = if (u.statusDescription.isBlank()) u.status else "${u.status}: ${u.statusDescription}",
+                                onEdit = { showStatusDialog = true },
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            ProfileEditableRow(
+                                label = "Pronouns",
+                                value = u.pronouns.ifBlank { "Not set" },
+                                onEdit = { showPronounsDialog = true },
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            ProfileEditableRow(
+                                label = "Bio",
+                                value = u.bio.ifBlank { "No bio yet" },
+                                onEdit = { showBioDialog = true },
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    if (u.homeLocation.isNotBlank()) {
+                        VrcxCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Home Location", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(u.homeLocation, style = MaterialTheme.typography.bodySmall)
                                 }
-                            }
-                            if (u.bio.isNotBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(u.bio, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { showBioDialog = true }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Outlined.Edit, contentDescription = "Edit bio", modifier = Modifier.size(16.dp))
-                                    }
+                                TextButton(onClick = { viewModel.clearHomeLocation() }) {
+                                    Text("Clear")
                                 }
                             }
                         }
@@ -252,6 +299,25 @@ fun ProfileScreen(
             dismissButton = { TextButton(onClick = { showBioDialog = false }) { Text("Cancel") } },
         )
     }
+
+    if (showPronounsDialog) {
+        var pronouns by remember { mutableStateOf(user?.pronouns ?: "") }
+        AlertDialog(
+            onDismissRequest = { showPronounsDialog = false },
+            title = { Text("Edit Pronouns") },
+            text = {
+                VrcxInputField(
+                    value = pronouns,
+                    onValueChange = { pronouns = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Add your pronouns",
+                    singleLine = false,
+                )
+            },
+            confirmButton = { TextButton(onClick = { viewModel.savePronouns(pronouns); showPronounsDialog = false }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { showPronounsDialog = false }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
@@ -273,5 +339,35 @@ private fun NavItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         Spacer(Modifier.size(12.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = vrcxColors.panelMuted)
+    }
+}
+
+@Composable
+private fun ProfileEditableRow(
+    label: String,
+    value: String,
+    onEdit: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onEdit, modifier = Modifier.size(24.dp)) {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = "Edit $label",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

@@ -7,12 +7,22 @@ import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.TextStyle
+import java.util.Locale
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+
+data class ChartsSummary(
+    val totalVisits: Int = 0,
+    val distinctWorlds: Int = 0,
+    val activeDays: Int = 0,
+)
 
 @HiltViewModel
 class ChartsViewModel @Inject constructor(
@@ -31,31 +41,92 @@ class ChartsViewModel @Inject constructor(
     private val _topWorlds = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
     val topWorlds: StateFlow<List<Pair<String, Int>>> = _topWorlds.asStateFlow()
 
-    init { loadData() }
+    private val _hourlyActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
+    val hourlyActivity: StateFlow<List<Pair<String, Int>>> = _hourlyActivity.asStateFlow()
+
+    private val _weekdayActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
+    val weekdayActivity: StateFlow<List<Pair<String, Int>>> = _weekdayActivity.asStateFlow()
+
+    private val _selectedRangeDays = MutableStateFlow<Int?>(30)
+    val selectedRangeDays: StateFlow<Int?> = _selectedRangeDays.asStateFlow()
+
+    private val _summary = MutableStateFlow(ChartsSummary())
+    val summary: StateFlow<ChartsSummary> = _summary.asStateFlow()
+
+    init {
+        loadData()
+    }
 
     private fun loadData() {
         viewModelScope.launch {
             try {
                 val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-                val gps = feedDao.getGpsFeed(userId, limit = 500).first()
-                _gpsHistory.value = gps
-
-                // Daily activity: group by date
-                _dailyActivity.value = gps
-                    .groupBy { it.createdAt.take(10) }
-                    .map { (date, entries) -> date to entries.size }
-                    .sortedByDescending { it.first }
-                    .take(30)
-
-                // Top worlds: group by world name
-                _topWorlds.value = gps
-                    .filter { it.worldName.isNotEmpty() }
-                    .groupBy { it.worldName }
-                    .map { (name, entries) -> name to entries.size }
-                    .sortedByDescending { it.second }
-                    .take(10)
-            } catch (_: Exception) {}
+                _gpsHistory.value = feedDao.getGpsFeed(userId, limit = 500).first()
+                recomputeCharts()
+            } catch (_: Exception) {
+                _gpsHistory.value = emptyList()
+                recomputeCharts()
+            }
             _isLoading.value = false
         }
+    }
+
+    fun setRangeDays(days: Int?) {
+        _selectedRangeDays.value = days
+        recomputeCharts()
+    }
+
+    private fun recomputeCharts() {
+        val filteredHistory = filterByRange(_gpsHistory.value, _selectedRangeDays.value)
+
+        _summary.value = ChartsSummary(
+            totalVisits = filteredHistory.size,
+            distinctWorlds = filteredHistory
+                .map { it.worldName.ifBlank { it.location.substringBefore(":") } }
+                .distinct()
+                .count(),
+            activeDays = filteredHistory
+                .map { it.createdAt.take(10) }
+                .distinct()
+                .count(),
+        )
+
+        _dailyActivity.value = filteredHistory
+            .groupBy { it.createdAt.take(10) }
+            .map { (date, entries) -> date to entries.size }
+            .sortedByDescending { it.first }
+
+        _topWorlds.value = filteredHistory
+            .groupBy { it.worldName.ifBlank { it.location.substringBefore(":") } }
+            .map { (name, entries) -> name to entries.size }
+            .sortedByDescending { it.second }
+            .take(10)
+
+        _hourlyActivity.value = (0..23).map { hour ->
+            "%02d:00".format(hour) to filteredHistory.count { entity ->
+                parseInstant(entity.createdAt)?.atZone(ZoneId.systemDefault())?.hour == hour
+            }
+        }
+
+        _weekdayActivity.value = (1..7).map { dayValue ->
+            weekdayLabel(dayValue) to filteredHistory.count { entity ->
+                parseInstant(entity.createdAt)?.atZone(ZoneId.systemDefault())?.dayOfWeek?.value == dayValue
+            }
+        }
+    }
+
+    private fun filterByRange(history: List<FeedGpsEntity>, rangeDays: Int?): List<FeedGpsEntity> {
+        if (rangeDays == null) return history
+        val cutoff = Instant.now().minusSeconds(rangeDays.toLong() * 24L * 60L * 60L)
+        return history.filter { entity ->
+            parseInstant(entity.createdAt)?.isAfter(cutoff) ?: false
+        }
+    }
+
+    private fun parseInstant(value: String): Instant? = runCatching { Instant.parse(value) }.getOrNull()
+
+    private fun weekdayLabel(dayValue: Int): String {
+        return java.time.DayOfWeek.of(dayValue)
+            .getDisplayName(TextStyle.SHORT, Locale.getDefault())
     }
 }
