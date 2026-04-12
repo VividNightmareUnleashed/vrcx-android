@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
@@ -558,13 +559,18 @@ class NotificationRepository @Inject constructor(
         type = type,
         category = category,
         isSystem = isSystem,
+        ignoreDND = ignoreDND,
         senderUserId = senderUserId,
         senderUsername = senderUsername,
         receiverUserId = receiverUserId,
+        relatedNotificationsId = relatedNotificationsId,
         title = title,
         message = message,
         seen = seen,
+        responsesJson = json.encodeToString(ListSerializer(NotificationAction.serializer()), responses),
+        responseDataJson = responseData?.toString().orEmpty(),
         expiresAt = expiresAt,
+        expiryAfterSeen = expiryAfterSeen,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
@@ -575,13 +581,18 @@ class NotificationRepository @Inject constructor(
         type = type,
         category = category,
         isSystem = isSystem,
+        ignoreDND = ignoreDND,
         senderUserId = senderUserId,
         senderUsername = senderUsername,
         receiverUserId = receiverUserId,
+        relatedNotificationsId = relatedNotificationsId,
         title = title,
         message = message,
         seen = seen,
+        responses = responsesJson.toNotificationActions(),
+        responseData = responseDataJson.toJsonElementOrNull(),
         expiresAt = expiresAt,
+        expiryAfterSeen = expiryAfterSeen,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
@@ -589,5 +600,12 @@ class NotificationRepository @Inject constructor(
     private fun String.toJsonElementOrNull(): JsonElement? {
         if (isBlank()) return null
         return runCatching { json.parseToJsonElement(this) }.getOrNull()
+    }
+
+    private fun String.toNotificationActions(): List<NotificationAction> {
+        if (isBlank()) return emptyList()
+        return runCatching {
+            json.decodeFromString(ListSerializer(NotificationAction.serializer()), this)
+        }.getOrDefault(emptyList())
     }
 }

@@ -95,7 +95,6 @@ class ChartsViewModel @Inject constructor(
             .groupBy { it.createdAt.take(10) }
             .map { (date, entries) -> date to entries.size }
             .sortedByDescending { it.first }
-            .take(30)
 
         _topWorlds.value = filteredHistory
             .groupBy { it.worldName.ifBlank { it.location.substringBefore(":") } }
