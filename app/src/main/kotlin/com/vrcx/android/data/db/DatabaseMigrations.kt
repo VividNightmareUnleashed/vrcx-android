@@ -23,3 +23,38 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            """
+            ALTER TABLE `notifications_v2`
+            ADD COLUMN `responsesJson` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            ALTER TABLE `notifications_v2`
+            ADD COLUMN `ignoreDND` INTEGER NOT NULL DEFAULT 0
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            ALTER TABLE `notifications_v2`
+            ADD COLUMN `relatedNotificationsId` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            ALTER TABLE `notifications_v2`
+            ADD COLUMN `responseDataJson` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            ALTER TABLE `notifications_v2`
+            ADD COLUMN `expiryAfterSeen` INTEGER
+            """.trimIndent()
+        )
+    }
+}

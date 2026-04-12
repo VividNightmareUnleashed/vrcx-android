@@ -102,7 +102,7 @@ class LoginViewModel @Inject constructor(
             if (_username.value.isBlank() || _password.value.isBlank()) {
                 return@launch
             }
-            authRepository.login(_username.value, _password.value)
+            authRepository.resendEmailOtp(_username.value, _password.value)
         }
     }
 

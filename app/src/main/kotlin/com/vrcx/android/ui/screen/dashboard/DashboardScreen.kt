@@ -124,8 +124,8 @@ class DashboardViewModel @Inject constructor(
     val favoriteOnlineFriends: StateFlow<List<FriendContext>> = friendRepository.friends
         .map { friends ->
             friends.values
-                .filter { it.isVIP && it.state != FriendState.OFFLINE }
-                .sortedWith(compareBy<FriendContext>({ it.state != FriendState.ONLINE }, { it.name.lowercase() }))
+                .filter { it.isVIP && it.state == FriendState.ONLINE }
+                .sortedBy { it.name.lowercase() }
                 .take(5)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

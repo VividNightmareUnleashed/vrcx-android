@@ -31,11 +31,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.time.Instant
 import javax.inject.Inject
 
@@ -262,28 +262,40 @@ class UserDetailViewModel @Inject constructor(
                     return@launch
                 }
 
-                val sections = coroutineScope {
+                val sectionResults = supervisorScope {
                     groups.map { group ->
                         async {
-                            FavoriteWorldSection(
-                                tag = group.name,
-                                displayName = group.displayName.ifBlank { group.name },
-                                visibility = group.visibility,
-                                worlds = favoriteApi.getFavoriteWorlds(
+                            runCatching {
+                                FavoriteWorldSection(
                                     tag = group.name,
-                                    ownerId = userId,
-                                    userId = userId,
-                                ),
-                            )
+                                    displayName = group.displayName.ifBlank { group.name },
+                                    visibility = group.visibility,
+                                    worlds = favoriteApi.getFavoriteWorlds(
+                                        tag = group.name,
+                                        ownerId = userId,
+                                    ),
+                                )
+                            }
                         }
                     }.awaitAll()
-                }.filter { it.worlds.isNotEmpty() }
+                }
+                val sections = sectionResults
+                    .mapNotNull { it.getOrNull() }
+                    .filter { it.worlds.isNotEmpty() }
+                val hadFailures = sectionResults.any { it.isFailure }
 
                 _favoriteWorldSections.value = sections
                 _selectedFavoriteWorldTag.value =
                     _selectedFavoriteWorldTag.value?.takeIf { selectedTag ->
                         sections.any { it.tag == selectedTag }
                     } ?: sections.firstOrNull()?.tag
+                if (hadFailures) {
+                    _message.value = if (sections.isEmpty()) {
+                        "Failed to load favorite worlds"
+                    } else {
+                        "Some favorite world groups could not be loaded"
+                    }
+                }
             } catch (e: Exception) {
                 _favoriteWorldSections.value = emptyList()
                 _selectedFavoriteWorldTag.value = null
