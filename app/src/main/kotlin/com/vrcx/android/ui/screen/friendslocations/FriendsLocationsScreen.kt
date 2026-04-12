@@ -444,7 +444,7 @@ private const val UNKNOWN_LOCATION_KEY = "__unknown_last_location__"
 private fun buildLastKnownLocations(entries: List<FeedGpsEntity>): Map<String, LastKnownFriendLocation> {
     val latestByUser = linkedMapOf<String, LastKnownFriendLocation>()
     entries.forEach { entry ->
-        if (entry.userId in latestByUser) return@forEach
+        if (!isTrackableLocation(entry.location) || entry.userId in latestByUser) return@forEach
         latestByUser[entry.userId] = LastKnownFriendLocation(
             location = entry.location,
             worldId = parseWorldId(entry.location),
