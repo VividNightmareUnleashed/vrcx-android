@@ -35,12 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
-import com.vrcx.android.data.repository.AvatarRepository
+import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
-import com.vrcx.android.data.repository.WorldRepository
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
@@ -66,8 +66,6 @@ class FavoritesViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
     private val friendRepository: FriendRepository,
     private val userRepository: UserRepository,
-    private val worldRepository: WorldRepository,
-    private val avatarRepository: AvatarRepository,
 ) : ViewModel() {
     private val _resolvedFavorites = MutableStateFlow<List<ResolvedFavorite>>(emptyList())
     val resolvedFavorites: StateFlow<List<ResolvedFavorite>> = _resolvedFavorites.asStateFlow()
@@ -78,11 +76,14 @@ class FavoritesViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
+                // Friend favorites still need per-id resolution because VRChat has no
+                // /users/favorites bulk endpoint, but worlds and avatars get a single
+                // paginated GET each via /worlds/favorites and /avatars/favorites.
                 favoriteRepository.loadFavorites()
                 favoriteRepository.loadFavoriteGroups()
-                favoriteRepository.favorites.collect { favorites ->
-                    resolveEntities(favorites)
-                }
+                favoriteRepository.loadFavoriteWorldsBulk()
+                favoriteRepository.loadFavoriteAvatarsBulk()
+                viewModelScope.launch { collectAndResolve() }
             } catch (e: Exception) {
                 _resolvedFavorites.value = emptyList()
             }
@@ -90,10 +91,28 @@ class FavoritesViewModel @Inject constructor(
         }
     }
 
-    private suspend fun resolveEntities(favorites: List<Favorite>) {
+    private suspend fun collectAndResolve() {
+        kotlinx.coroutines.flow.combine(
+            favoriteRepository.favorites,
+            favoriteRepository.favoriteWorlds,
+            favoriteRepository.favoriteAvatars,
+        ) { favorites, worlds, avatars ->
+            Triple(favorites, worlds, avatars)
+        }.collect { (favorites, worlds, avatars) ->
+            resolveEntities(favorites, worlds, avatars)
+        }
+    }
+
+    private suspend fun resolveEntities(
+        favorites: List<Favorite>,
+        worlds: List<World>,
+        avatars: List<Avatar>,
+    ) {
         _isLoading.value = true
-        val result = mutableListOf<ResolvedFavorite>()
+        val worldsById = worlds.associateBy { it.id }
+        val avatarsById = avatars.associateBy { it.id }
         val friends = friendRepository.friends.value
+        val result = mutableListOf<ResolvedFavorite>()
         for (fav in favorites) {
             try {
                 when (fav.type) {
@@ -107,12 +126,20 @@ class FavoritesViewModel @Inject constructor(
                         }
                     }
                     "world" -> {
-                        val world = worldRepository.getWorld(fav.favoriteId)
-                        result.add(ResolvedFavorite(fav, world.name, world.thumbnailImageUrl, "by ${world.authorName}"))
+                        val world = worldsById[fav.favoriteId]
+                        if (world != null) {
+                            result.add(ResolvedFavorite(fav, world.name, world.thumbnailImageUrl, "by ${world.authorName}"))
+                        } else {
+                            result.add(ResolvedFavorite(fav, fav.favoriteId))
+                        }
                     }
                     "avatar" -> {
-                        val avatar = avatarRepository.getAvatar(fav.favoriteId)
-                        result.add(ResolvedFavorite(fav, avatar.name, avatar.thumbnailImageUrl, "by ${avatar.authorName}"))
+                        val avatar = avatarsById[fav.favoriteId]
+                        if (avatar != null) {
+                            result.add(ResolvedFavorite(fav, avatar.name, avatar.thumbnailImageUrl, "by ${avatar.authorName}"))
+                        } else {
+                            result.add(ResolvedFavorite(fav, fav.favoriteId))
+                        }
                     }
                     else -> result.add(ResolvedFavorite(fav, fav.favoriteId))
                 }
@@ -127,7 +154,12 @@ class FavoritesViewModel @Inject constructor(
     fun unfavorite(favoriteId: String) {
         viewModelScope.launch {
             try {
+                val removed = favoriteRepository.favorites.value.firstOrNull { it.id == favoriteId }
                 favoriteRepository.deleteFavorite(favoriteId)
+                when (removed?.type) {
+                    "world" -> favoriteRepository.dropFavoriteWorldFromCache(removed.favoriteId)
+                    "avatar" -> favoriteRepository.dropFavoriteAvatarFromCache(removed.favoriteId)
+                }
                 _resolvedFavorites.value = _resolvedFavorites.value.filter { it.favorite.id != favoriteId }
             } catch (_: Exception) {}
         }

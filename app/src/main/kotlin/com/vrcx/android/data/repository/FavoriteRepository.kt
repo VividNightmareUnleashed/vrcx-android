@@ -2,9 +2,11 @@ package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FavoriteApi
+import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
+import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.entity.FavoriteFriendEntity
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,52 @@ class FavoriteRepository @Inject constructor(
 
     private val _favoriteLimits = MutableStateFlow<FavoriteLimits?>(null)
     val favoriteLimits: StateFlow<FavoriteLimits?> = _favoriteLimits.asStateFlow()
+
+    private val _favoriteWorlds = MutableStateFlow<List<World>>(emptyList())
+    val favoriteWorlds: StateFlow<List<World>> = _favoriteWorlds.asStateFlow()
+
+    private val _favoriteAvatars = MutableStateFlow<List<Avatar>>(emptyList())
+    val favoriteAvatars: StateFlow<List<Avatar>> = _favoriteAvatars.asStateFlow()
+
+    private var favoriteWorldsLoaded = false
+    private var favoriteAvatarsLoaded = false
+
+    /**
+     * Hydrates the world favorites list in one shot via /worlds/favorites instead
+     * of resolving each Favorite by hitting /worlds/{id} N times. The bulk endpoint
+     * is paginated server-side; iterate until a short page comes back.
+     */
+    suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) {
+        val shouldLoad = favoriteMutex.withLock {
+            if (forceRefresh) favoriteWorldsLoaded = false
+            !favoriteWorldsLoaded
+        }
+        if (!shouldLoad) return
+
+        val worlds = BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
+            favoriteApi.getFavoriteWorlds(n = count, offset = offset)
+        }
+        favoriteMutex.withLock {
+            _favoriteWorlds.value = worlds
+            favoriteWorldsLoaded = true
+        }
+    }
+
+    suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) {
+        val shouldLoad = favoriteMutex.withLock {
+            if (forceRefresh) favoriteAvatarsLoaded = false
+            !favoriteAvatarsLoaded
+        }
+        if (!shouldLoad) return
+
+        val avatars = BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
+            favoriteApi.getFavoriteAvatars(n = count, offset = offset)
+        }
+        favoriteMutex.withLock {
+            _favoriteAvatars.value = avatars
+            favoriteAvatarsLoaded = true
+        }
+    }
 
     suspend fun clearRuntimeState() {
         favoriteMutex.withLock {
@@ -195,8 +243,21 @@ class FavoriteRepository @Inject constructor(
         loadedFavoriteTypes.clear()
         favoriteGroupsLoaded = false
         favoriteLimitsLoaded = false
+        favoriteWorldsLoaded = false
+        favoriteAvatarsLoaded = false
         _favorites.value = emptyList()
         _favoriteGroups.value = emptyList()
         _favoriteLimits.value = null
+        _favoriteWorlds.value = emptyList()
+        _favoriteAvatars.value = emptyList()
+    }
+
+    /** Removes the cached entry for a single deleted favorite without re-fetching. */
+    fun dropFavoriteWorldFromCache(worldId: String) {
+        _favoriteWorlds.value = _favoriteWorlds.value.filterNot { it.id == worldId }
+    }
+
+    fun dropFavoriteAvatarFromCache(avatarId: String) {
+        _favoriteAvatars.value = _favoriteAvatars.value.filterNot { it.id == avatarId }
     }
 }
