@@ -59,10 +59,20 @@ class WorldRepository @Inject constructor(
     }
 
     suspend fun getInstances(worldId: String, instanceIds: List<String>): List<Instance> {
-        return instanceIds.take(10).mapNotNull { instanceId ->
+        return instanceIds.mapNotNull { instanceId ->
             try {
                 instanceApi.getInstance(worldId, instanceId)
             } catch (_: Exception) { null }
         }
+    }
+
+    /**
+     * Sends an invite for the given instance to the current user, mirroring the
+     * desktop "Invite Yourself" affordance. Useful on Android because the app
+     * cannot launch VRChat directly — accepting the resulting in-app invite is
+     * how the user joins from a headset session.
+     */
+    suspend fun selfInvite(worldId: String, instanceId: String) {
+        instanceApi.selfInvite(worldId = worldId, instanceId = instanceId)
     }
 }

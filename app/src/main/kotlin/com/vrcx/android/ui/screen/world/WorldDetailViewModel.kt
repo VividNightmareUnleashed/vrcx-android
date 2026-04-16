@@ -32,7 +32,31 @@ class WorldDetailViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
     init { loadWorld() }
+
+    fun clearMessage() { _message.value = null }
+
+    fun selfInvite(instanceId: String) {
+        viewModelScope.launch {
+            try {
+                worldRepository.selfInvite(worldId, instanceId)
+                _message.value = "Invite sent — check your VRChat notifications"
+            } catch (e: Exception) {
+                _message.value = "Self invite failed: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Builds the canonical browser launch URL for an instance. Tapping it on a
+     * device with VRChat installed opens the app via the OS handler; on devices
+     * without VRChat it falls back to the website's launch page.
+     */
+    fun browserLaunchUrl(instanceId: String): String =
+        "https://vrchat.com/home/launch?worldId=$worldId&instanceId=$instanceId"
 
     fun loadWorld() {
         viewModelScope.launch {
