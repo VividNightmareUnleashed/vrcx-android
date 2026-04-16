@@ -17,15 +17,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
 import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.VrcxCard
@@ -35,82 +48,110 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 @Composable
 fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
     val dailyActivity by viewModel.dailyActivity.collectAsStateWithLifecycle()
     val topWorlds by viewModel.topWorlds.collectAsStateWithLifecycle()
+
+    val modelProducer = remember { CartesianChartModelProducer() }
+    LaunchedEffect(dailyActivity) {
+        if (dailyActivity.isNotEmpty()) {
+            modelProducer.runTransaction {
+                columnSeries { series(dailyActivity.map { it.second.toFloat() }) }
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Charts", onBack = onBack)
 
-        if (isLoading) {
-            LoadingState()
-        } else if (dailyActivity.isEmpty() && topWorlds.isEmpty()) {
-            EmptyState(message = "No activity data yet", subtitle = "Instance visit history will appear here as you use VRChat")
-        } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+        when {
+            isLoading -> LoadingState()
+            error != null && dailyActivity.isEmpty() && topWorlds.isEmpty() -> ErrorState(
+                message = error ?: "Failed to load charts",
+                onRetry = viewModel::refresh,
+            )
+            else -> PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                // Daily Activity
-                if (dailyActivity.isNotEmpty()) {
-                    SectionHeader("Daily Instance Activity")
-                    VrcxCard {
-                        Column(Modifier.padding(16.dp)) {
-                            val maxCount = dailyActivity.maxOf { it.second }.coerceAtLeast(1)
-                            dailyActivity.forEach { (date, count) ->
-                                Row(
-                                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(date, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(80.dp))
-                                    Box(
-                                        Modifier
-                                            .weight(1f)
-                                            .height(16.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                                    ) {
-                                        Box(
-                                            Modifier
-                                                .fillMaxWidth(fraction = count.toFloat() / maxCount)
-                                                .height(16.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(MaterialTheme.colorScheme.primary),
-                                        )
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("$count", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(28.dp))
+                if (dailyActivity.isEmpty() && topWorlds.isEmpty()) {
+                    EmptyState(
+                        message = "No activity data yet",
+                        subtitle = "Instance visit history will appear here as you use VRChat",
+                    )
+                } else {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        if (dailyActivity.isNotEmpty()) {
+                            SectionHeader("Daily Instance Activity")
+                            VrcxCard {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text(
+                                        "${dailyActivity.size} day${if (dailyActivity.size == 1) "" else "s"} \u00B7 most recent ${dailyActivity.last().first}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    CartesianChartHost(
+                                        chart = rememberCartesianChart(
+                                            rememberColumnCartesianLayer(),
+                                            startAxis = VerticalAxis.rememberStart(),
+                                            bottomAxis = HorizontalAxis.rememberBottom(),
+                                        ),
+                                        modelProducer = modelProducer,
+                                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                                    )
                                 }
                             }
                         }
-                    }
-                }
 
-                // Top Worlds
-                if (topWorlds.isNotEmpty()) {
-                    SectionHeader("Most Visited Worlds")
-                    VrcxCard {
-                        Column(Modifier.padding(16.dp)) {
-                            val maxVisits = topWorlds.maxOf { it.second }.coerceAtLeast(1)
-                            topWorlds.forEachIndexed { index, (name, count) ->
-                                Row(
-                                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text("${index + 1}.", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(24.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-                                        Box(
-                                            Modifier
-                                                .fillMaxWidth(fraction = count.toFloat() / maxVisits)
-                                                .height(4.dp)
-                                                .clip(RoundedCornerShape(2.dp))
-                                                .background(MaterialTheme.colorScheme.primary),
-                                        )
+                        if (topWorlds.isNotEmpty()) {
+                            SectionHeader("Most Visited Worlds")
+                            VrcxCard {
+                                Column(Modifier.padding(16.dp)) {
+                                    val maxVisits = topWorlds.maxOf { it.second }.coerceAtLeast(1)
+                                    topWorlds.forEachIndexed { index, (name, count) ->
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                "${index + 1}.",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                modifier = Modifier.width(24.dp),
+                                            )
+                                            Column(Modifier.weight(1f)) {
+                                                Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                                Box(
+                                                    Modifier
+                                                        .fillMaxWidth(fraction = count.toFloat() / maxVisits)
+                                                        .height(4.dp)
+                                                        .clip(RoundedCornerShape(2.dp))
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                )
+                                            }
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("$count", style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("$count", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
+                        }
+
+                        if (error != null) {
+                            // Non-fatal error after a successful first load (refresh failed).
+                            Text(
+                                "Refresh failed: $error",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 }
