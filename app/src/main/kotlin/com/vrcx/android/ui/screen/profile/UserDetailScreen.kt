@@ -86,6 +86,34 @@ private object UserDetailTabs {
     const val AVATARS = 4
 }
 
+/**
+ * Destructive social actions on UserDetailScreen are gated behind a confirm
+ * dialog so a stray tap can't unfriend or block someone without warning. Each
+ * variant carries the verb and a short consequence string the dialog renders.
+ */
+internal sealed class UserDestructiveAction(val verb: String, val consequence: String) {
+    data object Block : UserDestructiveAction(
+        verb = "Block",
+        consequence = "They won't be able to interact with you in-game and will be removed from your friends list.",
+    )
+    data object Mute : UserDestructiveAction(
+        verb = "Mute",
+        consequence = "You won't hear them speak in any instance.",
+    )
+    data object HideAvatar : UserDestructiveAction(
+        verb = "Hide avatar",
+        consequence = "You'll see a fallback avatar in their place.",
+    )
+    data object ShowAvatar : UserDestructiveAction(
+        verb = "Show avatar",
+        consequence = "Their custom avatar will load again.",
+    )
+    data object Unfriend : UserDestructiveAction(
+        verb = "Unfriend",
+        consequence = "You'll be removed from each other's friends lists.",
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun UserDetailScreen(
@@ -98,6 +126,7 @@ fun UserDetailScreen(
 ) {
     val user by viewModel.user.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    var pendingDestructiveAction by remember { mutableStateOf<UserDestructiveAction?>(null) }
     val message by viewModel.message.collectAsState()
     val selectedTab by viewModel.selectedTab.collectAsState()
     val mutualFriends by viewModel.mutualFriends.collectAsState()
@@ -113,6 +142,32 @@ fun UserDetailScreen(
 
     LaunchedEffect(message) {
         message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
+    }
+
+    pendingDestructiveAction?.let { action ->
+        val targetName = user?.displayName ?: "this user"
+        AlertDialog(
+            onDismissRequest = { pendingDestructiveAction = null },
+            title = { Text("${action.verb} $targetName?") },
+            text = { Text(action.consequence) },
+            confirmButton = {
+                TextButton(onClick = {
+                    when (action) {
+                        UserDestructiveAction.Block -> viewModel.blockUser()
+                        UserDestructiveAction.Mute -> viewModel.muteUser()
+                        UserDestructiveAction.HideAvatar -> viewModel.hideAvatar()
+                        UserDestructiveAction.ShowAvatar -> viewModel.showAvatar()
+                        UserDestructiveAction.Unfriend -> viewModel.unfriend()
+                    }
+                    pendingDestructiveAction = null
+                }) {
+                    Text(action.verb, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDestructiveAction = null }) { Text("Cancel") }
+            },
+        )
     }
 
     val isWallpaperActive = LocalWallpaperActive.current
@@ -183,6 +238,7 @@ fun UserDetailScreen(
                         notifyEnabled = notifyEnabled,
                         viewModel = viewModel,
                         onWorldClick = onWorldClick,
+                        onConfirmDestructive = { pendingDestructiveAction = it },
                     )
                     UserDetailTabs.MUTUALS -> {
                         if (isTabLoading && mutualFriends.isEmpty()) LoadingState()
@@ -215,6 +271,7 @@ private fun InfoTab(
     notifyEnabled: Boolean,
     viewModel: UserDetailViewModel,
     onWorldClick: (String) -> Unit,
+    onConfirmDestructive: (UserDestructiveAction) -> Unit,
 ) {
     var showNoteDialog by remember { mutableStateOf(false) }
     var showMemoDialog by remember { mutableStateOf(false) }
@@ -308,7 +365,7 @@ private fun InfoTab(
                     Spacer(Modifier.width(4.dp))
                     Text(if (notifyEnabled) "Notifications On" else "Notifications Off")
                 }
-                OutlinedButton(onClick = { viewModel.unfriend() }) {
+                OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.Unfriend) }) {
                     Icon(Icons.Default.PersonRemove, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Unfriend")
                 }
                 OutlinedButton(onClick = { viewModel.sendBoop() }) {
@@ -325,16 +382,16 @@ private fun InfoTab(
             OutlinedButton(onClick = { viewModel.requestInvite() }) {
                 Text("Request Invite")
             }
-            OutlinedButton(onClick = { viewModel.blockUser() }) {
+            OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.Block) }) {
                 Icon(Icons.Default.Block, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Block")
             }
-            OutlinedButton(onClick = { viewModel.muteUser() }) {
+            OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.Mute) }) {
                 Icon(Icons.Default.VolumeOff, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Mute")
             }
-            OutlinedButton(onClick = { viewModel.showAvatar() }) {
+            OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.ShowAvatar) }) {
                 Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Show Avatar")
             }
-            OutlinedButton(onClick = { viewModel.hideAvatar() }) {
+            OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.HideAvatar) }) {
                 Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Hide Avatar")
             }
         }
