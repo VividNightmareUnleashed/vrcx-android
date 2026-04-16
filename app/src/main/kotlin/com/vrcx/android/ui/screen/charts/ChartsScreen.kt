@@ -18,7 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,9 +34,9 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val isLoading by viewModel.isLoading.collectAsState()
-    val dailyActivity by viewModel.dailyActivity.collectAsState()
-    val topWorlds by viewModel.topWorlds.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val dailyActivity by viewModel.dailyActivity.collectAsStateWithLifecycle()
+    val topWorlds by viewModel.topWorlds.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Charts", onBack = onBack)

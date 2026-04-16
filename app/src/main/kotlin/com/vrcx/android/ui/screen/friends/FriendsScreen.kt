@@ -26,7 +26,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,15 +49,15 @@ fun FriendsScreen(
     viewModel: FriendsViewModel = hiltViewModel(),
     onFriendClick: (String) -> Unit = {},
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val friends by viewModel.filteredFriends.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val onlineCount by viewModel.onlineCount.collectAsState()
-    val activeCount by viewModel.activeCount.collectAsState()
-    val offlineCount by viewModel.offlineCount.collectAsState()
-    val sortOption by viewModel.sortOption.collectAsState()
-    val vipOnly by viewModel.vipOnly.collectAsState()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val friends by viewModel.filteredFriends.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
+    val activeCount by viewModel.activeCount.collectAsStateWithLifecycle()
+    val offlineCount by viewModel.offlineCount.collectAsStateWithLifecycle()
+    val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
+    val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Friends")

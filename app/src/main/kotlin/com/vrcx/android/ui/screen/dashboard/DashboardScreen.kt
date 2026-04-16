@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,9 +127,9 @@ fun DashboardScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val currentUser by viewModel.currentUser.collectAsState()
-    val friendCounts by viewModel.friendCounts.collectAsState()
-    val recentEntries by viewModel.recentEntries.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val friendCounts by viewModel.friendCounts.collectAsStateWithLifecycle()
+    val recentEntries by viewModel.recentEntries.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Dashboard", onBack = onBack)

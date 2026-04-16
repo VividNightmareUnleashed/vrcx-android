@@ -50,7 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,21 +84,21 @@ fun GalleryScreen(
     viewModel: GalleryViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val isUploading by viewModel.isUploading.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val snackbarMessage by viewModel.snackbarMessage.collectAsState()
-    val fullscreenImageUrl by viewModel.fullscreenImageUrl.collectAsState()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val isUploading by viewModel.isUploading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val fullscreenImageUrl by viewModel.fullscreenImageUrl.collectAsStateWithLifecycle()
 
-    val galleryImages by viewModel.galleryImages.collectAsState()
-    val iconImages by viewModel.iconImages.collectAsState()
-    val emojiImages by viewModel.emojiImages.collectAsState()
-    val stickerImages by viewModel.stickerImages.collectAsState()
-    val prints by viewModel.prints.collectAsState()
-    val inventoryItems by viewModel.inventoryItems.collectAsState()
-    val inventoryTemplates by viewModel.inventoryTemplates.collectAsState()
+    val galleryImages by viewModel.galleryImages.collectAsStateWithLifecycle()
+    val iconImages by viewModel.iconImages.collectAsStateWithLifecycle()
+    val emojiImages by viewModel.emojiImages.collectAsStateWithLifecycle()
+    val stickerImages by viewModel.stickerImages.collectAsStateWithLifecycle()
+    val prints by viewModel.prints.collectAsStateWithLifecycle()
+    val inventoryItems by viewModel.inventoryItems.collectAsStateWithLifecycle()
+    val inventoryTemplates by viewModel.inventoryTemplates.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 

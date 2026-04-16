@@ -17,7 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -63,8 +63,8 @@ fun ToolsScreen(
     onOpenRoute: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val targetId by viewModel.targetId.collectAsState()
-    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
+    val targetId by viewModel.targetId.collectAsStateWithLifecycle()
+    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
 
     val resolvedRoute by remember {
         derivedStateOf { resolveOpenByIdRoute(targetId) }

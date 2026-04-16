@@ -35,7 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -139,16 +139,16 @@ fun SettingsScreen(
     onNavigateToCredits: () -> Unit = {},
     onBack: () -> Unit = {},
 ) {
-    val themeMode by viewModel.themeMode.collectAsState()
-    val dynamicColors by viewModel.dynamicColors.collectAsState()
-    val notifyInvite by viewModel.notifyInvite.collectAsState()
-    val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsState()
-    val wallpaperUri by viewModel.wallpaperUri.collectAsState()
-    val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsState()
-    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
-    val maxFeedSize by viewModel.maxFeedSize.collectAsState()
-    val cacheSizeText by viewModel.cacheSizeText.collectAsState()
-    val cacheAllProgress by viewModel.cacheAllProgress.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val dynamicColors by viewModel.dynamicColors.collectAsStateWithLifecycle()
+    val notifyInvite by viewModel.notifyInvite.collectAsStateWithLifecycle()
+    val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsStateWithLifecycle()
+    val wallpaperUri by viewModel.wallpaperUri.collectAsStateWithLifecycle()
+    val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsStateWithLifecycle()
+    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
+    val maxFeedSize by viewModel.maxFeedSize.collectAsStateWithLifecycle()
+    val cacheSizeText by viewModel.cacheSizeText.collectAsStateWithLifecycle()
+    val cacheAllProgress by viewModel.cacheAllProgress.collectAsStateWithLifecycle()
     var showCacheAllDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }

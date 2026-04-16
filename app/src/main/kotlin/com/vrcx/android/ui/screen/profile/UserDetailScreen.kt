@@ -50,7 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -124,20 +124,20 @@ fun UserDetailScreen(
     onGroupClick: (String) -> Unit = {},
     onAvatarClick: (String) -> Unit = {},
 ) {
-    val user by viewModel.user.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val user by viewModel.user.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var pendingDestructiveAction by remember { mutableStateOf<UserDestructiveAction?>(null) }
-    val message by viewModel.message.collectAsState()
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val mutualFriends by viewModel.mutualFriends.collectAsState()
-    val userGroups by viewModel.userGroups.collectAsState()
-    val userWorlds by viewModel.userWorlds.collectAsState()
-    val userAvatars by viewModel.userAvatars.collectAsState()
-    val isFavorited by viewModel.isFavorited.collectAsState()
-    val memo by viewModel.memo.collectAsState()
-    val note by viewModel.note.collectAsState()
-    val notifyEnabled by viewModel.notifyEnabled.collectAsState()
-    val isTabLoading by viewModel.isTabLoading.collectAsState()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val mutualFriends by viewModel.mutualFriends.collectAsStateWithLifecycle()
+    val userGroups by viewModel.userGroups.collectAsStateWithLifecycle()
+    val userWorlds by viewModel.userWorlds.collectAsStateWithLifecycle()
+    val userAvatars by viewModel.userAvatars.collectAsStateWithLifecycle()
+    val isFavorited by viewModel.isFavorited.collectAsStateWithLifecycle()
+    val memo by viewModel.memo.collectAsStateWithLifecycle()
+    val note by viewModel.note.collectAsStateWithLifecycle()
+    val notifyEnabled by viewModel.notifyEnabled.collectAsStateWithLifecycle()
+    val isTabLoading by viewModel.isTabLoading.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {

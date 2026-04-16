@@ -24,7 +24,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,10 +93,10 @@ class ModerationViewModel @Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val moderations by viewModel.filteredModerations.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedType by viewModel.selectedType.collectAsState()
-    val countsByType by viewModel.countsByType.collectAsState()
+    val moderations by viewModel.filteredModerations.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedType by viewModel.selectedType.collectAsStateWithLifecycle()
+    val countsByType by viewModel.countsByType.collectAsStateWithLifecycle()
     val selectedTabIndex = moderationTabIndex(selectedType)
     var pendingRemoveId by remember { mutableStateOf<Pair<String, String>?>(null) } // id to displayName
 

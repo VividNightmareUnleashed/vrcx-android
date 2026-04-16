@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +58,7 @@ class GroupsViewModel @Inject constructor(
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (String) -> Unit = {}, onBack: () -> Unit = {}) {
-    val groups by viewModel.groups.collectAsState()
+    val groups by viewModel.groups.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Groups", onBack = onBack)
         if (groups.isEmpty()) {

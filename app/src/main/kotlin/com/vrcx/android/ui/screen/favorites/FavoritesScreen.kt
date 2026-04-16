@@ -23,7 +23,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -137,8 +137,8 @@ class FavoritesViewModel @Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val resolvedFavorites by viewModel.resolvedFavorites.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val resolvedFavorites by viewModel.resolvedFavorites.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Friends", "Worlds", "Avatars")
     var pendingUnfavorite by remember { mutableStateOf<String?>(null) }

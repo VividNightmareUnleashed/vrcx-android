@@ -14,7 +14,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -88,9 +88,9 @@ fun PlayerListScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val players by viewModel.players.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedStates by viewModel.selectedStates.collectAsState()
+    val players by viewModel.players.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedStates by viewModel.selectedStates.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Player List", onBack = onBack)

@@ -21,7 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -188,11 +188,11 @@ fun GameLogScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val entries by viewModel.entries.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val vipOnly by viewModel.vipOnly.collectAsState()
-    val filters by viewModel.filters.collectAsState()
-    val canLoadMore by viewModel.canLoadMore.collectAsState()
+    val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
+    val filters by viewModel.filters.collectAsStateWithLifecycle()
+    val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Game Log", onBack = onBack)

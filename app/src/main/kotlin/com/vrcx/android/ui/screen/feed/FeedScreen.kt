@@ -24,7 +24,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,13 +45,13 @@ fun FeedScreen(
     viewModel: FeedViewModel = hiltViewModel(),
     onUserClick: (String) -> Unit = {},
 ) {
-    val entries by viewModel.feedEntries.collectAsState()
-    val filters by viewModel.activeFilters.collectAsState()
-    val avatarUrls by viewModel.userAvatarUrls.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val vipOnly by viewModel.vipOnly.collectAsState()
-    val canLoadMore by viewModel.canLoadMore.collectAsState()
+    val entries by viewModel.feedEntries.collectAsStateWithLifecycle()
+    val filters by viewModel.activeFilters.collectAsStateWithLifecycle()
+    val avatarUrls by viewModel.userAvatarUrls.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
+    val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Feed")

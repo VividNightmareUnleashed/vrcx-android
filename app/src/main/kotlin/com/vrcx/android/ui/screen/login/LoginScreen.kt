@@ -26,7 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,10 +46,10 @@ fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
     onLoginSuccess: () -> Unit = {},
 ) {
-    val authState by viewModel.authState.collectAsState()
-    val username by viewModel.username.collectAsState()
-    val password by viewModel.password.collectAsState()
-    val twoFactorCode by viewModel.twoFactorCode.collectAsState()
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
+    val username by viewModel.username.collectAsStateWithLifecycle()
+    val password by viewModel.password.collectAsStateWithLifecycle()
+    val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(authState) {
@@ -96,8 +96,8 @@ fun LoginScreen(
                     )
                 }
                 else -> {
-                    val passwordVisible by viewModel.passwordVisible.collectAsState()
-                    val rememberMe by viewModel.rememberMe.collectAsState()
+                    val passwordVisible by viewModel.passwordVisible.collectAsStateWithLifecycle()
+                    val rememberMe by viewModel.rememberMe.collectAsStateWithLifecycle()
                     LoginCard(
                         username = username,
                         password = password,

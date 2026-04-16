@@ -19,7 +19,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,10 +81,10 @@ class AvatarsViewModel @Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () -> Unit = {}, onAvatarClick: (String) -> Unit = {}) {
-    val avatars by viewModel.filteredAvatars.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedVisibility by viewModel.selectedVisibility.collectAsState()
-    val selectedPlatform by viewModel.selectedPlatform.collectAsState()
+    val avatars by viewModel.filteredAvatars.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedVisibility by viewModel.selectedVisibility.collectAsStateWithLifecycle()
+    val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "My Avatars", onBack = onBack)

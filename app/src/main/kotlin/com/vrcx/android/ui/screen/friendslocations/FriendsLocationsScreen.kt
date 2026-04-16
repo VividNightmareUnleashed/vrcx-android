@@ -23,7 +23,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -161,9 +161,9 @@ fun FriendsLocationsScreen(
     onWorldClick: (String) -> Unit = {},
     onBack: () -> Unit = {},
 ) {
-    val groups by viewModel.locationGroups.collectAsState()
-    val selectedSegment by viewModel.selectedSegment.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
+    val groups by viewModel.locationGroups.collectAsStateWithLifecycle()
+    val selectedSegment by viewModel.selectedSegment.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friends Locations", onBack = onBack)

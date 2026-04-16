@@ -23,7 +23,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,24 +45,24 @@ fun SearchScreen(
     onAvatarClick: (String) -> Unit = {},
     onGroupClick: (String) -> Unit = {},
 ) {
-    val query by viewModel.query.collectAsState()
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val users by viewModel.users.collectAsState()
-    val worlds by viewModel.worlds.collectAsState()
-    val avatars by viewModel.avatars.collectAsState()
-    val groups by viewModel.groups.collectAsState()
-    val hasSearched by viewModel.hasSearched.collectAsState()
-    val isSearching by viewModel.isSearching.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val currentOffset by viewModel.currentOffset.collectAsState()
-    val hasMore by viewModel.hasMore.collectAsState()
-    val searchUsersByBio by viewModel.searchUsersByBio.collectAsState()
-    val sortUsersByLastLogin by viewModel.sortUsersByLastLogin.collectAsState()
-    val worldMode by viewModel.worldMode.collectAsState()
-    val includeWorldLabs by viewModel.includeWorldLabs.collectAsState()
-    val worldTag by viewModel.worldTag.collectAsState()
-    val avatarSearchSource by viewModel.avatarSearchSource.collectAsState()
-    val avatarProviderUrl by viewModel.avatarProviderUrl.collectAsState()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val users by viewModel.users.collectAsStateWithLifecycle()
+    val worlds by viewModel.worlds.collectAsStateWithLifecycle()
+    val avatars by viewModel.avatars.collectAsStateWithLifecycle()
+    val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
+    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val currentOffset by viewModel.currentOffset.collectAsStateWithLifecycle()
+    val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
+    val searchUsersByBio by viewModel.searchUsersByBio.collectAsStateWithLifecycle()
+    val sortUsersByLastLogin by viewModel.sortUsersByLastLogin.collectAsStateWithLifecycle()
+    val worldMode by viewModel.worldMode.collectAsStateWithLifecycle()
+    val includeWorldLabs by viewModel.includeWorldLabs.collectAsStateWithLifecycle()
+    val worldTag by viewModel.worldTag.collectAsStateWithLifecycle()
+    val avatarSearchSource by viewModel.avatarSearchSource.collectAsStateWithLifecycle()
+    val avatarProviderUrl by viewModel.avatarProviderUrl.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Search")
