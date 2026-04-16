@@ -3,30 +3,15 @@ package com.vrcx.android.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.vrcx.android.data.preferences.VrcxPreferences
-import com.vrcx.android.data.security.SecureSecretsStore
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
-    @Inject lateinit var secureSecretsStore: SecureSecretsStore
-
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            val prefs = context.getSharedPreferences("vrcx_cookies", Context.MODE_PRIVATE)
-            val hasLegacyAuth = prefs.all.values.any { (it as? String)?.contains("auth=") == true }
-            val hasAuth = secureSecretsStore.hasAuthCookie() || hasLegacyAuth
-            if (!hasAuth) return
-
-            val bgEnabled = runBlocking {
-                VrcxPreferences(context).backgroundServiceEnabled.first()
-            }
-            if (!bgEnabled) return
-
-            BootReconnectWorker.enqueue(context)
-        }
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // Defer all auth/preference reads to BootReconnectWorker.doWork() so the
+        // broadcast main thread is never blocked on disk I/O during boot. The
+        // worker checks SecureSecretsStore + backgroundServiceEnabled before
+        // doing anything, so an unconditional enqueue is safe — it short-circuits
+        // when the user isn't logged in or has the background service disabled.
+        BootReconnectWorker.enqueue(context)
     }
 }
