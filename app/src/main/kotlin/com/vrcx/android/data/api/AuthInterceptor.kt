@@ -12,13 +12,12 @@ class AuthInterceptor : Interceptor {
     private val basicAuth = AtomicReference<String?>(null)
 
     fun setBasicAuth(username: String, password: String) {
-        val encodedUser = encodeURIComponent(username)
-        val encodedPass = encodeURIComponent(password)
-        val credentials = "$encodedUser:$encodedPass"
-        val encoded = Base64.getEncoder()
-            .withoutPadding()
-            .encodeToString(credentials.toByteArray(StandardCharsets.UTF_8))
-        basicAuth.set("Basic $encoded")
+        basicAuth.set("Basic ${encodeBasicAuth(username, password)}")
+    }
+
+    internal fun encodeBasicAuth(username: String, password: String): String {
+        val credentials = "${encodeURIComponent(username)}:${encodeURIComponent(password)}"
+        return Base64.getEncoder().encodeToString(credentials.toByteArray(StandardCharsets.UTF_8))
     }
 
     fun clearBasicAuth() {
