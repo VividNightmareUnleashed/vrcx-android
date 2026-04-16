@@ -13,11 +13,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -66,6 +69,41 @@ class AuthRepositoryTest {
             verify(authApi).verifyTotp(requestCaptor.capture())
             verify(authApi, never()).verifyOtp(any())
             assertEquals("123456", requestCaptor.firstValue.code)
+        }
+    }
+
+    @Test
+    fun `logout invalidates the session server-side before clearing local state`() {
+        runBlocking {
+            repository.logout()
+
+            verify(authApi).logout()
+            verify(cookieJar).clearAll()
+            verify(authInterceptor).clearBasicAuth()
+            verify(dedup).clearCache()
+            verify(favoriteRepository).clearRuntimeState()
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
+        }
+    }
+
+    @Test
+    fun `logout still clears local state when the server call fails`() {
+        runBlocking {
+            // Suspend functions don't declare checked exceptions, so Mockito only
+            // accepts unchecked Throwables here. RuntimeException stands in for the
+            // network-failure case.
+            authApi.stub {
+                onBlocking { logout() } doThrow RuntimeException("offline")
+            }
+
+            repository.logout()
+
+            verify(authApi).logout()
+            verify(cookieJar).clearAll()
+            verify(authInterceptor).clearBasicAuth()
+            verify(dedup).clearCache()
+            verify(favoriteRepository).clearRuntimeState()
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
         }
     }
 

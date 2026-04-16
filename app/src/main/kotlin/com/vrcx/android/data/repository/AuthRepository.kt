@@ -167,6 +167,14 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun logout() {
+        // Best-effort server invalidation before local cleanup so a stolen cookie
+        // can't outlive the user's intent. Network failure must not block sign-out
+        // (the user might be logging out specifically because they have no network).
+        try {
+            authApi.logout()
+        } catch (_: Exception) {
+            // Swallow: local state still gets cleared below.
+        }
         favoriteRepository.clearRuntimeState()
         _currentUser = null
         _authToken = null
