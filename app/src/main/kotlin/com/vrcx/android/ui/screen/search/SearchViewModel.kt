@@ -26,9 +26,21 @@ enum class WorldSearchMode {
     MINE,
 }
 
-enum class AvatarSearchSource {
-    VRCHAT,
-    REMOTE,
+enum class AvatarSearchSource(val label: String, val hint: String) {
+    /**
+     * VRChat's `/avatars?search=…` endpoint without `user=me` returns only the
+     * requesting user's own avatars — there is no public-avatar search through
+     * the official API. Label this source accurately so users don't expect
+     * results from other creators.
+     */
+    MY_AVATARS(
+        label = "My Avatars",
+        hint = "VRChat only exposes your own avatars to API search.",
+    ),
+    REMOTE(
+        label = "Remote",
+        hint = "Search a third-party avatar database via its provider URL.",
+    ),
 }
 
 @HiltViewModel
@@ -89,7 +101,7 @@ class SearchViewModel @Inject constructor(
     private val _worldTag = MutableStateFlow("")
     val worldTag: StateFlow<String> = _worldTag.asStateFlow()
 
-    private val _avatarSearchSource = MutableStateFlow(AvatarSearchSource.VRCHAT)
+    private val _avatarSearchSource = MutableStateFlow(AvatarSearchSource.MY_AVATARS)
     val avatarSearchSource: StateFlow<AvatarSearchSource> = _avatarSearchSource.asStateFlow()
 
     private val _avatarProviderUrl = MutableStateFlow("")

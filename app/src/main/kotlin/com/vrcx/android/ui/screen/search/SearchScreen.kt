@@ -154,10 +154,16 @@ fun SearchScreen(
                         FilterChip(
                             selected = avatarSearchSource == source,
                             onClick = { viewModel.setAvatarSearchSource(source) },
-                            label = { Text(source.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                            label = { Text(source.label) },
                         )
                     }
                 }
+                Text(
+                    avatarSearchSource.hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
                 if (avatarSearchSource == AvatarSearchSource.REMOTE) {
                     OutlinedTextField(
                         value = avatarProviderUrl,
