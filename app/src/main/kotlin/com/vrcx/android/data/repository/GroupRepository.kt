@@ -116,6 +116,15 @@ class GroupRepository @Inject constructor(
             }
     }
 
+    /**
+     * Removes the named user from the group. Returns true on success, false if
+     * the API rejects the request (most commonly because the caller doesn't have
+     * the permission). Callers should treat false as "not your call to make".
+     */
+    suspend fun kickGroupMember(groupId: String, userId: String): Boolean {
+        return runCatching { groupApi.kickGroupMember(groupId, userId) }.isSuccess
+    }
+
     fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.GroupJoined -> {
