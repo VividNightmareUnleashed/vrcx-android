@@ -69,7 +69,7 @@ import com.vrcx.android.data.db.entity.WorldMemoEntity
         FriendNotifyEntity::class,
     ],
     version = 2,
-    exportSchema = false,
+    exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class VrcxDatabase : RoomDatabase() {
