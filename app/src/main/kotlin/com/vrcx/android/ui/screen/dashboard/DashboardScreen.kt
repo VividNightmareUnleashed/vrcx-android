@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
@@ -35,14 +36,17 @@ import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     authRepository: AuthRepository,
@@ -53,20 +57,23 @@ class DashboardViewModel @Inject constructor(
 
     val currentUser = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val friendCounts: StateFlow<Triple<Int, Int, Int>> = friendRepository.friends
         .map { friends ->
             Triple(
-                friends.values.count { it.state.name == "ONLINE" },
-                friends.values.count { it.state.name == "ACTIVE" },
-                friends.values.count { it.state.name == "OFFLINE" },
+                friends.values.count { it.state == FriendState.ONLINE },
+                friends.values.count { it.state == FriendState.ACTIVE },
+                friends.values.count { it.state == FriendState.OFFLINE },
             )
         }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(0, 0, 0))
 
     val recentEntries: StateFlow<List<FeedEntry>> = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
+        .distinctUntilChanged()
         .flatMapLatest { userId ->
             if (userId.isBlank()) return@flatMapLatest flowOf(emptyList())
             combine(
@@ -124,13 +131,12 @@ fun DashboardScreen(
     val friendCounts by viewModel.friendCounts.collectAsState()
     val recentEntries by viewModel.recentEntries.collectAsState()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            VrcxDetailTopBar(title = "Dashboard", onBack = onBack)
-        }
+    Column(modifier = Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Dashboard", onBack = onBack)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                 Row(
@@ -215,6 +221,7 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
         }
     }
 }
