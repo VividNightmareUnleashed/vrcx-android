@@ -37,12 +37,12 @@ import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
 import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
-import com.vrcx.android.ui.components.EmptyState
-import com.vrcx.android.ui.components.ErrorState
-import com.vrcx.android.ui.components.LoadingState
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Insights
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,24 +65,24 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Charts", onBack = onBack)
 
-        when {
-            isLoading -> LoadingState()
-            error != null && dailyActivity.isEmpty() && topWorlds.isEmpty() -> ErrorState(
-                message = error ?: "Failed to load charts",
-                onRetry = viewModel::refresh,
-            )
-            else -> PullToRefreshBox(
+        UiStateContainer(
+            isLoading = isLoading,
+            // Only treat the error as fatal when there's no data to show alongside
+            // it; partial-refresh failures surface as a small footer instead.
+            error = if (dailyActivity.isEmpty() && topWorlds.isEmpty()) error else null,
+            isEmpty = dailyActivity.isEmpty() && topWorlds.isEmpty(),
+            onRetry = viewModel::refresh,
+            emptyMessage = "No activity data yet",
+            emptySubtitle = "Instance visit history will appear here as you use VRChat",
+            emptyIcon = Icons.Outlined.Insights,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (dailyActivity.isEmpty() && topWorlds.isEmpty()) {
-                    EmptyState(
-                        message = "No activity data yet",
-                        subtitle = "Instance visit history will appear here as you use VRChat",
-                    )
-                } else {
-                    Column(
+                Column(
                         Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
@@ -154,7 +154,6 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
                             )
                         }
                     }
-                }
             }
         }
     }

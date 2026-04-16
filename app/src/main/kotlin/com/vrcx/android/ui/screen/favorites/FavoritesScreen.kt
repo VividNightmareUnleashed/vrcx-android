@@ -41,7 +41,7 @@ import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
-import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
@@ -190,11 +190,14 @@ fun FavoritesScreen(viewModel: FavoritesViewModel = hiltViewModel(), onBack: () 
         val type = listOf("friend", "world", "avatar")[selectedTab]
         val filtered = resolvedFavorites.filter { it.favorite.type == type }
 
-        if (isLoading) {
-            com.vrcx.android.ui.components.LoadingState()
-        } else if (filtered.isEmpty()) {
-            EmptyState(message = "No ${tabs[selectedTab].lowercase()} favorites", icon = Icons.Outlined.FavoriteBorder)
-        } else {
+        UiStateContainer(
+            isLoading = isLoading,
+            error = null,
+            isEmpty = filtered.isEmpty(),
+            emptyMessage = "No ${tabs[selectedTab].lowercase()} favorites",
+            emptyIcon = Icons.Outlined.FavoriteBorder,
+            modifier = Modifier.fillMaxSize(),
+        ) {
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(filtered, key = { it.favorite.id }) { res ->
                     when (res.favorite.type) {
