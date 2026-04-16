@@ -7,15 +7,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.vrcx.android.ui.screen.avatars.AvatarDetailScreen
 import com.vrcx.android.ui.screen.avatars.MyAvatarsScreen
 import com.vrcx.android.ui.screen.charts.ChartsScreen
@@ -306,6 +306,11 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.USER_DETAIL,
+            arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "vrcx://user/{userId}" },
+                navDeepLink { uriPattern = "https://vrchat.com/home/user/{userId}" },
+            ),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -321,6 +326,11 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.GROUP_DETAIL,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "vrcx://group/{groupId}" },
+                navDeepLink { uriPattern = "https://vrchat.com/home/group/{groupId}" },
+            ),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -333,6 +343,11 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.AVATAR_DETAIL,
+            arguments = listOf(navArgument("avatarId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "vrcx://avatar/{avatarId}" },
+                navDeepLink { uriPattern = "https://vrchat.com/home/avatar/{avatarId}" },
+            ),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -345,6 +360,11 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.WORLD_DETAIL,
+            arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "vrcx://world/{worldId}" },
+                navDeepLink { uriPattern = "https://vrchat.com/home/world/{worldId}" },
+            ),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -356,9 +376,4 @@ fun VrcxNavGraph(
             )
         }
     }
-}
-
-@Composable
-private fun PlaceholderScreen(name: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(name) }
 }

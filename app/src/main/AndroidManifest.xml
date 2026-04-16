@@ -29,6 +29,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- vrcx://user/usr_..., vrcx://world/wrld_..., vrcx://avatar/avtr_..., vrcx://group/grp_... -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vrcx" />
+            </intent-filter>
+            <!-- https://vrchat.com/home/user/usr_... and friends -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/user/" />
+                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/world/" />
+                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/avatar/" />
+                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/group/" />
+            </intent-filter>
         </activity>
 
         <service
