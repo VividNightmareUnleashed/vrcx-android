@@ -33,4 +33,17 @@ interface NotificationDao {
 
     @Query("UPDATE notifications_v2 SET seen = 1 WHERE id = :notificationId")
     suspend fun markSeenV2(notificationId: String)
+
+    /** Snapshot reads for hydrating in-memory state on cold start. */
+    @Query("SELECT * FROM notifications WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun snapshotNotifications(userId: String, limit: Int = 200): List<NotificationEntity>
+
+    @Query("SELECT * FROM notifications_v2 WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun snapshotNotificationsV2(userId: String, limit: Int = 200): List<NotificationV2Entity>
+
+    @Query("DELETE FROM notifications WHERE ownerUserId = :userId")
+    suspend fun clearForUser(userId: String)
+
+    @Query("DELETE FROM notifications_v2 WHERE ownerUserId = :userId")
+    suspend fun clearV2ForUser(userId: String)
 }

@@ -94,6 +94,9 @@ class NotificationsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            // Hydrate from Room first so the inbox isn't empty for the user
+            // while the API call is in flight after a cold start.
+            try { notificationRepository.hydrateFromCache() } catch (_: Exception) {}
             try {
                 notificationRepository.loadNotifications()
             } catch (e: Exception) {
