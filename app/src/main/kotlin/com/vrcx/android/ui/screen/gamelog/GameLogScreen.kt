@@ -43,6 +43,7 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,18 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * Date-range filter for the Activity History screen. Lets users zoom in on
+ * recent windows without scrolling through the full feed.
+ */
+enum class ActivityRange(val label: String, val days: Int?) {
+    TODAY("Today", 1),
+    LAST_7("Last 7 days", 7),
+    LAST_30("Last 30 days", 30),
+    ALL("All time", null),
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class GameLogViewModel @Inject constructor(
     authRepository: AuthRepository,
@@ -69,6 +82,9 @@ class GameLogViewModel @Inject constructor(
 
     private val _filters = MutableStateFlow(setOf("gps", "status", "bio", "avatar", "online", "offline"))
     val filters: StateFlow<Set<String>> = _filters.asStateFlow()
+
+    private val _range = MutableStateFlow(ActivityRange.LAST_7)
+    val range: StateFlow<ActivityRange> = _range.asStateFlow()
 
     private val _limit = MutableStateFlow(100)
     val limit: StateFlow<Int> = _limit.asStateFlow()
@@ -130,7 +146,9 @@ class GameLogViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val entries = combine(allEntries, _filters, _searchQuery, _vipOnly, vipFriendIds, _limit) { values ->
+    val entries = combine(
+        listOf(allEntries, _filters, _searchQuery, _vipOnly, vipFriendIds, _limit, _range),
+    ) { values ->
         @Suppress("UNCHECKED_CAST")
         val all = values[0] as List<FeedEntry>
         val filters = values[1] as Set<*>
@@ -138,9 +156,18 @@ class GameLogViewModel @Inject constructor(
         val vipOnly = values[3] as Boolean
         val vipIds = values[4] as Set<*>
         val limit = values[5] as Int
+        val range = values[6] as ActivityRange
+
+        // Drop entries older than the chosen window. ALL skips the date filter.
+        val cutoffMs = range.days?.let {
+            System.currentTimeMillis() - it.toLong() * 24L * 60L * 60L * 1000L
+        }
 
         all
             .filter { it.type in filters }
+            .filter { entry ->
+                cutoffMs == null || parseInstantMs(entry.createdAt) >= cutoffMs
+            }
             .filter { entry ->
                 query.isBlank() ||
                     entry.displayName.contains(query, ignoreCase = true) ||
@@ -149,6 +176,10 @@ class GameLogViewModel @Inject constructor(
             .filter { if (vipOnly) it.userId in vipIds else true }
             .take(limit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private fun parseInstantMs(iso: String): Long {
+        return runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrDefault(Long.MAX_VALUE)
+    }
 
     val canLoadMore = combine(entries, allEntries, _limit, maxFeedSize) { visible, all, limit, maxSize ->
         visible.size >= limit && all.size >= limit && limit < maxSize
@@ -179,6 +210,10 @@ class GameLogViewModel @Inject constructor(
     fun loadMore() {
         _limit.value = (_limit.value + 100).coerceAtMost(maxFeedSize.value)
     }
+
+    fun selectRange(range: ActivityRange) {
+        _range.value = range
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -192,10 +227,13 @@ fun GameLogScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
     val filters by viewModel.filters.collectAsStateWithLifecycle()
+    val range by viewModel.range.collectAsStateWithLifecycle()
     val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = "Game Log", onBack = onBack)
+        // Renamed from "Game Log" — Android can't tail VRChat's client log so
+        // this screen actually holds friend-presence and feed activity history.
+        VrcxDetailTopBar(title = "Activity History", onBack = onBack)
 
         VrcxSearchBar(
             query = searchQuery,
@@ -207,7 +245,22 @@ fun GameLogScreen(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ActivityRange.entries.forEach { option ->
+                FilterChip(
+                    selected = range == option,
+                    onClick = { viewModel.selectRange(option) },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(
@@ -231,9 +284,9 @@ fun GameLogScreen(
 
         if (entries.isEmpty()) {
             EmptyState(
-                message = "No game log entries yet",
+                message = "No activity in this window",
                 icon = Icons.Outlined.History,
-                subtitle = "Friend movement, status changes, and avatar updates will build a longer history here.",
+                subtitle = "Friend movement, status changes, and avatar updates from the selected range appear here.",
             )
         } else {
             LazyColumn(Modifier.fillMaxSize()) {

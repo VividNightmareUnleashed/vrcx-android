@@ -37,6 +37,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
+/** Sort order for the Friends Roster. */
+enum class RosterSort(val label: String) {
+    PRESENCE("Presence"),
+    ALPHABETICAL("A → Z"),
+    VIP_FIRST("VIP first"),
+}
+
 @HiltViewModel
 class PlayerListViewModel @Inject constructor(
     friendRepository: FriendRepository,
@@ -47,21 +54,36 @@ class PlayerListViewModel @Inject constructor(
     private val _selectedStates = MutableStateFlow(setOf(FriendState.ONLINE, FriendState.ACTIVE, FriendState.OFFLINE))
     val selectedStates: StateFlow<Set<FriendState>> = _selectedStates.asStateFlow()
 
+    private val _sort = MutableStateFlow(RosterSort.PRESENCE)
+    val sort: StateFlow<RosterSort> = _sort.asStateFlow()
+
     val players: StateFlow<List<FriendContext>> = combine(
         friendRepository.friends,
         _searchQuery,
         _selectedStates,
-    ) { friends, query, selectedStates ->
-        friends.values
+        _sort,
+    ) { friends, query, selectedStates, sort ->
+        val filtered = friends.values
             .filter { it.state in selectedStates }
             .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-            .sortedWith(
+
+        when (sort) {
+            RosterSort.PRESENCE -> filtered.sortedWith(
                 compareBy<FriendContext>(
                     { stateRank(it.state) },
                     { !it.isVIP },
                     { it.name.lowercase() },
-                )
+                ),
             )
+            RosterSort.ALPHABETICAL -> filtered.sortedBy { it.name.lowercase() }
+            RosterSort.VIP_FIRST -> filtered.sortedWith(
+                compareBy<FriendContext>(
+                    { !it.isVIP },
+                    { stateRank(it.state) },
+                    { it.name.lowercase() },
+                ),
+            )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun updateSearch(query: String) {
@@ -72,6 +94,10 @@ class PlayerListViewModel @Inject constructor(
         val current = _selectedStates.value.toMutableSet()
         if (state in current) current.remove(state) else current.add(state)
         _selectedStates.value = current
+    }
+
+    fun selectSort(sort: RosterSort) {
+        _sort.value = sort
     }
 
     private fun stateRank(state: FriendState): Int = when (state) {
@@ -91,9 +117,13 @@ fun PlayerListScreen(
     val players by viewModel.players.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedStates by viewModel.selectedStates.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = "Player List", onBack = onBack)
+        // Renamed from "Player List" — Android cannot inspect the user's
+        // current VRChat instance, so this screen lists their friend roster
+        // with custom sorts and presence filters.
+        VrcxDetailTopBar(title = "Friends Roster", onBack = onBack)
 
         VrcxSearchBar(
             query = searchQuery,
@@ -105,7 +135,7 @@ fun PlayerListScreen(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FriendState.entries.forEach { state ->
@@ -113,6 +143,21 @@ fun PlayerListScreen(
                     selected = state in selectedStates,
                     onClick = { viewModel.toggleState(state) },
                     label = { Text(state.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                )
+            }
+        }
+
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            RosterSort.entries.forEach { option ->
+                FilterChip(
+                    selected = sort == option,
+                    onClick = { viewModel.selectSort(option) },
+                    label = { Text(option.label) },
                 )
             }
         }
