@@ -49,7 +49,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,7 @@ class SettingsViewModel @Inject constructor(
     private val preferences: VrcxPreferences,
     private val profilePicCacheManager: ProfilePicCacheManager,
     private val friendRepository: FriendRepository,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
@@ -130,6 +133,10 @@ class SettingsViewModel @Inject constructor(
             refreshCacheSize()
         }
     }
+
+    fun signOut() {
+        viewModelScope.launch { authRepository.logout() }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,6 +157,7 @@ fun SettingsScreen(
     val cacheSizeText by viewModel.cacheSizeText.collectAsStateWithLifecycle()
     val cacheAllProgress by viewModel.cacheAllProgress.collectAsStateWithLifecycle()
     var showCacheAllDialog by remember { mutableStateOf(false) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 
@@ -168,154 +176,153 @@ fun SettingsScreen(
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Settings", onBack = onBack)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("Appearance", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-
-        Text("Theme", style = MaterialTheme.typography.bodyLarge)
-        Text("Choose light, dark, or system default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(4.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("system" to "System", "light" to "Light", "dark" to "Dark")
-                .forEachIndexed { index, (value, label) ->
-                    SegmentedButton(
-                        selected = themeMode == value,
-                        onClick = { viewModel.setThemeMode(value) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
-                    ) { Text(label) }
-                }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        SettingToggle("Dynamic Colors", "Use Material You colors", dynamicColors, viewModel::setDynamicColors)
-
-        Spacer(Modifier.height(12.dp))
-        Text("Wallpaper", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            if (wallpaperUri != null) "Custom wallpaper set" else "No wallpaper",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = {
-                wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }) {
-                Text(if (wallpaperUri != null) "Change Wallpaper" else "Set Wallpaper")
-            }
-            if (wallpaperUri != null) {
-                OutlinedButton(onClick = { viewModel.setWallpaperUri(null) }) {
-                    Text("Remove")
-                }
-            }
-        }
-        if (wallpaperUri != null) {
-            Spacer(Modifier.height(12.dp))
-            Text("Scale Mode", style = MaterialTheme.typography.bodyLarge)
-            Text("How the wallpaper image is scaled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf("crop" to "Crop", "fit" to "Fit", "fill_width" to "Fill W", "fill_height" to "Fill H")
-                    .forEachIndexed { index, (value, label) ->
-                        SegmentedButton(
-                            selected = wallpaperScaleMode == value,
-                            onClick = { viewModel.setWallpaperScaleMode(value) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
-                        ) { Text(label) }
-                    }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-        Text("General", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        SettingToggle(
-            "Background Service",
-            "Keep WebSocket connected in the background when Android allows it (newer Android versions may require reopening the app after reboot)",
-            backgroundServiceEnabled,
-            viewModel::setBackgroundServiceEnabled,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("Feed History", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "Limit how many feed entries stay queryable for Feed and Game Log style views",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(4.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf(100, 250, 500, 1000).forEachIndexed { index, size ->
-                SegmentedButton(
-                    selected = maxFeedSize == size,
-                    onClick = { viewModel.setMaxFeedSize(size) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
-                ) {
-                    Text(size.toString())
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-        Text("Storage", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Text("Profile Picture Cache", style = MaterialTheme.typography.bodyLarge)
-        Text("Cached: $cacheSizeText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        if (cacheAllProgress != null) {
-            val (completed, total) = cacheAllProgress!!
-            Text("Caching: $completed / $total", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { if (total > 0) completed.toFloat() / total else 0f },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(
-                onClick = { showCacheAllDialog = true },
-                enabled = cacheAllProgress == null,
-            ) {
-                Text("Cache All Friends")
-            }
-            OutlinedButton(
-                onClick = { viewModel.clearProfilePicCache() },
-                enabled = cacheAllProgress == null,
-            ) {
-                Text("Clear Cache")
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-        Text("Notifications", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        SettingToggle("Invites", "Notify on invite received", notifyInvite, viewModel::setNotifyInvite)
-        SettingToggle("Friend Requests", "Notify on friend request", notifyFriendRequest, viewModel::setNotifyFriendRequest)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Per-friend notifications can be enabled from each friend's profile",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(Modifier.height(24.dp))
-        Text("About", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Text("VRCX Android v${com.vrcx.android.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-        Text("VRChat Companion App", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onNavigateToCredits() }
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.size(12.dp))
-            Text("Credits", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+            SettingsSection("Appearance") {
+                Text("Theme", style = MaterialTheme.typography.bodyLarge)
+                Text("Choose light, dark, or system default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf("system" to "System", "light" to "Light", "dark" to "Dark")
+                        .forEachIndexed { index, (value, label) ->
+                            SegmentedButton(
+                                selected = themeMode == value,
+                                onClick = { viewModel.setThemeMode(value) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
+                            ) { Text(label) }
+                        }
+                }
+                SettingToggle("Dynamic Colors", "Use Material You colors", dynamicColors, viewModel::setDynamicColors)
+
+                Text("Wallpaper", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (wallpaperUri != null) "Custom wallpaper set" else "No wallpaper",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = {
+                        wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) {
+                        Text(if (wallpaperUri != null) "Change Wallpaper" else "Set Wallpaper")
+                    }
+                    if (wallpaperUri != null) {
+                        OutlinedButton(onClick = { viewModel.setWallpaperUri(null) }) { Text("Remove") }
+                    }
+                }
+                if (wallpaperUri != null) {
+                    Text("Scale Mode", style = MaterialTheme.typography.bodyLarge)
+                    Text("How the wallpaper image is scaled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        listOf("crop" to "Crop", "fit" to "Fit", "fill_width" to "Fill W", "fill_height" to "Fill H")
+                            .forEachIndexed { index, (value, label) ->
+                                SegmentedButton(
+                                    selected = wallpaperScaleMode == value,
+                                    onClick = { viewModel.setWallpaperScaleMode(value) },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
+                                ) { Text(label) }
+                            }
+                    }
+                }
+            }
+
+            SettingsSection("General") {
+                SettingToggle(
+                    "Background Service",
+                    "Keep WebSocket connected in the background when Android allows it (newer Android versions may require reopening the app after reboot)",
+                    backgroundServiceEnabled,
+                    viewModel::setBackgroundServiceEnabled,
+                )
+                Text("Feed History", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Limit how many feed entries stay queryable for Feed and Game Log style views",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf(100, 250, 500, 1000).forEachIndexed { index, size ->
+                        SegmentedButton(
+                            selected = maxFeedSize == size,
+                            onClick = { viewModel.setMaxFeedSize(size) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
+                        ) { Text(size.toString()) }
+                    }
+                }
+            }
+
+            SettingsSection("Notifications") {
+                SettingToggle("Invites", "Notify on invite received", notifyInvite, viewModel::setNotifyInvite)
+                SettingToggle("Friend Requests", "Notify on friend request", notifyFriendRequest, viewModel::setNotifyFriendRequest)
+                Text(
+                    "Per-friend notifications can be enabled from each friend's profile",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            SettingsSection("Storage") {
+                Text("Profile Picture Cache", style = MaterialTheme.typography.bodyLarge)
+                Text("Cached: $cacheSizeText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (cacheAllProgress != null) {
+                    val (completed, total) = cacheAllProgress!!
+                    Text("Caching: $completed / $total", style = MaterialTheme.typography.bodySmall)
+                    LinearProgressIndicator(
+                        progress = { if (total > 0) completed.toFloat() / total else 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = { showCacheAllDialog = true },
+                        enabled = cacheAllProgress == null,
+                    ) { Text("Cache All Friends") }
+                    OutlinedButton(
+                        onClick = { viewModel.clearProfilePicCache() },
+                        enabled = cacheAllProgress == null,
+                    ) { Text("Clear Cache") }
+                }
+            }
+
+            SettingsSection("Privacy") {
+                Text("Sign Out", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Invalidates the session on VRChat's side and clears local cookies. You'll need to log in again.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = { showSignOutDialog = true }) {
+                    Text("Sign Out", color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            SettingsSection("About") {
+                Text(
+                    "VRCX Android v${com.vrcx.android.BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "VRChat Companion App",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToCredits() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.size(12.dp))
+                    Text("Credits", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
 
         if (showCacheAllDialog) {
@@ -337,6 +344,47 @@ fun SettingsScreen(
                     TextButton(onClick = { showCacheAllDialog = false }) { Text("Cancel") }
                 },
             )
+        }
+
+        if (showSignOutDialog) {
+            AlertDialog(
+                onDismissRequest = { showSignOutDialog = false },
+                title = { Text("Sign Out?") },
+                text = {
+                    Text(
+                        "Your session will be invalidated on VRChat's side and you'll need " +
+                            "to enter your credentials again to sign back in.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSignOutDialog = false
+                        viewModel.signOut()
+                    }) {
+                        Text("Sign Out", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+    VrcxCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            content()
         }
     }
 }
