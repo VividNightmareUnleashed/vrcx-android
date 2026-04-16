@@ -185,7 +185,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendOnline(event: PipelineEvent.FriendOnline) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"])
         val displayName = user?.displayName ?: _friends.value[userId]?.name ?: userId
         val location = content["location"]?.jsonPrimitive?.content ?: ""
@@ -216,10 +216,18 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendOffline(event: PipelineEvent.FriendOffline) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
-        val displayName = _friends.value[userId]?.name ?: userId
+        val userId = resolveFriendUserId(content) ?: return
+        val payloadUser = tryDecodeUser(content["user"])
+        if (payloadUser != null) userRepository.cacheUser(payloadUser)
+        val displayName = payloadUser?.displayName ?: _friends.value[userId]?.name ?: userId
         // 5s delay before marking offline
-        updateFriend(userId) { it.copy(pendingOffline = true) }
+        updateFriend(userId) { ctx ->
+            ctx.copy(
+                pendingOffline = true,
+                ref = (payloadUser ?: ctx.ref),
+                name = payloadUser?.displayName ?: ctx.name,
+            )
+        }
         scope.launch {
             delay(OFFLINE_DELAY_MS)
             val previous = updateFriend(userId) { ctx ->
@@ -248,9 +256,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendActive(event: PipelineEvent.FriendActive) {
         val content = event.content?.jsonObject ?: return
-        // VRChat API uses "userid" (lowercase d) for friend-active events
-        val userId = content["userId"]?.jsonPrimitive?.content
-            ?: content["userid"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"])
         val platform = content["platform"]?.jsonPrimitive?.content
         updateFriend(userId) { ctx ->
@@ -273,7 +279,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"]) ?: return
 
         val previous = updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
@@ -304,7 +310,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         val location = content["location"]?.jsonPrimitive?.content
         val user = tryDecodeUser(content["user"])
         val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content
@@ -348,7 +354,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendAdd(event: PipelineEvent.FriendAdd) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"])
         updateFriend(userId) {
             FriendContext(
@@ -365,7 +371,7 @@ class FriendRepository @Inject constructor(
 
     private suspend fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
         val content = event.content?.jsonObject ?: return
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return
+        val userId = resolveFriendUserId(content) ?: return
         syncFriendRemoved(userId)
         friendsMutex.withLock {
             val current = _friends.value.toMutableMap()
@@ -411,6 +417,16 @@ class FriendRepository @Inject constructor(
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Some pipeline payloads ("friend-active" historically, occasionally others) use the
+     * lowercase key "userid" rather than "userId". Accept both so events aren't silently
+     * dropped if VRChat changes which variant a given event carries.
+     */
+    internal fun resolveFriendUserId(content: kotlinx.serialization.json.JsonObject): String? {
+        return content["userId"]?.jsonPrimitive?.content
+            ?: content["userid"]?.jsonPrimitive?.content
     }
 
     /** Extracts instanceId from a VRChat location string (format: "worldId:instanceId"). */
