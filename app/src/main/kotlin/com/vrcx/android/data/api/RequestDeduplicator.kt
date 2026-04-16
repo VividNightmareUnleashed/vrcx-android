@@ -86,6 +86,11 @@ class RequestDeduplicator {
         failureCache.clear()
     }
 
+    /** Removes a single cached failure — used when a previously failing URL succeeds. */
+    fun invalidateFailure(key: String) {
+        failureCache.remove(key)
+    }
+
     companion object {
         const val FAILURE_CACHE_DURATION_MS = 15 * 60 * 1000L // 15 minutes
     }
