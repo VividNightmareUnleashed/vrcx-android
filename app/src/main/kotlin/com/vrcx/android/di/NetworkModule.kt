@@ -2,6 +2,7 @@ package com.vrcx.android.di
 
 import android.content.Context
 import com.vrcx.android.data.api.AuthApi
+import com.vrcx.android.data.api.AuthEventBus
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.AvatarApi
@@ -72,12 +73,13 @@ object NetworkModule {
     fun provideOkHttpClient(
         cookieJar: CookieJarImpl,
         authInterceptor: AuthInterceptor,
+        authEventBus: AuthEventBus,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(UserAgentInterceptor())
             .addInterceptor(authInterceptor)
-            .addInterceptor(ErrorInterceptor())
+            .addInterceptor(ErrorInterceptor(authEventBus))
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })

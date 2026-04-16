@@ -1,6 +1,8 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.AuthApi
+import com.vrcx.android.data.api.AuthEvent
+import com.vrcx.android.data.api.AuthEventBus
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.RequestDeduplicator
@@ -8,9 +10,13 @@ import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.websocket.PipelineEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -35,6 +41,7 @@ class AuthRepository @Inject constructor(
     private val json: Json,
     private val dedup: RequestDeduplicator,
     private val favoriteRepository: FavoriteRepository,
+    authEventBus: AuthEventBus? = null,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -44,6 +51,27 @@ class AuthRepository @Inject constructor(
 
     private var _authToken: String? = null
     val authToken: String? get() = _authToken
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    init {
+        // Collect unauthorized signals from ErrorInterceptor so a 401 on any
+        // request immediately transitions the app back to NotLoggedIn without
+        // waiting for the user to trigger an auth-aware code path.
+        authEventBus?.let { bus ->
+            scope.launch {
+                bus.events.collect { event ->
+                    when (event) {
+                        AuthEvent.Unauthorized -> if (_authState.value is AuthState.LoggedIn) {
+                            _currentUser = null
+                            _authToken = null
+                            _authState.value = AuthState.NotLoggedIn
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     suspend fun login(username: String, password: String) {
         try {
