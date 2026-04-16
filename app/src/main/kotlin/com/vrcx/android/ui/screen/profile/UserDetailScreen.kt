@@ -375,6 +375,12 @@ private fun InfoTab(
                 FilledTonalButton(onClick = { viewModel.sendFriendRequest() }) {
                     Icon(Icons.Default.PersonAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Add Friend")
                 }
+                // VRChat does not expose outbound friend-request status on the user payload,
+                // so we always offer Cancel as a sibling action — it 404s harmlessly if there's
+                // no pending request. Users who tapped Add Friend by mistake can undo it here.
+                OutlinedButton(onClick = { viewModel.cancelFriendRequest() }) {
+                    Text("Cancel Pending Request")
+                }
             }
             FilledTonalButton(onClick = { viewModel.sendInvite() }) {
                 Icon(Icons.Default.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Invite")

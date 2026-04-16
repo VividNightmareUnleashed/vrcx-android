@@ -173,6 +173,9 @@ fun NotificationsScreen(
                                                 FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
                                                     Text("Accept")
                                                 }
+                                                OutlinedButton(onClick = { viewModel.declineFriendRequest(notification) }) {
+                                                    Text("Decline")
+                                                }
                                             }
                                             notification.type == "invite" -> {
                                                 FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
@@ -188,8 +191,12 @@ fun NotificationsScreen(
                                                 }
                                             }
                                         }
-                                        OutlinedButton(onClick = { viewModel.hide(notification) }) {
-                                            Text("Dismiss")
+                                        // friendRequest already exposes Accept + Decline above; the generic
+                                        // Dismiss would be a confusing third option for the same type.
+                                        if (notification.type != "friendRequest") {
+                                            OutlinedButton(onClick = { viewModel.hide(notification) }) {
+                                                Text("Dismiss")
+                                            }
                                         }
                                     }
                                 }

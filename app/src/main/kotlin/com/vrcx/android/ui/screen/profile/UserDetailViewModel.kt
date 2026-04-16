@@ -348,6 +348,16 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
+    fun cancelFriendRequest() {
+        viewModelScope.launch {
+            try {
+                friendApi.cancelFriendRequest(userId)
+                _message.value = "Friend request cancelled"
+                loadUser()
+            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
+        }
+    }
+
     fun unfriend() {
         viewModelScope.launch {
             try {
