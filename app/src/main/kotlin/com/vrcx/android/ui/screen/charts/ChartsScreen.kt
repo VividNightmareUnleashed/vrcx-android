@@ -3,9 +3,11 @@ package com.vrcx.android.ui.screen.charts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,9 +26,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,15 +35,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
-import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
-import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
-import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
-import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
-import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
-import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
-import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
-import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
 import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.VrcxCard
@@ -66,15 +57,6 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
         topWorlds.isNotEmpty() ||
         hourlyActivity.any { it.second > 0 } ||
         weekdayActivity.any { it.second > 0 }
-
-    val modelProducer = remember { CartesianChartModelProducer() }
-    LaunchedEffect(dailyActivity) {
-        if (dailyActivity.isNotEmpty()) {
-            modelProducer.runTransaction {
-                columnSeries { series(dailyActivity.map { it.second.toFloat() }) }
-            }
-        }
-    }
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Charts", onBack = onBack)
@@ -132,25 +114,7 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
 
                     if (dailyActivity.isNotEmpty()) {
                         SectionHeader("Daily Instance Activity")
-                        VrcxCard {
-                            Column(Modifier.padding(16.dp)) {
-                                Text(
-                                    "${dailyActivity.size} day${if (dailyActivity.size == 1) "" else "s"} \u00B7 most recent ${dailyActivity.last().first}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                CartesianChartHost(
-                                    chart = rememberCartesianChart(
-                                        rememberColumnCartesianLayer(),
-                                        startAxis = VerticalAxis.rememberStart(),
-                                        bottomAxis = HorizontalAxis.rememberBottom(),
-                                    ),
-                                    modelProducer = modelProducer,
-                                    modifier = Modifier.fillMaxWidth().height(200.dp),
-                                )
-                            }
-                        }
+                        DailyActivityChart(dailyActivity)
                     }
 
                     if (topWorlds.isNotEmpty()) {
@@ -177,13 +141,22 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
+                                            Spacer(Modifier.height(2.dp))
                                             Box(
                                                 Modifier
-                                                    .fillMaxWidth(fraction = count.toFloat() / maxVisits)
-                                                    .height(4.dp)
-                                                    .clip(RoundedCornerShape(2.dp))
-                                                    .background(MaterialTheme.colorScheme.primary),
-                                            )
+                                                    .fillMaxWidth()
+                                                    .height(6.dp)
+                                                    .clip(RoundedCornerShape(3.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            ) {
+                                                Box(
+                                                    Modifier
+                                                        .fillMaxWidth(fraction = count.toFloat() / maxVisits)
+                                                        .height(6.dp)
+                                                        .clip(RoundedCornerShape(3.dp))
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                )
+                                            }
                                         }
                                         Spacer(Modifier.width(8.dp))
                                         Text("$count", style = MaterialTheme.typography.labelSmall)
@@ -232,6 +205,112 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Vertical bar chart for daily instance activity.
+ *
+ * Rolls our own renderer instead of using Vico because:
+ *   - Vico renders a single data point as a giant rounded stadium that fills
+ *     the chart area, which looks broken on days/ranges with little history.
+ *   - We only need one chart type on this screen, so pulling in a chart
+ *     library is overkill and keeps the UI language consistent with the
+ *     horizontal [BarChartCard] used below.
+ *
+ * Bars use `primary` for days with activity; a thin `surfaceVariant` line
+ * placeholder keeps empty days visible on the timeline so spacing reads
+ * correctly. Width adapts to the bar count via [Modifier.weight].
+ */
+@Composable
+private fun DailyActivityChart(data: List<Pair<String, Int>>) {
+    VrcxCard {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "${data.size} day${if (data.size == 1) "" else "s"} \u00B7 most recent ${data.last().first}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            val maxCount = data.maxOf { it.second }.coerceAtLeast(1)
+            val primary = MaterialTheme.colorScheme.primary
+            val track = MaterialTheme.colorScheme.surfaceVariant
+            // Cap bar width so sparse ranges (1–few days of data) render as
+            // recognizable columns instead of a single primary-colored slab.
+            // When data is dense enough to fill the row, weight kicks in and
+            // bars distribute evenly.
+            val preferredBarWidth = 14.dp
+            val barSpacing = 2.dp
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+            ) {
+                val totalPreferred = preferredBarWidth * data.size +
+                    barSpacing * (data.size - 1).coerceAtLeast(0)
+                val useFixedBarWidth = totalPreferred <= maxWidth
+                Row(
+                    Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(barSpacing, Alignment.End),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    data.forEach { (_, count) ->
+                        val fraction = count.toFloat() / maxCount
+                        val barModifier = if (useFixedBarWidth) {
+                            Modifier.width(preferredBarWidth).fillMaxHeight()
+                        } else {
+                            Modifier.weight(1f).fillMaxHeight()
+                        }
+                        Column(
+                            barModifier,
+                            verticalArrangement = Arrangement.Bottom,
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (count > 0) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(fraction.coerceAtLeast(0.04f))
+                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                        .background(primary),
+                                )
+                            } else {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp)
+                                        .clip(RoundedCornerShape(1.dp))
+                                        .background(track),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    data.first().first,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "peak $maxCount",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (data.size > 1) {
+                    Text(
+                        data.last().first,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
