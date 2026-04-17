@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.AvatarApi
+import com.vrcx.android.data.api.FavoriteApi
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.NotificationApi
@@ -26,12 +27,15 @@ import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.repository.UserRepository
-import kotlinx.coroutines.Dispatchers
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.time.Instant
 import javax.inject.Inject
 
@@ -41,13 +45,22 @@ private object UserDetailTab {
     const val GROUPS = 2
     const val WORLDS = 3
     const val AVATARS = 4
+    const val FAVORITE_WORLDS = 5
 }
+
+data class FavoriteWorldSection(
+    val tag: String,
+    val displayName: String,
+    val visibility: String,
+    val worlds: List<World>,
+)
 
 @HiltViewModel
 class UserDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val userRepository: UserRepository,
     private val avatarApi: AvatarApi,
+    private val favoriteApi: FavoriteApi,
     private val friendApi: FriendApi,
     private val playerModerationApi: PlayerModerationApi,
     private val groupApi: GroupApi,
@@ -88,6 +101,12 @@ class UserDetailViewModel @Inject constructor(
 
     private val _userAvatars = MutableStateFlow<List<Avatar>>(emptyList())
     val userAvatars: StateFlow<List<Avatar>> = _userAvatars.asStateFlow()
+
+    private val _favoriteWorldSections = MutableStateFlow<List<FavoriteWorldSection>>(emptyList())
+    val favoriteWorldSections: StateFlow<List<FavoriteWorldSection>> = _favoriteWorldSections.asStateFlow()
+
+    private val _selectedFavoriteWorldTag = MutableStateFlow<String?>(null)
+    val selectedFavoriteWorldTag: StateFlow<String?> = _selectedFavoriteWorldTag.asStateFlow()
 
     private val _isFavorited = MutableStateFlow(false)
     val isFavorited: StateFlow<Boolean> = _isFavorited.asStateFlow()
@@ -164,7 +183,12 @@ class UserDetailViewModel @Inject constructor(
             UserDetailTab.GROUPS -> if (_userGroups.value.isEmpty()) loadGroups()
             UserDetailTab.WORLDS -> if (_userWorlds.value.isEmpty()) loadWorlds()
             UserDetailTab.AVATARS -> if (_userAvatars.value.isEmpty()) loadAvatars()
+            UserDetailTab.FAVORITE_WORLDS -> if (_favoriteWorldSections.value.isEmpty()) loadFavoriteWorlds()
         }
+    }
+
+    fun selectFavoriteWorldGroup(tag: String) {
+        _selectedFavoriteWorldTag.value = tag
     }
 
     private fun loadMutualFriends() {
@@ -217,6 +241,65 @@ class UserDetailViewModel @Inject constructor(
                 )
             } catch (e: Exception) {
                 _message.value = "Failed to load avatars: ${e.message}"
+            } finally {
+                _isTabLoading.value = false
+            }
+        }
+    }
+
+    private fun loadFavoriteWorlds() {
+        viewModelScope.launch {
+            _isTabLoading.value = true
+            try {
+                val groups = favoriteApi.getFavoriteGroups(
+                    type = "world",
+                    ownerId = userId,
+                ).filter { it.type == "world" }
+
+                if (groups.isEmpty()) {
+                    _favoriteWorldSections.value = emptyList()
+                    _selectedFavoriteWorldTag.value = null
+                    return@launch
+                }
+
+                val sectionResults = supervisorScope {
+                    groups.map { group ->
+                        async {
+                            runCatching {
+                                FavoriteWorldSection(
+                                    tag = group.name,
+                                    displayName = group.displayName.ifBlank { group.name },
+                                    visibility = group.visibility,
+                                    worlds = favoriteApi.getFavoriteWorlds(
+                                        tag = group.name,
+                                        ownerId = userId,
+                                    ),
+                                )
+                            }
+                        }
+                    }.awaitAll()
+                }
+                val sections = sectionResults
+                    .mapNotNull { it.getOrNull() }
+                    .filter { it.worlds.isNotEmpty() }
+                val hadFailures = sectionResults.any { it.isFailure }
+
+                _favoriteWorldSections.value = sections
+                _selectedFavoriteWorldTag.value =
+                    _selectedFavoriteWorldTag.value?.takeIf { selectedTag ->
+                        sections.any { it.tag == selectedTag }
+                    } ?: sections.firstOrNull()?.tag
+                if (hadFailures) {
+                    _message.value = if (sections.isEmpty()) {
+                        "Failed to load favorite worlds"
+                    } else {
+                        "Some favorite world groups could not be loaded"
+                    }
+                }
+            } catch (e: Exception) {
+                _favoriteWorldSections.value = emptyList()
+                _selectedFavoriteWorldTag.value = null
+                _message.value = "Failed to load favorite worlds: ${e.message}"
             } finally {
                 _isTabLoading.value = false
             }

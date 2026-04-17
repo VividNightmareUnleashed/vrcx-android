@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.vrcx.android.ui.theme.vrcxColors
 
 @Composable
 fun WorldListItem(
@@ -29,11 +31,16 @@ fun WorldListItem(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val vrcxColors = MaterialTheme.vrcxColors
+
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(vrcxColors.panelElevated)
+            .border(1.dp, vrcxColors.panelBorder, MaterialTheme.shapes.small)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -64,7 +71,7 @@ fun WorldListItem(
                 Text(
                     details,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = vrcxColors.panelMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

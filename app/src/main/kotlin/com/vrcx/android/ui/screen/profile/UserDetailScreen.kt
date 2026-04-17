@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +85,7 @@ private object UserDetailTabs {
     const val GROUPS = 2
     const val WORLDS = 3
     const val AVATARS = 4
+    const val FAVORITE_WORLDS = 5
 }
 
 /**
@@ -133,6 +135,8 @@ fun UserDetailScreen(
     val userGroups by viewModel.userGroups.collectAsStateWithLifecycle()
     val userWorlds by viewModel.userWorlds.collectAsStateWithLifecycle()
     val userAvatars by viewModel.userAvatars.collectAsStateWithLifecycle()
+    val favoriteWorldSections by viewModel.favoriteWorldSections.collectAsStateWithLifecycle()
+    val selectedFavoriteWorldTag by viewModel.selectedFavoriteWorldTag.collectAsStateWithLifecycle()
     val isFavorited by viewModel.isFavorited.collectAsStateWithLifecycle()
     val memo by viewModel.memo.collectAsStateWithLifecycle()
     val note by viewModel.note.collectAsStateWithLifecycle()
@@ -228,6 +232,11 @@ fun UserDetailScreen(
                         onClick = { viewModel.selectTab(UserDetailTabs.AVATARS) },
                         text = { Text("Avatars") },
                     )
+                    Tab(
+                        selected = selectedTab == UserDetailTabs.FAVORITE_WORLDS,
+                        onClick = { viewModel.selectTab(UserDetailTabs.FAVORITE_WORLDS) },
+                        text = { Text("Fav Worlds") },
+                    )
                 }
 
                 when (selectedTab) {
@@ -255,6 +264,15 @@ fun UserDetailScreen(
                     UserDetailTabs.AVATARS -> {
                         if (isTabLoading && userAvatars.isEmpty()) LoadingState()
                         else AvatarsTab(userAvatars, onAvatarClick)
+                    }
+                    UserDetailTabs.FAVORITE_WORLDS -> {
+                        if (isTabLoading && favoriteWorldSections.isEmpty()) LoadingState()
+                        else FavoriteWorldsTab(
+                            sections = favoriteWorldSections,
+                            selectedTag = selectedFavoriteWorldTag,
+                            onSelectGroup = viewModel::selectFavoriteWorldGroup,
+                            onWorldClick = onWorldClick,
+                        )
                     }
                 }
             }
@@ -503,11 +521,15 @@ private fun GroupsTab(groups: List<com.vrcx.android.data.api.model.Group>, onGro
 }
 
 @Composable
-private fun WorldsTab(worlds: List<com.vrcx.android.data.api.model.World>, onWorldClick: (String) -> Unit) {
+private fun WorldsTab(
+    worlds: List<com.vrcx.android.data.api.model.World>,
+    onWorldClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (worlds.isEmpty()) {
         EmptyState(message = "No worlds")
     } else {
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(modifier.fillMaxSize()) {
             items(worlds, key = { it.id }) { world ->
                 WorldListItem(
                     thumbnailUrl = world.thumbnailImageUrl,
@@ -518,6 +540,58 @@ private fun WorldsTab(worlds: List<com.vrcx.android.data.api.model.World>, onWor
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FavoriteWorldsTab(
+    sections: List<FavoriteWorldSection>,
+    selectedTag: String?,
+    onSelectGroup: (String) -> Unit,
+    onWorldClick: (String) -> Unit,
+) {
+    if (sections.isEmpty()) {
+        EmptyState(message = "No public favorite worlds")
+        return
+    }
+
+    val selectedSection = sections.firstOrNull { it.tag == selectedTag } ?: sections.first()
+
+    Column(Modifier.fillMaxSize()) {
+        SectionHeader(title = "Favorite World Groups")
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            sections.forEach { section ->
+                FilterChip(
+                    selected = section.tag == selectedSection.tag,
+                    onClick = { onSelectGroup(section.tag) },
+                    label = { Text("${section.displayName} (${section.worlds.size})") },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = buildString {
+                append(selectedSection.displayName)
+                if (selectedSection.visibility.isNotBlank()) {
+                    append(" • ")
+                    append(selectedSection.visibility.prettyVisibility())
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        WorldsTab(
+            worlds = selectedSection.worlds,
+            onWorldClick = onWorldClick,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -599,3 +673,7 @@ private fun mutualFriendState(user: VrcUser): FriendState =
         user.location == "private" || user.state.equals("active", ignoreCase = true) -> FriendState.ACTIVE
         else -> FriendState.ONLINE
     }
+
+private fun String.prettyVisibility(): String =
+    replace('-', ' ')
+        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }

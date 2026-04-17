@@ -28,10 +28,9 @@ class FavoriteRepositoryTest {
     @Test
     fun `loadFavoriteWorldsBulk paginates the bulk endpoint and exposes the result`() {
         runBlocking {
-            // BulkPaginator passes (offset, pageSize=100) and a null tag default.
-            whenever(favoriteApi.getFavoriteWorlds(eq(100), eq(0), anyOrNull()))
+            whenever(favoriteApi.getFavoriteWorlds(eq(100), eq(0), anyOrNull(), anyOrNull(), anyOrNull()))
                 .thenReturn(List(100) { stubWorld("wrld_$it") })
-            whenever(favoriteApi.getFavoriteWorlds(eq(100), eq(100), anyOrNull()))
+            whenever(favoriteApi.getFavoriteWorlds(eq(100), eq(100), anyOrNull(), anyOrNull(), anyOrNull()))
                 .thenReturn(listOf(stubWorld("wrld_100"), stubWorld("wrld_101")))
 
             repository.loadFavoriteWorldsBulk()
@@ -43,15 +42,15 @@ class FavoriteRepositoryTest {
     @Test
     fun `loadFavoriteWorldsBulk skips work on the second call unless forceRefresh is true`() {
         runBlocking {
-            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull())).thenReturn(emptyList())
+            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull()))
+                .thenReturn(emptyList())
 
             repository.loadFavoriteWorldsBulk()
             repository.loadFavoriteWorldsBulk()
-            // The first call ran one paginated request; the second short-circuits.
-            verify(favoriteApi, times(1)).getFavoriteWorlds(any(), any(), anyOrNull())
+            verify(favoriteApi, times(1)).getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
 
             repository.loadFavoriteWorldsBulk(forceRefresh = true)
-            verify(favoriteApi, times(2)).getFavoriteWorlds(any(), any(), anyOrNull())
+            verify(favoriteApi, times(2)).getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
         }
     }
 
@@ -71,7 +70,7 @@ class FavoriteRepositoryTest {
     @Test
     fun `dropFavoriteWorldFromCache removes the matching entry without re-fetching`() {
         runBlocking {
-            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull()))
+            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull()))
                 .thenReturn(listOf(stubWorld("wrld_a"), stubWorld("wrld_b")))
             repository.loadFavoriteWorldsBulk()
 
@@ -79,7 +78,7 @@ class FavoriteRepositoryTest {
 
             assertEquals(listOf("wrld_b"), repository.favoriteWorlds.value.map { it.id })
             // No extra fetch was triggered by the cache drop.
-            verify(favoriteApi, never()).getFavoriteWorlds(eq(100), eq(2), anyOrNull())
+            verify(favoriteApi, never()).getFavoriteWorlds(eq(100), eq(2), anyOrNull(), anyOrNull(), anyOrNull())
         }
     }
 

@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.login
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,11 +15,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,13 +31,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxInputField
+import com.vrcx.android.ui.theme.vrcxColors
 
 @Composable
 fun LoginScreen(
@@ -51,6 +54,7 @@ fun LoginScreen(
     val password by viewModel.password.collectAsStateWithLifecycle()
     val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(authState) {
         when (val state = authState) {
@@ -62,12 +66,13 @@ fun LoginScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.vrcxColors.shellGradientStart,
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
+                .padding(horizontal = 24.dp, vertical = 32.dp)
                 .imePadding()
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -76,15 +81,16 @@ fun LoginScreen(
             Text(
                 text = "VRCX",
                 style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "VRChat Companion",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "VRChat Companion for Android",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.vrcxColors.panelMuted,
+                textAlign = TextAlign.Center,
             )
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             when (authState) {
                 is AuthState.RequiresTwoFactor -> {
@@ -93,8 +99,10 @@ fun LoginScreen(
                         code = twoFactorCode,
                         onCodeChange = viewModel::updateTwoFactorCode,
                         onSubmit = viewModel::submitTwoFactor,
+                        onResendEmail = viewModel::resendEmailCode,
                     )
                 }
+
                 else -> {
                     val passwordVisible by viewModel.passwordVisible.collectAsStateWithLifecycle()
                     val rememberMe by viewModel.rememberMe.collectAsStateWithLifecycle()
@@ -109,6 +117,8 @@ fun LoginScreen(
                         onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
                         onToggleRememberMe = viewModel::toggleRememberMe,
                         onLogin = viewModel::login,
+                        onOpenRegister = { uriHandler.openUri("https://vrchat.com/register") },
+                        onOpenForgotPassword = { uriHandler.openUri("https://vrchat.com/home/password/forgot") },
                     )
                 }
             }
@@ -128,37 +138,43 @@ private fun LoginCard(
     onTogglePasswordVisibility: () -> Unit = {},
     onToggleRememberMe: () -> Unit = {},
     onLogin: () -> Unit,
+    onOpenRegister: () -> Unit,
+    onOpenForgotPassword: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    VrcxCard {
         Column(
             modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
                 text = "Sign In",
                 style = MaterialTheme.typography.titleLarge,
             )
-            OutlinedTextField(
+
+            Text(
+                text = "Username",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            VrcxInputField(
                 value = username,
                 onValueChange = onUsernameChange,
-                label = { Text("Username") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                placeholder = "Enter your VRChat username",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 enabled = !isLoading,
             )
-            OutlinedTextField(
+
+            Text(
+                text = "Password",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            VrcxInputField(
                 value = password,
                 onValueChange = onPasswordChange,
-                label = { Text("Password") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                placeholder = "Enter your password",
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = onTogglePasswordVisibility) {
-                        Text(if (passwordVisible) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
+                trailingContent = {
+                    TextButton(onClick = onTogglePasswordVisibility) {
+                        Text(if (passwordVisible) "Hide" else "Show")
                     }
                 },
                 keyboardOptions = KeyboardOptions(
@@ -168,16 +184,21 @@ private fun LoginCard(
                 keyboardActions = KeyboardActions(onDone = { onLogin() }),
                 enabled = !isLoading,
             )
-            androidx.compose.foundation.layout.Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
                     checked = rememberMe,
                     onCheckedChange = { onToggleRememberMe() },
                 )
-                Text("Remember me", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = "Remember me",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
+
             Button(
                 onClick = onLogin,
                 modifier = Modifier.fillMaxWidth(),
@@ -193,6 +214,17 @@ private fun LoginCard(
                     Text("Sign In")
                 }
             }
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextButton(onClick = onOpenRegister, enabled = !isLoading) {
+                    Text("Register")
+                }
+                TextButton(onClick = onOpenForgotPassword, enabled = !isLoading) {
+                    Text("Forgot Password")
+                }
+            }
         }
     }
 }
@@ -203,6 +235,7 @@ private fun TwoFactorCard(
     code: String,
     onCodeChange: (String) -> Unit,
     onSubmit: (useEmail: Boolean) -> Unit,
+    onResendEmail: () -> Unit,
 ) {
     var useEmail by remember { mutableStateOf(false) }
     val hasEmail = methods.contains("emailOtp")
@@ -215,9 +248,7 @@ private fun TwoFactorCard(
     }
     val isValidCode = isTwoFactorCodeValid(code, useEmail)
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    VrcxCard {
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -228,14 +259,13 @@ private fun TwoFactorCard(
             )
             Text(
                 text = helperText,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.vrcxColors.panelMuted,
             )
-            OutlinedTextField(
+            VrcxInputField(
                 value = code,
                 onValueChange = { onCodeChange(normalizeTwoFactorCode(it)) },
-                label = { Text(label) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                placeholder = label,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done,
@@ -258,6 +288,14 @@ private fun TwoFactorCard(
                         if (useEmail) "Use authenticator app instead"
                         else "Use email code instead",
                     )
+                }
+            }
+            if (hasEmail && useEmail) {
+                TextButton(
+                    onClick = onResendEmail,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Resend Email Code")
                 }
             }
         }

@@ -70,17 +70,19 @@ class SettingsViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
-    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "system")
+    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "dark")
     val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
+    val autoLogin: StateFlow<Boolean> = preferences.autoLogin.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
     fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
     fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
     fun setMaxFeedSize(size: Int) { viewModelScope.launch { preferences.setMaxFeedSize(size) } }
+    fun setAutoLogin(enabled: Boolean) { viewModelScope.launch { preferences.setAutoLogin(enabled) } }
 
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -154,6 +156,7 @@ fun SettingsScreen(
     val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsStateWithLifecycle()
     val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
     val maxFeedSize by viewModel.maxFeedSize.collectAsStateWithLifecycle()
+    val autoLogin by viewModel.autoLogin.collectAsStateWithLifecycle()
     val cacheSizeText by viewModel.cacheSizeText.collectAsStateWithLifecycle()
     val cacheAllProgress by viewModel.cacheAllProgress.collectAsStateWithLifecycle()
     var showCacheAllDialog by remember { mutableStateOf(false) }
@@ -237,6 +240,12 @@ fun SettingsScreen(
                     "Keep WebSocket connected in the background when Android allows it (newer Android versions may require reopening the app after reboot)",
                     backgroundServiceEnabled,
                     viewModel::setBackgroundServiceEnabled,
+                )
+                SettingToggle(
+                    "Auto Login",
+                    "Automatically retry login with remembered credentials when no saved session is available",
+                    autoLogin,
+                    viewModel::setAutoLogin,
                 )
                 Text("Feed History", style = MaterialTheme.typography.bodyLarge)
                 Text(

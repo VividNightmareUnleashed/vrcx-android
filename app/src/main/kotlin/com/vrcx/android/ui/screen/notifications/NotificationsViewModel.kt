@@ -94,16 +94,15 @@ class NotificationsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Hydrate from Room first so the inbox isn't empty for the user
-            // while the API call is in flight after a cold start.
-            try { notificationRepository.hydrateFromCache() } catch (_: Exception) {}
+            // Hydrate from Room first so the inbox isn't empty after a cold start.
             try {
-                notificationRepository.loadNotifications()
+                notificationRepository.restoreNotifications()
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load notifications"
+                _error.value = e.message ?: "Failed to restore notifications"
             } finally {
                 _isLoading.value = false
             }
+            refresh()
         }
     }
 

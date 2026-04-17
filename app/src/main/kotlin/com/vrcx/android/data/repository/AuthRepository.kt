@@ -100,6 +100,13 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun resendEmailOtp(username: String, password: String) {
+        favoriteRepository.clearRuntimeState()
+        clearAuthSession()
+        _authState.value = AuthState.NotLoggedIn
+        login(username, password)
+    }
+
     suspend fun verifyTotp(code: String) {
         try {
             _authState.value = AuthState.LoggingIn
@@ -204,11 +211,7 @@ class AuthRepository @Inject constructor(
             // Swallow: local state still gets cleared below.
         }
         favoriteRepository.clearRuntimeState()
-        _currentUser = null
-        _authToken = null
-        authInterceptor.clearBasicAuth()
-        cookieJar.clearAll()
-        dedup.clearCache()
+        clearAuthSession()
         _authState.value = AuthState.NotLoggedIn
     }
 
@@ -245,5 +248,13 @@ class AuthRepository @Inject constructor(
         _authState.value = AuthState.LoggedIn(user)
         preferences.setLastUserId(user.id)
         fetchAuthToken()
+    }
+
+    private fun clearAuthSession() {
+        _currentUser = null
+        _authToken = null
+        authInterceptor.clearBasicAuth()
+        cookieJar.clearAll()
+        dedup.clearCache()
     }
 }

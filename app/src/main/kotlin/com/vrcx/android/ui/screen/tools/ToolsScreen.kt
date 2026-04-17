@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,6 +30,7 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.navigation.VrcxRoutes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -93,12 +93,11 @@ fun ToolsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedTextField(
+                    Text("ID", style = MaterialTheme.typography.labelLarge)
+                    VrcxInputField(
                         value = targetId,
                         onValueChange = viewModel::updateTargetId,
-                        label = { Text("ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = "usr_..., wrld_..., avtr_..., grp_...",
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(

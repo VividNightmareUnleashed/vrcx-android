@@ -19,12 +19,17 @@ local.properties
 CLAUDE.md
 AGENTS.md
 AI_GUIDE.md
+__pycache__/
+*.pyc
 
 # Secrets and signing material
 *.jks
 *.keystore
 keystore.properties
 .env
+.env.*
+!.env.example
+.npm-cache/
 
 # Local reference checkout
 reference/
