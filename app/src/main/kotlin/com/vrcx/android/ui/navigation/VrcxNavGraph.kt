@@ -376,25 +376,13 @@ fun VrcxNavGraph(
  * Build the deep-link list for a detail destination whose VRChat web URL
  * lives under `/home/{section}/` and whose primary argument is `{$argName}`.
  *
- * The manifest uses `pathPrefix="/home/{section}/"`, so Android happily hands
- * the app URLs like `/home/group/{id}/posts/{postId}/comments`. Navigation's
- * `{arg}` placeholder only matches a single path segment, so without extra
- * patterns those deeper URLs launch the app but fall off the NavGraph and
- * drop the user on the default screen.
- *
- * Enumerate patterns up to three trailing segments, which covers every
- * VRChat web URL shape we know of (`/info`, `/events/{eventId}`,
- * `/posts/{postId}/comments`, etc.) while keeping the matcher deterministic.
- * The tail captures (`p1`, `p2`, `p3`) go into undeclared args that
- * Navigation simply ignores.
+ * `MainActivity.normalizeDeepLinkIntent` collapses deeper paths (e.g.
+ * `/home/group/{id}/posts/{postId}/comments/{commentId}`) down to the
+ * canonical single-segment form before NavController sees them, so we only
+ * need to match the canonical shape here. The NavGraph stays simple
+ * regardless of how deep VRChat's web URLs get.
  */
-private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDeepLink> {
-    val base = "https://vrchat.com/home/$section/{$argName}"
-    return listOf(
-        navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
-        navDeepLink { uriPattern = base },
-        navDeepLink { uriPattern = "$base/{p1}" },
-        navDeepLink { uriPattern = "$base/{p1}/{p2}" },
-        navDeepLink { uriPattern = "$base/{p1}/{p2}/{p3}" },
-    )
-}
+private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDeepLink> = listOf(
+    navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
+    navDeepLink { uriPattern = "https://vrchat.com/home/$section/{$argName}" },
+)
