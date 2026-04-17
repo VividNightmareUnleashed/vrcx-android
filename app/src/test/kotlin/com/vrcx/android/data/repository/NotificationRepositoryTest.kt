@@ -16,6 +16,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -26,10 +28,12 @@ class NotificationRepositoryTest {
     private val notificationApi = mock<NotificationApi>()
     private val authRepository = mock<AuthRepository>()
     private val worldApi = mock<WorldApi>()
+    private val notificationDao = mock<com.vrcx.android.data.db.dao.NotificationDao>()
     private val repository = NotificationRepository(
         notificationApi = notificationApi,
         authRepository = authRepository,
         worldApi = worldApi,
+        notificationDao = notificationDao,
         json = Json { ignoreUnknownKeys = true },
     )
 
@@ -151,7 +155,11 @@ class NotificationRepositoryTest {
     @Test
     fun `loadNotifications propagates fetch failures`() {
         runBlocking {
-            whenever(notificationApi.getNotifications()).thenThrow(IllegalStateException("boom"))
+            whenever(authRepository.currentUser).thenReturn(
+                CurrentUser(id = "usr_me", displayName = "Me"),
+            )
+            whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any()))
+                .thenThrow(IllegalStateException("boom"))
 
             assertThrows(IllegalStateException::class.java) {
                 runBlocking { repository.loadNotifications() }

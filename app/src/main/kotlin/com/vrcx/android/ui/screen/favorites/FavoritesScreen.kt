@@ -24,7 +24,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,14 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
-import com.vrcx.android.data.repository.AvatarRepository
+import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
-import com.vrcx.android.data.repository.WorldRepository
-import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
@@ -79,8 +80,6 @@ class FavoritesViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
     private val friendRepository: FriendRepository,
     private val userRepository: UserRepository,
-    private val worldRepository: WorldRepository,
-    private val avatarRepository: AvatarRepository,
 ) : ViewModel() {
     private val _resolvedFavorites = MutableStateFlow<List<ResolvedFavorite>>(emptyList())
     val resolvedFavorites: StateFlow<List<ResolvedFavorite>> = _resolvedFavorites.asStateFlow()
@@ -97,24 +96,68 @@ class FavoritesViewModel @Inject constructor(
                 _favoriteGroups.value = groups
             }
         }
+        // Start the favorites flow collector up front so it keeps running even
+        // if one of the bulk prefetches below throws. Otherwise a single
+        // network hiccup would leave the UI subscribed to nothing for the rest
+        // of this ViewModel's lifetime, including friend favorites that don't
+        // actually depend on the /worlds/favorites or /avatars/favorites
+        // bulk endpoints.
+        //
+        // _isLoading is owned exclusively by the preload coroutine below —
+        // collectAndResolve() intentionally does not touch it. Flipping it to
+        // false the first time combine() emits would fire the "no favorites"
+        // empty state during the initial StateFlow seed (all three lists
+        // empty) before any fetch has actually run, producing a flicker on
+        // every screen entry and a false-negative empty state on slow or
+        // flaky networks.
+        viewModelScope.launch { collectAndResolve() }
         viewModelScope.launch {
             try {
+                // Friend favorites still need per-id resolution because VRChat has no
+                // /users/favorites bulk endpoint, but worlds and avatars get a single
+                // paginated GET each via /worlds/favorites and /avatars/favorites.
                 favoriteRepository.loadFavorites()
                 favoriteRepository.loadFavoriteGroups()
-                favoriteRepository.favorites.collect { favorites ->
-                    resolveEntities(favorites)
-                }
-            } catch (e: Exception) {
-                _resolvedFavorites.value = emptyList()
+                favoriteRepository.loadFavoriteWorldsBulk()
+                favoriteRepository.loadFavoriteAvatarsBulk()
+            } catch (_: Exception) {
+                // Prefetch failure is non-fatal: the collector above stays
+                // subscribed, so any entries the repository already has
+                // cached (or loads later) still flow through to the UI.
             }
+            // Only clear the loading flag after the preload attempt finishes
+            // (success OR failure). The UI stays in its loading state until
+            // then so users don't see a false empty state while bulk fetches
+            // are still in flight.
             _isLoading.value = false
         }
     }
 
-    private suspend fun resolveEntities(favorites: List<Favorite>) {
-        _isLoading.value = true
-        val result = mutableListOf<ResolvedFavorite>()
+    private suspend fun collectAndResolve() {
+        kotlinx.coroutines.flow.combine(
+            favoriteRepository.favorites,
+            favoriteRepository.favoriteWorlds,
+            favoriteRepository.favoriteAvatars,
+        ) { favorites, worlds, avatars ->
+            Triple(favorites, worlds, avatars)
+        }.collect { (favorites, worlds, avatars) ->
+            resolveEntities(favorites, worlds, avatars)
+        }
+    }
+
+    private suspend fun resolveEntities(
+        favorites: List<Favorite>,
+        worlds: List<World>,
+        avatars: List<Avatar>,
+    ) {
+        // _isLoading is owned by the preload coroutine (see init); don't touch
+        // it here. Toggling it on every combine() emission would either flash
+        // the loading spinner on routine updates or race with the preload
+        // completion and clear the flag before fetches actually finish.
+        val worldsById = worlds.associateBy { it.id }
+        val avatarsById = avatars.associateBy { it.id }
         val friends = friendRepository.friends.value
+        val result = mutableListOf<ResolvedFavorite>()
         for (fav in favorites) {
             try {
                 when (fav.type) {
@@ -125,7 +168,7 @@ class FavoritesViewModel @Inject constructor(
                                 ResolvedFavorite(
                                     favorite = fav,
                                     name = cachedFriend.name,
-                                    thumbnailUrl = cachedFriend.ref?.currentAvatarThumbnailImageUrl ?: "",
+                                    thumbnailUrl = cachedFriend.ref?.displayAvatarUrl().orEmpty(),
                                     subtitle = cachedFriend.ref?.statusDescription ?: "",
                                     groupTags = fav.tags,
                                 )
@@ -136,7 +179,7 @@ class FavoritesViewModel @Inject constructor(
                                 ResolvedFavorite(
                                     favorite = fav,
                                     name = user.displayName,
-                                    thumbnailUrl = user.currentAvatarThumbnailImageUrl,
+                                    thumbnailUrl = user.displayAvatarUrl(),
                                     subtitle = user.statusDescription,
                                     groupTags = fav.tags,
                                 )
@@ -144,28 +187,36 @@ class FavoritesViewModel @Inject constructor(
                         }
                     }
                     "world" -> {
-                        val world = worldRepository.getWorld(fav.favoriteId)
-                        result.add(
-                            ResolvedFavorite(
-                                favorite = fav,
-                                name = world.name,
-                                thumbnailUrl = world.thumbnailImageUrl,
-                                subtitle = world.authorName,
-                                groupTags = fav.tags,
+                        val world = worldsById[fav.favoriteId]
+                        if (world != null) {
+                            result.add(
+                                ResolvedFavorite(
+                                    favorite = fav,
+                                    name = world.name,
+                                    thumbnailUrl = world.thumbnailImageUrl,
+                                    subtitle = "by ${world.authorName}",
+                                    groupTags = fav.tags,
+                                )
                             )
-                        )
+                        } else {
+                            result.add(ResolvedFavorite(favorite = fav, name = fav.favoriteId, groupTags = fav.tags))
+                        }
                     }
                     "avatar" -> {
-                        val avatar = avatarRepository.getAvatar(fav.favoriteId)
-                        result.add(
-                            ResolvedFavorite(
-                                favorite = fav,
-                                name = avatar.name,
-                                thumbnailUrl = avatar.thumbnailImageUrl,
-                                subtitle = avatar.authorName,
-                                groupTags = fav.tags,
+                        val avatar = avatarsById[fav.favoriteId]
+                        if (avatar != null) {
+                            result.add(
+                                ResolvedFavorite(
+                                    favorite = fav,
+                                    name = avatar.name,
+                                    thumbnailUrl = avatar.thumbnailImageUrl,
+                                    subtitle = "by ${avatar.authorName}",
+                                    groupTags = fav.tags,
+                                )
                             )
-                        )
+                        } else {
+                            result.add(ResolvedFavorite(favorite = fav, name = fav.favoriteId, groupTags = fav.tags))
+                        }
                     }
                     else -> result.add(ResolvedFavorite(favorite = fav, name = fav.favoriteId, groupTags = fav.tags))
                 }
@@ -174,13 +225,17 @@ class FavoritesViewModel @Inject constructor(
             }
         }
         _resolvedFavorites.value = result
-        _isLoading.value = false
     }
 
     fun unfavorite(favoriteId: String) {
         viewModelScope.launch {
             try {
+                val removed = favoriteRepository.favorites.value.firstOrNull { it.id == favoriteId }
                 favoriteRepository.deleteFavorite(favoriteId)
+                when (removed?.type) {
+                    "world" -> favoriteRepository.dropFavoriteWorldFromCache(removed.favoriteId)
+                    "avatar" -> favoriteRepository.dropFavoriteAvatarFromCache(removed.favoriteId)
+                }
                 _resolvedFavorites.value = _resolvedFavorites.value.filter { it.favorite.id != favoriteId }
             } catch (_: Exception) {}
         }
@@ -196,9 +251,9 @@ fun FavoritesScreen(
     onWorldClick: (String) -> Unit = {},
     onAvatarClick: (String) -> Unit = {},
 ) {
-    val resolvedFavorites by viewModel.resolvedFavorites.collectAsState()
-    val favoriteGroups by viewModel.favoriteGroups.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val resolvedFavorites by viewModel.resolvedFavorites.collectAsStateWithLifecycle()
+    val favoriteGroups by viewModel.favoriteGroups.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Friends", "Worlds", "Avatars")
     var pendingUnfavorite by remember { mutableStateOf<String?>(null) }
@@ -224,11 +279,14 @@ fun FavoritesScreen(
             )
         }
 
-        if (isLoading) {
-            com.vrcx.android.ui.components.LoadingState()
-        } else if (filtered.isEmpty()) {
-            EmptyState(message = "No ${tabs[selectedTab].lowercase()} favorites", icon = Icons.Outlined.FavoriteBorder)
-        } else {
+        UiStateContainer(
+            isLoading = isLoading,
+            error = null,
+            isEmpty = filtered.isEmpty(),
+            emptyMessage = "No ${tabs[selectedTab].lowercase()} favorites",
+            emptyIcon = Icons.Outlined.FavoriteBorder,
+            modifier = Modifier.fillMaxSize(),
+        ) {
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item(key = "summary-$type") {
                     Text(

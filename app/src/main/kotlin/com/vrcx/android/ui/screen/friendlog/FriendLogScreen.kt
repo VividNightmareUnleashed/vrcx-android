@@ -23,7 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,9 +92,9 @@ class FriendLogViewModel @Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val history by viewModel.history.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedTypes by viewModel.selectedTypes.collectAsState()
+    val history by viewModel.history.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedTypes by viewModel.selectedTypes.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friend Log", onBack = onBack)

@@ -24,7 +24,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +37,7 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
@@ -316,9 +317,9 @@ fun FriendsLocationsScreen(
     onWorldClick: (String) -> Unit = {},
     onBack: () -> Unit = {},
 ) {
-    val groups by viewModel.locationGroups.collectAsState()
-    val selectedSegment by viewModel.selectedSegment.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
+    val groups by viewModel.locationGroups.collectAsStateWithLifecycle()
+    val selectedSegment by viewModel.selectedSegment.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friends Locations", onBack = onBack)
@@ -421,7 +422,7 @@ fun FriendsLocationsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     UserAvatar(
-                                        imageUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                                        imageUrl = friend.ref?.displayAvatarUrl(),
                                         status = friend.ref?.status,
                                         state = friend.state,
                                         size = 32.dp,

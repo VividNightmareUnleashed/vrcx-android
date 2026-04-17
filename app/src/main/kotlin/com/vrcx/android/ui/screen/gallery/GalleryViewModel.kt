@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.gallery
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.GalleryImage
@@ -167,6 +168,7 @@ class GalleryViewModel @Inject constructor(
             _isUploading.value = true
             try {
                 val mimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val fileName = resolveFileName(uri, mimeType)
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 } ?: return@launch
@@ -181,7 +183,7 @@ class GalleryViewModel @Inject constructor(
                     GalleryTab.STICKERS -> "sticker"
                     else -> return@launch
                 }
-                galleryRepository.uploadFile(tag, bytes, mimeType)
+                galleryRepository.uploadFile(tag, bytes, mimeType, fileName)
                 reloadTab(tab)
                 _snackbarMessage.value = "Image uploaded"
             } catch (e: Exception) {
@@ -197,6 +199,7 @@ class GalleryViewModel @Inject constructor(
             _isUploading.value = true
             try {
                 val mimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val fileName = resolveFileName(uri, mimeType)
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 } ?: return@launch
@@ -204,7 +207,7 @@ class GalleryViewModel @Inject constructor(
                     _snackbarMessage.value = "Image too large (max 10 MB)"
                     return@launch
                 }
-                galleryRepository.uploadPrint(bytes, note?.ifBlank { null }, mimeType)
+                galleryRepository.uploadPrint(bytes, note?.ifBlank { null }, mimeType, fileName)
                 val uid = currentUserId() ?: return@launch
                 galleryRepository.loadPrints(uid)
                 _snackbarMessage.value = "Print uploaded"
@@ -214,6 +217,29 @@ class GalleryViewModel @Inject constructor(
                 _isUploading.value = false
             }
         }
+    }
+
+    /**
+     * Pulls the original file name from the URI's OpenableColumns when the
+     * source provides it (gallery picker does), so the multipart upload reports
+     * the user's actual file name. Falls back to a MIME-appropriate default
+     * name so the extension matches the bytes regardless.
+     */
+    private fun resolveFileName(uri: Uri, mimeType: String): String {
+        val pickerName = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx) else null
+                } else null
+            }
+        }.getOrNull()
+        return pickerName?.takeIf { it.isNotBlank() }
+            ?: GalleryRepository.defaultFileNameFor(mimeType)
     }
 
     fun setProfilePic(fileId: String) {

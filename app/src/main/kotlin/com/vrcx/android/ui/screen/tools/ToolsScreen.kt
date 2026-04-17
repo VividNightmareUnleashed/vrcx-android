@@ -16,8 +16,10 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -29,6 +31,7 @@ import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxInputField
+import com.vrcx.android.ui.navigation.VrcxRoutes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,8 +63,12 @@ fun ToolsScreen(
     onOpenRoute: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val targetId by viewModel.targetId.collectAsState()
-    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsState()
+    val targetId by viewModel.targetId.collectAsStateWithLifecycle()
+    val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
+
+    val resolvedRoute by remember {
+        derivedStateOf { resolveOpenByIdRoute(targetId) }
+    }
 
     val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -94,18 +101,8 @@ fun ToolsScreen(
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(
-                            onClick = {
-                                when {
-                                    targetId.startsWith("usr_") -> onOpenRoute("user_detail/$targetId")
-                                    targetId.startsWith("wrld_") -> onOpenRoute("world_detail/$targetId")
-                                    targetId.startsWith("avtr_") -> onOpenRoute("avatar_detail/$targetId")
-                                    targetId.startsWith("grp_") -> onOpenRoute("group_detail/$targetId")
-                                }
-                            },
-                            enabled = targetId.startsWith("usr_") ||
-                                targetId.startsWith("wrld_") ||
-                                targetId.startsWith("avtr_") ||
-                                targetId.startsWith("grp_"),
+                            onClick = { resolvedRoute?.let(onOpenRoute) },
+                            enabled = resolvedRoute != null,
                         ) {
                             Text("Open")
                         }
@@ -117,11 +114,11 @@ fun ToolsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Quick Links", style = MaterialTheme.typography.titleMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = { onOpenRoute("dashboard") }) { Text("Dashboard") }
-                        FilledTonalButton(onClick = { onOpenRoute("game_log") }) { Text("Game Log") }
-                        FilledTonalButton(onClick = { onOpenRoute("player_list") }) { Text("Player List") }
-                        FilledTonalButton(onClick = { onOpenRoute("gallery") }) { Text("Gallery") }
-                        FilledTonalButton(onClick = { onOpenRoute("settings") }) { Text("Settings") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.DASHBOARD) }) { Text("Dashboard") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GAME_LOG) }) { Text("Activity History") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.PLAYER_LIST) }) { Text("Friends Roster") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GALLERY) }) { Text("Gallery") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.SETTINGS) }) { Text("Settings") }
                     }
                 }
             }
@@ -151,5 +148,16 @@ fun ToolsScreen(
                 }
             }
         }
+    }
+}
+
+internal fun resolveOpenByIdRoute(rawId: String): String? {
+    val id = rawId.trim()
+    return when {
+        id.startsWith("usr_") -> VrcxRoutes.userDetail(id)
+        id.startsWith("wrld_") -> VrcxRoutes.worldDetail(id)
+        id.startsWith("avtr_") -> VrcxRoutes.avatarDetail(id)
+        id.startsWith("grp_") -> VrcxRoutes.groupDetail(id)
+        else -> null
     }
 }

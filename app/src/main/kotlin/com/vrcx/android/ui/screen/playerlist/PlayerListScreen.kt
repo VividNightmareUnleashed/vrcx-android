@@ -15,7 +15,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -24,6 +24,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.AuthRepository
@@ -43,6 +44,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
+/** Sort order for the Friends Roster view. */
+enum class RosterSort(val label: String) {
+    PRESENCE("Presence"),
+    ALPHABETICAL("A → Z"),
+    VIP_FIRST("VIP first"),
+}
+
 enum class PlayerListScope(val label: String) {
     SAME_INSTANCE("Instance"),
     SAME_WORLD("World"),
@@ -59,6 +67,9 @@ class PlayerListViewModel @Inject constructor(
 
     private val _selectedStates = MutableStateFlow(setOf(FriendState.ONLINE, FriendState.ACTIVE, FriendState.OFFLINE))
     val selectedStates: StateFlow<Set<FriendState>> = _selectedStates.asStateFlow()
+
+    private val _sort = MutableStateFlow(RosterSort.PRESENCE)
+    val sort: StateFlow<RosterSort> = _sort.asStateFlow()
 
     private val _scope = MutableStateFlow(PlayerListScope.SAME_INSTANCE)
     val scope: StateFlow<PlayerListScope> = _scope.asStateFlow()
@@ -87,7 +98,7 @@ class PlayerListViewModel @Inject constructor(
                     "Current-world matching needs an active world location."
                 }
             }
-            PlayerListScope.FRIENDS -> "Fallback roster view sorted by presence and VIP state."
+            PlayerListScope.FRIENDS -> "Your full friend roster — pick a sort order."
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
@@ -96,6 +107,7 @@ class PlayerListViewModel @Inject constructor(
         _searchQuery,
         _selectedStates,
         _scope,
+        _sort,
         currentLocation,
         currentWorldId,
     ) { values ->
@@ -104,8 +116,9 @@ class PlayerListViewModel @Inject constructor(
         val query = values[1] as String
         val selectedStates = values[2] as Set<FriendState>
         val scope = values[3] as PlayerListScope
-        val activeLocation = values[4] as String
-        val activeWorldId = values[5] as String
+        val sort = values[4] as RosterSort
+        val activeLocation = values[5] as String
+        val activeWorldId = values[6] as String
 
         friends.values
             .filter { friend ->
@@ -131,20 +144,24 @@ class PlayerListViewModel @Inject constructor(
             }
             .sortedWith(
                 when (scope) {
-                    PlayerListScope.SAME_INSTANCE -> {
+                    PlayerListScope.SAME_INSTANCE ->
                         compareBy<FriendContext>({ !it.isVIP }, { it.name.lowercase() })
-                    }
-                    PlayerListScope.SAME_WORLD -> {
+                    PlayerListScope.SAME_WORLD ->
                         compareBy<FriendContext>(
                             { resolvePresenceLocation(it.ref) != activeLocation },
                             { !it.isVIP },
                             { it.name.lowercase() },
                         )
-                    }
-                    PlayerListScope.FRIENDS -> {
-                        compareBy<FriendContext>(
+                    PlayerListScope.FRIENDS -> when (sort) {
+                        RosterSort.PRESENCE -> compareBy<FriendContext>(
                             { stateRank(it.state) },
                             { !it.isVIP },
+                            { it.name.lowercase() },
+                        )
+                        RosterSort.ALPHABETICAL -> compareBy<FriendContext> { it.name.lowercase() }
+                        RosterSort.VIP_FIRST -> compareBy<FriendContext>(
+                            { !it.isVIP },
+                            { stateRank(it.state) },
                             { it.name.lowercase() },
                         )
                     }
@@ -162,8 +179,18 @@ class PlayerListViewModel @Inject constructor(
         _selectedStates.value = current
     }
 
+    fun selectSort(sort: RosterSort) {
+        _sort.value = sort
+    }
+
     fun selectScope(scope: PlayerListScope) {
         _scope.value = scope
+    }
+
+    private fun stateRank(state: FriendState): Int = when (state) {
+        FriendState.ONLINE -> 0
+        FriendState.ACTIVE -> 1
+        FriendState.OFFLINE -> 2
     }
 }
 
@@ -174,15 +201,19 @@ fun PlayerListScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val players by viewModel.players.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedStates by viewModel.selectedStates.collectAsState()
-    val scope by viewModel.scope.collectAsState()
-    val helperText by viewModel.helperText.collectAsState()
-    val currentLocation by viewModel.currentLocation.collectAsState()
+    val players by viewModel.players.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedStates by viewModel.selectedStates.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val scope by viewModel.scope.collectAsStateWithLifecycle()
+    val helperText by viewModel.helperText.collectAsStateWithLifecycle()
+    val currentLocation by viewModel.currentLocation.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = "Player List", onBack = onBack)
+        // Renamed from "Player List" — Android cannot inspect the user's
+        // current VRChat instance, so this screen lists their friend roster
+        // with custom sorts and presence filters.
+        VrcxDetailTopBar(title = "Friends Roster", onBack = onBack)
 
         Text(
             text = helperText,
@@ -205,7 +236,7 @@ fun PlayerListScreen(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -234,6 +265,22 @@ fun PlayerListScreen(
                     )
                 }
             }
+
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RosterSort.entries.forEach { option ->
+                    FilterChip(
+                        selected = sort == option,
+                        onClick = { viewModel.selectSort(option) },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
         }
 
         if (players.isEmpty()) {
@@ -253,7 +300,7 @@ fun PlayerListScreen(
             LazyColumn(Modifier.fillMaxSize()) {
                 items(players, key = { it.id }) { player ->
                     UserListItem(
-                        avatarUrl = player.ref?.currentAvatarThumbnailImageUrl,
+                        avatarUrl = player.ref?.displayAvatarUrl(),
                         displayName = player.name,
                         subtitle = describePlayerScope(player, scope, currentLocation),
                         tags = player.ref?.tags.orEmpty(),

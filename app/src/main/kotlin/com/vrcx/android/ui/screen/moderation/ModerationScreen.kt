@@ -12,8 +12,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
@@ -21,9 +24,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,13 +46,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-private val MODERATION_TYPES = listOf("block", "mute", "hideAvatar", "showAvatar", "interactOff", "interactOn")
-private val TAB_LABELS = listOf("Blocked", "Muted", "Hide Avatar", "Show Avatar", "Interact Off", "Interact On")
+internal val MODERATION_TYPES = listOf("block", "mute", "hideAvatar", "showAvatar", "interactOff", "interactOn")
+internal val TAB_LABELS = listOf("Blocked", "Muted", "Hide Avatar", "Show Avatar", "Interact Off", "Interact On")
+
+internal fun moderationTabIndex(selectedType: String): Int =
+    MODERATION_TYPES.indexOf(selectedType).takeIf { it >= 0 } ?: 0
 
 @HiltViewModel
 class ModerationViewModel @Inject constructor(
@@ -72,24 +78,38 @@ class ModerationViewModel @Inject constructor(
             .filter { query.isBlank() || it.targetDisplayName.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val countsByType: StateFlow<Map<String, Int>> = moderationRepository.moderations
+        .map { mods -> mods.groupingBy { it.type }.eachCount() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     init { viewModelScope.launch { moderationRepository.loadModerations() } }
 
     fun selectType(type: String) { _selectedType.value = type }
     fun updateSearch(query: String) { _searchQuery.value = query }
     fun remove(id: String) { viewModelScope.launch { moderationRepository.deleteModeration(id) } }
+    fun refresh() { viewModelScope.launch { moderationRepository.loadModerations() } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val moderations by viewModel.filteredModerations.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedType by viewModel.selectedType.collectAsState()
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val moderations by viewModel.filteredModerations.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedType by viewModel.selectedType.collectAsStateWithLifecycle()
+    val countsByType by viewModel.countsByType.collectAsStateWithLifecycle()
+    val selectedTabIndex = moderationTabIndex(selectedType)
     var pendingRemoveId by remember { mutableStateOf<Pair<String, String>?>(null) } // id to displayName
 
     Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = "Moderation", onBack = onBack)
+        VrcxDetailTopBar(
+            title = "Moderation",
+            onBack = onBack,
+            actions = {
+                IconButton(onClick = { viewModel.refresh() }) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                }
+            },
+        )
 
         val isWallpaperActive = LocalWallpaperActive.current
         ScrollableTabRow(
@@ -98,10 +118,13 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
                 .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
         ) {
             MODERATION_TYPES.forEachIndexed { index, type ->
+                val count = countsByType[type] ?: 0
                 Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { selectedTabIndex = index; viewModel.selectType(type) },
-                    text = { Text(TAB_LABELS[index]) },
+                    selected = selectedType == type,
+                    onClick = { viewModel.selectType(type) },
+                    text = {
+                        Text(if (count > 0) "${TAB_LABELS[index]} ($count)" else TAB_LABELS[index])
+                    },
                 )
             }
         }

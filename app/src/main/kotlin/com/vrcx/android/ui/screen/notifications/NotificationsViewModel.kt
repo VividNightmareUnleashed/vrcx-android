@@ -94,6 +94,7 @@ class NotificationsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            // Hydrate from Room first so the inbox isn't empty after a cold start.
             try {
                 notificationRepository.restoreNotifications()
             } catch (e: Exception) {
@@ -178,6 +179,22 @@ class NotificationsViewModel @Inject constructor(
                 notificationRepository.hideUnified(notification.id, notification.isV2)
             }.onFailure { error ->
                 _error.value = error.message ?: "Failed to dismiss notification"
+            }
+        }
+    }
+
+    /**
+     * Explicit decline path for friend requests. Calls the same hide endpoint
+     * (which is how VRChat declines V1 friendRequest notifications server-side)
+     * but surfaces the intent so users aren't guessing whether "Dismiss" leaves
+     * the request open.
+     */
+    fun declineFriendRequest(notification: UnifiedNotification) {
+        viewModelScope.launch {
+            runCatching {
+                notificationRepository.hideUnified(notification.id, notification.isV2)
+            }.onFailure { error ->
+                _error.value = error.message ?: "Failed to decline friend request"
             }
         }
     }

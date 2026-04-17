@@ -29,7 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -48,15 +48,15 @@ import com.vrcx.android.ui.components.VrcxTopBar
 fun NotificationsScreen(
     viewModel: NotificationsViewModel = hiltViewModel(),
 ) {
-    val notifications by viewModel.notifications.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
-    val selectedTypes by viewModel.selectedTypes.collectAsState()
-    val categoryCounts by viewModel.categoryCounts.collectAsState()
-    val visibleTypes by viewModel.visibleTypes.collectAsState()
-    val inviteResponseDialog by viewModel.inviteResponseDialog.collectAsState()
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val selectedTypes by viewModel.selectedTypes.collectAsStateWithLifecycle()
+    val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
+    val visibleTypes by viewModel.visibleTypes.collectAsStateWithLifecycle()
+    val inviteResponseDialog by viewModel.inviteResponseDialog.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Notifications")
@@ -173,6 +173,9 @@ fun NotificationsScreen(
                                                 FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
                                                     Text("Accept")
                                                 }
+                                                OutlinedButton(onClick = { viewModel.declineFriendRequest(notification) }) {
+                                                    Text("Decline")
+                                                }
                                             }
                                             notification.type == "invite" -> {
                                                 FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
@@ -188,8 +191,12 @@ fun NotificationsScreen(
                                                 }
                                             }
                                         }
-                                        OutlinedButton(onClick = { viewModel.hide(notification) }) {
-                                            Text("Dismiss")
+                                        // friendRequest already exposes Accept + Decline above; the generic
+                                        // Dismiss would be a confusing third option for the same type.
+                                        if (notification.type != "friendRequest") {
+                                            OutlinedButton(onClick = { viewModel.hide(notification) }) {
+                                                Text("Dismiss")
+                                            }
                                         }
                                     }
                                 }

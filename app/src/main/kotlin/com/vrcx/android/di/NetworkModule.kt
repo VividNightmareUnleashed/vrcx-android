@@ -2,10 +2,12 @@ package com.vrcx.android.di
 
 import android.content.Context
 import com.vrcx.android.data.api.AuthApi
+import com.vrcx.android.data.api.AuthEventBus
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.AvatarModerationApi
+import com.vrcx.android.data.api.DedupInterceptor
 import com.vrcx.android.data.api.ErrorInterceptor
 import com.vrcx.android.data.api.FavoriteApi
 import com.vrcx.android.data.api.FriendApi
@@ -72,12 +74,17 @@ object NetworkModule {
     fun provideOkHttpClient(
         cookieJar: CookieJarImpl,
         authInterceptor: AuthInterceptor,
+        authEventBus: AuthEventBus,
+        deduplicator: RequestDeduplicator,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(UserAgentInterceptor())
             .addInterceptor(authInterceptor)
-            .addInterceptor(ErrorInterceptor())
+            .addInterceptor(ErrorInterceptor(authEventBus))
+            // Cache 404/403 GETs globally so every repository benefits from the
+            // failure cache without having to opt in via dedupGet.
+            .addInterceptor(DedupInterceptor(deduplicator))
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })

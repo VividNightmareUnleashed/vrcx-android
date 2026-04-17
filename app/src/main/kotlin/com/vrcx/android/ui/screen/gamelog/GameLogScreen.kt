@@ -21,7 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +48,7 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +59,17 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/**
+ * Date-range filter for the Activity History screen. Lets users zoom in on
+ * recent windows without scrolling through the full feed.
+ */
+enum class ActivityRange(val label: String, val days: Int?) {
+    TODAY("Today", 1),
+    LAST_7("Last 7 days", 7),
+    LAST_30("Last 30 days", 30),
+    ALL("All time", null),
+}
 
 enum class GameLogScope(val label: String) {
     CURRENT_INSTANCE("Instance"),
@@ -79,6 +91,7 @@ data class GameLogEntryUi(
     val worldId: String = "",
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class GameLogViewModel @Inject constructor(
     authRepository: AuthRepository,
@@ -94,6 +107,9 @@ class GameLogViewModel @Inject constructor(
 
     private val _filters = MutableStateFlow(setOf("gps", "status", "bio", "avatar", "online", "offline"))
     val filters: StateFlow<Set<String>> = _filters.asStateFlow()
+
+    private val _range = MutableStateFlow(ActivityRange.LAST_7)
+    val range: StateFlow<ActivityRange> = _range.asStateFlow()
 
     private val _scope = MutableStateFlow(GameLogScope.ALL_ACTIVITY)
     val scope: StateFlow<GameLogScope> = _scope.asStateFlow()
@@ -152,6 +168,7 @@ class GameLogViewModel @Inject constructor(
         _scope,
         currentLocation,
         currentWorldId,
+        _range,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val all = values[0] as List<GameLogEntryUi>
@@ -162,10 +179,18 @@ class GameLogViewModel @Inject constructor(
         val scope = values[5] as GameLogScope
         val currentLocation = values[6] as String
         val currentWorldId = values[7] as String
+        val range = values[8] as ActivityRange
+
+        val cutoffMs = range.days?.let {
+            System.currentTimeMillis() - it.toLong() * 24L * 60L * 60L * 1000L
+        }
 
         all
             .filter { it.type in filters }
             .filter { entry -> matchesScope(entry, scope, currentLocation, currentWorldId) }
+            .filter { entry ->
+                cutoffMs == null || parseInstantMs(entry.createdAt) >= cutoffMs
+            }
             .filter { entry ->
                 query.isBlank() ||
                     entry.displayName.contains(query, ignoreCase = true) ||
@@ -184,6 +209,10 @@ class GameLogViewModel @Inject constructor(
     val canLoadMore = combine(filteredEntries, _limit, maxFeedSize) { filtered, limit, maxSize ->
         filtered.size > limit && limit < maxSize * GAME_LOG_SOURCE_COUNT
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private fun parseInstantMs(iso: String): Long {
+        return runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrDefault(Long.MAX_VALUE)
+    }
 
     init {
         viewModelScope.launch {
@@ -214,6 +243,10 @@ class GameLogViewModel @Inject constructor(
     fun loadMore() {
         _limit.value = (_limit.value + 100).coerceAtMost(maxFeedSize.value * GAME_LOG_SOURCE_COUNT)
     }
+
+    fun selectRange(range: ActivityRange) {
+        _range.value = range
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -223,16 +256,19 @@ fun GameLogScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val entries by viewModel.entries.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val vipOnly by viewModel.vipOnly.collectAsState()
-    val filters by viewModel.filters.collectAsState()
-    val scope by viewModel.scope.collectAsState()
-    val canLoadMore by viewModel.canLoadMore.collectAsState()
-    val currentLocation by viewModel.currentLocation.collectAsState()
+    val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
+    val filters by viewModel.filters.collectAsStateWithLifecycle()
+    val range by viewModel.range.collectAsStateWithLifecycle()
+    val scope by viewModel.scope.collectAsStateWithLifecycle()
+    val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
+    val currentLocation by viewModel.currentLocation.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = "Game Log", onBack = onBack)
+        // Renamed from "Game Log" — Android can't tail VRChat's client log so
+        // this screen actually holds friend-presence and feed activity history.
+        VrcxDetailTopBar(title = "Activity History", onBack = onBack)
 
         Text(
             text = "Friend activity history built from location, presence, and profile updates.",
@@ -251,7 +287,22 @@ fun GameLogScreen(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ActivityRange.entries.forEach { option ->
+                FilterChip(
+                    selected = range == option,
+                    onClick = { viewModel.selectRange(option) },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -309,13 +360,13 @@ fun GameLogScreen(
         if (entries.isEmpty()) {
             EmptyState(
                 message = when (scope) {
-                    GameLogScope.CURRENT_INSTANCE -> "No instance-matched activity yet"
-                    GameLogScope.CURRENT_WORLD -> "No current-world activity yet"
-                    GameLogScope.ALL_ACTIVITY -> "No activity history yet"
+                    GameLogScope.CURRENT_INSTANCE -> "No instance-matched activity in this window"
+                    GameLogScope.CURRENT_WORLD -> "No current-world activity in this window"
+                    GameLogScope.ALL_ACTIVITY -> "No activity in this window"
                 },
                 icon = Icons.Outlined.History,
                 subtitle = when (scope) {
-                    GameLogScope.ALL_ACTIVITY -> "Location, presence, bio, and avatar changes will build a longer history here."
+                    GameLogScope.ALL_ACTIVITY -> "Friend movement, status changes, and avatar updates from the selected range appear here."
                     else -> "Scoped views only show entries that include location context."
                 },
             )

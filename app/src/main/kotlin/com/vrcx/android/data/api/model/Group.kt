@@ -50,6 +50,14 @@ data class GroupMember(
     val managedBy: String? = null,
     val managerNotes: String = "",
     val membershipStatus: String = "",
+    /**
+     * Effective permissions granted to this member by all of their assigned
+     * roles, flattened into one list by the server. The wildcard `"*"` appears
+     * for owners/admins with unrestricted access. Only populated on the
+     * `myMember` field of `GET groups/{id}` responses; `GET groups/{id}/members`
+     * returns this empty.
+     */
+    val permissions: List<String> = emptyList(),
     val roleIds: List<String> = emptyList(),
     val userId: String = "",
     val visibility: String = "",

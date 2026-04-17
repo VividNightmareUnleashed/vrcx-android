@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 
 interface AuthApi {
     @GET("config")
@@ -27,4 +28,11 @@ interface AuthApi {
 
     @GET("auth")
     suspend fun getAuthToken(): AuthToken
+
+    /**
+     * Invalidates the current session server-side. Local cookies become unusable.
+     * See https://vrchat.community/reference/logout — `PUT /api/1/logout`.
+     */
+    @PUT("logout")
+    suspend fun logout()
 }

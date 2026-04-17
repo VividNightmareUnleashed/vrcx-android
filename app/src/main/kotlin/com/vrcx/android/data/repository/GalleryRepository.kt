@@ -102,20 +102,44 @@ class GalleryRepository @Inject constructor(
         galleryApi.deletePrint(printId)
     }
 
-    suspend fun uploadFile(tag: String, imageBytes: ByteArray, mimeType: String = "image/png"): GalleryImage {
+    suspend fun uploadFile(
+        tag: String,
+        imageBytes: ByteArray,
+        mimeType: String = "image/png",
+        fileName: String = defaultFileNameFor(mimeType),
+    ): GalleryImage {
         val tagBody = tag.toRequestBody("text/plain".toMediaType())
         val imagePart = MultipartBody.Part.createFormData(
-            "file", "blob", imageBytes.toRequestBody(mimeType.toMediaType())
+            "file", fileName, imageBytes.toRequestBody(mimeType.toMediaType())
         )
         return galleryApi.uploadFile(tagBody, imagePart)
     }
 
-    suspend fun uploadPrint(imageBytes: ByteArray, note: String?, mimeType: String = "image/png"): VrcPrint {
+    suspend fun uploadPrint(
+        imageBytes: ByteArray,
+        note: String?,
+        mimeType: String = "image/png",
+        fileName: String = defaultFileNameFor(mimeType),
+    ): VrcPrint {
         val imagePart = MultipartBody.Part.createFormData(
-            "image", "image.png", imageBytes.toRequestBody(mimeType.toMediaType())
+            "image", fileName, imageBytes.toRequestBody(mimeType.toMediaType())
         )
         val noteBody = note?.toRequestBody("text/plain".toMediaType())
         return galleryApi.uploadPrint(imagePart, noteBody)
+    }
+
+    internal companion object {
+        /**
+         * Picks a filename whose extension matches the actual MIME type so the
+         * VRChat file API doesn't reject a JPEG that the device returned but
+         * the multipart called "image.png".
+         */
+        internal fun defaultFileNameFor(mimeType: String): String = when (mimeType.lowercase()) {
+            "image/jpeg", "image/jpg" -> "image.jpg"
+            "image/webp" -> "image.webp"
+            "image/gif" -> "image.gif"
+            else -> "image.png"
+        }
     }
 
     suspend fun setProfilePicOverride(userId: String, fileId: String) {

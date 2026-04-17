@@ -136,54 +136,63 @@ class VRChatWebSocket(
     }
 
     private fun parseAndEmit(text: String) {
-        try {
-            val msg = json.parseToJsonElement(text).jsonObject
-            val type = msg["type"]?.jsonPrimitive?.content ?: return
-            // content can be a JSON string (needs double-parse) or a JSON object directly
-            val rawContent = msg["content"]
-            val content: JsonElement? = when {
-                rawContent == null -> null
-                rawContent is kotlinx.serialization.json.JsonPrimitive && rawContent.isString -> {
-                    try { json.parseToJsonElement(rawContent.content) } catch (_: Exception) { null }
-                }
-                else -> rawContent // already a JsonObject/JsonArray
-            }
-
-            val event = when (type) {
-                "friend-online" -> PipelineEvent.FriendOnline(content)
-                "friend-offline" -> PipelineEvent.FriendOffline(content)
-                "friend-active" -> PipelineEvent.FriendActive(content)
-                "friend-update" -> PipelineEvent.FriendUpdate(content)
-                "friend-location" -> PipelineEvent.FriendLocation(content)
-                "friend-add" -> PipelineEvent.FriendAdd(content)
-                "friend-delete" -> PipelineEvent.FriendDelete(content)
-                "user-update" -> PipelineEvent.UserUpdate(content)
-                "user-location" -> PipelineEvent.UserLocation(content)
-                "notification" -> PipelineEvent.Notification(content)
-                "notification-v2" -> PipelineEvent.NotificationV2(content)
-                "notification-v2-delete" -> PipelineEvent.NotificationV2Delete(content)
-                "notification-v2-update" -> PipelineEvent.NotificationV2Update(content)
-                "see-notification" -> PipelineEvent.SeeNotification(content)
-                "hide-notification" -> PipelineEvent.HideNotification(content)
-                "response-notification" -> PipelineEvent.ResponseNotification(content)
-                "group-joined" -> PipelineEvent.GroupJoined(content)
-                "group-left" -> PipelineEvent.GroupLeft(content)
-                "group-role-updated" -> PipelineEvent.GroupRoleUpdated(content)
-                "group-member-updated" -> PipelineEvent.GroupMemberUpdated(content)
-                "instance-queue-joined" -> PipelineEvent.InstanceQueueJoined(content)
-                "instance-queue-position" -> PipelineEvent.InstanceQueuePosition(content)
-                "instance-queue-ready" -> PipelineEvent.InstanceQueueReady(content)
-                "instance-queue-left" -> PipelineEvent.InstanceQueueLeft(content)
-                "content-refresh" -> PipelineEvent.ContentRefresh(content)
-                "instance-closed" -> PipelineEvent.InstanceClosed(content)
-                else -> PipelineEvent.Unknown(type, content)
-            }
-
-            scope.launch {
-                _events.emit(event)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse WebSocket message: ${e.message}")
+        val event = parsePipelineMessage(json, text) ?: return
+        scope.launch {
+            _events.emit(event)
         }
+    }
+}
+
+/**
+ * Parses a single VRChat pipeline frame into a typed PipelineEvent. Returns
+ * null for malformed messages or messages without a `type` field. The frame's
+ * `content` field can be either a JSON string (needs double-decoding) or an
+ * inline JSON object — both are supported. Extracted as a top-level pure
+ * function so the parser is testable without an OkHttp session.
+ */
+internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? {
+    val msg = try {
+        json.parseToJsonElement(text).jsonObject
+    } catch (_: Exception) {
+        return null
+    }
+    val type = msg["type"]?.jsonPrimitive?.content ?: return null
+    val rawContent = msg["content"]
+    val content: JsonElement? = when {
+        rawContent == null -> null
+        rawContent is kotlinx.serialization.json.JsonPrimitive && rawContent.isString -> {
+            try { json.parseToJsonElement(rawContent.content) } catch (_: Exception) { null }
+        }
+        else -> rawContent
+    }
+
+    return when (type) {
+        "friend-online" -> PipelineEvent.FriendOnline(content)
+        "friend-offline" -> PipelineEvent.FriendOffline(content)
+        "friend-active" -> PipelineEvent.FriendActive(content)
+        "friend-update" -> PipelineEvent.FriendUpdate(content)
+        "friend-location" -> PipelineEvent.FriendLocation(content)
+        "friend-add" -> PipelineEvent.FriendAdd(content)
+        "friend-delete" -> PipelineEvent.FriendDelete(content)
+        "user-update" -> PipelineEvent.UserUpdate(content)
+        "user-location" -> PipelineEvent.UserLocation(content)
+        "notification" -> PipelineEvent.Notification(content)
+        "notification-v2" -> PipelineEvent.NotificationV2(content)
+        "notification-v2-delete" -> PipelineEvent.NotificationV2Delete(content)
+        "notification-v2-update" -> PipelineEvent.NotificationV2Update(content)
+        "see-notification" -> PipelineEvent.SeeNotification(content)
+        "hide-notification" -> PipelineEvent.HideNotification(content)
+        "response-notification" -> PipelineEvent.ResponseNotification(content)
+        "group-joined" -> PipelineEvent.GroupJoined(content)
+        "group-left" -> PipelineEvent.GroupLeft(content)
+        "group-role-updated" -> PipelineEvent.GroupRoleUpdated(content)
+        "group-member-updated" -> PipelineEvent.GroupMemberUpdated(content)
+        "instance-queue-joined" -> PipelineEvent.InstanceQueueJoined(content)
+        "instance-queue-position" -> PipelineEvent.InstanceQueuePosition(content)
+        "instance-queue-ready" -> PipelineEvent.InstanceQueueReady(content)
+        "instance-queue-left" -> PipelineEvent.InstanceQueueLeft(content)
+        "content-refresh" -> PipelineEvent.ContentRefresh(content)
+        "instance-closed" -> PipelineEvent.InstanceClosed(content)
+        else -> PipelineEvent.Unknown(type, content)
     }
 }

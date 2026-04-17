@@ -26,7 +26,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxSearchBar
@@ -49,15 +50,15 @@ fun FriendsScreen(
     viewModel: FriendsViewModel = hiltViewModel(),
     onFriendClick: (String) -> Unit = {},
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val friends by viewModel.filteredFriends.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val onlineCount by viewModel.onlineCount.collectAsState()
-    val activeCount by viewModel.activeCount.collectAsState()
-    val offlineCount by viewModel.offlineCount.collectAsState()
-    val sortOption by viewModel.sortOption.collectAsState()
-    val vipOnly by viewModel.vipOnly.collectAsState()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val friends by viewModel.filteredFriends.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
+    val activeCount by viewModel.activeCount.collectAsStateWithLifecycle()
+    val offlineCount by viewModel.offlineCount.collectAsStateWithLifecycle()
+    val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
+    val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Friends")
@@ -141,7 +142,7 @@ fun FriendsScreen(
                         var showMenu by remember { mutableStateOf(false) }
                         Box {
                             UserListItem(
-                                avatarUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                                avatarUrl = friend.ref?.displayAvatarUrl(),
                                 displayName = friend.name,
                                 subtitle = friend.ref?.statusDescription ?: "",
                                 tags = friend.ref?.tags ?: emptyList(),

@@ -33,6 +33,12 @@ class ChartsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     private val _gpsHistory = MutableStateFlow<List<FeedGpsEntity>>(emptyList())
 
     private val _dailyActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
@@ -53,27 +59,34 @@ class ChartsViewModel @Inject constructor(
     private val _summary = MutableStateFlow(ChartsSummary())
     val summary: StateFlow<ChartsSummary> = _summary.asStateFlow()
 
-    init {
-        loadData()
-    }
+    init { loadData(initial = true) }
 
-    private fun loadData() {
-        viewModelScope.launch {
-            try {
-                val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-                _gpsHistory.value = feedDao.getGpsFeed(userId, limit = 500).first()
-                recomputeCharts()
-            } catch (_: Exception) {
-                _gpsHistory.value = emptyList()
-                recomputeCharts()
-            }
-            _isLoading.value = false
-        }
-    }
+    fun refresh() = loadData(initial = false)
 
     fun setRangeDays(days: Int?) {
         _selectedRangeDays.value = days
         recomputeCharts()
+    }
+
+    private fun loadData(initial: Boolean) {
+        viewModelScope.launch {
+            if (initial) _isLoading.value = true else _isRefreshing.value = true
+            _error.value = null
+            try {
+                val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
+                if (userId == null) {
+                    _error.value = "Not signed in"
+                    return@launch
+                }
+                _gpsHistory.value = feedDao.getGpsFeed(userId, limit = GPS_FEED_LIMIT).first()
+                recomputeCharts()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load chart data"
+            } finally {
+                _isLoading.value = false
+                _isRefreshing.value = false
+            }
+        }
     }
 
     private fun recomputeCharts() {
@@ -94,7 +107,8 @@ class ChartsViewModel @Inject constructor(
         _dailyActivity.value = filteredHistory
             .groupBy { it.createdAt.take(10) }
             .map { (date, entries) -> date to entries.size }
-            .sortedByDescending { it.first }
+            .sortedBy { it.first }
+            .takeLast(30)
 
         _topWorlds.value = filteredHistory
             .groupBy { it.worldName.ifBlank { it.location.substringBefore(":") } }
@@ -128,5 +142,9 @@ class ChartsViewModel @Inject constructor(
     private fun weekdayLabel(dayValue: Int): String {
         return java.time.DayOfWeek.of(dayValue)
             .getDisplayName(TextStyle.SHORT, Locale.getDefault())
+    }
+
+    companion object {
+        private const val GPS_FEED_LIMIT = 500
     }
 }

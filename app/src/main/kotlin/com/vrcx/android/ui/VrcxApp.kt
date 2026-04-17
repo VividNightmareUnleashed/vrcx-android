@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -76,16 +76,16 @@ class VrcxAppViewModel @Inject constructor(
 
 @Composable
 fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
-    val themeMode by appViewModel.themeMode.collectAsState()
-    val dynamicColors by appViewModel.dynamicColors.collectAsState()
+    val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
+    val dynamicColors by appViewModel.dynamicColors.collectAsStateWithLifecycle()
     val darkTheme = when (themeMode) {
         "dark" -> true
         "light" -> false
         else -> isSystemInDarkTheme()
     }
 
-    val wallpaperUri by appViewModel.wallpaperUri.collectAsState()
-    val wallpaperScaleMode by appViewModel.wallpaperScaleMode.collectAsState()
+    val wallpaperUri by appViewModel.wallpaperUri.collectAsStateWithLifecycle()
+    val wallpaperScaleMode by appViewModel.wallpaperScaleMode.collectAsStateWithLifecycle()
     val isWallpaperActive = wallpaperUri != null
     val wallpaperContentScale = when (wallpaperScaleMode) {
         "fit" -> ContentScale.Fit
@@ -96,7 +96,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
 
     VrcxTheme(darkTheme = darkTheme, dynamicColor = dynamicColors) {
         CompositionLocalProvider(LocalWallpaperActive provides isWallpaperActive) {
-        val disclaimerAccepted by appViewModel.disclaimerAccepted.collectAsState()
+        val disclaimerAccepted by appViewModel.disclaimerAccepted.collectAsStateWithLifecycle()
         val context = LocalContext.current
         val vrcxColors = MaterialTheme.vrcxColors
 
@@ -114,9 +114,9 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
 
         val navController = androidx.navigation.compose.rememberNavController()
         val loginViewModel: LoginViewModel = hiltViewModel()
-        val authState by loginViewModel.authState.collectAsState()
+        val authState by loginViewModel.authState.collectAsStateWithLifecycle()
         val isLoggedIn = authState is AuthState.LoggedIn
-        val backgroundServiceEnabled by appViewModel.backgroundServiceEnabled.collectAsState()
+        val backgroundServiceEnabled by appViewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
             loginViewModel.tryResumeSession()

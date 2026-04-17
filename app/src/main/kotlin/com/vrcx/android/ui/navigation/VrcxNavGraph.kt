@@ -7,15 +7,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavDeepLink
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.vrcx.android.ui.screen.avatars.AvatarDetailScreen
 import com.vrcx.android.ui.screen.avatars.MyAvatarsScreen
 import com.vrcx.android.ui.screen.charts.ChartsScreen
@@ -311,6 +312,8 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.USER_DETAIL,
+            arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+            deepLinks = vrchatDetailDeepLinks(section = "user", argName = "userId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -326,6 +329,8 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.GROUP_DETAIL,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
+            deepLinks = vrchatDetailDeepLinks(section = "group", argName = "groupId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -338,6 +343,8 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.AVATAR_DETAIL,
+            arguments = listOf(navArgument("avatarId") { type = NavType.StringType }),
+            deepLinks = vrchatDetailDeepLinks(section = "avatar", argName = "avatarId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -350,6 +357,8 @@ fun VrcxNavGraph(
         }
         composable(
             VrcxRoutes.WORLD_DETAIL,
+            arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
+            deepLinks = vrchatDetailDeepLinks(section = "world", argName = "worldId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -363,7 +372,17 @@ fun VrcxNavGraph(
     }
 }
 
-@Composable
-private fun PlaceholderScreen(name: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(name) }
-}
+/**
+ * Build the deep-link list for a detail destination whose VRChat web URL
+ * lives under `/home/{section}/` and whose primary argument is `{$argName}`.
+ *
+ * `MainActivity.normalizeDeepLinkIntent` collapses deeper paths (e.g.
+ * `/home/group/{id}/posts/{postId}/comments/{commentId}`) down to the
+ * canonical single-segment form before NavController sees them, so we only
+ * need to match the canonical shape here. The NavGraph stays simple
+ * regardless of how deep VRChat's web URLs get.
+ */
+private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDeepLink> = listOf(
+    navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
+    navDeepLink { uriPattern = "https://vrchat.com/home/$section/{$argName}" },
+)

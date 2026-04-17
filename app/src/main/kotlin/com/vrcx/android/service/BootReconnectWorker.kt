@@ -33,11 +33,11 @@ class BootReconnectWorker(
 
     override suspend fun doWork(): Result {
         val notificationHelper = NotificationHelper(applicationContext)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            notificationHelper.notifyBootReconnectRequired()
-            return Result.success()
-        }
 
+        // Run eligibility gates BEFORE the Android-15 notification branch.
+        // Without this, logged-out users or users who disabled the background
+        // service would still get a "tap to reconnect" notification on every
+        // reboot on Android 15+.
         val preferences = VrcxPreferences(applicationContext)
         if (!preferences.backgroundServiceEnabled.first()) {
             notificationHelper.cancelBootReconnectRequired()
@@ -52,6 +52,15 @@ class BootReconnectWorker(
         )
         if (!secureSecretsStore.hasAuthCookie() && !hasLegacyAuth) {
             notificationHelper.cancelBootReconnectRequired()
+            return Result.success()
+        }
+
+        // Android 15+ restricts foreground-service starts from BOOT_COMPLETED,
+        // so we surface a "tap to reconnect" notification instead of trying to
+        // start the websocket service here. This only fires once the gates
+        // above confirm the user is logged in AND hasn't opted out.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            notificationHelper.notifyBootReconnectRequired()
             return Result.success()
         }
 

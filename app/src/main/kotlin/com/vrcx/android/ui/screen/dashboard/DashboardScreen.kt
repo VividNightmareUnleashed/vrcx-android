@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,13 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.FriendContext
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
-import com.vrcx.android.data.model.FriendContext
-import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -38,9 +39,11 @@ import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -52,6 +55,7 @@ data class DashboardActivityBreakdown(
     val avatarChanges: Int = 0,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     authRepository: AuthRepository,
@@ -62,20 +66,23 @@ class DashboardViewModel @Inject constructor(
 
     val currentUser = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val friendCounts: StateFlow<Triple<Int, Int, Int>> = friendRepository.friends
         .map { friends ->
             Triple(
-                friends.values.count { it.state.name == "ONLINE" },
-                friends.values.count { it.state.name == "ACTIVE" },
-                friends.values.count { it.state.name == "OFFLINE" },
+                friends.values.count { it.state == FriendState.ONLINE },
+                friends.values.count { it.state == FriendState.ACTIVE },
+                friends.values.count { it.state == FriendState.OFFLINE },
             )
         }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(0, 0, 0))
 
     val recentEntries: StateFlow<List<FeedEntry>> = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
+        .distinctUntilChanged()
         .flatMapLatest { userId ->
             if (userId.isBlank()) return@flatMapLatest flowOf(emptyList())
             combine(
@@ -148,19 +155,18 @@ fun DashboardScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val currentUser by viewModel.currentUser.collectAsState()
-    val friendCounts by viewModel.friendCounts.collectAsState()
-    val recentEntries by viewModel.recentEntries.collectAsState()
-    val favoriteOnlineFriends by viewModel.favoriteOnlineFriends.collectAsState()
-    val activityBreakdown by viewModel.activityBreakdown.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val friendCounts by viewModel.friendCounts.collectAsStateWithLifecycle()
+    val recentEntries by viewModel.recentEntries.collectAsStateWithLifecycle()
+    val favoriteOnlineFriends by viewModel.favoriteOnlineFriends.collectAsStateWithLifecycle()
+    val activityBreakdown by viewModel.activityBreakdown.collectAsStateWithLifecycle()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            VrcxDetailTopBar(title = "Dashboard", onBack = onBack)
-        }
+    Column(modifier = Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = "Dashboard", onBack = onBack)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         item {
             VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                 Row(
@@ -170,7 +176,7 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     UserAvatar(
-                        imageUrl = currentUser?.currentAvatarThumbnailImageUrl,
+                        imageUrl = currentUser?.displayAvatarUrl(),
                         size = 56.dp,
                         showStatusDot = false,
                     )
@@ -242,7 +248,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         UserAvatar(
-                            imageUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                            imageUrl = friend.ref?.displayAvatarUrl(),
                             status = friend.ref?.status,
                             state = friend.state,
                             size = 40.dp,
@@ -324,6 +330,7 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
         }
     }
 }

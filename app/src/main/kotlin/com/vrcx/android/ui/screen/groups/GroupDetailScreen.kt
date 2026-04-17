@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.groups
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,26 +17,38 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +61,7 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
 import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.GroupRepository
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
@@ -58,6 +72,8 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,15 +117,55 @@ class GroupDetailViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                _group.value = groupRepository.getGroup(groupId)
-                _members.value = groupRepository.getGroupMembers(groupId)
-                _instances.value = groupRepository.getGroupInstances(groupId)
-                _posts.value = groupRepository.getGroupPosts(groupId)
+                // Run the four loads in parallel — they're independent server-side and
+                // sequencing them was 4x perceived latency for nothing.
+                coroutineScope {
+                    val groupAsync = async { groupRepository.getGroup(groupId) }
+                    val membersAsync = async { runCatching { groupRepository.getGroupMembers(groupId) }.getOrDefault(emptyList()) }
+                    val instancesAsync = async { runCatching { groupRepository.getGroupInstances(groupId) }.getOrDefault(emptyList()) }
+                    val postsAsync = async { runCatching { groupRepository.getGroupPosts(groupId) }.getOrDefault(emptyList()) }
+                    _group.value = groupAsync.await()
+                    _members.value = membersAsync.await()
+                    _instances.value = instancesAsync.await()
+                    _posts.value = postsAsync.await()
+                }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load group"
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Gate kick/remove UI on the caller actually holding the
+     * `group-members-manage` permission (or the `"*"` wildcard owners get).
+     *
+     * A prior version used `roleIds.isNotEmpty()` as a cheap heuristic, but
+     * every group membership includes at least a default member role, so that
+     * check surfaced destructive controls to regular members — who then hit
+     * `kickGroupMember` → 403 → error snackbar on every attempt. The server
+     * still enforces permissions authoritatively; this just keeps the UI
+     * honest. Matches desktop VRCX's `hasGroupPermission(..., 'group-members-manage')`.
+     */
+    fun canManageMembers(group: Group?): Boolean {
+        val myMember = group?.myMember ?: return false
+        if (!isMember(group)) return false
+        return myMember.permissions.contains("*") ||
+            myMember.permissions.contains("group-members-manage")
+    }
+
+    fun kickMember(userId: String) {
+        viewModelScope.launch {
+            _isActionLoading.value = true
+            val ok = groupRepository.kickGroupMember(groupId, userId)
+            if (ok) {
+                _members.value = _members.value.filterNot { it.userId == userId }
+                _message.value = "Member removed"
+            } else {
+                _message.value = "Failed to remove member (insufficient permissions?)"
+            }
+            _isActionLoading.value = false
         }
     }
 
@@ -156,15 +212,16 @@ fun GroupDetailScreen(
     onUserClick: (String) -> Unit = {},
     onBack: () -> Unit = {},
 ) {
-    val group by viewModel.group.collectAsState()
-    val members by viewModel.members.collectAsState()
-    val instances by viewModel.instances.collectAsState()
-    val posts by viewModel.posts.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isActionLoading by viewModel.isActionLoading.collectAsState()
-    val error by viewModel.error.collectAsState()
-    val message by viewModel.message.collectAsState()
+    val group by viewModel.group.collectAsStateWithLifecycle()
+    val members by viewModel.members.collectAsStateWithLifecycle()
+    val instances by viewModel.instances.collectAsStateWithLifecycle()
+    val posts by viewModel.posts.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
+    var pendingKickUserId by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -174,23 +231,29 @@ fun GroupDetailScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(title = group?.name ?: "Group", onBack = onBack)
-        SnackbarHost(hostState = snackbarHostState)
+    val isWallpaperActive = LocalWallpaperActive.current
+    Scaffold(
+        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
+        topBar = { VrcxDetailTopBar(title = group?.name ?: "Group", onBack = onBack) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
+    Column(
+        Modifier.fillMaxSize().padding(padding)
+    ) {
 
         if (isLoading) {
             LoadingState()
-            return
+            return@Column
         }
 
         if (error != null && group == null) {
             ErrorState(error ?: "Failed to load group", onRetry = { viewModel.loadGroup() })
-            return
+            return@Column
         }
 
         val currentGroup = group ?: run {
             ErrorState("Group not found")
-            return
+            return@Column
         }
 
         if (currentGroup.bannerUrl.isNotEmpty()) {
@@ -254,6 +317,7 @@ fun GroupDetailScreen(
 
         when (selectedTab) {
             0 -> LazyColumn(Modifier.fillMaxSize()) {
+                val canManage = viewModel.canManageMembers(currentGroup)
                 items(members, key = { it.id }) { member ->
                     Row(
                         Modifier
@@ -263,7 +327,7 @@ fun GroupDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
-                            model = member.user?.currentAvatarThumbnailImageUrl,
+                            model = member.user?.displayAvatarUrl(),
                             contentDescription = null,
                             modifier = Modifier
                                 .size(40.dp)
@@ -271,13 +335,31 @@ fun GroupDetailScreen(
                             contentScale = ContentScale.Crop,
                         )
                         Spacer(Modifier.width(12.dp))
-                        Column {
+                        Column(Modifier.weight(1f)) {
                             Text(member.user?.displayName ?: member.userId, style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 "Joined ${member.joinedAt.take(10)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        if (canManage) {
+                            var menuOpen by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) {
+                                    Icon(Icons.Outlined.MoreVert, contentDescription = "Member actions")
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Remove from group") },
+                                        leadingIcon = { Icon(Icons.Outlined.PersonRemove, contentDescription = null) },
+                                        onClick = {
+                                            menuOpen = false
+                                            pendingKickUserId = member.userId
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -339,6 +421,27 @@ fun GroupDetailScreen(
                 }
             }
         }
+    }
+    }
+
+    pendingKickUserId?.let { userId ->
+        val displayName = members.firstOrNull { it.userId == userId }?.user?.displayName ?: userId
+        AlertDialog(
+            onDismissRequest = { pendingKickUserId = null },
+            title = { Text("Remove $displayName?") },
+            text = { Text("They'll be removed from this group. They can rejoin if the group allows it.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.kickMember(userId)
+                    pendingKickUserId = null
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingKickUserId = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
