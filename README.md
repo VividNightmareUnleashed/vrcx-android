@@ -16,24 +16,42 @@ VRCX Android is a mobile companion app that brings the core functionality of the
 
 ## Features
 
+### Social
+
 - **Friends list** — See who's online, their current world, platform (PC/Quest/iOS), and status. Sort by name, last seen, or trust rank. Filter by VIP.
-- **Real-time feed** — Live activity feed of friend status changes, online/offline events, and GPS updates. Searchable with VIP filter.
+- **Real-time feed** — Live activity feed of friend status changes, online/offline events, and GPS updates with per-event dedup so a busy pipeline doesn't flood the list with repeats. Searchable with VIP filter; feed size cap is configurable in Settings.
 - **Friends locations** — See where your friends are with world thumbnails, names, capacity, and instance details. Filter by Online/Favorite/Active.
-- **Notifications** — View and respond to friend requests, invites, and other VRChat notifications with accept/decline actions and type filters.
-- **Search** — Find users, worlds, avatars, and groups with paginated results.
-- **World details** — Banner images, descriptions, capacity, platform support, tags, and active instances.
+- **Friends Roster** — Scoped roster view with granular filtering and sort, useful for quickly finding specific friends without scrolling the main list.
+- **Activity History** — Timeline view over the feed-backed history used elsewhere in the app, scoped to the current account and history-depth setting.
+- **Friend log** — Track friend additions, removals, display name changes, and trust-level changes with search and type filters.
+- **User profiles** — Detailed user view with Info/Groups/Worlds tabs, favorite star, invite buttons, avatar moderation, and personal notes. Destructive actions (block, unfriend) require confirmation.
+- **Friend-request management** — Accept, decline, or cancel incoming/outgoing friend requests directly from the relevant profile screens.
+- **Invite system** — Send invites and request invites from user profiles, including preset invite messages and auto-request replies from the desktop-parity invite flow.
+- **Notifications** — Unified V1/V2 inbox with type filters and accept/decline actions. Persisted locally so the latest state renders instantly on cold start, before the network round-trip completes.
+- **Profile editing** — Edit your own VRChat status, status description, bio, and pronouns from the app.
+
+### Worlds and avatars
+
+- **World details** — Banner images, descriptions, capacity, platform support, tags, and active instances. Instances are tappable and expose a self-invite, copy-URL, and share sheet — handy for accepting the resulting in-app invite from a headset without the desktop client.
 - **Avatar management** — Browse your avatars, filter by visibility and platform, view details, select, and favorite.
-- **Favorites** — View and manage your favorite worlds, avatars, and friends with actual names and thumbnails.
-- **User profiles** — Detailed user view with Info/Groups/Worlds tabs, favorite star, invite buttons, avatar moderation, and personal notes.
-- **Profile editing** — Edit your own VRChat status and bio directly from the app.
-- **Invite system** — Send invites and request invites from user profiles.
-- **Charts** — View your instance activity history with daily visit charts and most-visited worlds.
-- **Groups** — Browse groups you belong to and view group details.
-- **Friend log** — Track friend additions, removals, display name changes, and trust level changes with search and type filters.
-- **Moderation** — Manage blocks, mutes, avatar visibility, and interaction settings.
+- **Favorites** — View and manage your favorite worlds, avatars, and friends with actual names and thumbnails. Fast to open on accounts with many favorites thanks to bulk endpoints and background cache patching.
+- **Search** — Find users, worlds, avatars, and groups with paginated results. User search supports bio-text queries and last-login sort; world search supports mode + tag filters; avatar search supports remote provider sources in addition to your own avatars.
+
+### Groups and gallery
+
+- **Groups** — Browse groups you belong to, view group details, and see group posts. Admins with the `group-members-manage` permission can remove members directly from group detail.
+- **Charts** — Instance activity history with a daily bar chart that renders cleanly at any density, range-filtered metric cards (visits / worlds / active days), and most-visited worlds breakdown. Hour-of-day and weekday breakdowns included. Pull-to-refresh with explicit error surfacing.
 - **Gallery** — Browse your VRChat gallery with auto-refresh on new uploads.
-- **Background notifications** — Foreground service keeps a WebSocket connection alive for real-time Android notifications (per-friend opt-in). Auto-restarts on device boot.
+- **Moderation** — Manage blocks, mutes, avatar visibility, and interaction settings with persistent tab state across rotation.
+
+### Platform integration
+
+- **Deep links** — `vrcx://` and `https://vrchat.com/home/{user,world,avatar,group}/...` URLs open directly in the app. Any depth of trailing path segments routes to the right detail screen.
+- **Background notifications** — Foreground service keeps a WebSocket connection alive for real-time Android notifications (per-friend opt-in). Auto-restarts on device boot; Android 15 uses a "tap to reconnect" notification gated on login state and the background-service preference.
 - **Theming** — VRChat-branded Material 3 dark and light themes with wallpaper-based dynamic scaling.
+- **Tools** — Quick-link hub with an ID jump flow for opening users, worlds, avatars, and groups directly by ID.
+- **Dashboard** — Activity snapshot for one-glance situational awareness — online favorites, recent feed, activity breakdown, and current user context.
+- **Settings** — Theme mode, dynamic colors, wallpaper, notification toggles, feed history cap, background-service toggle, auto-login, profile-picture cache controls, and Sign Out. Sign out tears down session state, clears the bulk favorites cache, and stops the websocket service.
 
 ## Download
 
@@ -96,13 +114,13 @@ The Markdown report includes the APK SHA-256, a VirusTotal report link, scan ver
 ## Tech Stack
 
 - **Language**: Kotlin
-- **UI**: Jetpack Compose + Material 3
-- **Architecture**: Single-activity MVVM with Hilt DI
-- **Networking**: Retrofit + OkHttp + Kotlinx Serialization
-- **Real-time**: WebSocket (OkHttp) via foreground service
-- **Database**: Room
-- **Images**: Coil 3 (with GIF support)
-- **Charts**: Vico
+- **UI**: Jetpack Compose + Material 3, `collectAsStateWithLifecycle` everywhere for lifecycle-aware state collection
+- **Architecture**: Single-activity MVVM with Hilt DI, Navigation-Compose for routing + deep links
+- **Networking**: Retrofit + OkHttp + Kotlinx Serialization, with a custom request-dedup + failure-caching interceptor for 403/404/429 handling
+- **Real-time**: WebSocket (OkHttp) via foreground service, with reconnect orchestration driven by WorkManager on boot
+- **Persistence**: Room (account-scoped tables for feed, friend log, notifications, gallery cache, profile-pic cache)
+- **Images**: Coil 3 (with GIF support), wired to the authenticated OkHttp client so image fetches carry VRChat cookies
+- **Testing**: JUnit + Robolectric + Mockito, plus Room migration tests that track schema evolution across versions
 
 ## Credits & Disclaimer
 
