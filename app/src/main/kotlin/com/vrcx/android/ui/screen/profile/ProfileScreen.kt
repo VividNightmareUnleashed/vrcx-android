@@ -56,13 +56,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import android.content.Context
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
-import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.components.TrustRankBadge
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
@@ -70,7 +68,6 @@ import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -84,7 +81,6 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val userApi: UserApi,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val currentUser: StateFlow<CurrentUser?> = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user
@@ -143,10 +139,9 @@ class ProfileViewModel @Inject constructor(
     fun clearMessage() { _message.value = null }
 
     fun logout() {
-        viewModelScope.launch {
-            authRepository.logout()
-            WebSocketForegroundService.stop(context)
-        }
+        // authRepository.logout() now tears down the websocket service itself,
+        // so ProfileViewModel no longer has to stop it separately.
+        viewModelScope.launch { authRepository.logout() }
     }
 }
 

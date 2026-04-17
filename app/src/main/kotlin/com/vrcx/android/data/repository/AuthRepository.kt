@@ -1,5 +1,6 @@
 package com.vrcx.android.data.repository
 
+import android.content.Context
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEvent
 import com.vrcx.android.data.api.AuthEventBus
@@ -10,6 +11,8 @@ import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.service.WebSocketForegroundService
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +44,7 @@ class AuthRepository @Inject constructor(
     private val json: Json,
     private val dedup: RequestDeduplicator,
     private val favoriteRepository: FavoriteRepository,
+    @ApplicationContext private val context: Context,
     authEventBus: AuthEventBus? = null,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
@@ -71,9 +75,13 @@ class AuthRepository @Inject constructor(
                             // cache's 401 entries in place — next startup's
                             // tryResumeSession() sees a cookie and tries to
                             // resume an already-dead session instead of
-                            // bouncing the user to the login screen.
+                            // bouncing the user to the login screen. Also
+                            // stop the websocket foreground service so its
+                            // notification + authenticated socket don't
+                            // keep running with stale credentials.
                             favoriteRepository.clearRuntimeState()
                             clearAuthSession()
+                            WebSocketForegroundService.stop(context)
                             _authState.value = AuthState.NotLoggedIn
                         }
                     }
@@ -221,6 +229,11 @@ class AuthRepository @Inject constructor(
         }
         favoriteRepository.clearRuntimeState()
         clearAuthSession()
+        // Stop the websocket service so every logout path — explicit sign-out
+        // from Profile/Settings, interceptor-driven 401, etc. — tears down the
+        // background socket + persistent notification. Callers no longer need
+        // to remember to do this themselves.
+        WebSocketForegroundService.stop(context)
         _authState.value = AuthState.NotLoggedIn
     }
 

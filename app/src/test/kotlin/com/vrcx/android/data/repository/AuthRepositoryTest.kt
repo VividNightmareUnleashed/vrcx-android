@@ -1,5 +1,6 @@
 package com.vrcx.android.data.repository
 
+import android.content.Context
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
@@ -31,6 +32,7 @@ class AuthRepositoryTest {
     private val preferences = mock<VrcxPreferences>()
     private val dedup = mock<RequestDeduplicator>()
     private val favoriteRepository = mock<FavoriteRepository>()
+    private val context = mock<Context>()
 
     private val repository = AuthRepository(
         authApi = authApi,
@@ -40,6 +42,7 @@ class AuthRepositoryTest {
         json = Json { ignoreUnknownKeys = true },
         dedup = dedup,
         favoriteRepository = favoriteRepository,
+        context = context,
     )
 
     @Test

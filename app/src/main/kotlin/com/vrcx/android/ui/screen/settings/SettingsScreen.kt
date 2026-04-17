@@ -1,6 +1,5 @@
 package com.vrcx.android.ui.screen.settings
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,11 +51,9 @@ import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FriendRepository
-import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -72,7 +69,6 @@ class SettingsViewModel @Inject constructor(
     private val profilePicCacheManager: ProfilePicCacheManager,
     private val friendRepository: FriendRepository,
     private val authRepository: AuthRepository,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
     val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "dark")
@@ -141,13 +137,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun signOut() {
-        viewModelScope.launch {
-            authRepository.logout()
-            // Match the Profile-screen logout path: the websocket foreground
-            // service must be stopped explicitly, otherwise it (and its
-            // notification) keep running after sign-out with stale auth.
-            WebSocketForegroundService.stop(context)
-        }
+        // authRepository.logout() is the single source of truth for teardown —
+        // it clears session state, drops the bulk favorites cache, and stops
+        // WebSocketForegroundService.
+        viewModelScope.launch { authRepository.logout() }
     }
 }
 
