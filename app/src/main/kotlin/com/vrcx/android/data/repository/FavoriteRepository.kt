@@ -170,12 +170,38 @@ class FavoriteRepository @Inject constructor(
         _favorites.value = _favorites.value
             .filterNot { it.type == type && it.favoriteId == favoriteId }
             .plus(favorite)
+        // The bulk caches (_favoriteWorlds, _favoriteAvatars) are populated via
+        // the one-shot /worlds/favorites and /avatars/favorites endpoints and
+        // guarded by `favorite*Loaded` flags. Without invalidation here, the
+        // new Favorite entry lands in _favorites while the bulk cache stays
+        // stale, so the Favorites screen cannot resolve the world/avatar
+        // details and falls back to rendering raw IDs. Reset the flag so the
+        // next call to loadFavorite{Worlds,Avatars}Bulk refetches.
+        favoriteMutex.withLock {
+            when (type) {
+                "world" -> favoriteWorldsLoaded = false
+                "avatar" -> favoriteAvatarsLoaded = false
+            }
+        }
         return favorite
     }
 
     suspend fun deleteFavorite(favoriteId: String) {
+        val existing = _favorites.value.firstOrNull { it.id == favoriteId }
         favoriteApi.deleteFavorite(favoriteId)
         _favorites.value = _favorites.value.filter { it.id != favoriteId }
+        // Drop the underlying world/avatar from the bulk cache immediately so
+        // the Favorites screen updates without waiting for a full refetch.
+        // This mirrors the intent of the explicit dropFavorite*FromCache
+        // helpers without relying on callers to remember to invoke them.
+        if (existing != null) {
+            when (existing.type) {
+                "world" -> _favoriteWorlds.value =
+                    _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
+                "avatar" -> _favoriteAvatars.value =
+                    _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
+            }
+        }
     }
 
     suspend fun getPreferredFavoriteTags(type: String): List<String> {
