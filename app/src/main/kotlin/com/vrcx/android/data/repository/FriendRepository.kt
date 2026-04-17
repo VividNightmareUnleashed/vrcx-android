@@ -760,6 +760,13 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("onoff:$userId:$type")) return
         scope.launch {
+            // DB-level dedup guard: if the most recent row for this friend
+            // already records the same online/offline transition we're about
+            // to write, drop it. Catches VRChat's occasional repeats that
+            // land outside the in-memory DEDUP_WINDOW_MS and survives app
+            // restarts / re-logins (when recentFeedWrites gets cleared).
+            val latest = feedRepository.getLatestOnlineOffline(ownerUserId, userId)
+            if (latest != null && latest.type == type && latest.location == location) return@launch
             feedRepository.insertOnlineOffline(
                 FeedOnlineOfflineEntity(
                     ownerUserId = ownerUserId,
@@ -780,6 +787,8 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
+            val latest = feedRepository.getLatestGps(ownerUserId, userId)
+            if (latest != null && latest.location == location && latest.worldName == worldName) return@launch
             feedRepository.insertGps(
                 FeedGpsEntity(
                     ownerUserId = ownerUserId,
@@ -800,6 +809,8 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("status:$userId:$status:$statusDescription")) return
         scope.launch {
+            val latest = feedRepository.getLatestStatus(ownerUserId, userId)
+            if (latest != null && latest.status == status && latest.statusDescription == statusDescription) return@launch
             feedRepository.insertStatus(
                 FeedStatusEntity(
                     ownerUserId = ownerUserId,
@@ -819,6 +830,8 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("bio:$userId:${bio.hashCode()}")) return
         scope.launch {
+            val latest = feedRepository.getLatestBio(ownerUserId, userId)
+            if (latest != null && latest.bio == bio) return@launch
             feedRepository.insertBio(
                 FeedBioEntity(
                     ownerUserId = ownerUserId,
@@ -836,6 +849,11 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("avatar:$userId:$thumbnailUrl")) return
         scope.launch {
+            val latest = feedRepository.getLatestAvatar(ownerUserId, userId)
+            if (latest != null &&
+                latest.currentAvatarImageUrl == imageUrl &&
+                latest.currentAvatarThumbnailImageUrl == thumbnailUrl
+            ) return@launch
             feedRepository.insertAvatar(
                 FeedAvatarEntity(
                     ownerUserId = ownerUserId,

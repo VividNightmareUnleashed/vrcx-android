@@ -43,6 +43,27 @@ interface FeedDao {
     @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
     fun getOnlineOfflineFeed(userId: String, limit: Int = 100): Flow<List<FeedOnlineOfflineEntity>>
 
+    // "Latest for (owner, user)" lookups used to skip writes that would duplicate
+    // the most recent row for the same friend — the in-memory window dedup in
+    // FriendRepository only covers a short interval and is cleared on re-login,
+    // so it misses VRChat's occasional re-emits of the same location event
+    // minutes apart (observed: identical GPS rows at 1m relative time).
+
+    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestGps(ownerUserId: String, userId: String): FeedGpsEntity?
+
+    @Query("SELECT * FROM feed_status WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestStatus(ownerUserId: String, userId: String): FeedStatusEntity?
+
+    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestBio(ownerUserId: String, userId: String): FeedBioEntity?
+
+    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestAvatar(ownerUserId: String, userId: String): FeedAvatarEntity?
+
+    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String): FeedOnlineOfflineEntity?
+
     @Query("DELETE FROM feed_gps WHERE ownerUserId = :userId")
     suspend fun clearGpsFeed(userId: String)
 
