@@ -61,6 +61,14 @@ class FriendRepository @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val OFFLINE_DELAY_MS = 5000L
     private val DEDUP_WINDOW_MS = 10_000L
+    /**
+     * DB-level dedup horizon for GPS writes. Pipeline re-emits and reconnect
+     * replays arrive within seconds-to-minutes, so a 5-minute horizon catches
+     * them comfortably while still letting real revisits that bounce through a
+     * filtered intermediate state (e.g. `wrld_X -> private -> wrld_X`) record
+     * a new row once the gap widens past the window.
+     */
+    private val GPS_REVISIT_WINDOW = java.time.Duration.ofMinutes(5)
     private val recentFeedWrites = ConcurrentHashMap<String, Long>()
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
     private val _notifyEnabledIds = MutableStateFlow<Set<String>>(emptySet())
@@ -738,6 +746,17 @@ class FriendRepository @Inject constructor(
         }
     }
 
+    /**
+     * True when [createdAt] (an `Instant.toString()` value) is inside
+     * [GPS_REVISIT_WINDOW] of now. Unparseable strings conservatively return
+     * `false` so the write proceeds rather than silently drop a legit event.
+     */
+    private fun isWithinGpsRevisitWindow(createdAt: String): Boolean {
+        val latestInstant = runCatching { java.time.Instant.parse(createdAt) }.getOrNull()
+            ?: return false
+        return java.time.Duration.between(latestInstant, java.time.Instant.now()) < GPS_REVISIT_WINDOW
+    }
+
     private fun shouldWriteFeed(key: String): Boolean {
         val now = System.currentTimeMillis()
         var allowed = false
@@ -787,20 +806,22 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
-            // Include previousLocation in the match so legitimate revisits
-            // (e.g. wrld_X -> offline -> wrld_X) still write. GPS rows are
-            // only emitted for real worlds — offline/private transitions are
-            // filtered upstream in handleFriendLocation — so without the
-            // previousLocation check, "was at X, went offline, came back to
-            // X" would look like a straight X==X duplicate at the DB level
-            // even though a real state change occurred. True re-emits come
-            // through with identical location + previousLocation and still
-            // get dropped.
+            // Pipeline re-emits carry identical location + worldName +
+            // previousLocation to the row they duplicate, so the content
+            // match flags them. But the content match alone can't
+            // distinguish a re-emit from a legitimate revisit through a
+            // filtered intermediate state — writeFeedGps isn't called for
+            // offline/private transitions, so sequences like
+            // `wrld_X -> private -> wrld_X` hit the DB as two identical
+            // rows with nothing between them. Time-bound the dedup to the
+            // last few minutes: re-emits are always recent, revisits that
+            // come back after a natural gap still write a new row.
             val latest = feedRepository.getLatestGps(ownerUserId, userId)
             if (latest != null &&
                 latest.location == location &&
                 latest.worldName == worldName &&
-                latest.previousLocation == previousLocation
+                latest.previousLocation == previousLocation &&
+                isWithinGpsRevisitWindow(latest.createdAt)
             ) return@launch
             feedRepository.insertGps(
                 FeedGpsEntity(
