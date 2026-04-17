@@ -96,6 +96,13 @@ class FavoritesViewModel @Inject constructor(
                 _favoriteGroups.value = groups
             }
         }
+        // Start the favorites flow collector up front so it keeps running even
+        // if one of the bulk prefetches below throws. Otherwise a single
+        // network hiccup would leave the UI subscribed to nothing for the rest
+        // of this ViewModel's lifetime, including friend favorites that don't
+        // actually depend on the /worlds/favorites or /avatars/favorites
+        // bulk endpoints.
+        viewModelScope.launch { collectAndResolve() }
         viewModelScope.launch {
             try {
                 // Friend favorites still need per-id resolution because VRChat has no
@@ -105,9 +112,10 @@ class FavoritesViewModel @Inject constructor(
                 favoriteRepository.loadFavoriteGroups()
                 favoriteRepository.loadFavoriteWorldsBulk()
                 favoriteRepository.loadFavoriteAvatarsBulk()
-                viewModelScope.launch { collectAndResolve() }
-            } catch (e: Exception) {
-                _resolvedFavorites.value = emptyList()
+            } catch (_: Exception) {
+                // Prefetch failure is non-fatal: the collector above stays
+                // subscribed, so any entries the repository already has
+                // cached (or loads later) still flow through to the UI.
             }
             _isLoading.value = false
         }
