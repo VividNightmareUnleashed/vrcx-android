@@ -787,8 +787,21 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
+            // Include previousLocation in the match so legitimate revisits
+            // (e.g. wrld_X -> offline -> wrld_X) still write. GPS rows are
+            // only emitted for real worlds — offline/private transitions are
+            // filtered upstream in handleFriendLocation — so without the
+            // previousLocation check, "was at X, went offline, came back to
+            // X" would look like a straight X==X duplicate at the DB level
+            // even though a real state change occurred. True re-emits come
+            // through with identical location + previousLocation and still
+            // get dropped.
             val latest = feedRepository.getLatestGps(ownerUserId, userId)
-            if (latest != null && latest.location == location && latest.worldName == worldName) return@launch
+            if (latest != null &&
+                latest.location == location &&
+                latest.worldName == worldName &&
+                latest.previousLocation == previousLocation
+            ) return@launch
             feedRepository.insertGps(
                 FeedGpsEntity(
                     ownerUserId = ownerUserId,
