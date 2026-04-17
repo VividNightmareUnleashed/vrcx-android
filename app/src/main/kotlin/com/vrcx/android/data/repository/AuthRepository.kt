@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -121,7 +122,7 @@ class AuthRepository @Inject constructor(
             onLoginSuccess(user)
         } catch (e: Exception) {
             authInterceptor.clearBasicAuth()
-            _authState.value = AuthState.Error(e.message ?: "Login failed")
+            setErrorUnlessLoggedOut(e.message ?: "Login failed")
         }
     }
 
@@ -150,10 +151,10 @@ class AuthRepository @Inject constructor(
             if (result.verified) {
                 fetchCurrentUser()
             } else {
-                _authState.value = AuthState.Error("Verification failed")
+                setErrorUnlessLoggedOut("Verification failed")
             }
         } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Verification failed")
+            setErrorUnlessLoggedOut(e.message ?: "Verification failed")
         }
     }
 
@@ -164,10 +165,10 @@ class AuthRepository @Inject constructor(
             if (result.verified) {
                 fetchCurrentUser()
             } else {
-                _authState.value = AuthState.Error("Verification failed")
+                setErrorUnlessLoggedOut("Verification failed")
             }
         } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Verification failed")
+            setErrorUnlessLoggedOut(e.message ?: "Verification failed")
         }
     }
 
@@ -185,7 +186,7 @@ class AuthRepository @Inject constructor(
             val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
             onLoginSuccess(user)
         } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Failed to fetch user")
+            setErrorUnlessLoggedOut(e.message ?: "Failed to fetch user")
         }
     }
 
@@ -286,5 +287,24 @@ class AuthRepository @Inject constructor(
         authInterceptor.clearBasicAuth()
         cookieJar.clearAll()
         dedup.clearCache()
+    }
+
+    /**
+     * Set [AuthState.Error] from a request-coroutine catch block, unless the
+     * interceptor-driven unauthorized collector has already cleaned up and
+     * transitioned the app to [AuthState.NotLoggedIn]. Uses [MutableStateFlow.update]
+     * for an atomic compare-and-set so the two coroutines can't interleave in a
+     * way that leaves the final state as `Error` when we meant `NotLoggedIn`.
+     *
+     * Without this guard, a 401 during session resume triggers both:
+     *   - fetchCurrentUser()'s catch on the request coroutine → `Error`
+     *   - the Unauthorized collector on its own coroutine     → `NotLoggedIn`
+     * and whichever wrote last wins.
+     */
+    private fun setErrorUnlessLoggedOut(message: String) {
+        _authState.update { current ->
+            if (current is AuthState.NotLoggedIn) current
+            else AuthState.Error(message)
+        }
     }
 }

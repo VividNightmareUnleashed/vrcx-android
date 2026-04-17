@@ -10,6 +10,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavDeepLink
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -312,14 +313,7 @@ fun VrcxNavGraph(
         composable(
             VrcxRoutes.USER_DETAIL,
             arguments = listOf(navArgument("userId") { type = NavType.StringType }),
-            // The manifest uses pathPrefix="/home/user/" so URLs like
-            // /home/user/{id}/anything launch the app; match the same shape
-            // here or Navigation silently drops the user on the home screen.
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "vrcx://user/{userId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/user/{userId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/user/{userId}/{trailingPath}" },
-            ),
+            deepLinks = vrchatDetailDeepLinks(section = "user", argName = "userId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -336,14 +330,7 @@ fun VrcxNavGraph(
         composable(
             VrcxRoutes.GROUP_DETAIL,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
-            // VRChat web uses /home/group/{id}/posts, /events, /members, etc.
-            // The manifest matches the whole /home/group/ prefix, so we need
-            // to match the trailing segment here or the intent falls through.
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "vrcx://group/{groupId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/group/{groupId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/group/{groupId}/{trailingPath}" },
-            ),
+            deepLinks = vrchatDetailDeepLinks(section = "group", argName = "groupId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -357,11 +344,7 @@ fun VrcxNavGraph(
         composable(
             VrcxRoutes.AVATAR_DETAIL,
             arguments = listOf(navArgument("avatarId") { type = NavType.StringType }),
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "vrcx://avatar/{avatarId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/avatar/{avatarId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/avatar/{avatarId}/{trailingPath}" },
-            ),
+            deepLinks = vrchatDetailDeepLinks(section = "avatar", argName = "avatarId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -375,14 +358,7 @@ fun VrcxNavGraph(
         composable(
             VrcxRoutes.WORLD_DETAIL,
             arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
-            // VRChat web uses /home/world/{id}/info, /community-labs, etc.
-            // The manifest matches the whole /home/world/ prefix; match the
-            // trailing segment here so those links reach this destination.
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "vrcx://world/{worldId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/world/{worldId}" },
-                navDeepLink { uriPattern = "https://vrchat.com/home/world/{worldId}/{trailingPath}" },
-            ),
+            deepLinks = vrchatDetailDeepLinks(section = "world", argName = "worldId"),
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
             popEnterTransition = { subScreenPopEnterTransition },
@@ -394,4 +370,31 @@ fun VrcxNavGraph(
             )
         }
     }
+}
+
+/**
+ * Build the deep-link list for a detail destination whose VRChat web URL
+ * lives under `/home/{section}/` and whose primary argument is `{$argName}`.
+ *
+ * The manifest uses `pathPrefix="/home/{section}/"`, so Android happily hands
+ * the app URLs like `/home/group/{id}/posts/{postId}/comments`. Navigation's
+ * `{arg}` placeholder only matches a single path segment, so without extra
+ * patterns those deeper URLs launch the app but fall off the NavGraph and
+ * drop the user on the default screen.
+ *
+ * Enumerate patterns up to three trailing segments, which covers every
+ * VRChat web URL shape we know of (`/info`, `/events/{eventId}`,
+ * `/posts/{postId}/comments`, etc.) while keeping the matcher deterministic.
+ * The tail captures (`p1`, `p2`, `p3`) go into undeclared args that
+ * Navigation simply ignores.
+ */
+private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDeepLink> {
+    val base = "https://vrchat.com/home/$section/{$argName}"
+    return listOf(
+        navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
+        navDeepLink { uriPattern = base },
+        navDeepLink { uriPattern = "$base/{p1}" },
+        navDeepLink { uriPattern = "$base/{p1}/{p2}" },
+        navDeepLink { uriPattern = "$base/{p1}/{p2}/{p3}" },
+    )
 }
