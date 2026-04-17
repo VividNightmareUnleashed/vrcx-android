@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxInputField
@@ -230,7 +231,7 @@ fun SearchScreen(
                 when (selectedTab) {
                     SearchTab.USERS -> items(users, key = { it.id }) { user ->
                         UserListItem(
-                            avatarUrl = user.currentAvatarThumbnailImageUrl,
+                            avatarUrl = user.displayAvatarUrl(),
                             displayName = user.displayName,
                             subtitle = user.statusDescription,
                             tags = user.tags,

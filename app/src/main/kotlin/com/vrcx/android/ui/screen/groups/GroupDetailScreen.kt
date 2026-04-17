@@ -61,6 +61,7 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
 import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.GroupRepository
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
@@ -319,7 +320,7 @@ fun GroupDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
-                            model = member.user?.currentAvatarThumbnailImageUrl,
+                            model = member.user?.displayAvatarUrl(),
                             contentDescription = null,
                             modifier = Modifier
                                 .size(40.dp)

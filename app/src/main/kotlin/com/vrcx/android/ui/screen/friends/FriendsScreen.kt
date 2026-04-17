@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxSearchBar
@@ -141,7 +142,7 @@ fun FriendsScreen(
                         var showMenu by remember { mutableStateOf(false) }
                         Box {
                             UserListItem(
-                                avatarUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                                avatarUrl = friend.ref?.displayAvatarUrl(),
                                 displayName = friend.name,
                                 subtitle = friend.ref?.statusDescription ?: "",
                                 tags = friend.ref?.tags ?: emptyList(),

@@ -24,6 +24,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.AuthRepository
@@ -299,7 +300,7 @@ fun PlayerListScreen(
             LazyColumn(Modifier.fillMaxSize()) {
                 items(players, key = { it.id }) { player ->
                     UserListItem(
-                        avatarUrl = player.ref?.currentAvatarThumbnailImageUrl,
+                        avatarUrl = player.ref?.displayAvatarUrl(),
                         displayName = player.name,
                         subtitle = describePlayerScope(player, scope, currentLocation),
                         tags = player.ref?.tags.orEmpty(),

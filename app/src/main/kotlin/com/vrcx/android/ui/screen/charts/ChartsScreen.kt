@@ -81,8 +81,11 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
 
         UiStateContainer(
             isLoading = isLoading,
+            // Treat as fatal only when we have nothing to show AND an error occurred.
+            // Never short-circuit on "no data" — the range filter and metric cards
+            // must stay visible so the user can switch ranges even when empty.
             error = if (!hasData) error else null,
-            isEmpty = !hasData && !isLoading,
+            isEmpty = false,
             onRetry = viewModel::refresh,
             emptyMessage = "No activity data yet",
             emptySubtitle = "Instance visit history will appear here as you use VRChat",
@@ -198,6 +201,28 @@ fun ChartsScreen(viewModel: ChartsViewModel = hiltViewModel(), onBack: () -> Uni
                     if (weekdayActivity.any { it.second > 0 }) {
                         SectionHeader("Activity by Weekday")
                         BarChartCard(data = weekdayActivity, labelWidth = 56.dp)
+                    }
+
+                    if (!hasData && !isLoading) {
+                        VrcxCard {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    "No activity in this range",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    "Try a wider range or come back once you've visited a few instances.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
 
                     if (error != null && hasData) {

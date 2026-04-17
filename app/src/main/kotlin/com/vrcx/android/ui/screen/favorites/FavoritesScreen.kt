@@ -42,6 +42,7 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
@@ -144,7 +145,7 @@ class FavoritesViewModel @Inject constructor(
                                 ResolvedFavorite(
                                     favorite = fav,
                                     name = cachedFriend.name,
-                                    thumbnailUrl = cachedFriend.ref?.currentAvatarThumbnailImageUrl ?: "",
+                                    thumbnailUrl = cachedFriend.ref?.displayAvatarUrl().orEmpty(),
                                     subtitle = cachedFriend.ref?.statusDescription ?: "",
                                     groupTags = fav.tags,
                                 )
@@ -155,7 +156,7 @@ class FavoritesViewModel @Inject constructor(
                                 ResolvedFavorite(
                                     favorite = fav,
                                     name = user.displayName,
-                                    thumbnailUrl = user.currentAvatarThumbnailImageUrl,
+                                    thumbnailUrl = user.displayAvatarUrl(),
                                     subtitle = user.statusDescription,
                                     groupTags = fav.tags,
                                 )

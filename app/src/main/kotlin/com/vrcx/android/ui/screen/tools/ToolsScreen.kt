@@ -115,8 +115,8 @@ fun ToolsScreen(
                     Text("Quick Links", style = MaterialTheme.typography.titleMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.DASHBOARD) }) { Text("Dashboard") }
-                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GAME_LOG) }) { Text("Game Log") }
-                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.PLAYER_LIST) }) { Text("Player List") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GAME_LOG) }) { Text("Activity History") }
+                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.PLAYER_LIST) }) { Text("Friends Roster") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GALLERY) }) { Text("Gallery") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.SETTINGS) }) { Text("Settings") }
                     }

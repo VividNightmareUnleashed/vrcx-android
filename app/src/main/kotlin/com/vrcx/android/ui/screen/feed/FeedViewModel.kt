@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
@@ -77,7 +78,7 @@ class FeedViewModel @Inject constructor(
 
     val userAvatarUrls: StateFlow<Map<String, String>> = friendRepository.friends.map { friends ->
         friends.values.mapNotNull { f ->
-            f.ref?.currentAvatarThumbnailImageUrl?.let { url -> f.id to url }
+            f.ref?.displayAvatarUrl()?.takeIf { it.isNotEmpty() }?.let { url -> f.id to url }
         }.toMap()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 

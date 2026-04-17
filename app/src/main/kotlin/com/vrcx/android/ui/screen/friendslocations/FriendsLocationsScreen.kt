@@ -37,6 +37,7 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
@@ -421,7 +422,7 @@ fun FriendsLocationsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     UserAvatar(
-                                        imageUrl = friend.ref?.currentAvatarThumbnailImageUrl,
+                                        imageUrl = friend.ref?.displayAvatarUrl(),
                                         status = friend.ref?.status,
                                         state = friend.state,
                                         size = 32.dp,

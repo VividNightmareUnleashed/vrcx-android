@@ -59,6 +59,7 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.service.WebSocketForegroundService
@@ -178,7 +179,7 @@ fun ProfileScreen(
                 user?.let { u ->
                     VrcxCard {
                         Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            UserAvatar(imageUrl = u.currentAvatarThumbnailImageUrl, size = 96.dp, showStatusDot = false)
+                            UserAvatar(imageUrl = u.displayAvatarUrl(), size = 96.dp, showStatusDot = false)
                             Spacer(Modifier.height(8.dp))
                             Text(u.displayName, style = MaterialTheme.typography.titleLarge)
                             TrustRankBadge(tags = u.tags)
@@ -226,8 +227,8 @@ fun ProfileScreen(
                 Spacer(Modifier.height(16.dp))
 
                 NavItem(Icons.Default.Home, "Dashboard") { onNavigate("dashboard") }
-                NavItem(Icons.Default.History, "Game Log") { onNavigate("game_log") }
-                NavItem(Icons.Default.ViewList, "Player List") { onNavigate("player_list") }
+                NavItem(Icons.Default.History, "Activity History") { onNavigate("game_log") }
+                NavItem(Icons.Default.ViewList, "Friends Roster") { onNavigate("player_list") }
                 NavItem(Icons.Default.Build, "Tools") { onNavigate("tools") }
                 NavItem(Icons.Default.Favorite, "Favorites") { onNavigate("favorites") }
                 NavItem(Icons.Default.Group, "Groups") { onNavigate("groups") }
