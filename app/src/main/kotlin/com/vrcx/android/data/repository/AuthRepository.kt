@@ -63,8 +63,17 @@ class AuthRepository @Inject constructor(
                 bus.events.collect { event ->
                     when (event) {
                         AuthEvent.Unauthorized -> if (_authState.value is AuthState.LoggedIn) {
-                            _currentUser = null
-                            _authToken = null
+                            // Mirror logout() minus the network call (the 401
+                            // already proved the cookie is invalid, so asking
+                            // the server to invalidate it is pointless). Just
+                            // nulling _currentUser/_authToken leaves the stale
+                            // auth cookie in CookieJarImpl and the dedup
+                            // cache's 401 entries in place — next startup's
+                            // tryResumeSession() sees a cookie and tries to
+                            // resume an already-dead session instead of
+                            // bouncing the user to the login screen.
+                            favoriteRepository.clearRuntimeState()
+                            clearAuthSession()
                             _authState.value = AuthState.NotLoggedIn
                         }
                     }

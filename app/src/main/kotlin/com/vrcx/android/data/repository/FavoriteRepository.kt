@@ -1,7 +1,9 @@
 package com.vrcx.android.data.repository
 
+import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FavoriteApi
+import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
@@ -21,6 +23,8 @@ import javax.inject.Singleton
 class FavoriteRepository @Inject constructor(
     private val favoriteApi: FavoriteApi,
     private val favoriteLocalDao: FavoriteLocalDao,
+    private val worldApi: WorldApi,
+    private val avatarApi: AvatarApi,
 ) {
     private val favoriteMutex = Mutex()
     private val loadedFavoriteTypes = mutableSetOf<String>()
@@ -170,17 +174,33 @@ class FavoriteRepository @Inject constructor(
         _favorites.value = _favorites.value
             .filterNot { it.type == type && it.favoriteId == favoriteId }
             .plus(favorite)
-        // The bulk caches (_favoriteWorlds, _favoriteAvatars) are populated via
-        // the one-shot /worlds/favorites and /avatars/favorites endpoints and
-        // guarded by `favorite*Loaded` flags. Without invalidation here, the
-        // new Favorite entry lands in _favorites while the bulk cache stays
-        // stale, so the Favorites screen cannot resolve the world/avatar
-        // details and falls back to rendering raw IDs. Reset the flag so the
-        // next call to loadFavorite{Worlds,Avatars}Bulk refetches.
-        favoriteMutex.withLock {
+        // The bulk caches (_favoriteWorlds, _favoriteAvatars) are populated
+        // via /worlds/favorites and /avatars/favorites, which are called only
+        // during FavoritesViewModel init. Invalidating the "loaded" flag alone
+        // would leave the new entry showing as a raw ID for any screen that's
+        // already observing the flow. Fetch the single entity and patch the
+        // bulk cache in place so the UI updates immediately; if that fetch
+        // fails, fall back to invalidating the flag so the next screen entry
+        // gets a chance to catch up via the bulk endpoint.
+        try {
             when (type) {
-                "world" -> favoriteWorldsLoaded = false
-                "avatar" -> favoriteAvatarsLoaded = false
+                "world" -> {
+                    val world = worldApi.getWorld(favoriteId)
+                    _favoriteWorlds.value = _favoriteWorlds.value
+                        .filterNot { it.id == world.id } + world
+                }
+                "avatar" -> {
+                    val avatar = avatarApi.getAvatar(favoriteId)
+                    _favoriteAvatars.value = _favoriteAvatars.value
+                        .filterNot { it.id == avatar.id } + avatar
+                }
+            }
+        } catch (_: Exception) {
+            favoriteMutex.withLock {
+                when (type) {
+                    "world" -> favoriteWorldsLoaded = false
+                    "avatar" -> favoriteAvatarsLoaded = false
+                }
             }
         }
         return favorite
