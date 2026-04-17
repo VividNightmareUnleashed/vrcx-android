@@ -72,15 +72,20 @@ class FriendRepository @Inject constructor(
     private val GPS_REVISIT_WINDOW = java.time.Duration.ofMinutes(5)
     private val recentFeedWrites = ConcurrentHashMap<String, Long>()
     /**
-     * Per-user timestamp of the last `offline`/`private` location transition
-     * we chose NOT to write to the feed. A pipeline re-emit of the same GPS
-     * event would NOT produce one of these hops (the in-memory state matches
-     * and handleFriendLocation short-circuits), so a recorded hop that's
-     * newer than the latest DB row is evidence that the current write is a
-     * legitimate revisit (e.g. `wrld_X -> private -> wrld_X`) rather than a
-     * duplicate. Entries are process-local; the map is cleared alongside
-     * [recentFeedWrites] on [loadFriendsList] / logout to match the lifetime
-     * of the friend state.
+     * Per-user timestamp of the last transition into a state we don't
+     * persist to the GPS feed — `offline` (via [handleFriendOffline]),
+     * `private`/`active` (via [handleFriendActive]), or a `FriendLocation`
+     * payload whose destination is `offline`/`private`.
+     *
+     * A pipeline re-emit of the same GPS event would NOT produce one of
+     * these hops (the in-memory state already matches and the relevant
+     * handler short-circuits), so a recorded hop newer than the latest
+     * DB row is positive evidence that the current write is a real
+     * revisit (e.g. `wrld_X -> private -> wrld_X`) rather than a duplicate.
+     *
+     * Entries are process-local; the map is cleared alongside
+     * [recentFeedWrites] on [loadFriendsList] / logout to match the
+     * lifetime of the rest of the friend runtime state.
      */
     private val lastFilteredTransitionAt = ConcurrentHashMap<String, Long>()
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
@@ -270,6 +275,12 @@ class FriendRepository @Inject constructor(
                 }
             }
             if (previous.pendingOffline) {
+                // Confirmed offline: mark a filtered hop so a later return to
+                // the same world isn't mistaken for a re-emit. Stamp here
+                // rather than at event arrival so transient flickers that
+                // get rescinded during OFFLINE_DELAY_MS don't produce phantom
+                // hops.
+                lastFilteredTransitionAt[userId] = System.currentTimeMillis()
                 writeFeedOnlineOffline(userId, displayName, "offline", "")
                 _confirmedOfflineEvents.emit(userId to displayName)
             }
@@ -297,6 +308,11 @@ class FriendRepository @Inject constructor(
             )
         }
         if (user != null) userRepository.cacheUser(user)
+        // FriendActive = friend present but not in a world (VRChat web,
+        // menu, Quest social, etc.). Record as a filtered hop so a later
+        // return to a previously-visited world is treated as a real
+        // revisit rather than a pipeline re-emit.
+        lastFilteredTransitionAt[userId] = System.currentTimeMillis()
     }
 
     private suspend fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
