@@ -141,15 +141,6 @@ low-activity ranges.
   happened to be on the source URI, which previously caused VRChat to
   reject otherwise-valid images.
 
-### Under the hood
-
-This release ships with substantially more test coverage — pipeline
-frame parsing, repository-level dedup behaviour, and representative
-ViewModel logic are all covered by unit tests now — plus a small
-shared UI container that standardizes the loading / error / empty
-states across most screens. None of that is user-visible, but it
-makes the next wave of features measurably safer to land.
-
 ## [1.4.1] - 2026-04-10
 
 ### Improved
