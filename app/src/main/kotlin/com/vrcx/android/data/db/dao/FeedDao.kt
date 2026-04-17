@@ -48,20 +48,26 @@ interface FeedDao {
     // FriendRepository only covers a short interval and is cleared on re-login,
     // so it misses VRChat's occasional re-emits of the same location event
     // minutes apart (observed: identical GPS rows at 1m relative time).
+    //
+    // Order by `id DESC`, not `createdAt DESC`: createdAt is Instant.toString()
+    // text whose fractional seconds are variable-width (e.g. "...30Z" vs
+    // "...30.123Z"), so a lexicographic sort can return the wrong row for two
+    // events in the same second ('Z' = 0x5A sorts after '.' = 0x2E). The
+    // autoGenerate Long primary key is monotonic and gives us the true latest.
 
-    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestGps(ownerUserId: String, userId: String): FeedGpsEntity?
 
-    @Query("SELECT * FROM feed_status WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    @Query("SELECT * FROM feed_status WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestStatus(ownerUserId: String, userId: String): FeedStatusEntity?
 
-    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestBio(ownerUserId: String, userId: String): FeedBioEntity?
 
-    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestAvatar(ownerUserId: String, userId: String): FeedAvatarEntity?
 
-    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY createdAt DESC LIMIT 1")
+    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String): FeedOnlineOfflineEntity?
 
     @Query("DELETE FROM feed_gps WHERE ownerUserId = :userId")
