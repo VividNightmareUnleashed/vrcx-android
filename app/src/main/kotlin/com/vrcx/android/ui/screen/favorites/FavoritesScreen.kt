@@ -102,6 +102,14 @@ class FavoritesViewModel @Inject constructor(
         // of this ViewModel's lifetime, including friend favorites that don't
         // actually depend on the /worlds/favorites or /avatars/favorites
         // bulk endpoints.
+        //
+        // _isLoading is owned exclusively by the preload coroutine below —
+        // collectAndResolve() intentionally does not touch it. Flipping it to
+        // false the first time combine() emits would fire the "no favorites"
+        // empty state during the initial StateFlow seed (all three lists
+        // empty) before any fetch has actually run, producing a flicker on
+        // every screen entry and a false-negative empty state on slow or
+        // flaky networks.
         viewModelScope.launch { collectAndResolve() }
         viewModelScope.launch {
             try {
@@ -117,6 +125,10 @@ class FavoritesViewModel @Inject constructor(
                 // subscribed, so any entries the repository already has
                 // cached (or loads later) still flow through to the UI.
             }
+            // Only clear the loading flag after the preload attempt finishes
+            // (success OR failure). The UI stays in its loading state until
+            // then so users don't see a false empty state while bulk fetches
+            // are still in flight.
             _isLoading.value = false
         }
     }
@@ -138,7 +150,10 @@ class FavoritesViewModel @Inject constructor(
         worlds: List<World>,
         avatars: List<Avatar>,
     ) {
-        _isLoading.value = true
+        // _isLoading is owned by the preload coroutine (see init); don't touch
+        // it here. Toggling it on every combine() emission would either flash
+        // the loading spinner on routine updates or race with the preload
+        // completion and clear the flag before fetches actually finish.
         val worldsById = worlds.associateBy { it.id }
         val avatarsById = avatars.associateBy { it.id }
         val friends = friendRepository.friends.value
@@ -210,7 +225,6 @@ class FavoritesViewModel @Inject constructor(
             }
         }
         _resolvedFavorites.value = result
-        _isLoading.value = false
     }
 
     fun unfavorite(favoriteId: String) {
