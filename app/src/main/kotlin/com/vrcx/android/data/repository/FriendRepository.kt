@@ -61,7 +61,33 @@ class FriendRepository @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val OFFLINE_DELAY_MS = 5000L
     private val DEDUP_WINDOW_MS = 10_000L
+    /**
+     * Outer horizon for DB-level GPS dedup. If the latest matching row in the
+     * DB is older than this, we always allow a new write (revisits after a
+     * long enough gap are always worth recording, and a pipeline re-emit
+     * that arrives this much later is too stale to be the same event).
+     * Inside the window we still need a second signal to tell a re-emit
+     * from a short private/offline hop — see [lastFilteredTransitionAt].
+     */
+    private val GPS_REVISIT_WINDOW = java.time.Duration.ofMinutes(5)
     private val recentFeedWrites = ConcurrentHashMap<String, Long>()
+    /**
+     * Per-user timestamp of the last transition into a state we don't
+     * persist to the GPS feed — `offline` (via [handleFriendOffline]),
+     * `private`/`active` (via [handleFriendActive]), or a `FriendLocation`
+     * payload whose destination is `offline`/`private`.
+     *
+     * A pipeline re-emit of the same GPS event would NOT produce one of
+     * these hops (the in-memory state already matches and the relevant
+     * handler short-circuits), so a recorded hop newer than the latest
+     * DB row is positive evidence that the current write is a real
+     * revisit (e.g. `wrld_X -> private -> wrld_X`) rather than a duplicate.
+     *
+     * Entries are process-local; the map is cleared alongside
+     * [recentFeedWrites] on [loadFriendsList] / logout to match the
+     * lifetime of the rest of the friend runtime state.
+     */
+    private val lastFilteredTransitionAt = ConcurrentHashMap<String, Long>()
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
     private val _notifyEnabledIds = MutableStateFlow<Set<String>>(emptySet())
 
@@ -90,6 +116,7 @@ class FriendRepository @Inject constructor(
     suspend fun loadFriendsList() {
         ensureOwnerUserId()
         recentFeedWrites.clear()
+        lastFilteredTransitionAt.clear()
         // Fetch online friends
         val onlineFriends = BulkPaginator.fetchAll(pageSize = 100) { offset, count ->
             friendApi.getFriends(n = count, offset = offset, offline = false)
@@ -248,6 +275,12 @@ class FriendRepository @Inject constructor(
                 }
             }
             if (previous.pendingOffline) {
+                // Confirmed offline: mark a filtered hop so a later return to
+                // the same world isn't mistaken for a re-emit. Stamp here
+                // rather than at event arrival so transient flickers that
+                // get rescinded during OFFLINE_DELAY_MS don't produce phantom
+                // hops.
+                lastFilteredTransitionAt[userId] = System.currentTimeMillis()
                 writeFeedOnlineOffline(userId, displayName, "offline", "")
                 _confirmedOfflineEvents.emit(userId to displayName)
             }
@@ -275,6 +308,11 @@ class FriendRepository @Inject constructor(
             )
         }
         if (user != null) userRepository.cacheUser(user)
+        // FriendActive = friend present but not in a world (VRChat web,
+        // menu, Quest social, etc.). Record as a filtered hop so a later
+        // return to a previously-visited world is treated as a real
+        // revisit rather than a pipeline re-emit.
+        lastFilteredTransitionAt[userId] = System.currentTimeMillis()
     }
 
     private suspend fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
@@ -346,9 +384,18 @@ class FriendRepository @Inject constructor(
         val previousLocation = previous.ref?.location ?: ""
         val displayName = user?.displayName ?: previous.name
 
+        val isFilteredDestination = location.isNullOrEmpty() ||
+            location == "offline" || location == "private"
+        if (isFilteredDestination && location != previousLocation) {
+            // Remember that this friend briefly passed through an
+            // un-persisted state; writeFeedGps uses this to tell an honest
+            // revisit apart from a pipeline re-emit.
+            lastFilteredTransitionAt[userId] = System.currentTimeMillis()
+        }
+
         // Only write GPS feed for actual world locations, not "private" or "offline"
-        if (!location.isNullOrEmpty() && location != "offline" && location != "private" && location != previousLocation) {
-            writeFeedGps(userId, displayName, location, worldName, previousLocation)
+        if (!isFilteredDestination && location != previousLocation) {
+            writeFeedGps(userId, displayName, location!!, worldName, previousLocation)
         }
     }
 
@@ -760,6 +807,13 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("onoff:$userId:$type")) return
         scope.launch {
+            // DB-level dedup guard: if the most recent row for this friend
+            // already records the same online/offline transition we're about
+            // to write, drop it. Catches VRChat's occasional repeats that
+            // land outside the in-memory DEDUP_WINDOW_MS and survives app
+            // restarts / re-logins (when recentFeedWrites gets cleared).
+            val latest = feedRepository.getLatestOnlineOffline(ownerUserId, userId)
+            if (latest != null && latest.type == type && latest.location == location) return@launch
             feedRepository.insertOnlineOffline(
                 FeedOnlineOfflineEntity(
                     ownerUserId = ownerUserId,
@@ -780,6 +834,37 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
+            // Two signals tell a pipeline re-emit apart from a real revisit
+            // through a filtered (offline/private) state, since both arrive
+            // at the DB with identical content:
+            //   1. Age of the matching row. Past the outer GPS_REVISIT_WINDOW,
+            //      always treat as a legit revisit (re-emits don't lag that
+            //      long, and the cost of a stray duplicate row is low relative
+            //      to silently dropping a real event).
+            //   2. A recorded filtered hop since the latest row. When
+            //      handleFriendLocation saw the friend hit `offline`/`private`
+            //      we stamp [lastFilteredTransitionAt]. A re-emit wouldn't
+            //      produce one of those (the in-memory state already matches
+            //      and handleFriendLocation short-circuits), so a hop newer
+            //      than the latest DB row is positive evidence that this is
+            //      the friend legitimately coming back from a gap.
+            val latest = feedRepository.getLatestGps(ownerUserId, userId)
+            if (latest != null &&
+                latest.location == location &&
+                latest.worldName == worldName &&
+                latest.previousLocation == previousLocation
+            ) {
+                val latestMillis = runCatching { java.time.Instant.parse(latest.createdAt) }
+                    .getOrNull()?.toEpochMilli()
+                if (latestMillis != null) {
+                    val now = System.currentTimeMillis()
+                    val withinWindow = now - latestMillis < GPS_REVISIT_WINDOW.toMillis()
+                    val hopAfterLatest = (lastFilteredTransitionAt[userId] ?: 0L) > latestMillis
+                    if (withinWindow && !hopAfterLatest) return@launch
+                }
+                // Unparseable createdAt: fall through and write rather than
+                // silently drop a potentially real revisit.
+            }
             feedRepository.insertGps(
                 FeedGpsEntity(
                     ownerUserId = ownerUserId,
@@ -800,6 +885,8 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("status:$userId:$status:$statusDescription")) return
         scope.launch {
+            val latest = feedRepository.getLatestStatus(ownerUserId, userId)
+            if (latest != null && latest.status == status && latest.statusDescription == statusDescription) return@launch
             feedRepository.insertStatus(
                 FeedStatusEntity(
                     ownerUserId = ownerUserId,
@@ -819,6 +906,8 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("bio:$userId:${bio.hashCode()}")) return
         scope.launch {
+            val latest = feedRepository.getLatestBio(ownerUserId, userId)
+            if (latest != null && latest.bio == bio) return@launch
             feedRepository.insertBio(
                 FeedBioEntity(
                     ownerUserId = ownerUserId,
@@ -836,6 +925,11 @@ class FriendRepository @Inject constructor(
         if (ownerUserId.isEmpty()) return
         if (!shouldWriteFeed("avatar:$userId:$thumbnailUrl")) return
         scope.launch {
+            val latest = feedRepository.getLatestAvatar(ownerUserId, userId)
+            if (latest != null &&
+                latest.currentAvatarImageUrl == imageUrl &&
+                latest.currentAvatarThumbnailImageUrl == thumbnailUrl
+            ) return@launch
             feedRepository.insertAvatar(
                 FeedAvatarEntity(
                     ownerUserId = ownerUserId,

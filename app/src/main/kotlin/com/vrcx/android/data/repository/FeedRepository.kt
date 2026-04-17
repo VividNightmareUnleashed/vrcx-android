@@ -36,4 +36,10 @@ class FeedRepository @Inject constructor(
     suspend fun insertBio(entry: FeedBioEntity) = feedDao.insertBio(entry)
     suspend fun insertAvatar(entry: FeedAvatarEntity) = feedDao.insertAvatar(entry)
     suspend fun insertOnlineOffline(entry: FeedOnlineOfflineEntity) = feedDao.insertOnlineOffline(entry)
+
+    suspend fun getLatestGps(ownerUserId: String, userId: String) = feedDao.getLatestGps(ownerUserId, userId)
+    suspend fun getLatestStatus(ownerUserId: String, userId: String) = feedDao.getLatestStatus(ownerUserId, userId)
+    suspend fun getLatestBio(ownerUserId: String, userId: String) = feedDao.getLatestBio(ownerUserId, userId)
+    suspend fun getLatestAvatar(ownerUserId: String, userId: String) = feedDao.getLatestAvatar(ownerUserId, userId)
+    suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String) = feedDao.getLatestOnlineOffline(ownerUserId, userId)
 }
