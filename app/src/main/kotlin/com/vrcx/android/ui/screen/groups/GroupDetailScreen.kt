@@ -138,14 +138,21 @@ class GroupDetailViewModel @Inject constructor(
     }
 
     /**
-     * Heuristic: if the current user has any role assigned beyond a basic member
-     * (i.e. their roleIds list is non-empty), surface admin actions like kick.
-     * The API enforces real permissions; this just hides the buttons for users
-     * who definitely can't use them.
+     * Gate kick/remove UI on the caller actually holding the
+     * `group-members-manage` permission (or the `"*"` wildcard owners get).
+     *
+     * A prior version used `roleIds.isNotEmpty()` as a cheap heuristic, but
+     * every group membership includes at least a default member role, so that
+     * check surfaced destructive controls to regular members — who then hit
+     * `kickGroupMember` → 403 → error snackbar on every attempt. The server
+     * still enforces permissions authoritatively; this just keeps the UI
+     * honest. Matches desktop VRCX's `hasGroupPermission(..., 'group-members-manage')`.
      */
     fun canManageMembers(group: Group?): Boolean {
         val myMember = group?.myMember ?: return false
-        return myMember.roleIds.isNotEmpty() && isMember(group)
+        if (!isMember(group)) return false
+        return myMember.permissions.contains("*") ||
+            myMember.permissions.contains("group-members-manage")
     }
 
     fun kickMember(userId: String) {

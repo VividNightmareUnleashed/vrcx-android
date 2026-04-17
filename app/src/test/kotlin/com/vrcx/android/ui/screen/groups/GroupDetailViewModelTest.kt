@@ -75,23 +75,43 @@ class GroupDetailViewModelTest {
     }
 
     @Test
-    fun `canManageMembers returns false when myMember is missing or has no roles`() {
+    fun `canManageMembers returns false when myMember is missing or lacks manage permission`() {
         val vm = buildViewModel()
         assertFalse(vm.canManageMembers(null))
         assertFalse(vm.canManageMembers(Group(id = "grp_x", myMember = null)))
+        // Regular member with only the default role — has a roleId but no
+        // group-members-manage permission; the destructive UI must stay hidden.
         assertFalse(
             vm.canManageMembers(
                 Group(
                     id = "grp_x",
                     membershipStatus = "member",
-                    myMember = GroupMember(membershipStatus = "member", roleIds = emptyList()),
+                    myMember = GroupMember(
+                        membershipStatus = "member",
+                        roleIds = listOf("default_member_role"),
+                        permissions = emptyList(),
+                    ),
+                ),
+            ),
+        )
+        // Has unrelated admin-ish permissions but not group-members-manage.
+        assertFalse(
+            vm.canManageMembers(
+                Group(
+                    id = "grp_x",
+                    membershipStatus = "member",
+                    myMember = GroupMember(
+                        membershipStatus = "member",
+                        roleIds = listOf("admin_role"),
+                        permissions = listOf("group-announcements-manage"),
+                    ),
                 ),
             ),
         )
     }
 
     @Test
-    fun `canManageMembers returns true when caller has a role and is a member`() {
+    fun `canManageMembers returns true when caller has group-members-manage permission`() {
         val vm = buildViewModel()
         assertTrue(
             vm.canManageMembers(
@@ -100,7 +120,26 @@ class GroupDetailViewModelTest {
                     membershipStatus = "member",
                     myMember = GroupMember(
                         membershipStatus = "member",
-                        roleIds = listOf("admin_role"),
+                        roleIds = listOf("moderator_role"),
+                        permissions = listOf("group-members-manage"),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `canManageMembers returns true for owners with wildcard permission`() {
+        val vm = buildViewModel()
+        assertTrue(
+            vm.canManageMembers(
+                Group(
+                    id = "grp_x",
+                    membershipStatus = "member",
+                    myMember = GroupMember(
+                        membershipStatus = "member",
+                        roleIds = listOf("owner_role"),
+                        permissions = listOf("*"),
                     ),
                 ),
             ),
