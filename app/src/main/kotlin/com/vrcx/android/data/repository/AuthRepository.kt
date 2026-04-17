@@ -66,23 +66,31 @@ class AuthRepository @Inject constructor(
             scope.launch {
                 bus.events.collect { event ->
                     when (event) {
-                        AuthEvent.Unauthorized -> if (_authState.value is AuthState.LoggedIn) {
-                            // Mirror logout() minus the network call (the 401
-                            // already proved the cookie is invalid, so asking
-                            // the server to invalidate it is pointless). Just
-                            // nulling _currentUser/_authToken leaves the stale
-                            // auth cookie in CookieJarImpl and the dedup
-                            // cache's 401 entries in place — next startup's
-                            // tryResumeSession() sees a cookie and tries to
-                            // resume an already-dead session instead of
-                            // bouncing the user to the login screen. Also
-                            // stop the websocket foreground service so its
-                            // notification + authenticated socket don't
-                            // keep running with stale credentials.
-                            favoriteRepository.clearRuntimeState()
-                            clearAuthSession()
-                            WebSocketForegroundService.stop(context)
-                            _authState.value = AuthState.NotLoggedIn
+                        AuthEvent.Unauthorized -> {
+                            // Clean up whenever there's a persisted session to
+                            // clean — active (LoggedIn), resume in progress
+                            // (tryResumeSession sets LoggingIn with a cookie),
+                            // or 2FA continuation. Gating on LoggedIn alone
+                            // would skip the resume path and leave the stale
+                            // cookie + dedup cache in place, so each startup
+                            // would retry the dead session and land on
+                            // AuthState.Error instead of bouncing cleanly to
+                            // login.
+                            //
+                            // Skip when no session artifacts exist (fresh
+                            // login with a bad password: basic auth only,
+                            // no cookie yet) — the login() catch already sets
+                            // AuthState.Error with the user-facing message
+                            // and we don't want to race over it.
+                            val hasPersistedSession = _currentUser != null ||
+                                _authToken != null ||
+                                cookieJar.getAuthCookie() != null
+                            if (hasPersistedSession) {
+                                favoriteRepository.clearRuntimeState()
+                                clearAuthSession()
+                                WebSocketForegroundService.stop(context)
+                                _authState.value = AuthState.NotLoggedIn
+                            }
                         }
                     }
                 }
