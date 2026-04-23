@@ -301,6 +301,7 @@ class WebSocketForegroundService : Service() {
     private fun previousFriendFor(event: PipelineEvent): FriendContext? {
         val content = when (event) {
             is PipelineEvent.FriendUpdate -> event.content?.jsonObject
+            is PipelineEvent.FriendLocation -> event.content?.jsonObject
             else -> null
         } ?: return null
         val userId = content["userId"]?.jsonPrimitive?.content ?: return null
@@ -347,6 +348,7 @@ class WebSocketForegroundService : Service() {
                 val userId = content["userId"]?.jsonPrimitive?.content ?: return
                 if (userId !in notifyEnabledFriendIds) return
                 val location = content["location"]?.jsonPrimitive?.content ?: return
+                if (previousFriend?.ref?.location == location) return
                 if (location == "offline" || location == "private" || location.isEmpty()) return
                 val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content
                     ?: friendRepository.friends.value[userId]?.name
