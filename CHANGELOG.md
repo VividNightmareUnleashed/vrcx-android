@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.5.1] - 2026-04-25
+
+### Fixed
+
+- **Release token privacy** — Release builds no longer install OkHttp
+  request logging, and the WebSocket connection now uses a dedicated client
+  so the pipeline `auth` token cannot be printed through request URLs.
+- **Authenticated image loading** — Coil uses a separate image client that
+  keeps VRChat auth cookies for protected media without routing image 401s
+  through the global session-expiry path.
+- **Account-switch teardown** — Logout and account changes now reset
+  account-scoped runtime state, cancel in-flight deduplicated requests, and
+  guard late repository refreshes so previous-account data cannot reappear in
+  the next session.
+- **Login, search, and gallery edge cases** — Email-only 2FA submits through
+  the email OTP flow, canceled searches no longer publish stale failed states,
+  and large gallery uploads are rejected before the app reads the full file
+  into memory.
+- **WebSocket and cookie concurrency** — Reconnect callbacks are guarded by a
+  connection generation, and cookie storage is synchronized across OkHttp
+  callbacks and logout.
+- **Notifications, feed, and backup safety** — Invite payloads now match the
+  documented VRChat request bodies, feed lists order by local row id, Android
+  15 boot notifications create their channel before posting, and backup rules
+  exclude account-scoped database and DataStore files.
+- **Release evidence** — The release scanner verifies explicit APKs with
+  `apksigner` and rejects stale, debug, or unsigned artifacts unless an
+  existing signed APK is intentionally scanned with `--skip-build`.
+
 ## [1.5.0] - 2026-04-17
 
 A broad stability, correctness, and polish pass on top of the 1.4.x feature

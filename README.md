@@ -5,7 +5,7 @@
 A native Android companion app for VRChat — track friends, browse worlds, manage avatars, and get real-time notifications, all from your phone.
 
 [![Latest Release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=latest)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
-[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.5.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/733a6e531df806788a5b7cd41da9a64fe5928d5bbcf7fb7f3efcf27e74c7419d)
+[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.5.1%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326)
 [![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
 
 </div>
@@ -57,7 +57,7 @@ VRCX Android is a mobile companion app that brings the core functionality of the
 
 Grab the latest APK from [Releases](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest).
 
-The current signed `1.5.0` release is published at [VirusTotal](https://www.virustotal.com/gui/file/733a6e531df806788a5b7cd41da9a64fe5928d5bbcf7fb7f3efcf27e74c7419d) with SHA-256 `733a6e531df806788a5b7cd41da9a64fe5928d5bbcf7fb7f3efcf27e74c7419d`.
+The current signed `1.5.1` release is published at [VirusTotal](https://www.virustotal.com/gui/file/7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326) with SHA-256 `7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326`.
 
 Requires **Android 8.0** (API 26) or newer.
 
