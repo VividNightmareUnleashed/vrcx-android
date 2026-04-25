@@ -103,8 +103,9 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("imageOkHttpClient")
-    fun provideImageOkHttpClient(): OkHttpClient {
+    fun provideImageOkHttpClient(cookieJar: CookieJarImpl): OkHttpClient {
         return OkHttpClient.Builder()
+            .cookieJar(cookieJar)
             .addInterceptor(UserAgentInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
