@@ -9,6 +9,7 @@ import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.SearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,6 +53,7 @@ class SearchViewModel @Inject constructor(
     private val worldSourcePageSize = 50
     private var remoteAvatarResults: List<Avatar> = emptyList()
     private var searchJob: Job? = null
+    private var searchGeneration = 0L
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -188,6 +190,8 @@ class SearchViewModel @Inject constructor(
 
     private fun scheduleSearch(immediate: Boolean, useRemoteAvatarCache: Boolean = false) {
         searchJob?.cancel()
+        val generation = ++searchGeneration
+        _isSearching.value = false
         val validationError = validateSearchState()
         if (validationError != null) {
             clearCurrentResults()
@@ -206,12 +210,15 @@ class SearchViewModel @Inject constructor(
 
         if (immediate) {
             searchJob = viewModelScope.launch {
-                search(useRemoteAvatarCache = useRemoteAvatarCache)
+                search(
+                    generation = generation,
+                    useRemoteAvatarCache = useRemoteAvatarCache,
+                )
             }
         } else {
             searchJob = viewModelScope.launch {
                 delay(300)
-                search()
+                search(generation = generation)
             }
         }
     }
@@ -245,9 +252,11 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private suspend fun search(useRemoteAvatarCache: Boolean = false) {
+    private suspend fun search(generation: Long, useRemoteAvatarCache: Boolean = false) {
+        if (!isCurrentSearch(generation)) return
         _isSearching.value = true
         _error.value = null
+        var completed = false
         try {
             val q = _query.value.trim()
             val offset = _currentOffset.value
@@ -260,43 +269,64 @@ class SearchViewModel @Inject constructor(
                         searchByBio = _searchUsersByBio.value,
                         sortByLastLogin = _sortUsersByLastLogin.value,
                     )
+                    if (!isCurrentSearch(generation)) return
                     _users.value = results
                     _hasMore.value = results.size >= pageSize
                 }
                 SearchTab.WORLDS -> {
                     val result = loadWorldPage(query = q, offset = offset)
+                    if (!isCurrentSearch(generation)) return
                     _worlds.value = result.items
                     _hasMore.value = result.hasMore
                 }
                 SearchTab.AVATARS -> {
                     if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
-                        if (!useRemoteAvatarCache || remoteAvatarResults.isEmpty()) {
-                            remoteAvatarResults = searchRepository.searchRemoteAvatars(
+                        val results = if (!useRemoteAvatarCache || remoteAvatarResults.isEmpty()) {
+                            searchRepository.searchRemoteAvatars(
                                 query = q,
                                 providerUrl = _avatarProviderUrl.value.trim(),
                             )
+                        } else {
+                            remoteAvatarResults
                         }
+                        if (!isCurrentSearch(generation)) return
+                        remoteAvatarResults = results
                         _avatars.value = remoteAvatarResults.drop(offset).take(pageSize)
                         _hasMore.value = offset + pageSize < remoteAvatarResults.size
                     } else {
                         val results = searchRepository.searchAvatars(q, n = pageSize, offset = offset)
+                        if (!isCurrentSearch(generation)) return
                         _avatars.value = results
                         _hasMore.value = results.size >= pageSize
                     }
                 }
                 SearchTab.GROUPS -> {
                     val results = searchRepository.searchGroups(q, n = pageSize, offset = offset)
+                    if (!isCurrentSearch(generation)) return
                     _groups.value = results
                     _hasMore.value = results.size >= pageSize
                 }
             }
+            completed = true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            _error.value = e.message ?: "Search failed"
+            if (isCurrentSearch(generation)) {
+                _error.value = e.message ?: "Search failed"
+                completed = true
+            }
         } finally {
-            _isSearching.value = false
-            _hasSearched.value = true
+            if (isCurrentSearch(generation)) {
+                _isSearching.value = false
+                if (completed) {
+                    _hasSearched.value = true
+                }
+            }
         }
     }
+
+    private fun isCurrentSearch(generation: Long): Boolean =
+        generation == searchGeneration
 
     private fun clearCurrentResults() {
         when (_selectedTab.value) {

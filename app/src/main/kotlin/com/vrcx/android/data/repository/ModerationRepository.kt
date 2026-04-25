@@ -20,6 +20,10 @@ class ModerationRepository @Inject constructor(
         _moderations.value = playerModerationApi.getPlayerModerations()
     }
 
+    fun clearRuntimeState() {
+        _moderations.value = emptyList()
+    }
+
     suspend fun blockUser(userId: String) {
         playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "block"))
         loadModerations()

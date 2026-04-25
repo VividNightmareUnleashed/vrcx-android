@@ -1,6 +1,7 @@
 package com.vrcx.android.di
 
 import android.content.Context
+import com.vrcx.android.BuildConfig
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEventBus
 import com.vrcx.android.data.api.AuthInterceptor
@@ -35,6 +36,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -77,7 +79,7 @@ object NetworkModule {
         authEventBus: AuthEventBus,
         deduplicator: RequestDeduplicator,
     ): OkHttpClient {
-        return OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(UserAgentInterceptor())
             .addInterceptor(authInterceptor)
@@ -85,11 +87,40 @@ object NetworkModule {
             // Cache 404/403 GETs globally so every repository benefits from the
             // failure cache without having to opt in via dedupGet.
             .addInterceptor(DedupInterceptor(deduplicator))
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
+        }
+
+        return builder.build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("imageOkHttpClient")
+    fun provideImageOkHttpClient(cookieJar: CookieJarImpl): OkHttpClient {
+        return OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .addInterceptor(UserAgentInterceptor())
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("webSocketOkHttpClient")
+    fun provideWebSocketOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor(UserAgentInterceptor())
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }

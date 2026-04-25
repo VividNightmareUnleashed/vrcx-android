@@ -22,6 +22,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.TimeUnit
 
 enum class WebSocketState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
@@ -36,6 +37,7 @@ class VRChatWebSocket(
     private val MAX_RECONNECT_DELAY_MS = 300_000L // 5 min cap
     private val MAX_RECONNECT_ATTEMPTS = 50
     private var reconnectAttempt = 0
+    private val connectionGeneration = AtomicLong(0)
 
     private val _events = MutableSharedFlow<PipelineEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<PipelineEvent> = _events.asSharedFlow()
@@ -48,12 +50,14 @@ class VRChatWebSocket(
     private var lastMessage: String? = null
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Use the authenticated client (with cookies) but with no read timeout for WebSocket
+    // WebSocket auth is carried in the URL, so this client intentionally avoids
+    // API interceptors that could log, retry, or emit global auth events.
     private val client = baseClient.newBuilder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     fun connect(authToken: String) {
+        val generation = connectionGeneration.incrementAndGet()
         shouldReconnect = true
         _state.value = WebSocketState.CONNECTING
 
@@ -63,12 +67,14 @@ class VRChatWebSocket(
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!isCurrent(generation)) return
                 Log.d(TAG, "WebSocket connected")
                 reconnectAttempt = 0
                 _state.value = WebSocketState.CONNECTED
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!isCurrent(generation)) return
                 // Duplicate filtering
                 if (text == lastMessage) return
                 lastMessage = text
@@ -76,26 +82,30 @@ class VRChatWebSocket(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (!isCurrent(generation)) return
                 Log.d(TAG, "WebSocket closing: $code $reason")
                 webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!isCurrent(generation)) return
                 Log.d(TAG, "WebSocket closed: $code $reason")
                 _state.value = WebSocketState.DISCONNECTED
-                attemptReconnect(authToken)
+                attemptReconnect(authToken, generation)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (!isCurrent(generation)) return
                 Log.e(TAG, "WebSocket failure: ${t.message}")
                 _state.value = WebSocketState.DISCONNECTED
-                attemptReconnect(authToken)
+                attemptReconnect(authToken, generation)
             }
         })
     }
 
     fun disconnect() {
         shouldReconnect = false
+        connectionGeneration.incrementAndGet()
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
         _state.value = WebSocketState.DISCONNECTED
@@ -105,6 +115,7 @@ class VRChatWebSocket(
 
     fun reconnectNow(authToken: String) {
         shouldReconnect = false
+        connectionGeneration.incrementAndGet()
         webSocket?.close(1000, "Reconnecting")
         webSocket = null
         scope.cancel()
@@ -113,8 +124,8 @@ class VRChatWebSocket(
         connect(authToken)
     }
 
-    private fun attemptReconnect(authToken: String) {
-        if (!shouldReconnect) return
+    private fun attemptReconnect(authToken: String, generation: Long) {
+        if (!shouldReconnect || !isCurrent(generation)) return
         reconnectAttempt++
         if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
             Log.e(TAG, "Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached, giving up")
@@ -129,11 +140,13 @@ class VRChatWebSocket(
         Log.d(TAG, "Reconnect attempt $reconnectAttempt in ${delayMs}ms")
         scope.launch {
             delay(delayMs)
-            if (shouldReconnect) {
+            if (shouldReconnect && isCurrent(generation)) {
                 connect(authToken)
             }
         }
     }
+
+    private fun isCurrent(generation: Long): Boolean = generation == connectionGeneration.get()
 
     private fun parseAndEmit(text: String) {
         val event = parsePipelineMessage(json, text) ?: return

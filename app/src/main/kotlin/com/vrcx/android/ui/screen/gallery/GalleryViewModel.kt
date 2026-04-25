@@ -22,11 +22,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import javax.inject.Inject
 
 enum class GalleryTab { GALLERY, ICONS, EMOJIS, STICKERS, PRINTS, INVENTORY }
 
-private const val MAX_UPLOAD_SIZE = 10 * 1024 * 1024 // 10 MB
+internal const val MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+private const val UPLOAD_READ_BUFFER_SIZE = 8 * 1024
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
@@ -167,15 +170,6 @@ class GalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _isUploading.value = true
             try {
-                val mimeType = context.contentResolver.getType(uri) ?: "image/png"
-                val fileName = resolveFileName(uri, mimeType)
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: return@launch
-                if (bytes.size > MAX_UPLOAD_SIZE) {
-                    _snackbarMessage.value = "Image too large (max 10 MB)"
-                    return@launch
-                }
                 val tag = when (tab) {
                     GalleryTab.GALLERY -> "gallery"
                     GalleryTab.ICONS -> "icon"
@@ -183,6 +177,9 @@ class GalleryViewModel @Inject constructor(
                     GalleryTab.STICKERS -> "sticker"
                     else -> return@launch
                 }
+                val mimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val fileName = resolveFileName(uri, mimeType)
+                val bytes = readUploadBytes(uri) ?: return@launch
                 galleryRepository.uploadFile(tag, bytes, mimeType, fileName)
                 reloadTab(tab)
                 _snackbarMessage.value = "Image uploaded"
@@ -200,13 +197,7 @@ class GalleryViewModel @Inject constructor(
             try {
                 val mimeType = context.contentResolver.getType(uri) ?: "image/png"
                 val fileName = resolveFileName(uri, mimeType)
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: return@launch
-                if (bytes.size > MAX_UPLOAD_SIZE) {
-                    _snackbarMessage.value = "Image too large (max 10 MB)"
-                    return@launch
-                }
+                val bytes = readUploadBytes(uri) ?: return@launch
                 galleryRepository.uploadPrint(bytes, note?.ifBlank { null }, mimeType, fileName)
                 val uid = currentUserId() ?: return@launch
                 galleryRepository.loadPrints(uid)
@@ -240,6 +231,53 @@ class GalleryViewModel @Inject constructor(
         }.getOrNull()
         return pickerName?.takeIf { it.isNotBlank() }
             ?: GalleryRepository.defaultFileNameFor(mimeType)
+    }
+
+    private suspend fun readUploadBytes(uri: Uri): ByteArray? {
+        return when (val result = withContext(Dispatchers.IO) { readUploadBytesResult(uri) }) {
+            is UploadReadResult.Success -> result.bytes
+            UploadReadResult.TooLarge -> {
+                _snackbarMessage.value = "Image too large (max 10 MB)"
+                null
+            }
+            UploadReadResult.Unreadable -> null
+        }
+    }
+
+    private fun readUploadBytesResult(uri: Uri): UploadReadResult {
+        val metadataSize = resolveFileSize(uri)
+        if (metadataSize != null && metadataSize > MAX_UPLOAD_SIZE_BYTES) {
+            return UploadReadResult.TooLarge
+        }
+
+        val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+            readUploadBytesBounded(input)
+        } ?: return UploadReadResult.Unreadable
+
+        return bytes?.let(UploadReadResult::Success) ?: UploadReadResult.TooLarge
+    }
+
+    private fun resolveFileSize(uri: Uri): Long? {
+        val querySize = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.SIZE),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx >= 0) cursor.getLong(idx).takeIf { it >= 0 } else null
+                } else null
+            }
+        }.getOrNull()
+
+        if (querySize != null) return querySize
+
+        return runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it >= 0 }
+            }
+        }.getOrNull()
     }
 
     fun setProfilePic(fileId: String) {
@@ -315,4 +353,33 @@ class GalleryViewModel @Inject constructor(
             GalleryTab.INVENTORY -> galleryRepository.loadInventory()
         }
     }
+}
+
+private sealed interface UploadReadResult {
+    data class Success(val bytes: ByteArray) : UploadReadResult
+    data object TooLarge : UploadReadResult
+    data object Unreadable : UploadReadResult
+}
+
+internal fun readUploadBytesBounded(
+    input: InputStream,
+    maxBytes: Int = MAX_UPLOAD_SIZE_BYTES,
+): ByteArray? {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(UPLOAD_READ_BUFFER_SIZE)
+    var total = 0
+
+    while (true) {
+        val maxReadable = maxBytes + 1 - total
+        if (maxReadable <= 0) return null
+
+        val read = input.read(buffer, 0, minOf(buffer.size, maxReadable))
+        if (read == -1) break
+
+        total += read
+        if (total > maxBytes) return null
+        output.write(buffer, 0, read)
+    }
+
+    return output.toByteArray()
 }

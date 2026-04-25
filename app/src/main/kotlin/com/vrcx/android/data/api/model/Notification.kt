@@ -1,6 +1,8 @@
 package com.vrcx.android.data.api.model
 
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -49,9 +51,16 @@ data class NotificationV2(
 )
 
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 data class InviteRequest(
     val instanceId: String,
-    val messageSlot: Int = 0,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val messageSlot: Int? = null,
+)
+
+@Serializable
+data class InviteResponseRequest(
+    val responseSlot: Int,
 )
 
 @Serializable

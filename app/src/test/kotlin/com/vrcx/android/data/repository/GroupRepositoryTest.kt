@@ -3,6 +3,10 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.model.Group
+import com.vrcx.android.data.websocket.PipelineEvent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
@@ -44,6 +48,61 @@ class GroupRepositoryTest {
 
             assertEquals(refreshedGroup, fetchedGroup)
             verify(groupApi, times(3)).getGroup("grp_1")
+        }
+    }
+
+    @Test
+    fun `loadUserGroups ignores result when runtime state is cleared mid-request`() {
+        runBlocking {
+            val staleGroups = listOf(Group(id = "grp_old", groupId = "grp_old"))
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+
+            whenever(groupApi.getUserGroups("usr_old")).thenAnswer {
+                runBlocking {
+                    started.complete(Unit)
+                    release.await()
+                    staleGroups
+                }
+            }
+
+            val loadJob = async { repository.loadUserGroups("usr_old") }
+            started.await()
+
+            repository.clearRuntimeState()
+            release.complete(Unit)
+            loadJob.await()
+
+            assertEquals("", repository.ownerUserId)
+            assertEquals(emptyList<Group>(), repository.userGroups.value)
+        }
+    }
+
+    @Test
+    fun `group joined refresh ignores stale owner after runtime clear`() {
+        runBlocking {
+            val staleGroups = listOf(Group(id = "grp_old", groupId = "grp_old"))
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+
+            whenever(groupApi.getUserGroups("usr_old")).thenAnswer {
+                runBlocking {
+                    started.complete(Unit)
+                    release.await()
+                    staleGroups
+                }
+            }
+
+            repository.ownerUserId = "usr_old"
+            repository.handleEvent(PipelineEvent.GroupJoined(null))
+            started.await()
+
+            repository.clearRuntimeState()
+            release.complete(Unit)
+            delay(100)
+
+            assertEquals("", repository.ownerUserId)
+            assertEquals(emptyList<Group>(), repository.userGroups.value)
         }
     }
 }

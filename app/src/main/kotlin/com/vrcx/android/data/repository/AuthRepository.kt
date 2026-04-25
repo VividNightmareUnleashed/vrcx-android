@@ -26,6 +26,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 sealed class AuthState {
@@ -59,6 +60,15 @@ class AuthRepository @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    @Inject lateinit var avatarRepositoryProvider: Provider<AvatarRepository>
+    @Inject lateinit var friendRepositoryProvider: Provider<FriendRepository>
+    @Inject lateinit var galleryRepositoryProvider: Provider<GalleryRepository>
+    @Inject lateinit var groupRepositoryProvider: Provider<GroupRepository>
+    @Inject lateinit var instanceRepositoryProvider: Provider<InstanceRepository>
+    @Inject lateinit var moderationRepositoryProvider: Provider<ModerationRepository>
+    @Inject lateinit var notificationRepositoryProvider: Provider<NotificationRepository>
+    @Inject lateinit var userRepositoryProvider: Provider<UserRepository>
+
     init {
         // Collect unauthorized signals from ErrorInterceptor so a 401 on any
         // request immediately transitions the app back to NotLoggedIn without
@@ -87,7 +97,7 @@ class AuthRepository @Inject constructor(
                                 _authToken != null ||
                                 cookieJar.getAuthCookie() != null
                             if (hasPersistedSession) {
-                                favoriteRepository.clearRuntimeState()
+                                clearAccountRuntimeState()
                                 clearAuthSession()
                                 WebSocketForegroundService.stop(context)
                                 _authState.value = AuthState.NotLoggedIn
@@ -127,7 +137,7 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun resendEmailOtp(username: String, password: String) {
-        favoriteRepository.clearRuntimeState()
+        clearAccountRuntimeState()
         clearAuthSession()
         _authState.value = AuthState.NotLoggedIn
         login(username, password)
@@ -236,7 +246,7 @@ class AuthRepository @Inject constructor(
         } catch (_: Exception) {
             // Swallow: local state still gets cleared below.
         }
-        favoriteRepository.clearRuntimeState()
+        clearAccountRuntimeState()
         clearAuthSession()
         // Stop the websocket service so every logout path — explicit sign-out
         // from Profile/Settings, interceptor-driven 401, etc. — tears down the
@@ -274,7 +284,7 @@ class AuthRepository @Inject constructor(
     }
 
     private suspend fun onLoginSuccess(user: CurrentUser) {
-        favoriteRepository.clearRuntimeState()
+        clearAccountRuntimeState()
         _currentUser = user
         _authState.value = AuthState.LoggedIn(user)
         preferences.setLastUserId(user.id)
@@ -282,11 +292,28 @@ class AuthRepository @Inject constructor(
     }
 
     private fun clearAuthSession() {
+        clearInjectedRuntimeState()
         _currentUser = null
         _authToken = null
         authInterceptor.clearBasicAuth()
         cookieJar.clearAll()
         dedup.clearCache()
+    }
+
+    private suspend fun clearAccountRuntimeState() {
+        favoriteRepository.clearRuntimeState()
+        clearInjectedRuntimeState()
+    }
+
+    private fun clearInjectedRuntimeState() {
+        if (::avatarRepositoryProvider.isInitialized) avatarRepositoryProvider.get().clearRuntimeState()
+        if (::friendRepositoryProvider.isInitialized) friendRepositoryProvider.get().clearRuntimeState()
+        if (::galleryRepositoryProvider.isInitialized) galleryRepositoryProvider.get().clearRuntimeState()
+        if (::groupRepositoryProvider.isInitialized) groupRepositoryProvider.get().clearRuntimeState()
+        if (::instanceRepositoryProvider.isInitialized) instanceRepositoryProvider.get().clearRuntimeState()
+        if (::moderationRepositoryProvider.isInitialized) moderationRepositoryProvider.get().clearRuntimeState()
+        if (::notificationRepositoryProvider.isInitialized) notificationRepositoryProvider.get().clearRuntimeState()
+        if (::userRepositoryProvider.isInitialized) userRepositoryProvider.get().clearCache()
     }
 
     /**

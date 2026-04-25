@@ -28,32 +28,26 @@ interface FeedDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertOnlineOffline(entry: FeedOnlineOfflineEntity)
 
-    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getGpsFeed(userId: String, limit: Int = 100): Flow<List<FeedGpsEntity>>
 
-    @Query("SELECT * FROM feed_status WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_status WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getStatusFeed(userId: String, limit: Int = 100): Flow<List<FeedStatusEntity>>
 
-    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getBioFeed(userId: String, limit: Int = 100): Flow<List<FeedBioEntity>>
 
-    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getAvatarFeed(userId: String, limit: Int = 100): Flow<List<FeedAvatarEntity>>
 
-    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getOnlineOfflineFeed(userId: String, limit: Int = 100): Flow<List<FeedOnlineOfflineEntity>>
 
-    // "Latest for (owner, user)" lookups used to skip writes that would duplicate
-    // the most recent row for the same friend — the in-memory window dedup in
-    // FriendRepository only covers a short interval and is cleared on re-login,
-    // so it misses VRChat's occasional re-emits of the same location event
-    // minutes apart (observed: identical GPS rows at 1m relative time).
-    //
-    // Order by `id DESC`, not `createdAt DESC`: createdAt is Instant.toString()
-    // text whose fractional seconds are variable-width (e.g. "...30Z" vs
-    // "...30.123Z"), so a lexicographic sort can return the wrong row for two
-    // events in the same second ('Z' = 0x5A sorts after '.' = 0x2E). The
-    // autoGenerate Long primary key is monotonic and gives us the true latest.
+    // Order feed reads by `id DESC`, not `createdAt DESC`: createdAt is
+    // Instant.toString() text whose fractional seconds are variable-width
+    // (e.g. "...30Z" vs "...30.123Z"), so a lexicographic sort can return the
+    // wrong row for two events in the same second. The autoGenerate Long
+    // primary key is monotonic and gives us the true latest.
 
     @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestGps(ownerUserId: String, userId: String): FeedGpsEntity?

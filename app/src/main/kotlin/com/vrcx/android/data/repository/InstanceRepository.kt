@@ -37,6 +37,10 @@ class InstanceRepository @Inject constructor(
         }
     }
 
+    fun clearRuntimeState() {
+        _queueState.value = null
+    }
+
     suspend fun getInstance(worldId: String, instanceId: String): Instance =
         instanceApi.getInstance(worldId, instanceId)
 }

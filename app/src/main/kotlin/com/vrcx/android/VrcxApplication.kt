@@ -14,6 +14,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
+import javax.inject.Named
 
 @HiltAndroidApp
 class VrcxApplication : Application(), SingletonImageLoader.Factory {
@@ -25,7 +26,7 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
             .components {
                 add(ProfilePicCacheInterceptor(entryPoint.profilePicCacheManager()))
                 add(AnimatedImageDecoder.Factory())
-                add(OkHttpNetworkFetcherFactory(callFactory = { entryPoint.okHttpClient() }))
+                add(OkHttpNetworkFetcherFactory(callFactory = { entryPoint.imageOkHttpClient() }))
             }
             .build()
     }
@@ -34,6 +35,7 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface ImageLoaderEntryPoint {
-    fun okHttpClient(): OkHttpClient
+    @Named("imageOkHttpClient")
+    fun imageOkHttpClient(): OkHttpClient
     fun profilePicCacheManager(): ProfilePicCacheManager
 }

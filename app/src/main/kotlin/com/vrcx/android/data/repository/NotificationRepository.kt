@@ -1,7 +1,8 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.NotificationApi
-import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.data.api.model.InviteRequest
+import com.vrcx.android.data.api.model.InviteResponseRequest
 import com.vrcx.android.data.api.model.NotificationAction
 import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.NotificationV2
@@ -43,14 +44,12 @@ data class UnifiedNotification(
 
 private data class InviteContext(
     val location: String,
-    val worldName: String,
 )
 
 @Singleton
 class NotificationRepository @Inject constructor(
     private val notificationApi: NotificationApi,
     private val authRepository: AuthRepository,
-    private val worldApi: WorldApi,
     private val notificationDao: NotificationDao,
     private val json: Json,
 ) {
@@ -114,6 +113,15 @@ class NotificationRepository @Inject constructor(
             .map { it.toModel() }
             .sortedByDescending { it.createdAt }
         recalculateUnseenCount()
+    }
+
+    fun resetRuntimeState() = clearRuntimeState()
+
+    fun clearRuntimeState() {
+        _notifications.value = emptyList()
+        _notificationsV2.value = emptyList()
+        _localNotifications.value = emptyList()
+        unseenCount.value = 0
     }
 
     suspend fun loadNotifications() {
@@ -296,17 +304,14 @@ class NotificationRepository @Inject constructor(
         markSeen(notificationId)
     }
 
-    suspend fun sendInviteToUser(userId: String) {
-        notificationApi.sendInvite(userId, createInvitePayload())
+    suspend fun sendInviteToUser(userId: String, messageSlot: Int? = null) {
+        notificationApi.sendInvite(userId, createInvitePayload(messageSlot))
     }
 
     suspend fun sendInviteResponse(notificationId: String, responseSlot: Int) {
         notificationApi.sendInviteResponse(
             notificationId = notificationId,
-            body = mapOf(
-                "responseSlot" to responseSlot,
-                "rsvp" to true,
-            ),
+            body = InviteResponseRequest(responseSlot = responseSlot),
         )
         notificationApi.hideNotification(notificationId)
         removeFromLists(notificationId)
@@ -401,13 +406,11 @@ class NotificationRepository @Inject constructor(
         notificationApi.hideNotification(notification.id)
     }
 
-    private suspend fun createInvitePayload(): Map<String, @JvmSuppressWildcards Any> {
+    private suspend fun createInvitePayload(messageSlot: Int?): InviteRequest {
         val context = resolveInviteContext()
-        return mapOf(
-            "instanceId" to context.location,
-            "worldId" to context.location,
-            "worldName" to context.worldName,
-            "rsvp" to true,
+        return InviteRequest(
+            instanceId = context.location,
+            messageSlot = messageSlot,
         )
     }
 
@@ -428,11 +431,8 @@ class NotificationRepository @Inject constructor(
             error("You must be in a world to send invites")
         }
 
-        val worldId = currentLocation.substringBefore(":")
-        val worldName = runCatching { worldApi.getWorld(worldId).name }.getOrDefault(worldId)
         return InviteContext(
             location = currentLocation,
-            worldName = worldName,
         )
     }
 

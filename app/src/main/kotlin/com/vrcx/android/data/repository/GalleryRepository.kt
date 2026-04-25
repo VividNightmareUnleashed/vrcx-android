@@ -81,6 +81,16 @@ class GalleryRepository @Inject constructor(
         }
     }
 
+    fun clearRuntimeState() {
+        _galleryImages.value = emptyList()
+        _iconImages.value = emptyList()
+        _emojiImages.value = emptyList()
+        _stickerImages.value = emptyList()
+        _prints.value = emptyList()
+        _inventoryItems.value = emptyList()
+        _inventoryTemplates.value = emptyList()
+    }
+
     suspend fun handleContentRefresh(contentType: String, userId: String) {
         try {
             when (contentType) {

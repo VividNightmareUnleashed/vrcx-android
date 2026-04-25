@@ -93,6 +93,20 @@ class ErrorInterceptorTest {
     }
 
     @Test
+    fun `429 retry response 401 emits Unauthorized on the bus`() {
+        val collected = collectEvents()
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "1"))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("expired"))
+
+        val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
+
+        assertEquals(401, response.code)
+        assertEquals(1, collected().size)
+        assertTrue(collected().first() is AuthEvent.Unauthorized)
+        response.close()
+    }
+
+    @Test
     fun `Retry-After larger than the cap is clamped to 2 seconds`() {
         server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "60"))
         server.enqueue(MockResponse().setResponseCode(200))

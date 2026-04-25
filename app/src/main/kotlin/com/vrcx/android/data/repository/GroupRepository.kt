@@ -29,6 +29,7 @@ class GroupRepository @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val groupCache = ConcurrentHashMap<String, Group>()
 
+    @Volatile
     var ownerUserId: String = ""
 
     private val _userGroups = MutableStateFlow<List<Group>>(emptyList())
@@ -36,7 +37,16 @@ class GroupRepository @Inject constructor(
 
     suspend fun loadUserGroups(userId: String) {
         ownerUserId = userId
-        _userGroups.value = groupApi.getUserGroups(userId)
+        val groups = groupApi.getUserGroups(userId)
+        if (ownerUserId == userId) {
+            _userGroups.value = groups
+        }
+    }
+
+    fun clearRuntimeState() {
+        ownerUserId = ""
+        groupCache.clear()
+        _userGroups.value = emptyList()
     }
 
     suspend fun getGroup(groupId: String): Group {
@@ -128,9 +138,12 @@ class GroupRepository @Inject constructor(
     fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.GroupJoined -> {
-                if (ownerUserId.isNotEmpty()) {
+                val ownerId = ownerUserId
+                if (ownerId.isNotEmpty()) {
                     scope.launch {
-                        try { loadUserGroups(ownerUserId) } catch (_: Exception) {}
+                        try {
+                            refreshUserGroupsIfCurrent(ownerId)
+                        } catch (_: Exception) {}
                     }
                 }
             }
@@ -183,6 +196,16 @@ class GroupRepository @Inject constructor(
             _userGroups.value.filterNot { it.matchesGroupId(groupId) }
         }
         return updated
+    }
+
+    private suspend fun refreshUserGroupsIfCurrent(ownerId: String) {
+        if (ownerUserId != ownerId) {
+            return
+        }
+        val groups = groupApi.getUserGroups(ownerId)
+        if (ownerUserId == ownerId) {
+            _userGroups.value = groups
+        }
     }
 
     private fun isJoinedGroup(group: Group): Boolean {

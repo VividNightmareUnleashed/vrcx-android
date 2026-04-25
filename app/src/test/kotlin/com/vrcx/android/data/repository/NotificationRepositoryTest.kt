@@ -1,11 +1,13 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.NotificationApi
-import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.api.model.InviteRequest
+import com.vrcx.android.data.api.model.InviteResponseRequest
 import com.vrcx.android.data.api.model.NotificationAction
+import com.vrcx.android.data.api.model.NotificationV2
 import com.vrcx.android.data.api.model.NotificationResponse
-import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.api.model.VrcNotification
 import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -27,12 +29,10 @@ import org.mockito.kotlin.whenever
 class NotificationRepositoryTest {
     private val notificationApi = mock<NotificationApi>()
     private val authRepository = mock<AuthRepository>()
-    private val worldApi = mock<WorldApi>()
     private val notificationDao = mock<com.vrcx.android.data.db.dao.NotificationDao>()
     private val repository = NotificationRepository(
         notificationApi = notificationApi,
         authRepository = authRepository,
-        worldApi = worldApi,
         notificationDao = notificationDao,
         json = Json { ignoreUnknownKeys = true },
     )
@@ -68,12 +68,6 @@ class NotificationRepositoryTest {
                     location = "wrld_123:instance_456~region(eu)",
                 )
             )
-            whenever(worldApi.getWorld("wrld_123")).thenReturn(
-                World(
-                    id = "wrld_123",
-                    name = "Test World",
-                )
-            )
 
             repository.performPrimaryAction(
                 UnifiedNotification(
@@ -90,14 +84,12 @@ class NotificationRepositoryTest {
                 )
             )
 
-            val payloadCaptor = argumentCaptor<Map<String, Any>>()
+            val payloadCaptor = argumentCaptor<InviteRequest>()
             verify(notificationApi).sendInvite(eq("usr_sender"), payloadCaptor.capture())
             verify(notificationApi).hideNotification("noty_req")
             val payload = payloadCaptor.firstValue
-            org.junit.Assert.assertEquals("wrld_123:instance_456~region(eu)", payload["instanceId"])
-            org.junit.Assert.assertEquals("wrld_123:instance_456~region(eu)", payload["worldId"])
-            org.junit.Assert.assertEquals("Test World", payload["worldName"])
-            org.junit.Assert.assertEquals(true, payload["rsvp"])
+            assertEquals("wrld_123:instance_456~region(eu)", payload.instanceId)
+            assertEquals(null, payload.messageSlot)
         }
     }
 
@@ -144,11 +136,10 @@ class NotificationRepositoryTest {
                 responseSlot = 3,
             )
 
-            val payloadCaptor = argumentCaptor<Map<String, Any>>()
+            val payloadCaptor = argumentCaptor<InviteResponseRequest>()
             verify(notificationApi).sendInviteResponse(eq("noty_invite"), payloadCaptor.capture())
             verify(notificationApi).hideNotification("noty_invite")
-            assertEquals(3, payloadCaptor.firstValue["responseSlot"])
-            assertEquals(true, payloadCaptor.firstValue["rsvp"])
+            assertEquals(3, payloadCaptor.firstValue.responseSlot)
         }
     }
 
@@ -177,22 +168,76 @@ class NotificationRepositoryTest {
                     travelingToLocation = "wrld_dest:inst_dest~region(us)",
                 )
             )
-            whenever(worldApi.getWorld("wrld_dest")).thenReturn(
-                World(
-                    id = "wrld_dest",
-                    name = "Destination World",
-                )
-            )
 
             repository.sendInviteToUser("usr_target")
 
-            val payloadCaptor = argumentCaptor<Map<String, Any>>()
+            val payloadCaptor = argumentCaptor<InviteRequest>()
             verify(notificationApi).sendInvite(eq("usr_target"), payloadCaptor.capture())
             val payload = payloadCaptor.firstValue
-            org.junit.Assert.assertEquals("wrld_dest:inst_dest~region(us)", payload["instanceId"])
-            org.junit.Assert.assertEquals("wrld_dest:inst_dest~region(us)", payload["worldId"])
-            org.junit.Assert.assertEquals("Destination World", payload["worldName"])
-            org.junit.Assert.assertEquals(true, payload["rsvp"])
+            assertEquals("wrld_dest:inst_dest~region(us)", payload.instanceId)
+            assertEquals(null, payload.messageSlot)
+        }
+    }
+
+    @Test
+    fun `send invite includes message slot when supplied`() {
+        runBlocking {
+            whenever(authRepository.currentUser).thenReturn(
+                CurrentUser(
+                    id = "usr_me",
+                    location = "wrld_123:instance_456~region(eu)",
+                )
+            )
+
+            repository.sendInviteToUser("usr_target", messageSlot = 7)
+
+            val payloadCaptor = argumentCaptor<InviteRequest>()
+            verify(notificationApi).sendInvite(eq("usr_target"), payloadCaptor.capture())
+            assertEquals("wrld_123:instance_456~region(eu)", payloadCaptor.firstValue.instanceId)
+            assertEquals(7, payloadCaptor.firstValue.messageSlot)
+        }
+    }
+
+    @Test
+    fun `reset runtime state clears in-memory notification state`() {
+        runBlocking {
+            whenever(authRepository.currentUser).thenReturn(CurrentUser(id = "usr_me"))
+            whenever(notificationDao.getNotifications("usr_me", 5000)).thenReturn(
+                listOf(
+                    com.vrcx.android.data.db.entity.NotificationEntity(
+                        id = "noty_1",
+                        ownerUserId = "usr_me",
+                        type = "friendRequest",
+                        createdAt = "2026-03-19T00:00:00Z",
+                    )
+                )
+            )
+            whenever(notificationDao.getNotificationsV2("usr_me", 5000)).thenReturn(
+                listOf(
+                    com.vrcx.android.data.db.entity.NotificationV2Entity(
+                        id = "noty_v2",
+                        ownerUserId = "usr_me",
+                        type = "invite",
+                        createdAt = "2026-03-19T00:00:01Z",
+                    )
+                )
+            )
+            repository.restoreNotifications()
+            repository.handleEvent(
+                PipelineEvent.InstanceClosed(
+                    buildJsonObject {
+                        put("instanceLocation", "wrld_123:inst_456")
+                    }
+                )
+            )
+
+            repository.resetRuntimeState()
+
+            assertEquals(emptyList<VrcNotification>(), repository.notifications.value)
+            assertEquals(emptyList<NotificationV2>(), repository.notificationsV2.value)
+            assertEquals(emptyList<UnifiedNotification>(), repository.localNotifications.value)
+            assertEquals(0, repository.unseenCount.value)
+            assertEquals(emptyList<UnifiedNotification>(), repository.unifiedNotifications.first())
         }
     }
 
