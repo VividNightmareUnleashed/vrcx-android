@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
+import javax.inject.Named
 
 @AndroidEntryPoint
 class WebSocketForegroundService : Service() {
@@ -54,7 +55,7 @@ class WebSocketForegroundService : Service() {
     @Inject lateinit var galleryRepository: GalleryRepository
     @Inject lateinit var instanceRepository: InstanceRepository
     @Inject lateinit var json: Json
-    @Inject lateinit var okHttpClient: OkHttpClient
+    @Inject @Named("webSocketOkHttpClient") lateinit var okHttpClient: OkHttpClient
     @Inject lateinit var preferences: VrcxPreferences
 
     @Volatile private var prefNotifyInvite = true

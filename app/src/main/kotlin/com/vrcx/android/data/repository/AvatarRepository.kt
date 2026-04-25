@@ -29,6 +29,11 @@ class AvatarRepository @Inject constructor(
         _myAvatars.value = avatarApi.getAvatars(user = "me", releaseStatus = "all", n = 100)
     }
 
+    fun clearRuntimeState() {
+        avatarCache.clear()
+        _myAvatars.value = emptyList()
+    }
+
     suspend fun selectAvatar(avatarId: String) {
         avatarApi.selectAvatar(avatarId)
     }

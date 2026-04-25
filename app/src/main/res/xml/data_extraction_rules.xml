@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="database" path="vrcx.db" />
+        <exclude domain="database" path="vrcx.db-shm" />
+        <exclude domain="database" path="vrcx.db-wal" />
+        <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="database" path="vrcx.db" />
+        <exclude domain="database" path="vrcx.db-shm" />
+        <exclude domain="database" path="vrcx.db-wal" />
+        <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
     </device-transfer>

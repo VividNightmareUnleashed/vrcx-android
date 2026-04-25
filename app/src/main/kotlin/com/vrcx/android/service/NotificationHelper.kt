@@ -1,10 +1,12 @@
 package com.vrcx.android.service
 
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
 import java.util.concurrent.atomic.AtomicInteger
@@ -13,6 +15,10 @@ class NotificationHelper(private val context: Context) {
 
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
     private val notificationId = AtomicInteger(100)
+
+    init {
+        createNotificationChannels()
+    }
 
     fun notifyFriendOnline(displayName: String) {
         post(
@@ -102,6 +108,21 @@ class NotificationHelper(private val context: Context) {
             notificationId ?: this.notificationId.getAndUpdate { (it + 1 - 100) % 10000 + 100 },
             notification,
         )
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+
+        listOf(
+            NotificationChannel(WebSocketForegroundService.CHANNEL_SERVICE, "Background Service", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_ONLINE, "Friend Online", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_OFFLINE, "Friend Offline", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(WebSocketForegroundService.CHANNEL_INVITES, "Invites", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_REQUEST, "Friend Requests", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(WebSocketForegroundService.CHANNEL_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
+        ).forEach { notificationManager.createNotificationChannel(it) }
     }
 
     companion object {

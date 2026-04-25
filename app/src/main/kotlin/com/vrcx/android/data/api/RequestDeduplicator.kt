@@ -1,10 +1,12 @@
 package com.vrcx.android.data.api
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
 import retrofit2.Response
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Deduplicates identical GET requests within a time window and caches
@@ -23,6 +25,7 @@ class RequestDeduplicator {
 
     private val failureCache = ConcurrentHashMap<String, FailureEntry>()
     private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<Any?>>()
+    private val generation = AtomicLong(0)
 
     /**
      * Check if a URL has a cached failure (404/403) within the cache window.
@@ -53,6 +56,7 @@ class RequestDeduplicator {
      */
     @Suppress("UNCHECKED_CAST")
     suspend fun <T> dedupGet(key: String, block: suspend () -> T): T {
+        val requestGeneration = generation.get()
         getCachedFailure(key)?.let { code ->
             throw HttpException(
                 Response.error<Any>(code, "".toResponseBody(null))
@@ -72,7 +76,7 @@ class RequestDeduplicator {
             newRequest.complete(result)
             return result
         } catch (t: Throwable) {
-            if (t is HttpException) {
+            if (t is HttpException && requestGeneration == generation.get()) {
                 cacheFailure(key, t.code())
             }
             newRequest.completeExceptionally(t)
@@ -83,7 +87,12 @@ class RequestDeduplicator {
     }
 
     fun clearCache() {
+        generation.incrementAndGet()
         failureCache.clear()
+        pendingRequests.values.forEach { pendingRequest ->
+            pendingRequest.cancel(CancellationException("Request cache cleared"))
+        }
+        pendingRequests.clear()
     }
 
     /** Removes a single cached failure — used when a previously failing URL succeeds. */

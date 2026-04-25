@@ -39,6 +39,12 @@ class GroupRepository @Inject constructor(
         _userGroups.value = groupApi.getUserGroups(userId)
     }
 
+    fun clearRuntimeState() {
+        ownerUserId = ""
+        groupCache.clear()
+        _userGroups.value = emptyList()
+    }
+
     suspend fun getGroup(groupId: String): Group {
         groupCache[groupId]?.let { return it }
         val group = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
@@ -128,9 +134,12 @@ class GroupRepository @Inject constructor(
     fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.GroupJoined -> {
-                if (ownerUserId.isNotEmpty()) {
+                val ownerId = ownerUserId
+                if (ownerId.isNotEmpty()) {
                     scope.launch {
-                        try { loadUserGroups(ownerUserId) } catch (_: Exception) {}
+                        try {
+                            loadUserGroups(ownerId)
+                        } catch (_: Exception) {}
                     }
                 }
             }

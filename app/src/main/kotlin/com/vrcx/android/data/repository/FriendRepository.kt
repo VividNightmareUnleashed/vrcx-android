@@ -113,8 +113,18 @@ class FriendRepository @Inject constructor(
         }
     }
 
+    fun clearRuntimeState() {
+        ownerUserId = ""
+        recentFeedWrites.clear()
+        lastFilteredTransitionAt.clear()
+        _favoriteFriendIds.value = emptySet()
+        _notifyEnabledIds.value = emptySet()
+        _friends.value = emptyMap()
+    }
+
     suspend fun loadFriendsList() {
-        ensureOwnerUserId()
+        val ownerId = ensureOwnerUserId()
+        if (ownerId.isEmpty()) return
         recentFeedWrites.clear()
         lastFilteredTransitionAt.clear()
         // Fetch online friends
@@ -147,8 +157,9 @@ class FriendRepository @Inject constructor(
                 )
             }
         }
+        if (ownerId != ownerUserId) return
         _friends.value = decorateFriendMap(friendMap)
-        syncFriendLog(friendMap)
+        syncFriendLog(ownerId, friendMap)
 
         try {
             favoriteRepository.loadFavorites(type = "friend")
@@ -156,8 +167,8 @@ class FriendRepository @Inject constructor(
 
         // Load notification-enabled friend IDs
         try {
-            if (ownerUserId.isNotEmpty()) {
-                val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerUserId)
+            if (ownerId.isNotEmpty()) {
+                val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerId)
                 _notifyEnabledIds.value = enabledIds.toSet()
                 _friends.value = decorateFriendMap(_friends.value)
             }
@@ -165,8 +176,9 @@ class FriendRepository @Inject constructor(
     }
 
     suspend fun toggleFriendNotify(friendUserId: String): Boolean {
-        if (ownerUserId.isEmpty()) return false
-        val compositeId = "$ownerUserId:$friendUserId"
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return false
+        val compositeId = "$ownerId:$friendUserId"
         val existing = friendNotifyDao.get(compositeId)
         val newEnabled: Boolean
         if (existing != null) {
@@ -175,7 +187,7 @@ class FriendRepository @Inject constructor(
         } else {
             friendNotifyDao.insert(FriendNotifyEntity(
                 compositeId = compositeId,
-                ownerUserId = ownerUserId,
+                ownerUserId = ownerId,
                 friendUserId = friendUserId,
             ))
             newEnabled = true
@@ -484,17 +496,14 @@ class FriendRepository @Inject constructor(
     }
 
     private fun ensureOwnerUserId(): String {
-        if (ownerUserId.isNotEmpty()) {
-            return ownerUserId
+        val currentOwnerId = authRepository.currentUser?.id.orEmpty()
+        if (currentOwnerId.isNotEmpty() && currentOwnerId != ownerUserId) {
+            ownerUserId = currentOwnerId
         }
-        ownerUserId = authRepository.currentUser?.id.orEmpty()
         return ownerUserId
     }
 
-    private suspend fun syncFriendLog(friendMap: Map<String, FriendContext>) {
-        val ownerId = ensureOwnerUserId()
-        if (ownerId.isEmpty()) return
-
+    private suspend fun syncFriendLog(ownerId: String, friendMap: Map<String, FriendContext>) {
         val currentEntries = friendLogDao.getCurrentFriends(ownerId)
         val currentByCompositeId = currentEntries.associateBy { it.odUserId }
         if (currentEntries.isEmpty()) {
@@ -804,7 +813,8 @@ class FriendRepository @Inject constructor(
     }
 
     private fun writeFeedOnlineOffline(userId: String, displayName: String, type: String, location: String) {
-        if (ownerUserId.isEmpty()) return
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return
         if (!shouldWriteFeed("onoff:$userId:$type")) return
         scope.launch {
             // DB-level dedup guard: if the most recent row for this friend
@@ -812,11 +822,11 @@ class FriendRepository @Inject constructor(
             // to write, drop it. Catches VRChat's occasional repeats that
             // land outside the in-memory DEDUP_WINDOW_MS and survives app
             // restarts / re-logins (when recentFeedWrites gets cleared).
-            val latest = feedRepository.getLatestOnlineOffline(ownerUserId, userId)
+            val latest = feedRepository.getLatestOnlineOffline(ownerId, userId)
             if (latest != null && latest.type == type && latest.location == location) return@launch
             feedRepository.insertOnlineOffline(
                 FeedOnlineOfflineEntity(
-                    ownerUserId = ownerUserId,
+                    ownerUserId = ownerId,
                     userId = userId,
                     displayName = displayName,
                     type = type,
@@ -831,7 +841,8 @@ class FriendRepository @Inject constructor(
     }
 
     private fun writeFeedGps(userId: String, displayName: String, location: String, worldName: String, previousLocation: String) {
-        if (ownerUserId.isEmpty()) return
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return
         if (!shouldWriteFeed("gps:$userId:$location")) return
         scope.launch {
             // Two signals tell a pipeline re-emit apart from a real revisit
@@ -848,7 +859,7 @@ class FriendRepository @Inject constructor(
             //      and handleFriendLocation short-circuits), so a hop newer
             //      than the latest DB row is positive evidence that this is
             //      the friend legitimately coming back from a gap.
-            val latest = feedRepository.getLatestGps(ownerUserId, userId)
+            val latest = feedRepository.getLatestGps(ownerId, userId)
             if (latest != null &&
                 latest.location == location &&
                 latest.worldName == worldName &&
@@ -867,7 +878,7 @@ class FriendRepository @Inject constructor(
             }
             feedRepository.insertGps(
                 FeedGpsEntity(
-                    ownerUserId = ownerUserId,
+                    ownerUserId = ownerId,
                     userId = userId,
                     displayName = displayName,
                     location = location,
@@ -882,14 +893,15 @@ class FriendRepository @Inject constructor(
     }
 
     private fun writeFeedStatus(userId: String, displayName: String, status: String, statusDescription: String, previousStatus: String, previousStatusDescription: String) {
-        if (ownerUserId.isEmpty()) return
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return
         if (!shouldWriteFeed("status:$userId:$status:$statusDescription")) return
         scope.launch {
-            val latest = feedRepository.getLatestStatus(ownerUserId, userId)
+            val latest = feedRepository.getLatestStatus(ownerId, userId)
             if (latest != null && latest.status == status && latest.statusDescription == statusDescription) return@launch
             feedRepository.insertStatus(
                 FeedStatusEntity(
-                    ownerUserId = ownerUserId,
+                    ownerUserId = ownerId,
                     userId = userId,
                     displayName = displayName,
                     status = status,
@@ -903,14 +915,15 @@ class FriendRepository @Inject constructor(
     }
 
     private fun writeFeedBio(userId: String, displayName: String, bio: String, previousBio: String) {
-        if (ownerUserId.isEmpty()) return
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return
         if (!shouldWriteFeed("bio:$userId:${bio.hashCode()}")) return
         scope.launch {
-            val latest = feedRepository.getLatestBio(ownerUserId, userId)
+            val latest = feedRepository.getLatestBio(ownerId, userId)
             if (latest != null && latest.bio == bio) return@launch
             feedRepository.insertBio(
                 FeedBioEntity(
-                    ownerUserId = ownerUserId,
+                    ownerUserId = ownerId,
                     userId = userId,
                     displayName = displayName,
                     bio = bio,
@@ -922,17 +935,18 @@ class FriendRepository @Inject constructor(
     }
 
     private fun writeFeedAvatar(userId: String, displayName: String, imageUrl: String, thumbnailUrl: String, previousImageUrl: String, previousThumbnailUrl: String) {
-        if (ownerUserId.isEmpty()) return
+        val ownerId = ownerUserId
+        if (ownerId.isEmpty()) return
         if (!shouldWriteFeed("avatar:$userId:$thumbnailUrl")) return
         scope.launch {
-            val latest = feedRepository.getLatestAvatar(ownerUserId, userId)
+            val latest = feedRepository.getLatestAvatar(ownerId, userId)
             if (latest != null &&
                 latest.currentAvatarImageUrl == imageUrl &&
                 latest.currentAvatarThumbnailImageUrl == thumbnailUrl
             ) return@launch
             feedRepository.insertAvatar(
                 FeedAvatarEntity(
-                    ownerUserId = ownerUserId,
+                    ownerUserId = ownerId,
                     userId = userId,
                     displayName = displayName,
                     currentAvatarImageUrl = imageUrl,

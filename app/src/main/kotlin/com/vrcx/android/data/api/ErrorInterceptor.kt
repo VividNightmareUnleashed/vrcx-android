@@ -22,8 +22,7 @@ class ErrorInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         var response = chain.proceed(chain.request())
 
-        if (response.code == 401) {
-            authEventBus.tryEmit(AuthEvent.Unauthorized)
+        if (emitUnauthorizedIfNeeded(response)) {
             return response
         }
 
@@ -39,7 +38,16 @@ class ErrorInterceptor(
             response = chain.proceed(chain.request())
         }
 
+        emitUnauthorizedIfNeeded(response)
         return response
+    }
+
+    private fun emitUnauthorizedIfNeeded(response: Response): Boolean {
+        if (response.code != 401) {
+            return false
+        }
+        authEventBus.tryEmit(AuthEvent.Unauthorized)
+        return true
     }
 
     companion object {

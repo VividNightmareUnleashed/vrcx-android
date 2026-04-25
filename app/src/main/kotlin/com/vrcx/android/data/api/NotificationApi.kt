@@ -1,6 +1,8 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.NotificationV2
+import com.vrcx.android.data.api.model.InviteRequest
+import com.vrcx.android.data.api.model.InviteResponseRequest
 import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.VrcNotification
 import kotlinx.serialization.json.JsonElement
@@ -52,7 +54,7 @@ interface NotificationApi {
     @POST("invite/{userId}")
     suspend fun sendInvite(
         @Path("userId") userId: String,
-        @Body body: Map<String, @JvmSuppressWildcards Any>,
+        @Body body: InviteRequest,
     ): JsonElement
 
     @POST("requestInvite/{userId}")
@@ -64,6 +66,6 @@ interface NotificationApi {
     @POST("invite/{notificationId}/response")
     suspend fun sendInviteResponse(
         @Path("notificationId") notificationId: String,
-        @Body body: Map<String, @JvmSuppressWildcards Any>,
+        @Body body: InviteResponseRequest,
     ): JsonElement
 }

@@ -107,7 +107,9 @@ If you want the signed APK plus a VirusTotal evidence bundle for release notes, 
 python scripts/release_sign_and_scan.py
 ```
 
-That command loads `.env`, builds the signed release APK, computes its SHA-256, looks up or uploads the APK to VirusTotal, and writes two files under `build/release-evidence/`: a JSON payload with the raw evidence and a Markdown snippet you can paste into a GitHub release.
+That command loads `.env`, builds the signed release APK, verifies it with Android SDK build-tools `apksigner`, computes its SHA-256, looks up or uploads the APK to VirusTotal, and writes two files under `build/release-evidence/`: a JSON payload with the raw evidence and a Markdown snippet you can paste into a GitHub release.
+
+To scan an already-built APK with `--apk`, pass `--skip-build` explicitly. Without `--skip-build`, the script only accepts the APK produced by the current `assembleRelease` flow and rejects debug, unsigned, or stale release-directory artifacts.
 
 The Markdown report includes the APK SHA-256, a VirusTotal report link, scan verdict counts, and any contacted domains VirusTotal observed during analysis. If your VirusTotal plan supports private scanning, you can also set `VIRUSTOTAL_PRIVATE_SCANNING=true` and `VIRUSTOTAL_ENABLE_INTERNET=true` in `.env` to request internet-enabled sandbox evidence for the domain list.
 

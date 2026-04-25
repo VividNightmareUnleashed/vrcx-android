@@ -14,58 +14,69 @@ class CookieJarImpl(
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("vrcx_cookies", Context.MODE_PRIVATE)
+    private val lock = Any()
     private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
 
     init {
-        loadFromSecureStore()
-        migrateLegacyPrefsIfNeeded()
+        synchronized(lock) {
+            loadFromSecureStoreLocked()
+            migrateLegacyPrefsIfNeededLocked()
+        }
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val host = url.host
-        val existing = cookieStore.getOrPut(host) { mutableListOf() }
-        for (cookie in cookies) {
-            existing.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
-            if (!isExpired(cookie)) {
-                existing.add(cookie)
+        synchronized(lock) {
+            val host = url.host
+            val existing = cookieStore.getOrPut(host) { mutableListOf() }
+            for (cookie in cookies) {
+                existing.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
+                if (!isExpired(cookie)) {
+                    existing.add(cookie)
+                }
             }
+            persistToPrefsLocked()
         }
-        persistToPrefs()
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val host = url.host
-        val cookies = cookieStore[host] ?: return emptyList()
-        val validCookies = cookies.filter { !isExpired(it) && it.matches(url) }
-        if (validCookies.size != cookies.size) {
-            cookieStore[host] = validCookies.toMutableList()
-            persistToPrefs()
+        return synchronized(lock) {
+            val host = url.host
+            val cookies = cookieStore[host] ?: return@synchronized emptyList()
+            val validCookies = cookies.filter { !isExpired(it) && it.matches(url) }
+            if (validCookies.size != cookies.size) {
+                cookieStore[host] = validCookies.toMutableList()
+                persistToPrefsLocked()
+            }
+            validCookies
         }
-        return validCookies
     }
 
     fun clearAll() {
-        cookieStore.clear()
-        secureSecretsStore.replaceCookiesByHost(emptyMap())
-        prefs.edit().clear().apply()
+        synchronized(lock) {
+            cookieStore.clear()
+            secureSecretsStore.replaceCookiesByHost(emptyMap())
+            prefs.edit().clear().apply()
+        }
     }
 
     fun getAuthCookie(): String? {
-        return cookieStore.values.flatten().firstOrNull { it.name == "auth" }?.value
+        return synchronized(lock) {
+            cookieStore.values.flatten().firstOrNull { it.name == "auth" }?.value
+        }
     }
 
     private fun isExpired(cookie: Cookie): Boolean {
         return cookie.expiresAt < System.currentTimeMillis()
     }
 
-    private fun persistToPrefs() {
+    private fun persistToPrefsLocked() {
         val serializedCookies = cookieStore.mapValues { (_, cookies) ->
             cookies.joinToString("|") { serializeCookie(it) }
         }
         secureSecretsStore.replaceCookiesByHost(serializedCookies)
     }
 
-    private fun loadFromSecureStore() {
+    private fun loadFromSecureStoreLocked() {
         secureSecretsStore.getCookiesByHost().forEach { (host, value) ->
             if (value.isNotEmpty()) {
                 val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
@@ -76,7 +87,7 @@ class CookieJarImpl(
         }
     }
 
-    private fun migrateLegacyPrefsIfNeeded() {
+    private fun migrateLegacyPrefsIfNeededLocked() {
         if (cookieStore.isNotEmpty()) {
             prefs.edit().clear().apply()
             return
@@ -101,7 +112,7 @@ class CookieJarImpl(
                 cookieStore[host] = cookies.toMutableList()
             }
         }
-        persistToPrefs()
+        persistToPrefsLocked()
         prefs.edit().clear().apply()
     }
 

@@ -237,9 +237,9 @@ private fun TwoFactorCard(
     onSubmit: (useEmail: Boolean) -> Unit,
     onResendEmail: () -> Unit,
 ) {
-    var useEmail by remember { mutableStateOf(false) }
     val hasEmail = methods.contains("emailOtp")
     val hasTotp = methods.contains("totp") || methods.contains("otp")
+    var useEmail by remember(methods) { mutableStateOf(shouldUseEmailOtpByDefault(methods)) }
     val label = if (useEmail) "6-digit email code" else "Authenticator or recovery code"
     val helperText = if (useEmail) {
         "Enter the code sent to your email"
@@ -319,4 +319,10 @@ private fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
     } else {
         digitsOnly.length == 6 || digitsOnly.length == 8
     }
+}
+
+internal fun shouldUseEmailOtpByDefault(methods: List<String>): Boolean {
+    val hasEmail = methods.contains("emailOtp")
+    val hasTotp = methods.contains("totp") || methods.contains("otp")
+    return hasEmail && !hasTotp
 }
