@@ -77,32 +77,7 @@ class AuthRepository @Inject constructor(
             scope.launch {
                 bus.events.collect { event ->
                     when (event) {
-                        AuthEvent.Unauthorized -> {
-                            // Clean up whenever there's a persisted session to
-                            // clean — active (LoggedIn), resume in progress
-                            // (tryResumeSession sets LoggingIn with a cookie),
-                            // or 2FA continuation. Gating on LoggedIn alone
-                            // would skip the resume path and leave the stale
-                            // cookie + dedup cache in place, so each startup
-                            // would retry the dead session and land on
-                            // AuthState.Error instead of bouncing cleanly to
-                            // login.
-                            //
-                            // Skip when no session artifacts exist (fresh
-                            // login with a bad password: basic auth only,
-                            // no cookie yet) — the login() catch already sets
-                            // AuthState.Error with the user-facing message
-                            // and we don't want to race over it.
-                            val hasPersistedSession = _currentUser != null ||
-                                _authToken != null ||
-                                cookieJar.getAuthCookie() != null
-                            if (hasPersistedSession) {
-                                clearAccountRuntimeState()
-                                clearAuthSession()
-                                WebSocketForegroundService.stop(context)
-                                _authState.value = AuthState.NotLoggedIn
-                            }
-                        }
+                        AuthEvent.Unauthorized -> handleUnauthorizedSignal()
                     }
                 }
             }
@@ -284,11 +259,48 @@ class AuthRepository @Inject constructor(
     }
 
     private suspend fun onLoginSuccess(user: CurrentUser) {
+        authInterceptor.clearBasicAuth()
         clearAccountRuntimeState()
         _currentUser = user
         _authState.value = AuthState.LoggedIn(user)
         preferences.setLastUserId(user.id)
         fetchAuthToken()
+    }
+
+    internal suspend fun handleUnauthorizedSignal() {
+        if (!hasPersistedSessionArtifacts()) {
+            return
+        }
+        if (isSessionStillAccepted()) {
+            return
+        }
+        clearAccountRuntimeState()
+        clearAuthSession()
+        WebSocketForegroundService.stop(context)
+        _authState.value = AuthState.NotLoggedIn
+    }
+
+    private fun hasPersistedSessionArtifacts(): Boolean {
+        return _currentUser != null ||
+            _authToken != null ||
+            cookieJar.getAuthCookie() != null
+    }
+
+    private suspend fun isSessionStillAccepted(): Boolean {
+        return try {
+            val response = authApi.getCurrentUser()
+            val jsonObj = response.jsonObject
+            if (jsonObj.containsKey("requiresTwoFactorAuth")) {
+                false
+            } else {
+                val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
+                _currentUser = user
+                _authState.value = AuthState.LoggedIn(user)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun clearAuthSession() {

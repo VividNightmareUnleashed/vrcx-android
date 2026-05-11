@@ -6,9 +6,10 @@ import okhttp3.Response
 /**
  * Handles common HTTP failure modes for VRChat API calls.
  *
- * - **401 Unauthorized**: emits AuthEvent.Unauthorized so AuthRepository can flip
- *   state to NotLoggedIn. The response itself is passed through unchanged so the
- *   caller still sees the original failure.
+ * - **401 Unauthorized**: emits AuthEvent.Unauthorized for cookie-auth requests so
+ *   AuthRepository can verify whether the session is still valid. Basic-auth
+ *   login failures are left to the login caller so they do not clear an existing
+ *   cookie session.
  * - **429 Too Many Requests**: retries once with a bounded delay. The delay is
  *   capped at [MAX_RETRY_DELAY_MS] (2s) because this interceptor runs on OkHttp
  *   dispatcher threads — blocking one of them for longer starves other in-flight
@@ -45,6 +46,9 @@ class ErrorInterceptor(
     private fun emitUnauthorizedIfNeeded(response: Response): Boolean {
         if (response.code != 401) {
             return false
+        }
+        if (response.request.header("Authorization")?.startsWith("Basic ", ignoreCase = true) == true) {
+            return true
         }
         authEventBus.tryEmit(AuthEvent.Unauthorized)
         return true

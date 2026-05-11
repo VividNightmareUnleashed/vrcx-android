@@ -51,6 +51,23 @@ class ErrorInterceptorTest {
     }
 
     @Test
+    fun `401 from basic auth request does not emit Unauthorized`() {
+        val collected = collectEvents()
+        server.enqueue(MockResponse().setResponseCode(401).setBody("bad credentials"))
+
+        val response = client.newCall(
+            Request.Builder()
+                .url(server.url("/auth/user"))
+                .header("Authorization", "Basic dXNlcjpwYXNz")
+                .build()
+        ).execute()
+
+        assertEquals(401, response.code)
+        assertEquals(0, collected().size)
+        response.close()
+    }
+
+    @Test
     fun `429 retries once with Retry-After and respects the cap`() {
         server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "1"))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))

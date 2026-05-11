@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
@@ -72,6 +73,54 @@ class AuthRepositoryTest {
             verify(authApi).verifyTotp(requestCaptor.capture())
             verify(authApi, never()).verifyOtp(any())
             assertEquals("123456", requestCaptor.firstValue.code)
+        }
+    }
+
+    @Test
+    fun `successful password login clears temporary basic auth`() {
+        runBlocking {
+            stubLoginFollowUp()
+
+            repository.login("test-user", "test-password")
+
+            verify(authInterceptor).setBasicAuth("test-user", "test-password")
+            verify(authInterceptor).clearBasicAuth()
+            assertTrue(repository.authState.value is AuthState.LoggedIn)
+        }
+    }
+
+    @Test
+    fun `unauthorized signal keeps session when validation succeeds`() {
+        runBlocking {
+            stubLoginFollowUp()
+            repository.login("test-user", "test-password")
+
+            repository.handleUnauthorizedSignal()
+
+            verify(cookieJar, never()).clearAll()
+            assertTrue(repository.authState.value is AuthState.LoggedIn)
+        }
+    }
+
+    @Test
+    fun `unauthorized signal clears session when validation fails`() {
+        runBlocking {
+            whenever(authApi.getCurrentUser())
+                .thenReturn(
+                    buildJsonObject {
+                        put("id", "usr_test")
+                        put("displayName", "Test User")
+                    }
+                )
+                .thenThrow(RuntimeException("expired"))
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            repository.login("test-user", "test-password")
+
+            repository.handleUnauthorizedSignal()
+
+            verify(cookieJar).clearAll()
+            verify(dedup).clearCache()
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
         }
     }
 
