@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -62,60 +63,66 @@ fun VrcxBottomBar(navController: NavController) {
     val isWallpaperActive = LocalWallpaperActive.current
     val vrcxColors = MaterialTheme.vrcxColors
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        shape = MaterialTheme.shapes.medium,
-        color = vrcxColors.panelBackground.let {
-            if (isWallpaperActive) it.copy(alpha = 0.9f) else it
-        },
-        border = BorderStroke(1.dp, vrcxColors.panelBorder),
-        shadowElevation = 0.dp,
+            .navigationBarsPadding(),
     ) {
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = vrcxColors.panelBackground.let {
+                if (isWallpaperActive) it.copy(alpha = 0.9f) else it
+            },
+            border = BorderStroke(1.dp, vrcxColors.panelBorder),
+            shadowElevation = 0.dp,
         ) {
-            bottomNavItems.forEach { item ->
-                val selected = currentRoute == item.route
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(
-                            color = if (selected) vrcxColors.navActive else Color.Transparent,
-                            shape = MaterialTheme.shapes.small,
-                        )
-                        .clickable {
-                            if (currentRoute != item.route) {
-                                navController.navigate(item.route) {
-                                    popUpTo(VrcxRoutes.FEED) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                bottomNavItems.forEach { item ->
+                    val selected = currentRoute == item.route
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                color = if (selected) vrcxColors.navActive else Color.Transparent,
+                                shape = MaterialTheme.shapes.small,
+                            )
+                            .clickable {
+                                if (currentRoute != item.route) {
+                                    navController.navigate(item.route) {
+                                        popUpTo(VrcxRoutes.FEED) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
                             }
-                        }
-                        .padding(horizontal = 4.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Box(
-                        modifier = Modifier.size(28.dp),
-                        contentAlignment = Alignment.Center,
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Icon(
-                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                            contentDescription = item.label,
-                            tint = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
+                        Box(
+                            modifier = Modifier.size(28.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                contentDescription = item.label,
+                                tint = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
+                            )
+                        }
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
                         )
                     }
-                    Text(
-                        text = item.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
-                    )
                 }
             }
         }

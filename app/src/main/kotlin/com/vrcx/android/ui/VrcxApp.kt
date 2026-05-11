@@ -6,7 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -180,11 +182,20 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
                             .background(Color.Black.copy(alpha = 0.42f)),
                     )
                 }
+                val navigationBarBottomPadding = WindowInsets.navigationBars
+                    .asPaddingValues()
+                    .calculateBottomPadding()
+
                 Scaffold(
                     bottomBar = { VrcxBottomBar(navController) },
                     containerColor = Color.Transparent,
                     contentWindowInsets = WindowInsets(0),
                 ) { innerPadding ->
+                    val bottomPadding = maxOf(
+                        innerPadding.calculateBottomPadding(),
+                        navigationBarBottomPadding,
+                    )
+
                     VrcxPanelSurface(
                         modifier = Modifier
                             .fillMaxSize()
@@ -192,7 +203,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
                                 start = 8.dp,
                                 top = 8.dp,
                                 end = 8.dp,
-                                bottom = innerPadding.calculateBottomPadding() + 8.dp,
+                                bottom = bottomPadding + 8.dp,
                             ),
                     ) {
                         VrcxNavGraph(
