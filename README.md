@@ -2,84 +2,105 @@
 
 # VRCX Android
 
-A native Android companion app for VRChat — track friends, browse worlds, manage avatars, and get real-time notifications, all from your phone.
+A native Android companion app for VRChat social tracking, alerts, world browsing, and account utilities.
 
 [![Latest Release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=latest)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
-[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.5.1%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326)
-[![Min SDK](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
+[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.5.2%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/65282ca4bc37ac0ccdbc6fabae45ee81e0a6fd36b6e80466e1a02a520f938416)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](https://developer.android.com/compose)
 
 </div>
 
-## About
+## What is this?
 
-VRCX Android is a mobile companion app that brings the core functionality of the desktop [VRCX](https://github.com/vrcx-team/VRCX) to your Android device. It connects directly to the VRChat API and WebSocket pipeline to give you real-time visibility into your VRChat social circle without needing a PC.
+VRCX Android brings the everyday companion workflows of desktop [VRCX](https://github.com/vrcx-team/VRCX) to your phone. It talks directly to the VRChat API and WebSocket pipeline so you can keep an eye on friends, worlds, invites, notifications, favorites, and account activity without needing your PC nearby.
 
-## Features
+This is a companion app, not a replacement for the VRChat game client. It helps you monitor and manage your VRChat account from Android; it does not render or join VRChat worlds itself.
 
-### Social
+## Highlights
 
-- **Friends list** — See who's online, their current world, platform (PC/Quest/iOS), and status. Sort by name, last seen, or trust rank. Filter by VIP.
-- **Real-time feed** — Live activity feed of friend status changes, online/offline events, and GPS updates with per-event dedup so a busy pipeline doesn't flood the list with repeats. Searchable with VIP filter; feed size cap is configurable in Settings.
-- **Friends locations** — See where your friends are with world thumbnails, names, capacity, and instance details. Filter by Online/Favorite/Active.
-- **Friends Roster** — Scoped roster view with granular filtering and sort, useful for quickly finding specific friends without scrolling the main list.
-- **Activity History** — Timeline view over the feed-backed history used elsewhere in the app, scoped to the current account and history-depth setting.
-- **Friend log** — Track friend additions, removals, display name changes, and trust-level changes with search and type filters.
-- **User profiles** — Detailed user view with Info/Groups/Worlds tabs, favorite star, invite buttons, avatar moderation, and personal notes. Destructive actions (block, unfriend) require confirmation.
-- **Friend-request management** — Accept, decline, or cancel incoming/outgoing friend requests directly from the relevant profile screens.
-- **Invite system** — Send invites and request invites from user profiles, including preset invite messages and auto-request replies from the desktop-parity invite flow.
-- **Notifications** — Unified V1/V2 inbox with type filters and accept/decline actions. Persisted locally so the latest state renders instantly on cold start, before the network round-trip completes.
-- **Profile editing** — Edit your own VRChat status, status description, bio, and pronouns from the app.
+### Stay close to friends
 
-### Worlds and avatars
+- Live friends list with platform, status, trust rank, last-seen, VIP filters, and current-world context.
+- Real-time activity feed for online/offline, status, GPS, travel, and friend events, with deduplication to keep noisy reconnects readable.
+- Friends Locations and Friends Roster views for quickly finding who is online, where they are, and which instances are active.
+- Friend Log for adds, removals, display-name changes, and trust-rank changes.
+- Per-friend Android notifications, invite handling, and friend-request management.
 
-- **World details** — Banner images, descriptions, capacity, platform support, tags, and active instances. Instances are tappable and expose a self-invite, copy-URL, and share sheet — handy for accepting the resulting in-app invite from a headset without the desktop client.
-- **Avatar management** — Browse your avatars, filter by visibility and platform, view details, select, and favorite.
-- **Favorites** — View and manage your favorite worlds, avatars, and friends with actual names and thumbnails. Fast to open on accounts with many favorites thanks to bulk endpoints and background cache patching.
-- **Search** — Find users, worlds, avatars, and groups with paginated results. User search supports bio-text queries and last-login sort; world search supports mode + tag filters; avatar search supports remote provider sources in addition to your own avatars.
+### Browse VRChat from mobile
 
-### Groups and gallery
+- Search users, worlds, avatars, and groups with paginated results and useful filters.
+- World detail pages with images, descriptions, platform support, tags, capacity, and active instances.
+- Instance actions for self-invite, copy URL, and share, useful when moving between phone and headset.
+- Avatar browsing, filtering, details, selecting, and favoriting.
+- Favorites for friends, worlds, and avatars with names, images, and fast cache-backed loading.
 
-- **Groups** — Browse groups you belong to, view group details, and see group posts. Admins with the `group-members-manage` permission can remove members directly from group detail.
-- **Charts** — Instance activity history with a daily bar chart that renders cleanly at any density, range-filtered metric cards (visits / worlds / active days), and most-visited worlds breakdown. Hour-of-day and weekday breakdowns included. Pull-to-refresh with explicit error surfacing.
-- **Gallery** — Browse your VRChat gallery with auto-refresh on new uploads.
-- **Moderation** — Manage blocks, mutes, avatar visibility, and interaction settings with persistent tab state across rotation.
+### Keep your account organized
 
-### Platform integration
-
-- **Deep links** — `vrcx://` and `https://vrchat.com/home/{user,world,avatar,group}/...` URLs open directly in the app. Any depth of trailing path segments routes to the right detail screen.
-- **Background notifications** — Foreground service keeps a WebSocket connection alive for real-time Android notifications (per-friend opt-in). Auto-restarts on device boot; Android 15 uses a "tap to reconnect" notification gated on login state and the background-service preference.
-- **Theming** — VRChat-branded Material 3 dark and light themes with wallpaper-based dynamic scaling.
-- **Tools** — Quick-link hub with an ID jump flow for opening users, worlds, avatars, and groups directly by ID.
-- **Dashboard** — Activity snapshot for one-glance situational awareness — online favorites, recent feed, activity breakdown, and current user context.
-- **Settings** — Theme mode, dynamic colors, wallpaper, notification toggles, feed history cap, background-service toggle, auto-login, profile-picture cache controls, and Sign Out. Sign out tears down session state, clears the bulk favorites cache, and stops the websocket service.
+- Unified V1/V2 notifications inbox with local persistence so recent notifications appear quickly on cold start.
+- Profile editing for status, status description, bio, and pronouns.
+- User profiles with groups, worlds, notes, favorite status, invites, and guarded destructive actions.
+- Groups, group posts, and permission-gated member removal for admins.
+- Gallery browsing and uploads, moderation tools, dashboard summaries, charts, and deep links from `vrcx://` and `https://vrchat.com/home/...`.
+- Material 3 dark/light themes, dynamic colors, custom wallpaper support, and background WebSocket service controls.
 
 ## Download
 
-Grab the latest APK from [Releases](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest).
+Download the latest APK from [GitHub Releases](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest).
 
-The current signed `1.5.1` release is published at [VirusTotal](https://www.virustotal.com/gui/file/7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326) with SHA-256 `7a48b730fbb79df8c5df076235fef72fd45664850c1bad135b2a3de286d91326`.
+Requirements:
 
-Requires **Android 8.0** (API 26) or newer.
+- Android 8.0 or newer, API 26+
+- A VRChat account
 
-## Building from Source
+Current signed release integrity:
+
+- APK: `vrcx-android-1.5.2.apk`
+- SHA-256: `65282ca4bc37ac0ccdbc6fabae45ee81e0a6fd36b6e80466e1a02a520f938416`
+- VirusTotal: [public report](https://www.virustotal.com/gui/file/65282ca4bc37ac0ccdbc6fabae45ee81e0a6fd36b6e80466e1a02a520f938416)
+- Last analysis: 2026-05-12, with 0 malicious and 0 suspicious detections in the release evidence
+
+## Build from source
 
 ### Prerequisites
 
-- Android Studio or the Android SDK (API 35)
-- JDK 17+
+- JDK 17
+- Android SDK API 35
+- `ANDROID_HOME` set to your Android SDK path
 
-### Build
+### Debug build
 
 ```bash
-export ANDROID_HOME=/path/to/your/Android/Sdk
+export ANDROID_HOME=/path/to/Android/Sdk
 ./gradlew assembleDebug
 ```
 
-The debug APK will be at `app/build/outputs/apk/debug/vrcx-android-<version>.apk`.
+On Windows PowerShell:
+
+```powershell
+$env:ANDROID_HOME = "C:\path\to\Android\Sdk"
+.\gradlew.bat assembleDebug
+```
+
+The debug APK is written to:
+
+```text
+app/build/outputs/apk/debug/vrcx-android-<version>.apk
+```
+
+### Tests and lint
+
+```bash
+./gradlew test
+./gradlew :app:testDebugUnitTest --tests "com.vrcx.android.data.repository.AuthRepositoryTest"
+./gradlew lint
+```
+
+There is no ktlint, detekt, spotless, or `.editorconfig` in this project. Android lint is the configured quality gate.
 
 ### Release builds
 
-Release builds require a signing keystore. Generate one:
+Release signing is driven by environment variables. Generate your own local keystore:
 
 ```bash
 keytool -genkeypair -v -keystore release-keystore.jks \
@@ -87,51 +108,55 @@ keytool -genkeypair -v -keystore release-keystore.jks \
   -alias vrcx-android -storepass YOUR_PASSWORD -keypass YOUR_PASSWORD
 ```
 
-Then create a local `.env` file. You can start from `.env.example` and fill in the real values:
+Create a local `.env` from `.env.example`:
 
 ```bash
-VRCX_KEYSTORE_PASSWORD='YOUR_PASSWORD'
-VRCX_KEY_ALIAS='vrcx-android'
-VIRUSTOTAL_API_KEY='YOUR_VIRUSTOTAL_API_KEY'
+VRCX_KEYSTORE_PASSWORD=YOUR_PASSWORD
+VRCX_KEY_ALIAS=vrcx-android
+VIRUSTOTAL_API_KEY=YOUR_VIRUSTOTAL_API_KEY
 ```
 
-If you only want the signed APK, Gradle still works directly:
+Then build the signed release:
 
 ```bash
 ./gradlew assembleRelease
 ```
 
-If you want the signed APK plus a VirusTotal evidence bundle for release notes, run:
+For release publishing evidence, run:
 
 ```bash
 python scripts/release_sign_and_scan.py
 ```
 
-That command loads `.env`, builds the signed release APK, verifies it with Android SDK build-tools `apksigner`, computes its SHA-256, looks up or uploads the APK to VirusTotal, and writes two files under `build/release-evidence/`: a JSON payload with the raw evidence and a Markdown snippet you can paste into a GitHub release.
+The script signs the APK, verifies it with `apksigner`, computes SHA-256, queries or uploads to VirusTotal, and writes JSON plus Markdown evidence under `build/release-evidence/`. Do not commit `.env`, keystores, passwords, API keys, or machine-specific paths.
 
-To scan an already-built APK with `--apk`, pass `--skip-build` explicitly. Without `--skip-build`, the script only accepts the APK produced by the current `assembleRelease` flow and rejects debug, unsigned, or stale release-directory artifacts.
+## Architecture
 
-The Markdown report includes the APK SHA-256, a VirusTotal report link, scan verdict counts, and any contacted domains VirusTotal observed during analysis. If your VirusTotal plan supports private scanning, you can also set `VIRUSTOTAL_PRIVATE_SCANNING=true` and `VIRUSTOTAL_ENABLE_INTERNET=true` in `.env` to request internet-enabled sandbox evidence for the domain list.
+- Kotlin single-activity Android app
+- Jetpack Compose and Material 3 UI
+- MVVM with Hilt dependency injection
+- Retrofit, OkHttp, and Kotlinx Serialization for VRChat REST APIs
+- Dedicated OkHttp WebSocket client for the VRChat pipeline
+- Room for account-scoped local data, with committed migration schemas
+- DataStore and AndroidX Security Crypto for preferences and session storage
+- Coil 3 for authenticated image loading
+- WorkManager and a foreground service for background reconnect and notifications
+- JUnit, Robolectric, Mockito, MockWebServer, and Room migration tests
 
-## Tech Stack
+Kotlin sources live in `app/src/main/kotlin/com/vrcx/android/`. Unit tests live in `app/src/test/kotlin/`.
 
-- **Language**: Kotlin
-- **UI**: Jetpack Compose + Material 3, `collectAsStateWithLifecycle` everywhere for lifecycle-aware state collection
-- **Architecture**: Single-activity MVVM with Hilt DI, Navigation-Compose for routing + deep links
-- **Networking**: Retrofit + OkHttp + Kotlinx Serialization, with a custom request-dedup + failure-caching interceptor for 403/404/429 handling
-- **Real-time**: WebSocket (OkHttp) via foreground service, with reconnect orchestration driven by WorkManager on boot
-- **Persistence**: Room (account-scoped tables for feed, friend log, notifications, gallery cache, profile-pic cache)
-- **Images**: Coil 3 (with GIF support), wired to the authenticated OkHttp client so image fetches carry VRChat cookies
-- **Testing**: JUnit + Robolectric + Mockito, plus Room migration tests that track schema evolution across versions
+## Credits
 
-## Credits & Disclaimer
+Developer: [AyaDreamsOfYou](https://x.com/AyaDreamsOfYou)
 
-**Developer** — [AyaDreamsOfYou](https://x.com/AyaDreamsOfYou)
+Inspired by [VRCX](https://github.com/vrcx-team/VRCX), the open-source VRChat companion app for desktop.
 
-**Inspired by** [VRCX](https://github.com/vrcx-team/VRCX) — the open-source VRChat companion app for desktop.
+Built with [Claude](https://claude.ai) by Anthropic.
 
-**Built with** [Claude](https://claude.ai) by Anthropic.
+## Disclaimer
 
-This is an independent project. It is **not affiliated with or endorsed by the [VRCX Team](https://github.com/vrcx-team/VRCX) or VRChat Inc.** "VRChat" is a trademark of VRChat Inc. Use of the VRChat API is subject to the [VRChat Terms of Service](https://hello.vrchat.com/legal).
+This is an independent project. It is not affiliated with or endorsed by the [VRCX Team](https://github.com/vrcx-team/VRCX) or VRChat Inc.
 
-This software is provided as-is with **no guarantee of functionality**.
+"VRChat" is a trademark of VRChat Inc. Use of the VRChat API is subject to the [VRChat Terms of Service](https://hello.vrchat.com/legal).
+
+This software is provided as-is with no guarantee of functionality.
