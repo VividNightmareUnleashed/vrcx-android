@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.2] - 2026-05-12
+
+### Fixed
+
+- **Session stability** — The app now double-checks cookie-auth 401s before
+  clearing your saved VRChat session, so a transient unauthorized response is
+  less likely to kick you back to the login screen.
+- **Login retry behavior** — Successful password logins clear the temporary
+  Basic auth header, and failed Basic-auth login attempts no longer trigger the
+  global session-expiry path.
+- **Bottom navigation spacing** — The logged-in app shell and bottom bar now
+  respect system navigation insets together, keeping content and navigation
+  controls clear on gesture and button navigation devices.
+
 ## [1.5.1] - 2026-04-25
 
 ### Fixed
