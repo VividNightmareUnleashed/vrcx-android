@@ -304,6 +304,7 @@ fun PlayerListScreen(
                         displayName = player.name,
                         subtitle = describePlayerScope(player, scope, currentLocation),
                         tags = player.ref?.tags.orEmpty(),
+                        state = player.state,
                         onClick = { onUserClick(player.id) },
                     )
                 }

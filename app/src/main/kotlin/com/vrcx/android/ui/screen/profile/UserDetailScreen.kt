@@ -141,7 +141,8 @@ fun UserDetailScreen(
     val memo by viewModel.memo.collectAsStateWithLifecycle()
     val note by viewModel.note.collectAsStateWithLifecycle()
     val notifyEnabled by viewModel.notifyEnabled.collectAsStateWithLifecycle()
-    val isTabLoading by viewModel.isTabLoading.collectAsStateWithLifecycle()
+    val loadingTabs by viewModel.loadingTabs.collectAsStateWithLifecycle()
+    val isSelf by viewModel.isSelf.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -182,7 +183,7 @@ fun UserDetailScreen(
                 title = user?.displayName ?: "User",
                 onBack = onBack,
                 actions = {
-                    IconButton(onClick = { viewModel.toggleFavorite() }) {
+                    if (!isSelf) IconButton(onClick = { viewModel.toggleFavorite() }) {
                         Icon(
                             if (isFavorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = if (isFavorited) "Unfavorite" else "Favorite",
@@ -247,26 +248,27 @@ fun UserDetailScreen(
                         notifyEnabled = notifyEnabled,
                         viewModel = viewModel,
                         onWorldClick = onWorldClick,
+                        isSelf = isSelf,
                         onConfirmDestructive = { pendingDestructiveAction = it },
                     )
                     UserDetailTabs.MUTUALS -> {
-                        if (isTabLoading && mutualFriends.isEmpty()) LoadingState()
+                        if (UserDetailTabs.MUTUALS in loadingTabs && mutualFriends.isEmpty()) LoadingState()
                         else MutualFriendsTab(mutualFriends, onUserClick)
                     }
                     UserDetailTabs.GROUPS -> {
-                        if (isTabLoading && userGroups.isEmpty()) LoadingState()
+                        if (UserDetailTabs.GROUPS in loadingTabs && userGroups.isEmpty()) LoadingState()
                         else GroupsTab(userGroups, onGroupClick)
                     }
                     UserDetailTabs.WORLDS -> {
-                        if (isTabLoading && userWorlds.isEmpty()) LoadingState()
+                        if (UserDetailTabs.WORLDS in loadingTabs && userWorlds.isEmpty()) LoadingState()
                         else WorldsTab(userWorlds, onWorldClick)
                     }
                     UserDetailTabs.AVATARS -> {
-                        if (isTabLoading && userAvatars.isEmpty()) LoadingState()
+                        if (UserDetailTabs.AVATARS in loadingTabs && userAvatars.isEmpty()) LoadingState()
                         else AvatarsTab(userAvatars, onAvatarClick)
                     }
                     UserDetailTabs.FAVORITE_WORLDS -> {
-                        if (isTabLoading && favoriteWorldSections.isEmpty()) LoadingState()
+                        if (UserDetailTabs.FAVORITE_WORLDS in loadingTabs && favoriteWorldSections.isEmpty()) LoadingState()
                         else FavoriteWorldsTab(
                             sections = favoriteWorldSections,
                             selectedTag = selectedFavoriteWorldTag,
@@ -287,6 +289,7 @@ private fun InfoTab(
     note: String?,
     memo: String?,
     notifyEnabled: Boolean,
+    isSelf: Boolean,
     viewModel: UserDetailViewModel,
     onWorldClick: (String) -> Unit,
     onConfirmDestructive: (UserDestructiveAction) -> Unit,
@@ -310,8 +313,9 @@ private fun InfoTab(
         }
 
         // Location
-        if (!u.location.isNullOrEmpty() && u.location != "offline" && u.location != "private") {
-            VrcxCard(onClick = { onWorldClick(u.location!!.substringBefore(":")) }) {
+        val worldId = resolvedWorldId(u.location, u.travelingToLocation)
+        if (worldId != null) {
+            VrcxCard(onClick = { onWorldClick(worldId) }) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Location", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(4.dp))
@@ -370,9 +374,10 @@ private fun InfoTab(
         Spacer(Modifier.height(16.dp))
 
         // Actions
-        Text("Actions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(8.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!isSelf) {
+          Text("Actions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.height(8.dp))
+          FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (u.isFriend) {
                 FilledTonalButton(onClick = { viewModel.toggleNotify() }) {
                     Icon(
@@ -418,6 +423,7 @@ private fun InfoTab(
             OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.HideAvatar) }) {
                 Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Hide Avatar")
             }
+          }
         }
     }
 
@@ -677,3 +683,8 @@ private fun mutualFriendState(user: VrcUser): FriendState =
 private fun String.prettyVisibility(): String =
     replace('-', ' ')
         .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
+internal fun resolvedWorldId(location: String?, travelingToLocation: String?): String? {
+    val resolved = if (location == "traveling") travelingToLocation else location
+    return resolved?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
+}

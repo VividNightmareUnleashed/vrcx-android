@@ -13,9 +13,11 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -55,6 +57,24 @@ class NotificationsViewModelTest {
         advanceUntilIdle()
 
         verify(repo).hideUnified(eq("notif_v2"), eq(true))
+    }
+
+    @Test
+    fun `dismissed invite dialog is not reopened by its template load`() = runTest(testDispatcher) {
+        val (vm, _) = buildViewModel()
+        val inviteRepository = mock<InviteMessageRepository>()
+        whenever(inviteRepository.getMessages(any())).thenReturn(emptyList())
+        val repo = mock<NotificationRepository>().also {
+            whenever(it.unifiedNotifications).thenReturn(MutableStateFlow(emptyList()))
+        }
+        val tested = NotificationsViewModel(repo, inviteRepository)
+        val invite = friendRequestNotification("invite_1", false).copy(type = "invite")
+
+        tested.openInviteResponseDialog(invite)
+        tested.dismissInviteResponseDialog()
+        advanceUntilIdle()
+
+        assertNull(tested.inviteResponseDialog.value)
     }
 
     private fun buildViewModel(): Pair<NotificationsViewModel, NotificationRepository> {

@@ -44,6 +44,9 @@ class LoginViewModel @Inject constructor(
     private var cachedSavedCredentials: SavedCredentials? = null
     private var savedCredentialsLoaded = false
     private var autoLoginAttempted = false
+    private var usernameEdited = false
+    private var passwordEdited = false
+    private var rememberMeEdited = false
 
     init {
         viewModelScope.launch {
@@ -51,11 +54,11 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    fun updateUsername(value: String) { _username.value = value }
-    fun updatePassword(value: String) { _password.value = value }
+    fun updateUsername(value: String) { usernameEdited = true; _username.value = value }
+    fun updatePassword(value: String) { passwordEdited = true; _password.value = value }
     fun updateTwoFactorCode(value: String) { _twoFactorCode.value = value }
     fun togglePasswordVisibility() { _passwordVisible.value = !_passwordVisible.value }
-    fun toggleRememberMe() { _rememberMe.value = !_rememberMe.value }
+    fun toggleRememberMe() { rememberMeEdited = true; _rememberMe.value = !_rememberMe.value }
 
     fun login() {
         viewModelScope.launch {
@@ -76,6 +79,7 @@ class LoginViewModel @Inject constructor(
     }
 
     fun submitTwoFactor(useEmail: Boolean = false) {
+        if (!isTwoFactorCodeValid(_twoFactorCode.value, useEmail)) return
         viewModelScope.launch {
             if (useEmail) {
                 authRepository.verifyEmailOtp(_twoFactorCode.value)
@@ -133,9 +137,9 @@ class LoginViewModel @Inject constructor(
         savedCredentialsLoaded = true
 
         if (savedCredentials != null) {
-            _username.value = savedCredentials.username
-            _password.value = savedCredentials.password
-            _rememberMe.value = true
+            if (!usernameEdited) _username.value = savedCredentials.username
+            if (!passwordEdited) _password.value = savedCredentials.password
+            if (!rememberMeEdited) _rememberMe.value = true
         }
 
         return savedCredentials
@@ -144,6 +148,7 @@ class LoginViewModel @Inject constructor(
     private suspend fun maybeAutoLogin() {
         if (autoLoginAttempted) return
         val savedCredentials = ensureSavedCredentialsLoaded() ?: return
+        if (usernameEdited || passwordEdited || rememberMeEdited) return
         val autoLoginEnabled = preferences.autoLogin.first()
         if (!autoLoginEnabled) return
 

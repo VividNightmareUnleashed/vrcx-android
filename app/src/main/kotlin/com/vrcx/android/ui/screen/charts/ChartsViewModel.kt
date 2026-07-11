@@ -78,7 +78,7 @@ class ChartsViewModel @Inject constructor(
                     _error.value = "Not signed in"
                     return@launch
                 }
-                _gpsHistory.value = feedDao.getGpsFeed(userId, limit = GPS_FEED_LIMIT).first()
+                _gpsHistory.value = feedDao.getAllGpsFeed(userId).first()
                 recomputeCharts()
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load chart data"
@@ -144,7 +144,4 @@ class ChartsViewModel @Inject constructor(
             .getDisplayName(TextStyle.SHORT, Locale.getDefault())
     }
 
-    companion object {
-        private const val GPS_FEED_LIMIT = 500
-    }
 }

@@ -7,6 +7,7 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,7 @@ class AvatarDetailViewModel @Inject constructor(
 
     init {
         observeFavoriteStatus()
+        loadFavoriteStatus()
         loadAvatar()
     }
 
@@ -48,9 +50,10 @@ class AvatarDetailViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                favoriteRepository.loadFavorites(type = "avatar")
-                val a = avatarRepository.getAvatar(avatarId)
+                val a = avatarRepository.getAvatar(avatarId, forceRefresh = true)
                 _avatar.value = a
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load avatar"
             } finally {
@@ -88,6 +91,18 @@ class AvatarDetailViewModel @Inject constructor(
     }
 
     fun clearMessage() { _message.value = null }
+
+    private fun loadFavoriteStatus() {
+        viewModelScope.launch {
+            try {
+                favoriteRepository.loadFavorites(type = "avatar")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Favorite status is ancillary to the primary avatar detail.
+            }
+        }
+    }
 
     private fun observeFavoriteStatus() {
         viewModelScope.launch {

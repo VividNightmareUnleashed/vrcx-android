@@ -28,12 +28,19 @@ import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import java.time.Instant
@@ -120,13 +127,19 @@ class UserDetailViewModel @Inject constructor(
     private val _notifyEnabled = MutableStateFlow(false)
     val notifyEnabled: StateFlow<Boolean> = _notifyEnabled.asStateFlow()
 
-    private val _isTabLoading = MutableStateFlow(false)
-    val isTabLoading: StateFlow<Boolean> = _isTabLoading.asStateFlow()
+    private val _loadingTabs = MutableStateFlow<Set<Int>>(emptySet())
+    val loadingTabs: StateFlow<Set<Int>> = _loadingTabs.asStateFlow()
+    private val tabJobs = mutableMapOf<Int, Job>()
+
+    val isSelf: StateFlow<Boolean> = authRepository.authState
+        .map { state -> (state as? AuthState.LoggedIn)?.user?.id == userId }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private var favoriteEntryId: String? = null
 
     init {
         observeFavoriteStatus()
+        loadFavoriteStatus()
         loadUser()
     }
 
@@ -134,7 +147,6 @@ class UserDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                favoriteRepository.loadFavorites(type = "friend")
                 val resolvedUser = userRepository.getUser(userId, forceRefresh = true)
                 _user.value = resolvedUser
                 // Load memo
@@ -168,6 +180,8 @@ class UserDetailViewModel @Inject constructor(
                         try { profilePicCacheManager.cacheImage(imageUrl) } catch (_: Exception) {}
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed to load user: ${e.message}"
             } finally {
@@ -191,65 +205,77 @@ class UserDetailViewModel @Inject constructor(
         _selectedFavoriteWorldTag.value = tag
     }
 
+    private fun launchTabLoad(tab: Int, block: suspend () -> Unit) {
+        if (tabJobs[tab]?.isActive == true) return
+
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            val currentJob = coroutineContext[Job] ?: return@launch
+            _loadingTabs.update { it + tab }
+            try {
+                block()
+            } finally {
+                _loadingTabs.update { it - tab }
+                tabJobs.remove(tab, currentJob)
+            }
+        }
+        tabJobs[tab] = job
+        job.start()
+    }
+
     private fun loadMutualFriends() {
-        viewModelScope.launch {
-            _isTabLoading.value = true
+        launchTabLoad(UserDetailTab.MUTUALS) {
             try {
                 _mutualFriends.value = userRepository.getMutualFriends(userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed to load mutual friends: ${e.message}"
-            } finally {
-                _isTabLoading.value = false
             }
         }
     }
 
     private fun loadGroups() {
-        viewModelScope.launch {
-            _isTabLoading.value = true
+        launchTabLoad(UserDetailTab.GROUPS) {
             try {
                 _userGroups.value = groupApi.getUserGroups(userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed to load groups: ${e.message}"
-            } finally {
-                _isTabLoading.value = false
             }
         }
     }
 
     private fun loadWorlds() {
-        viewModelScope.launch {
-            _isTabLoading.value = true
+        launchTabLoad(UserDetailTab.WORLDS) {
             try {
                 _userWorlds.value = worldApi.getWorlds(user = userId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed to load worlds: ${e.message}"
-            } finally {
-                _isTabLoading.value = false
             }
         }
     }
 
     private fun loadAvatars() {
-        viewModelScope.launch {
-            _isTabLoading.value = true
+        launchTabLoad(UserDetailTab.AVATARS) {
             try {
                 _userAvatars.value = avatarApi.getAvatars(
                     user = userId,
                     releaseStatus = "all",
                     n = 100,
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed to load avatars: ${e.message}"
-            } finally {
-                _isTabLoading.value = false
             }
         }
     }
 
     private fun loadFavoriteWorlds() {
-        viewModelScope.launch {
-            _isTabLoading.value = true
+        launchTabLoad(UserDetailTab.FAVORITE_WORLDS) favoriteWorldLoad@{
             try {
                 val groups = favoriteApi.getFavoriteGroups(
                     type = "world",
@@ -259,7 +285,7 @@ class UserDetailViewModel @Inject constructor(
                 if (groups.isEmpty()) {
                     _favoriteWorldSections.value = emptyList()
                     _selectedFavoriteWorldTag.value = null
-                    return@launch
+                    return@favoriteWorldLoad
                 }
 
                 val sectionResults = supervisorScope {
@@ -296,12 +322,12 @@ class UserDetailViewModel @Inject constructor(
                         "Some favorite world groups could not be loaded"
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _favoriteWorldSections.value = emptyList()
                 _selectedFavoriteWorldTag.value = null
                 _message.value = "Failed to load favorite worlds: ${e.message}"
-            } finally {
-                _isTabLoading.value = false
             }
         }
     }
@@ -330,6 +356,18 @@ class UserDetailViewModel @Inject constructor(
                 }
                 favoriteEntryId = favorite?.id
                 _isFavorited.value = favorite != null
+            }
+        }
+    }
+
+    private fun loadFavoriteStatus() {
+        viewModelScope.launch {
+            try {
+                favoriteRepository.loadFavorites(type = "friend")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The user profile remains usable when favorite metadata fails.
             }
         }
     }

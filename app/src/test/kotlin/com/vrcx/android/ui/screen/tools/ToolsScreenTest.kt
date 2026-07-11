@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.screen.tools
 
 import com.vrcx.android.ui.navigation.VrcxRoutes
+import com.vrcx.android.ui.navigation.encodeRouteSegment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -26,5 +27,14 @@ class ToolsScreenTest {
         assertNull(resolveOpenByIdRoute("nope"))
         assertNull(resolveOpenByIdRoute("user_abc"))
         assertNull(resolveOpenByIdRoute("usr"))
+        assertNull(resolveOpenByIdRoute("usr_abc/def"))
+        assertNull(resolveOpenByIdRoute("usr_abc?x=1"))
+        assertNull(resolveOpenByIdRoute("usr_abc#fragment"))
+    }
+
+    @Test
+    fun `route segment encoding is JVM safe and percent encodes reserved bytes`() {
+        assertEquals("usr_a%2Fb%20c", encodeRouteSegment("usr_a/b c"))
+        assertEquals("%E2%9C%93", encodeRouteSegment("✓"))
     }
 }

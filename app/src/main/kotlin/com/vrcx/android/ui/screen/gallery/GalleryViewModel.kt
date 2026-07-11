@@ -1,6 +1,8 @@
 package com.vrcx.android.ui.screen.gallery
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
@@ -28,7 +30,8 @@ import javax.inject.Inject
 
 enum class GalleryTab { GALLERY, ICONS, EMOJIS, STICKERS, PRINTS, INVENTORY }
 
-internal const val MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+internal const val MAX_UPLOAD_SIZE_BYTES = 10_000_000
+internal const val MAX_UPLOAD_DIMENSION = 2_000
 private const val UPLOAD_READ_BUFFER_SIZE = 8 * 1024
 
 @HiltViewModel
@@ -177,12 +180,14 @@ class GalleryViewModel @Inject constructor(
                     GalleryTab.STICKERS -> "sticker"
                     else -> return@launch
                 }
-                val mimeType = context.contentResolver.getType(uri) ?: "image/png"
-                val fileName = resolveFileName(uri, mimeType)
-                val bytes = readUploadBytes(uri) ?: return@launch
-                galleryRepository.uploadFile(tag, bytes, mimeType, fileName)
-                reloadTab(tab)
+                val sourceMimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val sourceFileName = resolveFileName(uri, sourceMimeType)
+                val upload = prepareUpload(uri, sourceMimeType, sourceFileName) ?: return@launch
+                galleryRepository.uploadFile(tag, upload.bytes, upload.mimeType, upload.fileName)
                 _snackbarMessage.value = "Image uploaded"
+                runCatching { reloadTab(tab) }.onFailure { error ->
+                    _snackbarMessage.value = "Image uploaded, but refresh failed: ${error.message}"
+                }
             } catch (e: Exception) {
                 _snackbarMessage.value = "Upload failed: ${e.message}"
             } finally {
@@ -195,13 +200,24 @@ class GalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _isUploading.value = true
             try {
-                val mimeType = context.contentResolver.getType(uri) ?: "image/png"
-                val fileName = resolveFileName(uri, mimeType)
-                val bytes = readUploadBytes(uri) ?: return@launch
-                galleryRepository.uploadPrint(bytes, note?.ifBlank { null }, mimeType, fileName)
-                val uid = currentUserId() ?: return@launch
-                galleryRepository.loadPrints(uid)
+                val sourceMimeType = context.contentResolver.getType(uri) ?: "image/png"
+                val sourceFileName = resolveFileName(uri, sourceMimeType)
+                val upload = prepareUpload(uri, sourceMimeType, sourceFileName) ?: return@launch
+                galleryRepository.uploadPrint(
+                    upload.bytes,
+                    note?.ifBlank { null },
+                    upload.mimeType,
+                    upload.fileName,
+                )
                 _snackbarMessage.value = "Print uploaded"
+                val uid = currentUserId()
+                if (uid == null) {
+                    _snackbarMessage.value = "Print uploaded, but refresh requires signing in again"
+                } else {
+                    runCatching { galleryRepository.loadPrints(uid) }.onFailure { error ->
+                        _snackbarMessage.value = "Print uploaded, but refresh failed: ${error.message}"
+                    }
+                }
             } catch (e: Exception) {
                 _snackbarMessage.value = "Upload failed: ${e.message}"
             } finally {
@@ -233,19 +249,42 @@ class GalleryViewModel @Inject constructor(
             ?: GalleryRepository.defaultFileNameFor(mimeType)
     }
 
-    private suspend fun readUploadBytes(uri: Uri): ByteArray? {
-        return when (val result = withContext(Dispatchers.IO) { readUploadBytesResult(uri) }) {
-            is UploadReadResult.Success -> result.bytes
+    private suspend fun prepareUpload(uri: Uri, mimeType: String, fileName: String): PreparedUpload? {
+        return when (
+            val result = withContext(Dispatchers.IO) {
+                prepareUploadResult(uri, mimeType, fileName)
+            }
+        ) {
+            is UploadReadResult.Success -> result.upload
             UploadReadResult.TooLarge -> {
                 _snackbarMessage.value = "Image too large (max 10 MB)"
                 null
             }
-            UploadReadResult.Unreadable -> null
+            UploadReadResult.Unreadable -> {
+                _snackbarMessage.value = "Unable to open or read this image"
+                null
+            }
         }
     }
 
-    private fun readUploadBytesResult(uri: Uri): UploadReadResult {
+    private fun prepareUploadResult(uri: Uri, mimeType: String, fileName: String): UploadReadResult {
         val metadataSize = resolveFileSize(uri)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        val boundsDecoded = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, bounds)
+            } != null || (bounds.outWidth > 0 && bounds.outHeight > 0)
+        }.getOrDefault(false)
+        val hasDimensions = boundsDecoded || (bounds.outWidth > 0 && bounds.outHeight > 0)
+        val needsResize = hasDimensions && (
+            bounds.outWidth > MAX_UPLOAD_DIMENSION ||
+                bounds.outHeight > MAX_UPLOAD_DIMENSION ||
+                (metadataSize != null && metadataSize > MAX_UPLOAD_SIZE_BYTES)
+            )
+
+        if (needsResize) {
+            return resizeUpload(uri, mimeType, fileName, bounds.outWidth, bounds.outHeight)
+        }
         if (metadataSize != null && metadataSize > MAX_UPLOAD_SIZE_BYTES) {
             return UploadReadResult.TooLarge
         }
@@ -254,7 +293,65 @@ class GalleryViewModel @Inject constructor(
             readUploadBytesBounded(input)
         } ?: return UploadReadResult.Unreadable
 
-        return bytes?.let(UploadReadResult::Success) ?: UploadReadResult.TooLarge
+        return bytes?.let {
+            UploadReadResult.Success(PreparedUpload(it, mimeType, fileName))
+        } ?: UploadReadResult.TooLarge
+    }
+
+    private fun resizeUpload(
+        uri: Uri,
+        sourceMimeType: String,
+        sourceFileName: String,
+        width: Int,
+        height: Int,
+    ): UploadReadResult {
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateUploadSampleSize(width, height)
+        }
+        val decoded = context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        } ?: return UploadReadResult.Unreadable
+        val target = scaleBitmapToFit(decoded)
+        val outputMimeType = when (sourceMimeType.lowercase()) {
+            "image/jpeg", "image/jpg" -> "image/jpeg"
+            "image/webp" -> "image/webp"
+            else -> "image/png"
+        }
+        val extension = when (outputMimeType) {
+            "image/jpeg" -> "jpg"
+            "image/webp" -> "webp"
+            else -> "png"
+        }
+        val outputName = sourceFileName.substringBeforeLast('.', sourceFileName) + ".$extension"
+        val bytes = compressBitmapBounded(target, outputMimeType)
+        if (target !== decoded) target.recycle()
+        decoded.recycle()
+        return bytes?.let {
+            UploadReadResult.Success(PreparedUpload(it, outputMimeType, outputName))
+        } ?: UploadReadResult.TooLarge
+    }
+
+    private fun scaleBitmapToFit(bitmap: Bitmap): Bitmap {
+        val (targetWidth, targetHeight) = fitUploadDimensions(bitmap.width, bitmap.height)
+        return if (targetWidth == bitmap.width && targetHeight == bitmap.height) bitmap else {
+            Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        }
+    }
+
+    private fun compressBitmapBounded(bitmap: Bitmap, mimeType: String): ByteArray? {
+        val format = when (mimeType) {
+            "image/jpeg" -> Bitmap.CompressFormat.JPEG
+            "image/webp" -> Bitmap.CompressFormat.WEBP
+            else -> Bitmap.CompressFormat.PNG
+        }
+        val qualities = if (format == Bitmap.CompressFormat.PNG) listOf(100) else listOf(92, 84, 76, 68, 60)
+        for (quality in qualities) {
+            val output = ByteArrayOutputStream()
+            if (bitmap.compress(format, quality, output) && output.size() <= MAX_UPLOAD_SIZE_BYTES) {
+                return output.toByteArray()
+            }
+        }
+        return null
     }
 
     private fun resolveFileSize(uri: Uri): Long? {
@@ -355,10 +452,34 @@ class GalleryViewModel @Inject constructor(
     }
 }
 
+private data class PreparedUpload(val bytes: ByteArray, val mimeType: String, val fileName: String)
+
 private sealed interface UploadReadResult {
-    data class Success(val bytes: ByteArray) : UploadReadResult
+    data class Success(val upload: PreparedUpload) : UploadReadResult
     data object TooLarge : UploadReadResult
     data object Unreadable : UploadReadResult
+}
+
+internal fun calculateUploadSampleSize(
+    width: Int,
+    height: Int,
+    maxDimension: Int = MAX_UPLOAD_DIMENSION,
+): Int {
+    var sampleSize = 1
+    while (width / (sampleSize * 2) > maxDimension || height / (sampleSize * 2) > maxDimension) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
+
+internal fun fitUploadDimensions(
+    width: Int,
+    height: Int,
+    maxDimension: Int = MAX_UPLOAD_DIMENSION,
+): Pair<Int, Int> {
+    if (width <= maxDimension && height <= maxDimension) return width to height
+    val scale = minOf(maxDimension.toFloat() / width, maxDimension.toFloat() / height)
+    return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }
 
 internal fun readUploadBytesBounded(

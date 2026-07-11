@@ -29,6 +29,7 @@ class FeedViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     preferences: VrcxPreferences,
 ) : ViewModel() {
+    private data class FeedPage(val entries: List<FeedEntry>, val sourceSaturated: Boolean)
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -97,10 +98,10 @@ class FeedViewModel @Inject constructor(
         currentLimit.coerceAtMost(maxLimit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
 
-    private val allEntries: StateFlow<List<FeedEntry>> = combine(userId, queryLimit) { uid, limit ->
+    private val feedPage: StateFlow<FeedPage> = combine(userId, queryLimit) { uid, limit ->
         uid to limit
     }.flatMapLatest { (uid, limit) ->
-        if (uid.isEmpty()) return@flatMapLatest flowOf(emptyList<FeedEntry>())
+        if (uid.isEmpty()) return@flatMapLatest flowOf(FeedPage(emptyList(), false))
 
         combine(
             feedRepository.getGpsFeed(uid, limit),
@@ -125,12 +126,15 @@ class FeedViewModel @Inject constructor(
             onlineOffline.forEach {
                 entries.add(FeedEntry(it.id, it.type, it.userId, it.displayName, it.worldName, "", it.createdAt))
             }
-            entries.sortedByDescending { it.createdAt }
+            FeedPage(
+                entries = entries.sortedByDescending { it.createdAt },
+                sourceSaturated = listOf(gps, status, bio, avatar, onlineOffline).any { it.size >= limit },
+            )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FeedPage(emptyList(), false))
 
     val feedEntries: StateFlow<List<FeedEntry>> = combine(
-        allEntries,
+        feedPage,
         _activeFilters,
         _searchQuery,
         _vipOnly,
@@ -138,7 +142,7 @@ class FeedViewModel @Inject constructor(
         _feedLimit,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val entries = values[0] as List<FeedEntry>
+        val entries = (values[0] as FeedPage).entries
         val filters = values[1] as Set<*>
         val query = values[2] as String
         val vip = values[3] as Boolean
@@ -156,10 +160,8 @@ class FeedViewModel @Inject constructor(
             .take(limit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val canLoadMore: StateFlow<Boolean> = combine(feedEntries, allEntries, _feedLimit, maxFeedSize) { visibleEntries, allLoadedEntries, currentLimit, maxLimit ->
-        visibleEntries.size >= currentLimit &&
-            allLoadedEntries.size >= currentLimit &&
-            currentLimit < maxLimit
+    val canLoadMore: StateFlow<Boolean> = combine(feedPage, _feedLimit, maxFeedSize) { page, currentLimit, maxLimit ->
+        page.sourceSaturated && currentLimit < maxLimit
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun toggleFilter(filter: String) {
@@ -167,4 +169,6 @@ class FeedViewModel @Inject constructor(
         if (current.contains(filter)) current.remove(filter) else current.add(filter)
         _activeFilters.value = current
     }
+
+    fun consumeError() { _error.value = null }
 }

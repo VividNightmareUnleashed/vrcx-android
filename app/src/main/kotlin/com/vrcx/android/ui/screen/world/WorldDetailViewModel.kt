@@ -63,7 +63,7 @@ class WorldDetailViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                val w = worldRepository.getWorld(worldId)
+                val w = worldRepository.getWorld(worldId, forceRefresh = true)
                 _world.value = w
                 // Load instances in background
                 val instanceIds = worldRepository.parseInstanceIds(w)
