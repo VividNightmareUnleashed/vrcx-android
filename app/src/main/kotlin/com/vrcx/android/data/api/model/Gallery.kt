@@ -47,7 +47,7 @@ data class VrcPrint(
     val worldName: String = "",
     val note: String = "",
     val files: PrintFiles = PrintFiles(),
-    @SerialName("created_at") val createdAt: String = "",
+    val createdAt: String = "",
 )
 
 @Serializable
@@ -57,27 +57,57 @@ data class PrintFiles(
 
 @Serializable
 data class InventoryItem(
-    val id: String = "",
-    val inventoryId: String = "",
-    val itemId: String = "",
-    val expiresAfterUse: Boolean = false,
-    val quantity: Int = 0,
-    val usesLeft: Int = 0,
-    val name: String = "",
-    val description: String = "",
-    val imageUrl: String = "",
-    val itemType: String = "",
-    val flags: List<String> = emptyList(),
+    val collections: List<String> = emptyList(),
     @SerialName("created_at") val createdAt: String = "",
+    val defaultAttributes: JsonElement? = null,
+    val description: String = "",
+    val equipSlot: String? = null,
+    val equipSlots: List<String> = emptyList(),
+    val expiryDate: String? = null,
+    val flags: List<String> = emptyList(),
+    val holderId: String = "",
+    val id: String = "",
+    val imageUrl: String = "",
+    val isArchived: Boolean = false,
+    val isSeen: Boolean = false,
+    val itemType: String = "",
+    val itemTypeLabel: String = "",
+    val metadata: JsonElement? = null,
+    val name: String = "",
+    val quantifiable: Boolean = false,
+    val tags: List<String> = emptyList(),
+    val templateId: String = "",
+    @SerialName("template_created_at") val templateCreatedAt: String = "",
+    @SerialName("template_updated_at") val templateUpdatedAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+    val userAttributes: JsonElement? = null,
+    val validateUserAttributes: Boolean = false,
 )
 
 @Serializable
 data class InventoryTemplate(
-    val category: String = "",
+    val authorId: String = "",
+    val collections: List<String> = emptyList(),
+    @SerialName("created_at") val createdAt: String = "",
+    val defaultAttributes: JsonElement? = null,
     val description: String = "",
+    val equipSlots: List<String> = emptyList(),
+    val flags: List<String> = emptyList(),
     val id: String = "",
     val imageUrl: String = "",
+    val itemType: String = "",
+    val itemTypeLabel: String = "",
+    val metadata: JsonElement? = null,
     val name: String = "",
+    val notificationDetails: JsonElement? = null,
+    val status: String = "",
     val tags: List<String> = emptyList(),
-    val type: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+    val validateUserAttributes: Boolean = false,
+)
+
+@Serializable
+data class InventoryResponse(
+    val data: List<InventoryItem> = emptyList(),
+    val totalCount: Int = 0,
 )

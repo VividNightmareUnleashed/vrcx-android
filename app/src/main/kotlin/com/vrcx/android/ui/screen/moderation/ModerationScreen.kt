@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.screen.moderation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,10 +21,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +42,8 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.repository.ModerationRepository
 import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ErrorState
+import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import com.vrcx.android.ui.theme.LocalWallpaperActive
@@ -50,6 +56,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 internal val MODERATION_TYPES = listOf("block", "mute", "hideAvatar", "showAvatar", "interactOff", "interactOn")
@@ -62,6 +69,15 @@ internal fun moderationTabIndex(selectedType: String): Int =
 class ModerationViewModel @Inject constructor(
     private val moderationRepository: ModerationRepository,
 ) : ViewModel() {
+    data class ScreenState(
+        val isLoading: Boolean = true,
+        val hasLoaded: Boolean = false,
+        val isMutating: Boolean = false,
+        val errorMessage: String? = null,
+    )
+
+    private val _screenState = MutableStateFlow(ScreenState())
+    val screenState: StateFlow<ScreenState> = _screenState.asStateFlow()
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -82,12 +98,48 @@ class ModerationViewModel @Inject constructor(
         .map { mods -> mods.groupingBy { it.type }.eachCount() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    init { viewModelScope.launch { moderationRepository.loadModerations() } }
+    init { refresh() }
 
     fun selectType(type: String) { _selectedType.value = type }
     fun updateSearch(query: String) { _searchQuery.value = query }
-    fun remove(id: String) { viewModelScope.launch { moderationRepository.deleteModeration(id) } }
-    fun refresh() { viewModelScope.launch { moderationRepository.loadModerations() } }
+    fun remove(moderation: PlayerModeration) {
+        viewModelScope.launch {
+            _screenState.value = _screenState.value.copy(isMutating = true, errorMessage = null)
+            try {
+                moderationRepository.deleteModeration(moderation)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _screenState.value = _screenState.value.copy(
+                    errorMessage = e.message ?: "Failed to remove moderation",
+                )
+            } finally {
+                _screenState.value = _screenState.value.copy(isMutating = false)
+            }
+        }
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _screenState.value = _screenState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                moderationRepository.loadModerations()
+                _screenState.value = _screenState.value.copy(hasLoaded = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _screenState.value = _screenState.value.copy(
+                    errorMessage = e.message ?: "Failed to load moderations",
+                )
+            } finally {
+                _screenState.value = _screenState.value.copy(isLoading = false)
+            }
+        }
+    }
+
+    fun consumeError() {
+        _screenState.value = _screenState.value.copy(errorMessage = null)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,15 +149,27 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedType by viewModel.selectedType.collectAsStateWithLifecycle()
     val countsByType by viewModel.countsByType.collectAsStateWithLifecycle()
+    val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val selectedTabIndex = moderationTabIndex(selectedType)
-    var pendingRemoveId by remember { mutableStateOf<Pair<String, String>?>(null) } // id to displayName
+    var pendingRemove by remember { mutableStateOf<PlayerModeration?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(Modifier.fillMaxSize()) {
+    LaunchedEffect(screenState.errorMessage, screenState.hasLoaded) {
+        if (screenState.hasLoaded) {
+            screenState.errorMessage?.let { message ->
+                snackbarHostState.showSnackbar(message)
+                viewModel.consumeError()
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+      Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(
             title = "Moderation",
             onBack = onBack,
             actions = {
-                IconButton(onClick = { viewModel.refresh() }) {
+                IconButton(onClick = { viewModel.refresh() }, enabled = !screenState.isLoading) {
                     Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
                 }
             },
@@ -135,7 +199,14 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         )
 
-        if (moderations.isEmpty()) {
+        if (screenState.isLoading && !screenState.hasLoaded) {
+            LoadingState()
+        } else if (screenState.errorMessage != null && !screenState.hasLoaded) {
+            ErrorState(
+                message = screenState.errorMessage ?: "Failed to load moderations",
+                onRetry = viewModel::refresh,
+            )
+        } else if (moderations.isEmpty()) {
             EmptyState(message = "No ${TAB_LABELS[selectedTabIndex].lowercase()} users", icon = Icons.Outlined.Block)
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
@@ -146,27 +217,32 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
                             Text(mod.created.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(onClick = { pendingRemoveId = mod.id to mod.targetDisplayName }) {
+                        OutlinedButton(
+                            onClick = { pendingRemove = mod },
+                            enabled = !screenState.isMutating,
+                        ) {
                             Text("Remove")
                         }
                     }
                 }
             }
         }
+      }
+      SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     // Confirmation dialog
-    pendingRemoveId?.let { (id, name) ->
+    pendingRemove?.let { moderation ->
         AlertDialog(
-            onDismissRequest = { pendingRemoveId = null },
+            onDismissRequest = { pendingRemove = null },
             title = { Text("Remove Moderation") },
-            text = { Text("Remove ${TAB_LABELS[selectedTabIndex].lowercase()} moderation for $name?") },
+            text = { Text("Remove ${TAB_LABELS[selectedTabIndex].lowercase()} moderation for ${moderation.targetDisplayName}?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.remove(id); pendingRemoveId = null }) {
+                TextButton(onClick = { viewModel.remove(moderation); pendingRemove = null }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { pendingRemoveId = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("Cancel") } },
         )
     }
 }

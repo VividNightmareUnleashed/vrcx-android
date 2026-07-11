@@ -71,7 +71,7 @@ class CookieJarImpl(
 
     private fun persistToPrefsLocked() {
         val serializedCookies = cookieStore.mapValues { (_, cookies) ->
-            cookies.joinToString("|") { serializeCookie(it) }
+            cookies.joinToString("|") { StoredCookieCodec.serialize(it) }
         }
         secureSecretsStore.replaceCookiesByHost(serializedCookies)
     }
@@ -79,7 +79,7 @@ class CookieJarImpl(
     private fun loadFromSecureStoreLocked() {
         secureSecretsStore.getCookiesByHost().forEach { (host, value) ->
             if (value.isNotEmpty()) {
-                val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
+                val cookies = value.split("|").mapNotNull { StoredCookieCodec.deserialize(it) }
                 if (cookies.isNotEmpty()) {
                     cookieStore[host] = cookies.toMutableList()
                 }
@@ -107,7 +107,7 @@ class CookieJarImpl(
         }
 
         legacyCookies.forEach { (host, value) ->
-            val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
+            val cookies = value.split("|").mapNotNull { StoredCookieCodec.deserialize(it) }
             if (cookies.isNotEmpty()) {
                 cookieStore[host] = cookies.toMutableList()
             }
@@ -116,38 +116,4 @@ class CookieJarImpl(
         prefs.edit().clear().apply()
     }
 
-    private fun serializeCookie(cookie: Cookie): String {
-        return buildString {
-            append(cookie.name).append("=").append(cookie.value)
-            append("; domain=").append(cookie.domain)
-            append("; path=").append(cookie.path)
-            append("; expires=").append(cookie.expiresAt)
-            if (cookie.secure) append("; secure")
-            if (cookie.httpOnly) append("; httponly")
-        }
-    }
-
-    private fun deserializeCookie(serialized: String): Cookie? {
-        return try {
-            val parts = serialized.split("; ")
-            val nameValue = parts[0].split("=", limit = 2)
-            val builder = Cookie.Builder()
-                .name(nameValue[0])
-                .value(nameValue.getOrElse(1) { "" })
-
-            for (part in parts.drop(1)) {
-                val kv = part.split("=", limit = 2)
-                when (kv[0].lowercase()) {
-                    "domain" -> builder.domain(kv[1])
-                    "path" -> builder.path(kv[1])
-                    "expires" -> builder.expiresAt(kv[1].toLongOrNull() ?: 0L)
-                    "secure" -> builder.secure()
-                    "httponly" -> builder.httpOnly()
-                }
-            }
-            builder.build()
-        } catch (_: Exception) {
-            null
-        }
-    }
 }

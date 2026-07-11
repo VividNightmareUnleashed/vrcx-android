@@ -5,12 +5,15 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,42 +24,45 @@ class VrcxPreferences @Inject constructor(
     private val context: Context,
 ) {
     private val dataStore get() = context.dataStore
+    private val preferences = dataStore.data.catch { error ->
+        if (error is IOException) emit(emptyPreferences()) else throw error
+    }
 
     // Auth
-    val lastUserId: Flow<String?> = dataStore.data.map { it[LAST_USER_ID] }
+    val lastUserId: Flow<String?> = preferences.map { it[LAST_USER_ID] }
     suspend fun setLastUserId(userId: String) = dataStore.edit { it[LAST_USER_ID] = userId }
 
     // Notification settings
-    val notifyInvite: Flow<Boolean> = dataStore.data.map { it[NOTIFY_INVITE] ?: true }
-    val notifyFriendRequest: Flow<Boolean> = dataStore.data.map { it[NOTIFY_FRIEND_REQUEST] ?: true }
+    val notifyInvite: Flow<Boolean> = preferences.map { it[NOTIFY_INVITE] ?: true }
+    val notifyFriendRequest: Flow<Boolean> = preferences.map { it[NOTIFY_FRIEND_REQUEST] ?: true }
 
     suspend fun setNotifySetting(key: Preferences.Key<Boolean>, value: Boolean) {
         dataStore.edit { it[key] = value }
     }
 
     // Appearance
-    val themeMode: Flow<String> = dataStore.data.map { it[THEME_MODE] ?: "dark" }
-    val dynamicColors: Flow<Boolean> = dataStore.data.map { it[DYNAMIC_COLORS] ?: false }
+    val themeMode: Flow<String> = preferences.map { it[THEME_MODE] ?: "dark" }
+    val dynamicColors: Flow<Boolean> = preferences.map { it[DYNAMIC_COLORS] ?: false }
 
     suspend fun setThemeMode(mode: String) = dataStore.edit { it[THEME_MODE] = mode }
     suspend fun setDynamicColors(enabled: Boolean) = dataStore.edit { it[DYNAMIC_COLORS] = enabled }
 
-    val wallpaperUri: Flow<String?> = dataStore.data.map { it[WALLPAPER_URI] }
+    val wallpaperUri: Flow<String?> = preferences.map { it[WALLPAPER_URI] }
     suspend fun setWallpaperUri(uri: String?) = dataStore.edit {
         if (uri != null) it[WALLPAPER_URI] = uri else it.remove(WALLPAPER_URI)
     }
 
-    val wallpaperScaleMode: Flow<String> = dataStore.data.map { it[WALLPAPER_SCALE_MODE] ?: "crop" }
+    val wallpaperScaleMode: Flow<String> = preferences.map { it[WALLPAPER_SCALE_MODE] ?: "crop" }
     suspend fun setWallpaperScaleMode(mode: String) = dataStore.edit { it[WALLPAPER_SCALE_MODE] = mode }
 
     // General
-    val maxFeedSize: Flow<Int> = dataStore.data.map { it[MAX_FEED_SIZE] ?: 1000 }
-    val autoLogin: Flow<Boolean> = dataStore.data.map { it[AUTO_LOGIN] ?: false }
+    val maxFeedSize: Flow<Int> = preferences.map { it[MAX_FEED_SIZE] ?: 1000 }
+    val autoLogin: Flow<Boolean> = preferences.map { it[AUTO_LOGIN] ?: false }
 
     suspend fun setMaxFeedSize(size: Int) = dataStore.edit { it[MAX_FEED_SIZE] = size }
     suspend fun setAutoLogin(enabled: Boolean) = dataStore.edit { it[AUTO_LOGIN] = enabled }
 
-    val backgroundServiceEnabled: Flow<Boolean> = dataStore.data.map { it[BACKGROUND_SERVICE_ENABLED] ?: true }
+    val backgroundServiceEnabled: Flow<Boolean> = preferences.map { it[BACKGROUND_SERVICE_ENABLED] ?: true }
     suspend fun setBackgroundServiceEnabled(enabled: Boolean) = dataStore.edit { it[BACKGROUND_SERVICE_ENABLED] = enabled }
 
     suspend fun clear() = dataStore.edit { prefs ->
@@ -85,7 +91,7 @@ class VrcxPreferences @Inject constructor(
     }
 
     suspend fun getLegacySavedCredentials(): Pair<String, String>? {
-        val prefs = dataStore.data.map { data ->
+        val prefs = preferences.map { data ->
             val username = data[SAVED_USERNAME]
             val password = data[SAVED_PASSWORD]
             if (username.isNullOrEmpty() || password.isNullOrEmpty()) {

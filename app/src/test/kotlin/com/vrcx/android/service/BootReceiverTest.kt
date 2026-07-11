@@ -48,15 +48,12 @@ class BootReceiverTest {
     @Test
     fun `onReceive enqueues BootReconnectWorker on BOOT_COMPLETED without doing IO`() {
         val receiver = BootReceiver()
-        val start = System.nanoTime()
         receiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
-        val durationMs = (System.nanoTime() - start) / 1_000_000
 
-        // The receiver should never block on disk reads. Even on a slow CI host,
-        // a no-IO enqueue completes in well under 100ms — anything higher means
-        // we slipped a runBlocking back in.
-        assert(durationMs < 200) { "BootReceiver.onReceive took ${durationMs}ms, expected < 200ms" }
-
+        // No auth cookie or preference fixture is installed here. Enqueueing
+        // anyway verifies that eligibility reads remain deferred to the worker;
+        // a wall-clock limit would measure Robolectric/WorkManager startup and
+        // is too host-dependent to prove the absence of disk I/O.
         val workInfos = WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork("boot-reconnect-worker")
             .get()

@@ -4,6 +4,7 @@ import com.vrcx.android.data.api.model.NotificationV2
 import com.vrcx.android.data.api.model.InviteRequest
 import com.vrcx.android.data.api.model.InviteResponseRequest
 import com.vrcx.android.data.api.model.NotificationResponse
+import com.vrcx.android.data.api.model.RequestInviteRequest
 import com.vrcx.android.data.api.model.VrcNotification
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
@@ -60,7 +61,7 @@ interface NotificationApi {
     @POST("requestInvite/{userId}")
     suspend fun sendRequestInvite(
         @Path("userId") userId: String,
-        @Body body: Map<String, @JvmSuppressWildcards Any> = emptyMap(),
+        @Body body: RequestInviteRequest = RequestInviteRequest(),
     ): JsonElement
 
     @POST("invite/{notificationId}/response")

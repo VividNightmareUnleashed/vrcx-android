@@ -6,6 +6,7 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.api.model.GroupPostsResponse
 import com.vrcx.android.data.api.model.GroupSearchResult
+import com.vrcx.android.data.api.model.UpdateGroupMemberRequest
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -60,7 +61,7 @@ interface GroupApi {
     suspend fun updateGroupMember(
         @Path("groupId") groupId: String,
         @Path("userId") userId: String,
-        @Body body: Map<String, @JvmSuppressWildcards Any>,
+        @Body body: UpdateGroupMemberRequest,
     ): JsonElement
 
     @DELETE("groups/{groupId}/members/{userId}")

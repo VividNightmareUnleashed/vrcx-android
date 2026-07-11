@@ -3,8 +3,10 @@ package com.vrcx.android.data.security
 import android.content.Context
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
+import com.vrcx.android.data.api.StoredCookieCodec
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.Serializable
@@ -30,6 +32,7 @@ class SecureSecretsStore @Inject constructor(
     private val appContext = context.applicationContext
     private val lock = Any()
     private val secretsFile = File(appContext.filesDir, SECRETS_FILE_NAME)
+    private val backupFile = File(appContext.filesDir, "$SECRETS_FILE_NAME.backup")
     private val masterKey by lazy {
         MasterKey.Builder(appContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -63,7 +66,8 @@ class SecureSecretsStore @Inject constructor(
     }
 
     fun hasAuthCookie(): Boolean = synchronized(lock) {
-        readState().cookiesByHost.values.any { it.contains("auth=") }
+        val now = System.currentTimeMillis()
+        hasUsableAuthCookie(readState().cookiesByHost, now)
     }
 
     private fun updateState(transform: (SecureSecretsState) -> SecureSecretsState) {
@@ -71,12 +75,29 @@ class SecureSecretsStore @Inject constructor(
     }
 
     private fun readState(): SecureSecretsState {
+        if (!secretsFile.exists() && backupFile.exists()) {
+            backupFile.renameTo(secretsFile)
+        }
         if (!secretsFile.exists()) {
             return SecureSecretsState()
         }
 
-        return runCatching {
-            encryptedFile().openFileInput().bufferedReader().use { reader ->
+        readStateFromPrimary()?.let { state ->
+            if (backupFile.exists()) backupFile.delete()
+            return state
+        }
+
+        if (backupFile.exists()) {
+            secretsFile.delete()
+            if (backupFile.renameTo(secretsFile)) {
+                readStateFromPrimary()?.let { return it }
+            }
+        }
+        return SecureSecretsState()
+    }
+
+    private fun readStateFromPrimary(): SecureSecretsState? = runCatching {
+            encryptedFile(secretsFile).openFileInput().bufferedReader().use { reader ->
                 val text = reader.readText()
                 if (text.isBlank()) {
                     SecureSecretsState()
@@ -84,33 +105,39 @@ class SecureSecretsStore @Inject constructor(
                     json.decodeFromString<SecureSecretsState>(text)
                 }
             }
-        }.getOrElse {
-            SecureSecretsState()
-        }
-    }
+        }.getOrNull()
 
     private fun writeState(state: SecureSecretsState) {
         if (state.savedCredentials == null && state.cookiesByHost.isEmpty()) {
-            if (secretsFile.exists()) {
-                secretsFile.delete()
-            }
+            secretsFile.delete()
+            backupFile.delete()
             return
         }
 
-        if (secretsFile.exists()) {
-            secretsFile.delete()
+        backupFile.delete()
+        if (secretsFile.exists() && !secretsFile.renameTo(backupFile)) {
+            error("Unable to preserve the existing encrypted secrets")
         }
 
-        encryptedFile().openFileOutput().bufferedWriter().use { writer ->
-            writer.write(json.encodeToString(SecureSecretsState.serializer(), state))
+        try {
+            encryptedFile(secretsFile).openFileOutput().bufferedWriter().use { writer ->
+                writer.write(json.encodeToString(SecureSecretsState.serializer(), state))
+                writer.flush()
+            }
+            FileOutputStream(secretsFile, true).use { output -> output.fd.sync() }
+            backupFile.delete()
+        } catch (failure: Exception) {
+            secretsFile.delete()
+            backupFile.renameTo(secretsFile)
+            throw failure
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun encryptedFile(): EncryptedFile {
+    private fun encryptedFile(file: File): EncryptedFile {
         return EncryptedFile.Builder(
             appContext,
-            secretsFile,
+            file,
             masterKey,
             EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB,
         ).build()
@@ -118,5 +145,16 @@ class SecureSecretsStore @Inject constructor(
 
     companion object {
         const val SECRETS_FILE_NAME = "vrcx_secure_secrets.json"
+    }
+}
+
+internal fun hasUsableAuthCookie(
+    cookiesByHost: Map<String, String>,
+    nowMillis: Long,
+): Boolean = cookiesByHost.values.any { encodedCookies ->
+    encodedCookies.split("|").any { encodedCookie ->
+        StoredCookieCodec.deserialize(encodedCookie)?.let { cookie ->
+            cookie.name == "auth" && cookie.expiresAt >= nowMillis
+        } == true
     }
 }

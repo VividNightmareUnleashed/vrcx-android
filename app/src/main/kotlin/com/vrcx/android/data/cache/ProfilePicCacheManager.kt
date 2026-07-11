@@ -15,17 +15,20 @@ import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Singleton
 class ProfilePicCacheManager @Inject constructor(
     @ApplicationContext context: Context,
+    @Named("imageOkHttpClient")
     private val okHttpClient: OkHttpClient,
 ) {
     private val cacheDir = File(context.filesDir, "profile_pic_cache")
 
     init {
         cacheDir.mkdirs()
+        trimCache()
     }
 
     private fun urlToFilename(url: String): String {
@@ -35,7 +38,12 @@ class ProfilePicCacheManager @Inject constructor(
 
     fun getCachedFile(url: String): File? {
         val file = File(cacheDir, urlToFilename(url))
-        return if (file.exists() && file.length() > 0) file else null
+        return if (file.exists() && file.length() > 0) {
+            file.setLastModified(System.currentTimeMillis())
+            file
+        } else {
+            null
+        }
     }
 
     suspend fun cacheImage(url: String) = withContext(Dispatchers.IO) {
@@ -55,7 +63,10 @@ class ProfilePicCacheManager @Inject constructor(
                 }
             }
             if (tempFile.length() > 0) {
-                tempFile.renameTo(file)
+                if (tempFile.renameTo(file)) {
+                    file.setLastModified(System.currentTimeMillis())
+                    trimCache()
+                }
             } else {
                 tempFile.delete()
             }
@@ -70,7 +81,7 @@ class ProfilePicCacheManager @Inject constructor(
     }
 
     fun getCacheSizeBytes(): Long {
-        return cacheDir.listFiles()?.sumOf { it.length() } ?: 0L
+        return cacheDir.listFiles()?.filterNot { it.name.endsWith(".tmp") }?.sumOf { it.length() } ?: 0L
     }
 
     suspend fun cacheAllFriends(
@@ -102,5 +113,24 @@ class ProfilePicCacheManager @Inject constructor(
                 }
             }.awaitAll()
         }
+    }
+
+    private fun trimCache(nowMillis: Long = System.currentTimeMillis()) {
+        val files = cacheDir.listFiles()
+            ?.filter { it.isFile && !it.name.endsWith(".tmp") }
+            ?.sortedBy { it.lastModified() }
+            ?: return
+        var totalBytes = files.sumOf { it.length() }
+        files.forEach { file ->
+            if (nowMillis - file.lastModified() > MAX_CACHE_AGE_MS || totalBytes > MAX_CACHE_BYTES) {
+                val bytes = file.length()
+                if (file.delete()) totalBytes -= bytes
+            }
+        }
+    }
+
+    private companion object {
+        const val MAX_CACHE_BYTES = 64L * 1024L * 1024L
+        const val MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L
     }
 }

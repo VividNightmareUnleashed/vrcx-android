@@ -22,6 +22,7 @@ import com.vrcx.android.MainActivity
 import com.vrcx.android.R
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.security.SecureSecretsStore
+import com.vrcx.android.data.security.hasUsableAuthCookie
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
@@ -45,7 +46,13 @@ class BootReconnectWorker(
         }
 
         val legacyPrefs = applicationContext.getSharedPreferences("vrcx_cookies", Context.MODE_PRIVATE)
-        val hasLegacyAuth = legacyPrefs.all.values.any { (it as? String)?.contains("auth=") == true }
+        val legacyCookiesByHost = legacyPrefs.all.mapNotNull { (host, value) ->
+            (value as? String)?.let { host to it }
+        }.toMap()
+        val hasLegacyAuth = hasUsableAuthCookie(
+            cookiesByHost = legacyCookiesByHost,
+            nowMillis = System.currentTimeMillis(),
+        )
         val secureSecretsStore = SecureSecretsStore(
             context = applicationContext,
             json = Json { ignoreUnknownKeys = true },

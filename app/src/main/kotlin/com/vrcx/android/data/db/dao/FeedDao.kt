@@ -31,6 +31,9 @@ interface FeedDao {
     @Query("SELECT * FROM feed_gps WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getGpsFeed(userId: String, limit: Int = 100): Flow<List<FeedGpsEntity>>
 
+    @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId ORDER BY id DESC")
+    fun getAllGpsFeed(ownerUserId: String): Flow<List<FeedGpsEntity>>
+
     @Query("SELECT * FROM feed_status WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
     fun getStatusFeed(userId: String, limit: Int = 100): Flow<List<FeedStatusEntity>>
 
@@ -78,4 +81,19 @@ interface FeedDao {
 
     @Query("DELETE FROM feed_online_offline WHERE ownerUserId = :userId")
     suspend fun clearOnlineOfflineFeed(userId: String)
+
+    @Query("DELETE FROM feed_gps WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_gps WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
+    suspend fun pruneGps(ownerUserId: String, limit: Int)
+
+    @Query("DELETE FROM feed_status WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_status WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
+    suspend fun pruneStatus(ownerUserId: String, limit: Int)
+
+    @Query("DELETE FROM feed_bio WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_bio WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
+    suspend fun pruneBio(ownerUserId: String, limit: Int)
+
+    @Query("DELETE FROM feed_avatar WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_avatar WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
+    suspend fun pruneAvatar(ownerUserId: String, limit: Int)
+
+    @Query("DELETE FROM feed_online_offline WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_online_offline WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
+    suspend fun pruneOnlineOffline(ownerUserId: String, limit: Int)
 }

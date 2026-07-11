@@ -58,3 +58,15 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         )
     }
 }
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        val tables = listOf("feed_gps", "feed_status", "feed_bio", "feed_avatar", "feed_online_offline")
+        tables.forEach { table ->
+            database.execSQL("DROP INDEX IF EXISTS `index_${table}_userId`")
+            database.execSQL("DROP INDEX IF EXISTS `index_${table}_createdAt`")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_${table}_ownerUserId_id` ON `$table` (`ownerUserId`, `id`)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_${table}_ownerUserId_userId_id` ON `$table` (`ownerUserId`, `userId`, `id`)")
+        }
+    }
+}

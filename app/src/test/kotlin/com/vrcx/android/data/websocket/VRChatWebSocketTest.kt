@@ -33,6 +33,7 @@ class VRChatWebSocketTest {
             "see-notification" to PipelineEvent.SeeNotification::class.java,
             "hide-notification" to PipelineEvent.HideNotification::class.java,
             "response-notification" to PipelineEvent.ResponseNotification::class.java,
+            "clear-notification" to PipelineEvent.ClearNotification::class.java,
             "group-joined" to PipelineEvent.GroupJoined::class.java,
             "group-left" to PipelineEvent.GroupLeft::class.java,
             "group-role-updated" to PipelineEvent.GroupRoleUpdated::class.java,
@@ -109,5 +110,11 @@ class VRChatWebSocketTest {
         val event = parsePipelineMessage(json, frame)
         assertTrue(event is PipelineEvent.FriendOnline)
         assertNull(event!!.content)
+    }
+
+    @Test
+    fun `reconnect delay remains bounded after the old fifty-attempt cutoff`() {
+        assertEquals(300_000L, calculateReconnectDelayMs(attempt = 51, jitterMs = 0))
+        assertEquals(302_000L, calculateReconnectDelayMs(attempt = 500, jitterMs = 2_000))
     }
 }

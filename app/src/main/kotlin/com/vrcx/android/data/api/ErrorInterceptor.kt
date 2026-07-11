@@ -50,6 +50,12 @@ class ErrorInterceptor(
         if (response.request.header("Authorization")?.startsWith("Basic ", ignoreCase = true) == true) {
             return true
         }
+        // An invalid 2FA code is an authentication-phase error, not evidence
+        // that an established cookie session expired. Let the login flow keep
+        // its selected 2FA methods and surface the verification error locally.
+        if (response.request.url.encodedPath.contains("/auth/twofactorauth/")) {
+            return true
+        }
         authEventBus.tryEmit(AuthEvent.Unauthorized)
         return true
     }

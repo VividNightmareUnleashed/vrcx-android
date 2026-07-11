@@ -18,6 +18,9 @@ import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,6 +38,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,7 +62,10 @@ class FriendRepository @Inject constructor(
     )
 
     var ownerUserId: String = ""
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val accountGeneration = AtomicLong(0)
+    private val friendsRevision = AtomicLong(0)
+    private val pendingOfflineJobs = ConcurrentHashMap<String, Job>()
     private val OFFLINE_DELAY_MS = 5000L
     private val DEDUP_WINDOW_MS = 10_000L
     /**
@@ -114,17 +121,25 @@ class FriendRepository @Inject constructor(
     }
 
     fun clearRuntimeState() {
+        accountGeneration.incrementAndGet()
+        friendsRevision.incrementAndGet()
+        pendingOfflineJobs.values.forEach(Job::cancel)
+        pendingOfflineJobs.clear()
         ownerUserId = ""
         recentFeedWrites.clear()
         lastFilteredTransitionAt.clear()
         _favoriteFriendIds.value = emptySet()
         _notifyEnabledIds.value = emptySet()
-        _friends.value = emptyMap()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            friendsMutex.withLock { _friends.value = emptyMap() }
+        }
     }
 
     suspend fun loadFriendsList() {
         val ownerId = ensureOwnerUserId()
         if (ownerId.isEmpty()) return
+        val generation = accountGeneration.get()
+        val revision = friendsRevision.get()
         recentFeedWrites.clear()
         lastFilteredTransitionAt.clear()
         // Fetch online friends
@@ -157,8 +172,11 @@ class FriendRepository @Inject constructor(
                 )
             }
         }
-        if (ownerId != ownerUserId) return
-        _friends.value = decorateFriendMap(friendMap)
+        friendsMutex.withLock {
+            if (ownerId != ownerUserId || generation != accountGeneration.get() || revision != friendsRevision.get()) return
+            _friends.value = decorateFriendMap(friendMap)
+            friendsRevision.incrementAndGet()
+        }
         syncFriendLog(ownerId, friendMap)
 
         try {
@@ -225,6 +243,7 @@ class FriendRepository @Inject constructor(
     private suspend fun handleFriendOnline(event: PipelineEvent.FriendOnline) {
         val content = event.content?.jsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
+        cancelPendingOffline(userId)
         val user = tryDecodeUser(content["user"])
         val displayName = user?.displayName ?: _friends.value[userId]?.name ?: userId
         val location = content["location"]?.jsonPrimitive?.content ?: ""
@@ -259,6 +278,8 @@ class FriendRepository @Inject constructor(
         val payloadUser = tryDecodeUser(content["user"])
         if (payloadUser != null) userRepository.cacheUser(payloadUser)
         val displayName = payloadUser?.displayName ?: _friends.value[userId]?.name ?: userId
+        val generation = accountGeneration.get()
+        val ownerId = ownerUserId
         // 5s delay before marking offline
         updateFriend(userId) { ctx ->
             ctx.copy(
@@ -267,9 +288,10 @@ class FriendRepository @Inject constructor(
                 name = payloadUser?.displayName ?: ctx.name,
             )
         }
-        scope.launch {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             delay(OFFLINE_DELAY_MS)
-            val previous = updateFriend(userId) { ctx ->
+            if (generation != accountGeneration.get() || ownerId != ownerUserId) return@launch
+            val previous = updateFriendIfCurrent(userId, generation) { ctx ->
                 if (ctx.pendingOffline) {
                     ctx.copy(
                         state = FriendState.OFFLINE,
@@ -286,7 +308,7 @@ class FriendRepository @Inject constructor(
                     ctx
                 }
             }
-            if (previous.pendingOffline) {
+            if (previous?.pendingOffline == true) {
                 // Confirmed offline: mark a filtered hop so a later return to
                 // the same world isn't mistaken for a re-emit. Stamp here
                 // rather than at event arrival so transient flickers that
@@ -296,12 +318,16 @@ class FriendRepository @Inject constructor(
                 writeFeedOnlineOffline(userId, displayName, "offline", "")
                 _confirmedOfflineEvents.emit(userId to displayName)
             }
+            pendingOfflineJobs.remove(userId)
         }
+        pendingOfflineJobs.put(userId, job)?.cancel()
+        job.start()
     }
 
     private suspend fun handleFriendActive(event: PipelineEvent.FriendActive) {
         val content = event.content?.jsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
+        cancelPendingOffline(userId)
         val user = tryDecodeUser(content["user"])
         val platform = content["platform"]?.jsonPrimitive?.content
         updateFriend(userId) { ctx ->
@@ -361,6 +387,7 @@ class FriendRepository @Inject constructor(
     private suspend fun handleFriendLocation(event: PipelineEvent.FriendLocation) {
         val content = event.content?.jsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
+        cancelPendingOffline(userId)
         val location = content["location"]?.jsonPrimitive?.content
         val user = tryDecodeUser(content["user"])
         val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content
@@ -431,11 +458,13 @@ class FriendRepository @Inject constructor(
     private suspend fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
         val content = event.content?.jsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
+        cancelPendingOffline(userId)
         syncFriendRemoved(userId)
         friendsMutex.withLock {
             val current = _friends.value.toMutableMap()
             current.remove(userId)
             _friends.value = current
+            friendsRevision.incrementAndGet()
         }
     }
 
@@ -449,8 +478,27 @@ class FriendRepository @Inject constructor(
             )
             current[userId] = decorateFriendContext(update(existing))
             _friends.value = current
+            friendsRevision.incrementAndGet()
             existing
         }
+    }
+
+    private suspend fun updateFriendIfCurrent(
+        userId: String,
+        generation: Long,
+        update: (FriendContext) -> FriendContext,
+    ): FriendContext? = friendsMutex.withLock {
+        if (generation != accountGeneration.get()) return@withLock null
+        val current = _friends.value.toMutableMap()
+        val existing = current[userId] ?: FriendContext(id = userId, name = userId, state = FriendState.OFFLINE)
+        current[userId] = decorateFriendContext(update(existing))
+        _friends.value = current
+        friendsRevision.incrementAndGet()
+        existing
+    }
+
+    private fun cancelPendingOffline(userId: String) {
+        pendingOfflineJobs.remove(userId)?.cancel()
     }
 
     private suspend fun applyFavoriteFlags() {

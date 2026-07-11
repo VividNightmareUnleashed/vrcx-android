@@ -9,8 +9,11 @@ import com.vrcx.android.data.api.model.AuthToken
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -49,6 +52,7 @@ class AuthRepositoryTest {
     @Test
     fun `eight digit recovery codes use otp verification endpoint`() {
         runBlocking {
+            enterTwoFactorState()
             whenever(authApi.verifyOtp(any())).thenReturn(TwoFactorAuthResponse(verified = true))
             stubLoginFollowUp()
 
@@ -64,6 +68,7 @@ class AuthRepositoryTest {
     @Test
     fun `authenticator codes keep using totp verification endpoint`() {
         runBlocking {
+            enterTwoFactorState()
             whenever(authApi.verifyTotp(any())).thenReturn(TwoFactorAuthResponse(verified = true))
             stubLoginFollowUp()
 
@@ -73,6 +78,43 @@ class AuthRepositoryTest {
             verify(authApi).verifyTotp(requestCaptor.capture())
             verify(authApi, never()).verifyOtp(any())
             assertEquals("123456", requestCaptor.firstValue.code)
+        }
+    }
+
+    @Test
+    fun `failed two factor verification preserves the challenge phase`() {
+        runBlocking {
+            enterTwoFactorState()
+            whenever(authApi.verifyTotp(any())).thenReturn(TwoFactorAuthResponse(verified = false))
+            repository.verifyTotp("123456")
+            val state = repository.authState.value as AuthState.RequiresTwoFactor
+            assertEquals(listOf("totp"), state.methods)
+            assertEquals("Verification failed", state.errorMessage)
+        }
+    }
+
+    @Test
+    fun `partial user update preserves omitted authenticated user fields`() {
+        runBlocking {
+            whenever(authApi.getCurrentUser()).thenReturn(
+                buildJsonObject {
+                    put("id", "usr_test")
+                    put("displayName", "Before")
+                    put("location", "wrld_keep:instance")
+                    put("travelingToLocation", "wrld_destination:instance")
+                }
+            )
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            repository.login("test-user", "test-password")
+            repository.handleEvent(
+                PipelineEvent.UserUpdate(
+                    buildJsonObject { put("user", buildJsonObject { put("displayName", "After") }) }
+                )
+            )
+            val user = (repository.authState.value as AuthState.LoggedIn).user
+            assertEquals("After", user.displayName)
+            assertEquals("wrld_keep:instance", user.location)
+            assertEquals("wrld_destination:instance", user.travelingToLocation)
         }
     }
 
@@ -167,5 +209,15 @@ class AuthRepositoryTest {
             }
         )
         whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+    }
+
+    private suspend fun enterTwoFactorState() {
+        whenever(authApi.getCurrentUser()).thenReturn(
+            buildJsonObject {
+                put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
+            }
+        )
+        repository.login("test-user", "test-password")
+        assertTrue(repository.authState.value is AuthState.RequiresTwoFactor)
     }
 }

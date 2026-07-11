@@ -40,7 +40,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -124,27 +123,8 @@ fun GalleryScreen(
     }
 
     val isWallpaperActive = LocalWallpaperActive.current
-    Scaffold(
-        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        floatingActionButton = {
-            if (selectedTab != GalleryTab.INVENTORY && !isLoading) {
-                FloatingActionButton(
-                    onClick = { if (!isUploading) imagePicker.launch("image/*") },
-                ) {
-                    if (isUploading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(Icons.Default.Add, contentDescription = "Upload")
-                    }
-                }
-            }
-        },
-    ) { innerPadding ->
-        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
             VrcxDetailTopBar(
                 title = "Gallery",
                 onBack = onBack,
@@ -257,6 +237,19 @@ fun GalleryScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
+        if (selectedTab != GalleryTab.INVENTORY && !isLoading) {
+            FloatingActionButton(
+                onClick = { if (!isUploading) imagePicker.launch("image/*") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            ) {
+                if (isUploading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Add, contentDescription = "Upload")
                 }
             }
         }
@@ -496,9 +489,9 @@ private fun InventoryGridContent(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(items, key = { it.id }) { item ->
-                val template = templateMap[item.itemId]
+                val template = templateMap[item.templateId]
                 val displayImageUrl = item.imageUrl.ifBlank { template?.imageUrl ?: "" }
-                val displayName = item.name.ifBlank { template?.name ?: item.itemId }
+                val displayName = item.name.ifBlank { template?.name ?: item.templateId }
                 val displayDescription = item.description.ifBlank { template?.description ?: "" }
 
                 Column {
@@ -593,9 +586,9 @@ private fun FullscreenImageDialog(
                 model = imageUrl,
                 contentDescription = null,
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .padding(16.dp)
-                    .clickable(enabled = false, onClick = {}),
+                    .clickable(onClick = {}),
                 contentScale = ContentScale.Fit,
             )
             IconButton(

@@ -22,10 +22,10 @@ interface NotificationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotificationsV2(entries: List<NotificationV2Entity>)
 
-    @Query("SELECT * FROM notifications WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM notifications WHERE ownerUserId = :userId ORDER BY rowid DESC LIMIT :limit")
     suspend fun getNotifications(userId: String, limit: Int = 100): List<NotificationEntity>
 
-    @Query("SELECT * FROM notifications_v2 WHERE ownerUserId = :userId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM notifications_v2 WHERE ownerUserId = :userId ORDER BY rowid DESC LIMIT :limit")
     suspend fun getNotificationsV2(userId: String, limit: Int = 100): List<NotificationV2Entity>
 
     @Query("DELETE FROM notifications WHERE ownerUserId = :userId")
@@ -56,7 +56,7 @@ interface NotificationDao {
     suspend fun replaceNotifications(userId: String, entries: List<NotificationEntity>) {
         deleteNotificationsForUser(userId)
         if (entries.isNotEmpty()) {
-            insertNotifications(entries)
+            insertNotifications(entries.asReversed())
         }
     }
 
@@ -64,7 +64,7 @@ interface NotificationDao {
     suspend fun replaceNotificationsV2(userId: String, entries: List<NotificationV2Entity>) {
         deleteNotificationsV2ForUser(userId)
         if (entries.isNotEmpty()) {
-            insertNotificationsV2(entries)
+            insertNotificationsV2(entries.asReversed())
         }
     }
 }

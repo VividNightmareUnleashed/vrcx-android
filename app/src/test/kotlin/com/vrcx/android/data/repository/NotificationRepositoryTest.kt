@@ -25,6 +25,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.mockito.Mockito.timeout
 
 class NotificationRepositoryTest {
     private val notificationApi = mock<NotificationApi>()
@@ -277,6 +278,31 @@ class NotificationRepositoryTest {
             verify(notificationApi, never()).hideNotification(notification.id)
             verify(notificationApi, never()).hideNotificationV2(notification.id)
             org.junit.Assert.assertEquals(emptyList<UnifiedNotification>(), repository.localNotifications.value)
+        }
+    }
+
+    @Test
+    fun `clear notification event clears current owner memory and storage`() {
+        runBlocking {
+            whenever(authRepository.currentUser).thenReturn(CurrentUser(id = "usr_me"))
+            repository.handleEvent(
+                PipelineEvent.Notification(
+                    buildJsonObject {
+                        put("id", "noty_1")
+                        put("created_at", "2026-03-19T00:00:00Z")
+                    }
+                )
+            )
+            assertEquals(1, repository.notifications.value.size)
+
+            repository.handleEvent(PipelineEvent.ClearNotification)
+
+            assertEquals(emptyList<VrcNotification>(), repository.notifications.value)
+            assertEquals(emptyList<NotificationV2>(), repository.notificationsV2.value)
+            assertEquals(emptyList<UnifiedNotification>(), repository.localNotifications.value)
+            assertEquals(0, repository.unseenCount.value)
+            verify(notificationDao, timeout(1_000)).deleteNotificationsForUser("usr_me")
+            verify(notificationDao, timeout(1_000)).deleteNotificationsV2ForUser("usr_me")
         }
     }
 }

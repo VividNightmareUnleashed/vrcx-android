@@ -89,6 +89,19 @@ class NotificationHelper(private val context: Context) {
         notificationManager.cancel(BOOT_RECONNECT_NOTIFICATION_ID)
     }
 
+    fun notifyServiceReconnectRequired() {
+        post(
+            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            title = "Open VRCX to reconnect",
+            text = "Android paused the background connection after its service time limit.",
+            notificationId = SERVICE_RECONNECT_NOTIFICATION_ID,
+        )
+    }
+
+    fun cancelServiceReconnectRequired() {
+        notificationManager.cancel(SERVICE_RECONNECT_NOTIFICATION_ID)
+    }
+
     private fun post(channel: String, title: String, text: String, notificationId: Int? = null) {
         val pendingIntent = PendingIntent.getActivity(
             context, 0,
@@ -127,5 +140,6 @@ class NotificationHelper(private val context: Context) {
 
     companion object {
         const val BOOT_RECONNECT_NOTIFICATION_ID = 99
+        const val SERVICE_RECONNECT_NOTIFICATION_ID = 98
     }
 }

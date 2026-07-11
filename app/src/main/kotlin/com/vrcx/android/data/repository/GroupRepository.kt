@@ -2,6 +2,7 @@ package com.vrcx.android.data.repository
 
 import android.util.Log
 import com.vrcx.android.data.api.GroupApi
+import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
@@ -11,6 +12,7 @@ import com.vrcx.android.data.websocket.PipelineEvent
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.atomic.AtomicLong
 
 @Singleton
 class GroupRepository @Inject constructor(
@@ -26,8 +29,9 @@ class GroupRepository @Inject constructor(
     private val dedup: RequestDeduplicator,
 ) {
     private val TAG = "GroupRepository"
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val groupCache = ConcurrentHashMap<String, Group>()
+    private val accountGeneration = AtomicLong(0)
 
     @Volatile
     var ownerUserId: String = ""
@@ -36,14 +40,18 @@ class GroupRepository @Inject constructor(
     val userGroups: StateFlow<List<Group>> = _userGroups.asStateFlow()
 
     suspend fun loadUserGroups(userId: String) {
+        val generation = accountGeneration.get()
         ownerUserId = userId
-        val groups = groupApi.getUserGroups(userId)
-        if (ownerUserId == userId) {
+        val groups = BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
+            groupApi.getUserGroups(userId, n = count, offset = offset)
+        }
+        if (ownerUserId == userId && generation == accountGeneration.get()) {
             _userGroups.value = groups
         }
     }
 
     fun clearRuntimeState() {
+        accountGeneration.incrementAndGet()
         ownerUserId = ""
         groupCache.clear()
         _userGroups.value = emptyList()
@@ -51,11 +59,15 @@ class GroupRepository @Inject constructor(
 
     suspend fun getGroup(groupId: String): Group {
         groupCache[groupId]?.let { return it }
+        val generation = accountGeneration.get()
         val group = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
-        groupCache[groupId] = group
+        if (generation == accountGeneration.get()) groupCache[groupId] = group
         return group
     }
-    suspend fun getGroupMembers(groupId: String): List<GroupMember> = groupApi.getGroupMembers(groupId)
+    suspend fun getGroupMembers(groupId: String): List<GroupMember> =
+        BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
+            groupApi.getGroupMembers(groupId, n = count, offset = offset)
+        }
     suspend fun getGroupInstances(groupId: String): List<GroupInstance> = groupApi.getGroupInstances(groupId)
 
     suspend fun getGroupPosts(groupId: String): List<GroupPost> {
@@ -138,27 +150,35 @@ class GroupRepository @Inject constructor(
     fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.GroupJoined -> {
+                val groupId = event.content?.jsonObject?.get("groupId")?.jsonPrimitive?.content
+                if (groupId != null) invalidateCachedGroup(groupId)
                 val ownerId = ownerUserId
+                val generation = accountGeneration.get()
                 if (ownerId.isNotEmpty()) {
                     scope.launch {
                         try {
-                            refreshUserGroupsIfCurrent(ownerId)
+                            refreshUserGroupsIfCurrent(ownerId, generation)
                         } catch (_: Exception) {}
                     }
                 }
             }
             is PipelineEvent.GroupLeft -> {
                 val groupId = event.content?.jsonObject?.get("groupId")?.jsonPrimitive?.content ?: return
+                invalidateCachedGroup(groupId)
                 _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
             }
             is PipelineEvent.GroupRoleUpdated -> {
                 val groupId = event.content?.jsonObject?.get("role")
                     ?.jsonObject?.get("groupId")?.jsonPrimitive?.content ?: return
+                val ownerId = ownerUserId
+                val generation = accountGeneration.get()
                 scope.launch {
                     try {
                         val updated = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
-                        groupCache[groupId] = updated
-                        _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
+                        if (ownerUserId == ownerId && generation == accountGeneration.get()) {
+                            groupCache[groupId] = updated
+                            _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
+                        }
                     } catch (e: Exception) {
                         Log.d(TAG, "Failed to refresh group on role update: ${e.message}")
                     }
@@ -167,11 +187,15 @@ class GroupRepository @Inject constructor(
             is PipelineEvent.GroupMemberUpdated -> {
                 val groupId = event.content?.jsonObject?.get("member")
                     ?.jsonObject?.get("groupId")?.jsonPrimitive?.content ?: return
+                val ownerId = ownerUserId
+                val generation = accountGeneration.get()
                 scope.launch {
                     try {
                         val updated = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
-                        groupCache[groupId] = updated
-                        _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
+                        if (ownerUserId == ownerId && generation == accountGeneration.get()) {
+                            groupCache[groupId] = updated
+                            _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
+                        }
                     } catch (e: Exception) {
                         Log.d(TAG, "Failed to refresh group on member update: ${e.message}")
                     }
@@ -198,12 +222,14 @@ class GroupRepository @Inject constructor(
         return updated
     }
 
-    private suspend fun refreshUserGroupsIfCurrent(ownerId: String) {
-        if (ownerUserId != ownerId) {
+    private suspend fun refreshUserGroupsIfCurrent(ownerId: String, generation: Long) {
+        if (ownerUserId != ownerId || generation != accountGeneration.get()) {
             return
         }
-        val groups = groupApi.getUserGroups(ownerId)
-        if (ownerUserId == ownerId) {
+        val groups = BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
+            groupApi.getUserGroups(ownerId, n = count, offset = offset)
+        }
+        if (ownerUserId == ownerId && generation == accountGeneration.get()) {
             _userGroups.value = groups
         }
     }
@@ -266,5 +292,9 @@ class GroupRepository @Inject constructor(
 
     private fun Group.matchesGroupId(groupId: String): Boolean {
         return id == groupId || groupId == this.groupId
+    }
+
+    private companion object {
+        const val GROUP_PAGE_SIZE = 100
     }
 }

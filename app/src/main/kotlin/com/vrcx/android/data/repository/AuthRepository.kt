@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,7 +34,11 @@ import javax.inject.Singleton
 sealed class AuthState {
     data object NotLoggedIn : AuthState()
     data object LoggingIn : AuthState()
-    data class RequiresTwoFactor(val methods: List<String>) : AuthState()
+    data class RequiresTwoFactor(
+        val methods: List<String>,
+        val isVerifying: Boolean = false,
+        val errorMessage: String? = null,
+    ) : AuthState()
     data class LoggedIn(val user: CurrentUser) : AuthState()
     data class Error(val message: String) : AuthState()
 }
@@ -68,6 +74,7 @@ class AuthRepository @Inject constructor(
     @Inject lateinit var moderationRepositoryProvider: Provider<ModerationRepository>
     @Inject lateinit var notificationRepositoryProvider: Provider<NotificationRepository>
     @Inject lateinit var userRepositoryProvider: Provider<UserRepository>
+    @Inject lateinit var worldRepositoryProvider: Provider<WorldRepository>
 
     init {
         // Collect unauthorized signals from ErrorInterceptor so a 401 on any
@@ -119,8 +126,9 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun verifyTotp(code: String) {
+        val phase = _authState.value as? AuthState.RequiresTwoFactor ?: return
         try {
-            _authState.value = AuthState.LoggingIn
+            _authState.value = phase.copy(isVerifying = true, errorMessage = null)
             val digitsOnly = code.filter(Char::isDigit)
             // Recovery codes (OTP) are 8 digits and need a hyphen at position 4
             val formattedCode = if (digitsOnly.length == 8) {
@@ -136,24 +144,25 @@ class AuthRepository @Inject constructor(
             if (result.verified) {
                 fetchCurrentUser()
             } else {
-                setErrorUnlessLoggedOut("Verification failed")
+                setTwoFactorError("Verification failed")
             }
         } catch (e: Exception) {
-            setErrorUnlessLoggedOut(e.message ?: "Verification failed")
+            setTwoFactorError(e.message ?: "Verification failed")
         }
     }
 
     suspend fun verifyEmailOtp(code: String) {
+        val phase = _authState.value as? AuthState.RequiresTwoFactor ?: return
         try {
-            _authState.value = AuthState.LoggingIn
+            _authState.value = phase.copy(isVerifying = true, errorMessage = null)
             val result = authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
             if (result.verified) {
                 fetchCurrentUser()
             } else {
-                setErrorUnlessLoggedOut("Verification failed")
+                setTwoFactorError("Verification failed")
             }
         } catch (e: Exception) {
-            setErrorUnlessLoggedOut(e.message ?: "Verification failed")
+            setTwoFactorError(e.message ?: "Verification failed")
         }
     }
 
@@ -234,9 +243,14 @@ class AuthRepository @Inject constructor(
     fun handleEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.UserUpdate -> {
-                val userJson = event.content?.jsonObject?.get("user") ?: return
+                val userPatch = event.content?.jsonObject?.get("user")?.jsonObject ?: return
+                val current = _currentUser ?: return
                 try {
-                    val user = json.decodeFromJsonElement(CurrentUser.serializer(), userJson)
+                    val currentJson = json.encodeToJsonElement(CurrentUser.serializer(), current).jsonObject
+                    val user = json.decodeFromJsonElement(
+                        CurrentUser.serializer(),
+                        JsonObject(currentJson + userPatch),
+                    )
                     _currentUser = user
                     _authState.value = AuthState.LoggedIn(user)
                 } catch (_: Exception) {}
@@ -326,6 +340,7 @@ class AuthRepository @Inject constructor(
         if (::moderationRepositoryProvider.isInitialized) moderationRepositoryProvider.get().clearRuntimeState()
         if (::notificationRepositoryProvider.isInitialized) notificationRepositoryProvider.get().clearRuntimeState()
         if (::userRepositoryProvider.isInitialized) userRepositoryProvider.get().clearCache()
+        if (::worldRepositoryProvider.isInitialized) worldRepositoryProvider.get().clearRuntimeState()
     }
 
     /**
@@ -344,6 +359,16 @@ class AuthRepository @Inject constructor(
         _authState.update { current ->
             if (current is AuthState.NotLoggedIn) current
             else AuthState.Error(message)
+        }
+    }
+
+    private fun setTwoFactorError(message: String) {
+        _authState.update { current ->
+            if (current is AuthState.RequiresTwoFactor) {
+                current.copy(isVerifying = false, errorMessage = message)
+            } else {
+                current
+            }
         }
     }
 }

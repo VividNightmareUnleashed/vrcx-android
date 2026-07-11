@@ -91,6 +91,12 @@ interface CacheDao {
 
     @Query("SELECT * FROM cache_world WHERE id = :id")
     suspend fun getWorld(id: String): CacheWorldEntity?
+
+    @Query("DELETE FROM cache_avatar")
+    suspend fun clearAvatarCache()
+
+    @Query("DELETE FROM cache_world")
+    suspend fun clearWorldCache()
 }
 
 @Dao
@@ -136,6 +142,9 @@ interface MemoDao {
 
     @Query("SELECT * FROM memos WHERE odUserId = :compositeId")
     suspend fun getMemo(compositeId: String): MemoEntity?
+
+    @Query("SELECT * FROM memos WHERE ownerUserId = :ownerUserId")
+    suspend fun getMemos(ownerUserId: String): List<MemoEntity>
 
     @Query("SELECT * FROM world_memos WHERE compositeId = :compositeId")
     suspend fun getWorldMemo(compositeId: String): WorldMemoEntity?

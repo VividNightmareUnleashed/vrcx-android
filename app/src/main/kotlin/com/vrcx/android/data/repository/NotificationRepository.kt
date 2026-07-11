@@ -17,6 +17,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.util.concurrent.atomic.AtomicLong
 
 data class UnifiedNotification(
     val id: String,
@@ -57,9 +61,20 @@ class NotificationRepository @Inject constructor(
         private const val PAGE_SIZE = 100
         private const val MAX_REMOTE_PAGES = 50
         private const val MAX_CACHED_NOTIFICATIONS = PAGE_SIZE * MAX_REMOTE_PAGES
+        private const val MAX_LOCAL_NOTIFICATIONS = 100
     }
 
     private val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val storageCommands = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+    private val stateLock = Any()
+    private val accountGeneration = AtomicLong(0)
+    private val removedNotificationIds = linkedSetOf<String>()
+
+    init {
+        storageScope.launch {
+            for (command in storageCommands) runCatching { command() }
+        }
+    }
 
     private val _notifications = MutableStateFlow<List<VrcNotification>>(emptyList())
     val notifications: StateFlow<List<VrcNotification>> = _notifications.asStateFlow()
@@ -101,45 +116,68 @@ class NotificationRepository @Inject constructor(
                 responses = n.responses,
             )
         }
-        (fromV1 + fromV2 + local).sortedByDescending { it.createdAt }
+        (fromV1 + fromV2 + local).sortedByDescending { notificationSortKey(it.createdAt) }
     }
 
     suspend fun restoreNotifications() {
         val userId = currentUserId() ?: return
-        _notifications.value = notificationDao.getNotifications(userId, MAX_CACHED_NOTIFICATIONS)
-            .map { it.toModel() }
-            .sortedByDescending { it.createdAt }
-        _notificationsV2.value = notificationDao.getNotificationsV2(userId, MAX_CACHED_NOTIFICATIONS)
-            .map { it.toModel() }
-            .sortedByDescending { it.createdAt }
-        recalculateUnseenCount()
+        val generation = accountGeneration.get()
+        val v1 = notificationDao.getNotifications(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel() }
+        val v2 = notificationDao.getNotificationsV2(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel() }
+        synchronized(stateLock) {
+            if (generation != accountGeneration.get() || userId != currentUserId()) return
+            _notifications.value = v1.sortedByDescending { notificationSortKey(it.createdAt) }
+            _notificationsV2.value = v2.sortedByDescending { notificationSortKey(it.createdAt) }
+            recalculateUnseenCount()
+        }
     }
 
     fun resetRuntimeState() = clearRuntimeState()
 
     fun clearRuntimeState() {
-        _notifications.value = emptyList()
-        _notificationsV2.value = emptyList()
-        _localNotifications.value = emptyList()
-        unseenCount.value = 0
+        accountGeneration.incrementAndGet()
+        synchronized(stateLock) {
+            removedNotificationIds.clear()
+            _notifications.value = emptyList()
+            _notificationsV2.value = emptyList()
+            _localNotifications.value = emptyList()
+            unseenCount.value = 0
+        }
     }
 
     suspend fun loadNotifications() {
         val userId = currentUserId() ?: return
+        val generation = accountGeneration.get()
         var firstFailure: Throwable? = null
 
         runCatching {
             val remoteV1 = loadAllV1Notifications()
-            _notifications.value = remoteV1
-            notificationDao.replaceNotifications(userId, remoteV1.map { it.toEntity(userId) })
+            val committed = synchronized(stateLock) {
+                if (generation != accountGeneration.get() || userId != currentUserId()) null else {
+                    (remoteV1 + _notifications.value)
+                        .filterNot { it.id in removedNotificationIds }
+                        .associateBy { it.id }.values
+                        .sortedByDescending { notificationSortKey(it.createdAt) }
+                        .also { _notifications.value = it }
+                }
+            } ?: return@runCatching
+            notificationDao.replaceNotifications(userId, committed.map { it.toEntity(userId) })
         }.onFailure { error ->
             firstFailure = error
         }
 
         runCatching {
             val remoteV2 = loadAllV2Notifications()
-            _notificationsV2.value = remoteV2
-            notificationDao.replaceNotificationsV2(userId, remoteV2.map { it.toEntity(userId) })
+            val committed = synchronized(stateLock) {
+                if (generation != accountGeneration.get() || userId != currentUserId()) null else {
+                    (remoteV2 + _notificationsV2.value)
+                        .filterNot { it.id in removedNotificationIds }
+                        .associateBy { it.id }.values
+                        .sortedByDescending { notificationSortKey(it.createdAt) }
+                        .also { _notificationsV2.value = it }
+                }
+            } ?: return@runCatching
+            notificationDao.replaceNotificationsV2(userId, committed.map { it.toEntity(userId) })
         }.onFailure { error ->
             if (firstFailure == null) {
                 firstFailure = error
@@ -153,7 +191,7 @@ class NotificationRepository @Inject constructor(
     }
 
     fun handleEvent(event: PipelineEvent) {
-        when (event) {
+        synchronized(stateLock) { when (event) {
             is PipelineEvent.Notification -> handleV1Notification(event)
             is PipelineEvent.NotificationV2 -> handleV2Notification(event)
             is PipelineEvent.NotificationV2Delete -> handleV2Delete(event)
@@ -162,7 +200,22 @@ class NotificationRepository @Inject constructor(
             is PipelineEvent.HideNotification -> handleHide(event)
             is PipelineEvent.ResponseNotification -> handleResponse(event)
             is PipelineEvent.InstanceClosed -> handleInstanceClosed(event)
+            PipelineEvent.ClearNotification -> handleClearNotification()
             else -> {}
+        } }
+    }
+
+    private fun handleClearNotification() {
+        val userId = currentUserId() ?: return
+        accountGeneration.incrementAndGet()
+        removedNotificationIds.clear()
+        _notifications.value = emptyList()
+        _notificationsV2.value = emptyList()
+        _localNotifications.value = emptyList()
+        unseenCount.value = 0
+        storageCommands.trySend {
+            notificationDao.deleteNotificationsForUser(userId)
+            notificationDao.deleteNotificationsV2ForUser(userId)
         }
     }
 
@@ -173,7 +226,7 @@ class NotificationRepository @Inject constructor(
             null
         } ?: return
         _notifications.value = (_notifications.value.filter { it.id != notif.id } + notif)
-            .sortedByDescending { it.createdAt }
+            .sortedByDescending { notificationSortKey(it.createdAt) }
         persistNotificationAsync(notif)
         recalculateUnseenCount()
     }
@@ -191,7 +244,7 @@ class NotificationRepository @Inject constructor(
         } else {
             updated += notif
         }
-        _notificationsV2.value = updated.sortedByDescending { it.createdAt }
+        _notificationsV2.value = updated.sortedByDescending { notificationSortKey(it.createdAt) }
         persistNotificationV2Async(notif)
         recalculateUnseenCount()
     }
@@ -212,26 +265,21 @@ class NotificationRepository @Inject constructor(
         val id = obj["id"]?.jsonPrimitive?.content ?: return
         val updatesJson = obj["updates"]?.jsonObject ?: return
         val existing = _notificationsV2.value.firstOrNull { it.id == id }
-        val updated = if (existing != null) {
-            existing.copy(
-                seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: existing.seen,
-                message = updatesJson["message"]?.jsonPrimitive?.content ?: existing.message,
-                title = updatesJson["title"]?.jsonPrimitive?.content ?: existing.title,
-                type = updatesJson["type"]?.jsonPrimitive?.content ?: existing.type,
+        val existingObject = existing?.let {
+            json.encodeToJsonElement(NotificationV2.serializer(), it).jsonObject
+        } ?: return
+        val updated = runCatching {
+            json.decodeFromJsonElement(
+                NotificationV2.serializer(),
+                buildJsonObject {
+                    existingObject.forEach { (key, value) -> put(key, value) }
+                    updatesJson.forEach { (key, value) -> put(key, value) }
+                    put("id", JsonPrimitive(id))
+                },
             )
-        } else {
-            NotificationV2(
-                id = id,
-                seen = updatesJson["seen"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
-                message = updatesJson["message"]?.jsonPrimitive?.content.orEmpty(),
-                title = updatesJson["title"]?.jsonPrimitive?.content.orEmpty(),
-                type = updatesJson["type"]?.jsonPrimitive?.content.orEmpty(),
-                createdAt = Instant.now().toString(),
-                updatedAt = Instant.now().toString(),
-            )
-        }
+        }.getOrNull() ?: return
         _notificationsV2.value = (_notificationsV2.value.filter { it.id != id } + updated)
-            .sortedByDescending { it.createdAt }
+            .sortedByDescending { notificationSortKey(it.createdAt) }
         persistNotificationV2Async(updated)
         recalculateUnseenCount()
     }
@@ -265,7 +313,8 @@ class NotificationRepository @Inject constructor(
             isV2 = false,
             responses = emptyList(),
         )
-        _localNotifications.value = listOf(notification) + _localNotifications.value
+        _localNotifications.value = (listOf(notification) + _localNotifications.value)
+            .take(MAX_LOCAL_NOTIFICATIONS)
         recalculateUnseenCount()
     }
 
@@ -474,22 +523,18 @@ class NotificationRepository @Inject constructor(
 
     private fun persistNotificationAsync(notification: VrcNotification) {
         val userId = currentUserId() ?: return
-        storageScope.launch {
-            notificationDao.insertNotification(notification.toEntity(userId))
-        }
+        storageCommands.trySend { notificationDao.insertNotification(notification.toEntity(userId)) }
     }
 
     private fun persistNotificationV2Async(notification: NotificationV2) {
         val userId = currentUserId() ?: return
-        storageScope.launch {
-            notificationDao.insertNotificationV2(notification.toEntity(userId))
-        }
+        storageCommands.trySend { notificationDao.insertNotificationV2(notification.toEntity(userId)) }
     }
 
     private fun markSeenInStorageAsync(notificationId: String) {
         if (notificationId.startsWith("local:")) return
         val userId = currentUserId() ?: return
-        storageScope.launch {
+        storageCommands.trySend {
             notificationDao.markSeen(userId, notificationId)
             notificationDao.markSeenV2(userId, notificationId)
         }
@@ -499,7 +544,7 @@ class NotificationRepository @Inject constructor(
         val persistedIds = notificationIds.filter { !it.startsWith("local:") }
         if (persistedIds.isEmpty()) return
         val userId = currentUserId() ?: return
-        storageScope.launch {
+        storageCommands.trySend {
             if (persistedIds.size == 1) {
                 val notificationId = persistedIds.first()
                 notificationDao.deleteNotification(userId, notificationId)
@@ -518,6 +563,10 @@ class NotificationRepository @Inject constructor(
     private fun removeFromLists(notificationIds: Collection<String>) {
         if (notificationIds.isEmpty()) return
         val idSet = notificationIds.toSet()
+        removedNotificationIds.addAll(idSet)
+        while (removedNotificationIds.size > MAX_CACHED_NOTIFICATIONS) {
+            removedNotificationIds.remove(removedNotificationIds.first())
+        }
         _notifications.value = _notifications.value.filter { it.id !in idSet }
         _notificationsV2.value = _notificationsV2.value.filter { it.id !in idSet }
         _localNotifications.value = _localNotifications.value.filter { it.id !in idSet }
@@ -526,6 +575,9 @@ class NotificationRepository @Inject constructor(
     }
 
     private fun currentUserId(): String? = authRepository.currentUser?.id?.takeIf { it.isNotBlank() }
+
+    private fun notificationSortKey(createdAt: String): Long =
+        runCatching { Instant.parse(createdAt).toEpochMilli() }.getOrDefault(Long.MIN_VALUE)
 
     private fun VrcNotification.toEntity(ownerUserId: String) = NotificationEntity(
         id = id,

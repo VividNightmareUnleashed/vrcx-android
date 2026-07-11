@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.vrcx.android.service.BootReconnectWorker
 import com.vrcx.android.service.NotificationHelper
+import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.VrcxApp
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -35,6 +36,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             VrcxApp()
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        WebSocketForegroundService.restartAfterTimeoutIfNeeded(this)
     }
 
     private fun requestNotificationPermission() {

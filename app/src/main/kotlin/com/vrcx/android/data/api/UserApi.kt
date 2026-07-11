@@ -1,6 +1,7 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.UserSearchResult
 import com.vrcx.android.data.api.model.VrcUser
 import kotlinx.serialization.json.JsonElement
@@ -28,7 +29,7 @@ interface UserApi {
     @PUT("users/{userId}")
     suspend fun saveCurrentUser(
         @Path("userId") userId: String,
-        @Body body: Map<String, @JvmSuppressWildcards Any>,
+        @Body body: UpdateCurrentUserRequest,
     ): CurrentUser
 
     @GET("users/{userId}/mutuals")
