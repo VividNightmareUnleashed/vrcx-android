@@ -26,6 +26,9 @@ sealed class PipelineEvent {
     data class SeeNotification(override val content: JsonElement?) : PipelineEvent()
     data class HideNotification(override val content: JsonElement?) : PipelineEvent()
     data class ResponseNotification(override val content: JsonElement?) : PipelineEvent()
+    data object ClearNotification : PipelineEvent() {
+        override val content: JsonElement? = null
+    }
 
     // Group events
     data class GroupJoined(override val content: JsonElement?) : PipelineEvent()

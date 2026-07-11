@@ -68,7 +68,7 @@ import com.vrcx.android.data.db.entity.WorldMemoEntity
         AvatarTagEntity::class,
         FriendNotifyEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

@@ -3,9 +3,12 @@ package com.vrcx.android.data.websocket
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,10 +36,7 @@ class VRChatWebSocket(
 ) {
     private val TAG = "VRChatWebSocket"
     private val WEBSOCKET_URL = "wss://pipeline.vrchat.cloud"
-    private val BASE_RECONNECT_DELAY_MS = 5000L
-    private val MAX_RECONNECT_DELAY_MS = 300_000L // 5 min cap
-    private val MAX_RECONNECT_ATTEMPTS = 50
-    private var reconnectAttempt = 0
+    @Volatile private var reconnectAttempt = 0
     private val connectionGeneration = AtomicLong(0)
 
     private val _events = MutableSharedFlow<PipelineEvent>(extraBufferCapacity = 64)
@@ -46,19 +46,27 @@ class VRChatWebSocket(
     val state: StateFlow<WebSocketState> = _state.asStateFlow()
 
     private var webSocket: WebSocket? = null
-    private var shouldReconnect = false
+    @Volatile private var shouldReconnect = false
+    @Volatile private var reconnectJob: Job? = null
     private var lastMessage: String? = null
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var frameQueue = newFrameQueue()
 
     // WebSocket auth is carried in the URL, so this client intentionally avoids
     // API interceptors that could log, retry, or emit global auth events.
     private val client = baseClient.newBuilder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(WEBSOCKET_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
         .build()
+
+    init {
+        launchFramePump()
+    }
 
     fun connect(authToken: String) {
         val generation = connectionGeneration.incrementAndGet()
         shouldReconnect = true
+        lastMessage = null
         _state.value = WebSocketState.CONNECTING
 
         val request = Request.Builder()
@@ -78,7 +86,7 @@ class VRChatWebSocket(
                 // Duplicate filtering
                 if (text == lastMessage) return
                 lastMessage = text
-                parseAndEmit(text)
+                frameQueue.trySend(text)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -109,8 +117,7 @@ class VRChatWebSocket(
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
         _state.value = WebSocketState.DISCONNECTED
-        scope.cancel()
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        resetProcessingScope()
     }
 
     fun reconnectNow(authToken: String) {
@@ -118,29 +125,22 @@ class VRChatWebSocket(
         connectionGeneration.incrementAndGet()
         webSocket?.close(1000, "Reconnecting")
         webSocket = null
-        scope.cancel()
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        resetProcessingScope()
         reconnectAttempt = 0
         connect(authToken)
     }
 
     private fun attemptReconnect(authToken: String, generation: Long) {
         if (!shouldReconnect || !isCurrent(generation)) return
-        reconnectAttempt++
-        if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
-            Log.e(TAG, "Max reconnect attempts ($MAX_RECONNECT_ATTEMPTS) reached, giving up")
-            _state.value = WebSocketState.DISCONNECTED
-            return
-        }
+        if (reconnectJob?.isActive == true) return
+        if (reconnectAttempt < Int.MAX_VALUE) reconnectAttempt++
         _state.value = WebSocketState.RECONNECTING
-        val delayMs = minOf(
-            BASE_RECONNECT_DELAY_MS * (1L shl (reconnectAttempt - 1).coerceAtMost(17)),
-            MAX_RECONNECT_DELAY_MS,
-        ) + (0..2000L).random()
+        val delayMs = calculateReconnectDelayMs(reconnectAttempt)
         Log.d(TAG, "Reconnect attempt $reconnectAttempt in ${delayMs}ms")
-        scope.launch {
+        reconnectJob = scope.launch {
             delay(delayMs)
             if (shouldReconnect && isCurrent(generation)) {
+                reconnectJob = null
                 connect(authToken)
             }
         }
@@ -148,12 +148,47 @@ class VRChatWebSocket(
 
     private fun isCurrent(generation: Long): Boolean = generation == connectionGeneration.get()
 
-    private fun parseAndEmit(text: String) {
-        val event = parsePipelineMessage(json, text) ?: return
+    private fun newFrameQueue(): Channel<String> = Channel(
+        capacity = PIPELINE_FRAME_BUFFER_CAPACITY,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    private fun launchFramePump() {
         scope.launch {
-            _events.emit(event)
+            for (text in frameQueue) {
+                parsePipelineMessage(json, text)?.let { event -> _events.emit(event) }
+            }
         }
     }
+
+    private fun resetProcessingScope() {
+        scope.cancel()
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        reconnectJob = null
+        frameQueue = newFrameQueue()
+        launchFramePump()
+    }
+
+    private companion object {
+        const val PIPELINE_FRAME_BUFFER_CAPACITY = 256
+        const val WEBSOCKET_PING_INTERVAL_SECONDS = 30L
+    }
+}
+
+private const val BASE_RECONNECT_DELAY_MS = 5_000L
+private const val MAX_RECONNECT_DELAY_MS = 300_000L
+private const val MAX_RECONNECT_JITTER_MS = 2_000L
+
+internal fun calculateReconnectDelayMs(
+    attempt: Int,
+    jitterMs: Long = (0L..MAX_RECONNECT_JITTER_MS).random(),
+): Long {
+    val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(17)
+    val baseDelay = minOf(
+        BASE_RECONNECT_DELAY_MS * (1L shl exponent),
+        MAX_RECONNECT_DELAY_MS,
+    )
+    return baseDelay + jitterMs.coerceIn(0L, MAX_RECONNECT_JITTER_MS)
 }
 
 /**
@@ -196,6 +231,7 @@ internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? {
         "see-notification" -> PipelineEvent.SeeNotification(content)
         "hide-notification" -> PipelineEvent.HideNotification(content)
         "response-notification" -> PipelineEvent.ResponseNotification(content)
+        "clear-notification" -> PipelineEvent.ClearNotification
         "group-joined" -> PipelineEvent.GroupJoined(content)
         "group-left" -> PipelineEvent.GroupLeft(content)
         "group-role-updated" -> PipelineEvent.GroupRoleUpdated(content)

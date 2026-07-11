@@ -26,17 +26,18 @@ class DedupInterceptor(
         if (request.method != "GET") return chain.proceed(request)
 
         val cacheKey = request.url.toString()
+        val requestGeneration = deduplicator.currentGeneration()
         deduplicator.getCachedFailure(cacheKey)?.let { code ->
             return syntheticFailureResponse(chain, code)
         }
 
         val response = chain.proceed(request)
         when (response.code) {
-            404, 403 -> deduplicator.cacheFailure(cacheKey, response.code)
+            404, 403 -> deduplicator.cacheFailureIfCurrent(cacheKey, response.code, requestGeneration)
             in 200..299 -> {
                 // A previously failing URL now returns success; clear the stale
                 // cache entry so subsequent calls don't keep replaying the 404.
-                deduplicator.invalidateFailure(cacheKey)
+                deduplicator.invalidateFailure(cacheKey, requestGeneration)
             }
         }
         return response

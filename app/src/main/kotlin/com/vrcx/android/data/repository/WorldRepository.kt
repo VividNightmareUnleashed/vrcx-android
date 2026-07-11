@@ -14,6 +14,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,34 +27,42 @@ class WorldRepository @Inject constructor(
     private val json: Json,
     private val dedup: RequestDeduplicator,
 ) {
-    private val worldCache = ConcurrentHashMap<String, World>()
+    private data class CachedWorld(val value: World, val cachedAtMillis: Long)
 
-    suspend fun getWorld(worldId: String): World {
-        worldCache[worldId]?.let { return it }
+    private val worldCache = ConcurrentHashMap<String, CachedWorld>()
+    private val accountGeneration = AtomicLong(0)
+    private val legacyCachePurged = AtomicBoolean(false)
 
-        // Check Room cache
-        cacheDao.getWorld(worldId)?.let { entity ->
-            try {
-                val world = json.decodeFromString(World.serializer(), entity.data)
-                worldCache[worldId] = world
-                return world
-            } catch (_: Exception) {}
+    suspend fun getWorld(worldId: String, forceRefresh: Boolean = false): World {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            worldCache[worldId]?.takeIf { now - it.cachedAtMillis < WORLD_CACHE_TTL_MS }
+                ?.let { return it.value }
         }
+        purgeLegacyCacheOnce()
 
-        // Fetch from API (deduplicated)
+        val generation = accountGeneration.get()
         val world = dedup.dedupGet("world:$worldId") { worldApi.getWorld(worldId) }
-        worldCache[worldId] = world
-        try {
-            cacheDao.insertWorld(CacheWorldEntity(
-                id = worldId,
-                data = json.encodeToString(World.serializer(), world),
-                updatedAt = java.time.Instant.now().toString(),
-            ))
-        } catch (_: Exception) {}
+        if (generation == accountGeneration.get()) {
+            worldCache[worldId] = CachedWorld(world, System.currentTimeMillis())
+        }
         return world
     }
 
     fun getCachedWorld(worldId: String): World? = worldCache[worldId]
+        ?.takeIf { System.currentTimeMillis() - it.cachedAtMillis < WORLD_CACHE_TTL_MS }
+        ?.value
+
+    fun clearRuntimeState() {
+        accountGeneration.incrementAndGet()
+        worldCache.clear()
+    }
+
+    private suspend fun purgeLegacyCacheOnce() {
+        if (!legacyCachePurged.compareAndSet(false, true)) return
+        runCatching { cacheDao.clearWorldCache() }
+            .onFailure { legacyCachePurged.set(false) }
+    }
 
     /** Parse instance IDs from the World.instances field (List<[instanceId, nUsers]>). */
     fun parseInstanceIds(world: World): List<String> {
@@ -100,5 +110,6 @@ class WorldRepository @Inject constructor(
     private companion object {
         /** Matches desktop VRCX's active-instance list density. */
         const val MAX_INSTANCE_DETAILS = 20
+        const val WORLD_CACHE_TTL_MS = 5L * 60L * 1000L
     }
 }

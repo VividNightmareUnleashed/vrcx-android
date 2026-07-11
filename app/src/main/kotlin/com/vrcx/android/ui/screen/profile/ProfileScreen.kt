@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.screen.profile
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,7 +37,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -58,6 +58,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
@@ -90,7 +91,7 @@ class ProfileViewModel @Inject constructor(
     val message: StateFlow<String?> = _message.asStateFlow()
 
     private fun updateCurrentUser(
-        payload: Map<String, Any>,
+        payload: UpdateCurrentUserRequest,
         successMessage: String,
     ) {
         viewModelScope.launch {
@@ -107,9 +108,9 @@ class ProfileViewModel @Inject constructor(
 
     fun saveStatus(status: String, statusDescription: String) {
         updateCurrentUser(
-            payload = mapOf(
-                "status" to status,
-                "statusDescription" to statusDescription,
+            payload = UpdateCurrentUserRequest(
+                status = status,
+                statusDescription = statusDescription,
             ),
             successMessage = "Status updated",
         )
@@ -117,21 +118,21 @@ class ProfileViewModel @Inject constructor(
 
     fun saveBio(bio: String) {
         updateCurrentUser(
-            payload = mapOf("bio" to bio),
+            payload = UpdateCurrentUserRequest(bio = bio),
             successMessage = "Bio updated",
         )
     }
 
     fun savePronouns(pronouns: String) {
         updateCurrentUser(
-            payload = mapOf("pronouns" to pronouns),
+            payload = UpdateCurrentUserRequest(pronouns = pronouns),
             successMessage = "Pronouns updated",
         )
     }
 
     fun clearHomeLocation() {
         updateCurrentUser(
-            payload = mapOf("homeLocation" to ""),
+            payload = UpdateCurrentUserRequest(homeLocation = ""),
             successMessage = "Home location cleared",
         )
     }
@@ -162,10 +163,8 @@ fun ProfileScreen(
         message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             VrcxTopBar(title = "Profile")
 
             Column(
@@ -243,6 +242,10 @@ fun ProfileScreen(
                 }
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 
     // Status edit dialog

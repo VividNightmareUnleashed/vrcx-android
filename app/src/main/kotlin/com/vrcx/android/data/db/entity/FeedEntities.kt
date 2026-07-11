@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "feed_gps",
-    indices = [Index(value = ["userId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId", "id"]), Index(value = ["ownerUserId", "userId", "id"])],
 )
 data class FeedGpsEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -23,7 +23,7 @@ data class FeedGpsEntity(
 
 @Entity(
     tableName = "feed_status",
-    indices = [Index(value = ["userId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId", "id"]), Index(value = ["ownerUserId", "userId", "id"])],
 )
 data class FeedStatusEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -39,7 +39,7 @@ data class FeedStatusEntity(
 
 @Entity(
     tableName = "feed_bio",
-    indices = [Index(value = ["userId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId", "id"]), Index(value = ["ownerUserId", "userId", "id"])],
 )
 data class FeedBioEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -53,7 +53,7 @@ data class FeedBioEntity(
 
 @Entity(
     tableName = "feed_avatar",
-    indices = [Index(value = ["userId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId", "id"]), Index(value = ["ownerUserId", "userId", "id"])],
 )
 data class FeedAvatarEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -71,7 +71,7 @@ data class FeedAvatarEntity(
 
 @Entity(
     tableName = "feed_online_offline",
-    indices = [Index(value = ["userId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId", "id"]), Index(value = ["ownerUserId", "userId", "id"])],
 )
 data class FeedOnlineOfflineEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

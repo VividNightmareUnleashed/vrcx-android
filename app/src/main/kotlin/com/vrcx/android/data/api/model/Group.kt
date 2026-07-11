@@ -1,5 +1,7 @@
 package com.vrcx.android.data.api.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -138,4 +140,15 @@ data class GroupSearchResult(
     val ownerId: String = "",
     val shortCode: String = "",
     val tags: List<String> = emptyList(),
+)
+
+@Serializable
+@OptIn(ExperimentalSerializationApi::class)
+data class UpdateGroupMemberRequest(
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val visibility: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val isSubscribedToAnnouncements: Boolean? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val managerNotes: String? = null,
 )

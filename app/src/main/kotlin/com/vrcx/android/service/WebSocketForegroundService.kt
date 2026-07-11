@@ -12,7 +12,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
@@ -63,13 +62,16 @@ class WebSocketForegroundService : Service() {
     @Volatile private var notifyEnabledFriendIds: Set<String> = emptySet()
 
     private var webSocket: VRChatWebSocket? = null
-    private var wakeLock: PowerManager.WakeLock? = null
     private var notificationHelper: NotificationHelper? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var activeNetwork: Network? = null
     private var currentAuthToken: String? = null
     private var isForegroundMode = false
     private var startupJob: Job? = null
+    private val serviceStatePreferences by lazy {
+        getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -82,19 +84,32 @@ class WebSocketForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                setRequestedMode(REQUESTED_MODE_FOREGROUND)
+                clearTimeoutState()
                 isForegroundMode = true
                 startWebSocket(foreground = true)
             }
             ACTION_START_NON_FOREGROUND -> {
+                setRequestedMode(REQUESTED_MODE_NON_FOREGROUND)
                 isForegroundMode = false
                 startWebSocket(foreground = false)
             }
             ACTION_STOP -> {
+                setRequestedMode(REQUESTED_MODE_NONE)
                 startupJob?.cancel()
                 startupJob = null
                 webSocket?.disconnect()
                 webSocket = null
                 stopSelf()
+            }
+            null -> {
+                if (requestedMode() == REQUESTED_MODE_FOREGROUND) {
+                    isForegroundMode = true
+                    startWebSocket(foreground = true)
+                } else {
+                    isForegroundMode = false
+                    stopSelf(startId)
+                }
             }
         }
         return if (isForegroundMode) START_STICKY else START_NOT_STICKY
@@ -104,7 +119,12 @@ class WebSocketForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
             fgsType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0
         ) {
-            Log.w(TAG, "Foreground service dataSync timeout reached, stopping service")
+            Log.w(TAG, "Foreground service dataSync timeout reached; waiting for foreground recovery")
+            serviceStatePreferences.edit()
+                .putBoolean(KEY_STOPPED_BY_TIMEOUT, true)
+                .putInt(KEY_REQUESTED_MODE, REQUESTED_MODE_NONE)
+                .commit()
+            notificationHelper?.notifyServiceReconnectRequired()
             webSocket?.disconnect()
             webSocket = null
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -139,10 +159,6 @@ class WebSocketForegroundService : Service() {
                     return@launch
                 }
                 currentAuthToken = token
-
-                if (foreground) {
-                    acquireWakeLock()
-                }
 
                 // Set owner user ID for feed entries and group events
                 val userId = authRepository.currentUser?.id ?: ""
@@ -211,15 +227,23 @@ class WebSocketForegroundService : Service() {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available")
+                val previousNetwork = activeNetwork
+                activeNetwork = network
                 val ws = webSocket ?: return
                 val token = currentAuthToken ?: return
-                if (ws.state.value != WebSocketState.CONNECTED) {
+                val networkWasReplaced = previousNetwork != null && previousNetwork != network
+                if (networkWasReplaced || ws.state.value == WebSocketState.DISCONNECTED) {
                     ws.reconnectNow(token)
                 }
             }
 
             override fun onLost(network: Network) {
                 Log.d(TAG, "Network lost")
+                if (activeNetwork != network) return
+                activeNetwork = null
+                val ws = webSocket ?: return
+                val token = currentAuthToken ?: return
+                ws.reconnectNow(token)
             }
         }
         networkCallback = callback
@@ -232,11 +256,12 @@ class WebSocketForegroundService : Service() {
             cm.unregisterNetworkCallback(it)
             networkCallback = null
         }
+        activeNetwork = null
         serviceScope.cancel()
         startupJob = null
         webSocket?.disconnect()
         webSocket = null
-        releaseWakeLock()
+        setRequestedMode(REQUESTED_MODE_NONE)
         super.onDestroy()
     }
 
@@ -379,16 +404,18 @@ class WebSocketForegroundService : Service() {
         }
     }
 
-    private fun acquireWakeLock() {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vrcx:websocket").apply {
-            acquire()
-        }
+    private fun requestedMode(): Int = serviceStatePreferences.getInt(
+        KEY_REQUESTED_MODE,
+        REQUESTED_MODE_NONE,
+    )
+
+    private fun setRequestedMode(mode: Int) {
+        serviceStatePreferences.edit().putInt(KEY_REQUESTED_MODE, mode).commit()
     }
 
-    private fun releaseWakeLock() {
-        wakeLock?.let { if (it.isHeld) it.release() }
-        wakeLock = null
+    private fun clearTimeoutState() {
+        serviceStatePreferences.edit().putBoolean(KEY_STOPPED_BY_TIMEOUT, false).apply()
+        notificationHelper?.cancelServiceReconnectRequired()
     }
 
     companion object {
@@ -403,6 +430,12 @@ class WebSocketForegroundService : Service() {
         const val CHANNEL_FRIEND_REQUEST = "vrcx_friend_request"
         const val CHANNEL_GENERAL = "vrcx_general"
         private const val SERVICE_LOG_TAG = "WebSocketForegroundSvc"
+        private const val SERVICE_STATE_PREFERENCES = "websocket_service_state"
+        private const val KEY_REQUESTED_MODE = "requested_mode"
+        private const val KEY_STOPPED_BY_TIMEOUT = "stopped_by_timeout"
+        private const val REQUESTED_MODE_NONE = 0
+        private const val REQUESTED_MODE_FOREGROUND = 1
+        private const val REQUESTED_MODE_NON_FOREGROUND = 2
 
         fun start(context: Context): Boolean {
             val intent = Intent(context, WebSocketForegroundService::class.java).apply {
@@ -437,6 +470,23 @@ class WebSocketForegroundService : Service() {
                 Log.w(SERVICE_LOG_TAG, "Unable to stop websocket service", it)
                 false
             }
+        }
+
+        fun hasTimedOut(context: Context): Boolean = context
+            .getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(KEY_STOPPED_BY_TIMEOUT, false)
+
+        fun restartAfterTimeoutIfNeeded(context: Context): Boolean {
+            if (!hasTimedOut(context)) return false
+            val started = start(context)
+            if (started) {
+                context.getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_STOPPED_BY_TIMEOUT, false)
+                    .apply()
+                NotificationHelper(context).cancelServiceReconnectRequired()
+            }
+            return started
         }
     }
 }

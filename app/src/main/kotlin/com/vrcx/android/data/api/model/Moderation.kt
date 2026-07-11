@@ -21,6 +21,12 @@ data class PlayerModerationRequest(
 )
 
 @Serializable
+data class UnPlayerModerationRequest(
+    val moderated: String,
+    val type: String,
+)
+
+@Serializable
 data class AvatarModeration(
     val id: String = "",
     val targetAvatarId: String = "",

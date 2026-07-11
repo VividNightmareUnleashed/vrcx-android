@@ -1,6 +1,7 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.Instance
+import com.vrcx.android.data.api.model.CreateInstanceRequest
 import com.vrcx.android.data.api.model.InstanceShortName
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body
@@ -20,7 +21,7 @@ interface InstanceApi {
     suspend fun getInstanceByShortName(@Path("shortName") shortName: String): Instance
 
     @POST("instances")
-    suspend fun createInstance(@Body body: Map<String, @JvmSuppressWildcards Any>): Instance
+    suspend fun createInstance(@Body body: CreateInstanceRequest): Instance
 
     @GET("instances/{worldId}:{instanceId}/shortName")
     suspend fun getInstanceShortName(

@@ -1,5 +1,7 @@
 package com.vrcx.android.data.api.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -162,4 +164,24 @@ data class UserSearchResult(
     val statusDescription: String = "",
     val tags: List<String> = emptyList(),
     val userIcon: String = "",
+)
+
+/** Sparse patch body for `PUT users/{userId}`. */
+@Serializable
+@OptIn(ExperimentalSerializationApi::class)
+data class UpdateCurrentUserRequest(
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val status: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val statusDescription: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val bio: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val pronouns: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val homeLocation: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val profilePicOverride: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val userIcon: String? = null,
 )

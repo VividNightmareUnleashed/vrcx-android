@@ -46,8 +46,8 @@ data class NotificationV2(
     val responseData: JsonElement? = null,
     val expiresAt: String = "",
     val expiryAfterSeen: Int? = null,
-    @SerialName("created_at") val createdAt: String = "",
-    @SerialName("updated_at") val updatedAt: String = "",
+    val createdAt: String = "",
+    val updatedAt: String = "",
 )
 
 @Serializable
@@ -67,4 +67,12 @@ data class InviteResponseRequest(
 data class NotificationResponse(
     val responseType: String,
     val responseData: String = "",
+)
+
+@Serializable
+@OptIn(ExperimentalSerializationApi::class)
+data class RequestInviteRequest(
+    val platform: String = "standalonewindows",
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val requestSlot: Int? = null,
 )

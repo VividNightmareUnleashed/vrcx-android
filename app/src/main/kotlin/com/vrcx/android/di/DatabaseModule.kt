@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.vrcx.android.data.db.MIGRATION_1_2
 import com.vrcx.android.data.db.MIGRATION_2_3
+import com.vrcx.android.data.db.MIGRATION_3_4
 import com.vrcx.android.data.db.VrcxDatabase
 import com.vrcx.android.data.db.dao.AvatarHistoryDao
 import com.vrcx.android.data.db.dao.AvatarTagDao
@@ -33,7 +34,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VrcxDatabase {
         return Room.databaseBuilder(context, VrcxDatabase::class.java, "vrcx.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
     }
 

@@ -68,6 +68,22 @@ class ErrorInterceptorTest {
     }
 
     @Test
+    fun `401 from two factor verification does not expire the session`() {
+        val collected = collectEvents()
+        server.enqueue(MockResponse().setResponseCode(401).setBody("bad code"))
+
+        val response = client.newCall(
+            Request.Builder()
+                .url(server.url("/api/1/auth/twofactorauth/totp/verify"))
+                .build()
+        ).execute()
+
+        assertEquals(401, response.code)
+        assertEquals(0, collected().size)
+        response.close()
+    }
+
+    @Test
     fun `429 retries once with Retry-After and respects the cap`() {
         server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "1"))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))

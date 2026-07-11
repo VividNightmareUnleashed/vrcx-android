@@ -4,7 +4,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -71,12 +70,17 @@ class RequestDeduplicatorTest {
             deduplicator.clearCache()
 
             try {
+                owner.await()
+                fail("Expected request owner to be canceled")
+            } catch (_: CancellationException) {
+                // Expected: the deduplicator owns and cancels the HTTP work.
+            }
+
+            try {
                 waiter.await()
                 fail("Expected pending deduplicated request to be canceled")
             } catch (_: CancellationException) {
                 // Expected.
-            } finally {
-                owner.cancelAndJoin()
             }
         }
     }
@@ -102,9 +106,26 @@ class RequestDeduplicatorTest {
             started.await()
             deduplicator.clearCache()
             release.complete(Unit)
-            owner.await()
+            try {
+                owner.await()
+                fail("Expected the stale request owner to be canceled")
+            } catch (_: CancellationException) {
+                // Expected: clearing request state now cancels the owned work,
+                // not only callers waiting on its shared result.
+            }
 
             assertNull(deduplicator.getCachedFailure("file:file_404"))
         }
+    }
+
+    @Test
+    fun `stale generation cannot cache a failure`() {
+        val deduplicator = RequestDeduplicator()
+        val oldGeneration = deduplicator.currentGeneration()
+
+        deduplicator.clearCache()
+
+        assertEquals(false, deduplicator.cacheFailureIfCurrent("user:old", 404, oldGeneration))
+        assertNull(deduplicator.getCachedFailure("user:old"))
     }
 }

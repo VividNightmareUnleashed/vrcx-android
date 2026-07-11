@@ -3,6 +3,7 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.api.model.PlayerModerationRequest
+import com.vrcx.android.data.api.model.UnPlayerModerationRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,9 +35,14 @@ class ModerationRepository @Inject constructor(
         loadModerations()
     }
 
-    suspend fun deleteModeration(moderationId: String) {
-        playerModerationApi.deletePlayerModeration(moderationId)
-        _moderations.value = _moderations.value.filter { it.id != moderationId }
+    suspend fun deleteModeration(moderation: PlayerModeration) {
+        playerModerationApi.unmoderatePlayer(
+            UnPlayerModerationRequest(
+                moderated = moderation.targetUserId,
+                type = moderation.type,
+            )
+        )
+        _moderations.value = _moderations.value.filter { it.id != moderation.id }
     }
 
     suspend fun interactOn(userId: String) {

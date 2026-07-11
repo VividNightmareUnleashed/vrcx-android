@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,6 +28,7 @@ class FavoriteRepository @Inject constructor(
     private val avatarApi: AvatarApi,
 ) {
     private val favoriteMutex = Mutex()
+    private val accountGeneration = AtomicLong(0)
     private val loadedFavoriteTypes = mutableSetOf<String>()
     private var favoriteGroupsLoaded = false
     private var favoriteLimitsLoaded = false
@@ -55,6 +57,7 @@ class FavoriteRepository @Inject constructor(
      * is paginated server-side; iterate until a short page comes back.
      */
     suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) {
+        val generation = accountGeneration.get()
         val shouldLoad = favoriteMutex.withLock {
             if (forceRefresh) favoriteWorldsLoaded = false
             !favoriteWorldsLoaded
@@ -65,12 +68,14 @@ class FavoriteRepository @Inject constructor(
             favoriteApi.getFavoriteWorlds(n = count, offset = offset)
         }
         favoriteMutex.withLock {
+            if (generation != accountGeneration.get()) return
             _favoriteWorlds.value = worlds
             favoriteWorldsLoaded = true
         }
     }
 
     suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) {
+        val generation = accountGeneration.get()
         val shouldLoad = favoriteMutex.withLock {
             if (forceRefresh) favoriteAvatarsLoaded = false
             !favoriteAvatarsLoaded
@@ -81,18 +86,21 @@ class FavoriteRepository @Inject constructor(
             favoriteApi.getFavoriteAvatars(n = count, offset = offset)
         }
         favoriteMutex.withLock {
+            if (generation != accountGeneration.get()) return
             _favoriteAvatars.value = avatars
             favoriteAvatarsLoaded = true
         }
     }
 
     suspend fun clearRuntimeState() {
+        accountGeneration.incrementAndGet()
         favoriteMutex.withLock {
             resetRuntimeStateLocked()
         }
     }
 
     suspend fun loadFavorites(type: String? = null, forceRefresh: Boolean = false) {
+        val generation = accountGeneration.get()
         val requestedTypes = if (type == null) DEFAULT_FAVORITE_TYPES else listOf(type)
         val typesToLoad = favoriteMutex.withLock {
             if (forceRefresh) {
@@ -113,6 +121,7 @@ class FavoriteRepository @Inject constructor(
         }
 
         favoriteMutex.withLock {
+            if (generation != accountGeneration.get()) return
             var merged = _favorites.value
             for ((favoriteType, items) in loadedFavorites) {
                 merged = merged.filterNot { it.type == favoriteType } + items
@@ -123,6 +132,7 @@ class FavoriteRepository @Inject constructor(
     }
 
     suspend fun loadFavoriteGroups(forceRefresh: Boolean = false) {
+        val generation = accountGeneration.get()
         val shouldLoad = favoriteMutex.withLock {
             if (forceRefresh) {
                 favoriteGroupsLoaded = false
@@ -139,12 +149,14 @@ class FavoriteRepository @Inject constructor(
         }
 
         favoriteMutex.withLock {
+            if (generation != accountGeneration.get()) return
             _favoriteGroups.value = groups
             favoriteGroupsLoaded = true
         }
     }
 
     suspend fun loadFavoriteLimits(forceRefresh: Boolean = false) {
+        val generation = accountGeneration.get()
         val shouldLoad = favoriteMutex.withLock {
             if (forceRefresh) {
                 favoriteLimitsLoaded = false
@@ -155,6 +167,7 @@ class FavoriteRepository @Inject constructor(
 
         val limits = favoriteApi.getFavoriteLimits()
         favoriteMutex.withLock {
+            if (generation != accountGeneration.get()) return
             _favoriteLimits.value = limits
             favoriteLimitsLoaded = true
         }
@@ -275,7 +288,7 @@ class FavoriteRepository @Inject constructor(
     fun getLocalAvatars(userId: String) = favoriteLocalDao.getAvatars(userId)
 
     companion object {
-        private val DEFAULT_FAVORITE_TYPES = listOf("friend", "world", "avatar")
+        private val DEFAULT_FAVORITE_TYPES = listOf("friend", "world", "avatar", "vrcPlusWorld")
         private val DEFAULT_FAVORITE_TAGS = mapOf(
             "friend" to "group_0",
             "world" to "worlds1",

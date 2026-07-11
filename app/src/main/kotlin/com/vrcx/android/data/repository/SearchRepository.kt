@@ -115,7 +115,17 @@ class SearchRepository @Inject constructor(
                             "Check the provider URL and access requirements."
                     )
                 }
-                val body = response.body?.string().orEmpty()
+                val responseBody = response.body
+                    ?: throw IOException("Remote avatar provider returned an empty response.")
+                val contentLength = responseBody.contentLength()
+                if (contentLength > MAX_REMOTE_RESPONSE_BYTES) {
+                    throw IOException("Remote avatar provider response is too large.")
+                }
+                val bytes = responseBody.source().readByteArray(MAX_REMOTE_RESPONSE_BYTES + 1L)
+                if (bytes.size > MAX_REMOTE_RESPONSE_BYTES) {
+                    throw IOException("Remote avatar provider response is too large.")
+                }
+                val body = bytes.toString(Charsets.UTF_8)
                 if (body.isBlank()) {
                     throw IOException("Remote avatar provider returned an empty response.")
                 }
@@ -151,7 +161,7 @@ class SearchRepository @Inject constructor(
             else -> throw IOException("Remote avatar provider returned an unsupported response format.")
         }
         val avatarsById = linkedMapOf<String, Avatar>()
-        items.forEach { element ->
+        items.take(MAX_REMOTE_AVATARS).forEach { element ->
             val avatar = remoteAvatarFromJson(element) ?: return@forEach
             avatarsById.putIfAbsent(avatar.id, avatar)
         }
@@ -187,5 +197,10 @@ class SearchRepository @Inject constructor(
             }
         }
         return ""
+    }
+
+    private companion object {
+        const val MAX_REMOTE_RESPONSE_BYTES = 5 * 1024 * 1024
+        const val MAX_REMOTE_AVATARS = 1_000
     }
 }
