@@ -34,7 +34,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,8 +46,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +61,6 @@ import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
-import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -88,13 +86,10 @@ fun WorldDetailScreen(
         }
     }
 
-    val isWallpaperActive = LocalWallpaperActive.current
-    Scaffold(
-        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
-        topBar = { VrcxDetailTopBar(title = world?.name ?: "World", onBack = onBack) },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            VrcxDetailTopBar(title = world?.name ?: "World", onBack = onBack)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
         when {
             isLoading && world == null -> LoadingState()
             error != null && world == null -> ErrorState(error ?: "Error", onRetry = { viewModel.loadWorld() })
@@ -144,7 +139,8 @@ fun WorldDetailScreen(
                     VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SectionHeader("Stats")
-                            StatRow(Icons.Outlined.Groups, "Capacity", "${w.occupants} / ${w.capacity}")
+                            StatRow(Icons.Outlined.Groups, "Online", "${w.occupants}")
+                            StatRow(Icons.Outlined.Groups, "Capacity", "${w.capacity} per instance")
                             StatRow(Icons.Outlined.Favorite, "Favorites", "${w.favorites}")
                             StatRow(Icons.Outlined.Visibility, "Visits", "${w.visits}")
                             StatRow(Icons.Outlined.Public, "Status", w.releaseStatus)
@@ -167,9 +163,9 @@ fun WorldDetailScreen(
                                             else -> platform
                                         }
                                         AssistChip(onClick = {}, label = { Text(label) })
-                                    }
-                                }
-                            }
+            }
+        }
+                        }
                         }
                         Spacer(Modifier.height(8.dp))
                     }
@@ -231,6 +227,8 @@ fun WorldDetailScreen(
             }
         }
         }
+    }
+        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
     }
 
     pendingInstance?.let { instance ->

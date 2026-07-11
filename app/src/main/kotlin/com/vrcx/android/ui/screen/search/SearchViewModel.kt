@@ -264,14 +264,14 @@ class SearchViewModel @Inject constructor(
                 SearchTab.USERS -> {
                     val results = searchRepository.searchUsers(
                         query = q,
-                        n = pageSize,
+                        n = pageSize + 1,
                         offset = offset,
                         searchByBio = _searchUsersByBio.value,
                         sortByLastLogin = _sortUsersByLastLogin.value,
                     )
                     if (!isCurrentSearch(generation)) return
-                    _users.value = results
-                    _hasMore.value = results.size >= pageSize
+                    _users.value = results.take(pageSize)
+                    _hasMore.value = results.size > pageSize
                 }
                 SearchTab.WORLDS -> {
                     val result = loadWorldPage(query = q, offset = offset)
@@ -294,17 +294,17 @@ class SearchViewModel @Inject constructor(
                         _avatars.value = remoteAvatarResults.drop(offset).take(pageSize)
                         _hasMore.value = offset + pageSize < remoteAvatarResults.size
                     } else {
-                        val results = searchRepository.searchAvatars(q, n = pageSize, offset = offset)
+                        val results = searchRepository.searchAvatars(q, n = pageSize + 1, offset = offset)
                         if (!isCurrentSearch(generation)) return
-                        _avatars.value = results
-                        _hasMore.value = results.size >= pageSize
+                        _avatars.value = results.take(pageSize)
+                        _hasMore.value = results.size > pageSize
                     }
                 }
                 SearchTab.GROUPS -> {
-                    val results = searchRepository.searchGroups(q, n = pageSize, offset = offset)
+                    val results = searchRepository.searchGroups(q, n = pageSize + 1, offset = offset)
                     if (!isCurrentSearch(generation)) return
-                    _groups.value = results
-                    _hasMore.value = results.size >= pageSize
+                    _groups.value = results.take(pageSize)
+                    _hasMore.value = results.size > pageSize
                 }
             }
             completed = true
@@ -350,15 +350,15 @@ class SearchViewModel @Inject constructor(
         if (_worldMode.value == WorldSearchMode.SEARCH || query.isBlank()) {
             val results = searchRepository.searchWorlds(
                 query = query,
-                n = pageSize,
+                n = pageSize + 1,
                 offset = offset,
                 mode = mode,
                 includeLabs = includeLabs,
                 tag = tag,
             )
             return WorldPageResult(
-                items = results,
-                hasMore = results.size >= pageSize,
+                items = results.take(pageSize),
+                hasMore = results.size > pageSize,
             )
         }
 

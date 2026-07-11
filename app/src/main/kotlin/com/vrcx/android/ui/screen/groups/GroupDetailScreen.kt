@@ -30,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -48,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,7 +71,8 @@ import com.vrcx.android.ui.theme.LocalWallpaperActive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -98,6 +97,20 @@ class GroupDetailViewModel @Inject constructor(
     private val _posts = MutableStateFlow<List<GroupPost>>(emptyList())
     val posts: StateFlow<List<GroupPost>> = _posts.asStateFlow()
 
+    private val _membersLoading = MutableStateFlow(true)
+    val membersLoading: StateFlow<Boolean> = _membersLoading.asStateFlow()
+    private val _instancesLoading = MutableStateFlow(true)
+    val instancesLoading: StateFlow<Boolean> = _instancesLoading.asStateFlow()
+    private val _postsLoading = MutableStateFlow(true)
+    val postsLoading: StateFlow<Boolean> = _postsLoading.asStateFlow()
+
+    private val _membersError = MutableStateFlow<String?>(null)
+    val membersError: StateFlow<String?> = _membersError.asStateFlow()
+    private val _instancesError = MutableStateFlow<String?>(null)
+    val instancesError: StateFlow<String?> = _instancesError.asStateFlow()
+    private val _postsError = MutableStateFlow<String?>(null)
+    val postsError: StateFlow<String?> = _postsError.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -119,15 +132,18 @@ class GroupDetailViewModel @Inject constructor(
             try {
                 // Run the four loads in parallel — they're independent server-side and
                 // sequencing them was 4x perceived latency for nothing.
-                coroutineScope {
-                    val groupAsync = async { groupRepository.getGroup(groupId) }
-                    val membersAsync = async { runCatching { groupRepository.getGroupMembers(groupId) }.getOrDefault(emptyList()) }
-                    val instancesAsync = async { runCatching { groupRepository.getGroupInstances(groupId) }.getOrDefault(emptyList()) }
-                    val postsAsync = async { runCatching { groupRepository.getGroupPosts(groupId) }.getOrDefault(emptyList()) }
-                    _group.value = groupAsync.await()
-                    _members.value = membersAsync.await()
-                    _instances.value = instancesAsync.await()
-                    _posts.value = postsAsync.await()
+                supervisorScope {
+                    val groupAsync = async { loadResult { groupRepository.getGroup(groupId) } }
+                    val membersAsync = async { loadResult { groupRepository.getGroupMembers(groupId) } }
+                    val instancesAsync = async { loadResult { groupRepository.getGroupInstances(groupId) } }
+                    val postsAsync = async { loadResult { groupRepository.getGroupPosts(groupId) } }
+                    groupAsync.await().fold(
+                        onSuccess = { _group.value = it },
+                        onFailure = { _error.value = it.message ?: "Failed to load group" },
+                    )
+                    applyMembersResult(membersAsync.await())
+                    applyInstancesResult(instancesAsync.await())
+                    applyPostsResult(postsAsync.await())
                 }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load group"
@@ -135,6 +151,47 @@ class GroupDetailViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun retryMembers() = viewModelScope.launch {
+        _membersLoading.value = true
+        _membersError.value = null
+        applyMembersResult(loadResult { groupRepository.getGroupMembers(groupId) })
+    }
+
+    fun retryInstances() = viewModelScope.launch {
+        _instancesLoading.value = true
+        _instancesError.value = null
+        applyInstancesResult(loadResult { groupRepository.getGroupInstances(groupId) })
+    }
+
+    fun retryPosts() = viewModelScope.launch {
+        _postsLoading.value = true
+        _postsError.value = null
+        applyPostsResult(loadResult { groupRepository.getGroupPosts(groupId) })
+    }
+
+    private fun applyMembersResult(result: Result<List<GroupMember>>) {
+        result.onSuccess { _members.value = it }.onFailure { _membersError.value = it.message ?: "Failed to load members" }
+        _membersLoading.value = false
+    }
+
+    private fun applyInstancesResult(result: Result<List<GroupInstance>>) {
+        result.onSuccess { _instances.value = it }.onFailure { _instancesError.value = it.message ?: "Failed to load instances" }
+        _instancesLoading.value = false
+    }
+
+    private fun applyPostsResult(result: Result<List<GroupPost>>) {
+        result.onSuccess { _posts.value = it }.onFailure { _postsError.value = it.message ?: "Failed to load posts" }
+        _postsLoading.value = false
+    }
+
+    private suspend fun <T> loadResult(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     /**
@@ -158,15 +215,27 @@ class GroupDetailViewModel @Inject constructor(
     fun kickMember(userId: String) {
         viewModelScope.launch {
             _isActionLoading.value = true
-            val ok = groupRepository.kickGroupMember(groupId, userId)
-            if (ok) {
-                _members.value = _members.value.filterNot { it.userId == userId }
-                _message.value = "Member removed"
-            } else {
-                _message.value = "Failed to remove member (insufficient permissions?)"
+            try {
+                val ok = groupRepository.kickGroupMember(groupId, userId)
+                if (ok) {
+                    _members.value = _members.value.filterNot { it.userId == userId }
+                    _message.value = "Member removed"
+                } else {
+                    _message.value = "Failed to remove member (insufficient permissions?)"
+                }
+            } catch (e: Exception) {
+                _message.value = e.message ?: "Failed to remove member"
+            } finally {
+                _isActionLoading.value = false
             }
-            _isActionLoading.value = false
         }
+    }
+
+    fun canRemoveMember(group: Group?, member: GroupMember): Boolean {
+        if (!canManageMembers(group)) return false
+        return member.userId.isNotBlank() &&
+            member.userId != group?.ownerId &&
+            member.userId != group?.myMember?.userId
     }
 
     fun joinOrLeaveGroup() {
@@ -216,6 +285,12 @@ fun GroupDetailScreen(
     val members by viewModel.members.collectAsStateWithLifecycle()
     val instances by viewModel.instances.collectAsStateWithLifecycle()
     val posts by viewModel.posts.collectAsStateWithLifecycle()
+    val membersLoading by viewModel.membersLoading.collectAsStateWithLifecycle()
+    val instancesLoading by viewModel.instancesLoading.collectAsStateWithLifecycle()
+    val postsLoading by viewModel.postsLoading.collectAsStateWithLifecycle()
+    val membersError by viewModel.membersError.collectAsStateWithLifecycle()
+    val instancesError by viewModel.instancesError.collectAsStateWithLifecycle()
+    val postsError by viewModel.postsError.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
@@ -231,15 +306,10 @@ fun GroupDetailScreen(
         }
     }
 
-    val isWallpaperActive = LocalWallpaperActive.current
-    Scaffold(
-        containerColor = if (isWallpaperActive) Color.Transparent else MaterialTheme.colorScheme.background,
-        topBar = { VrcxDetailTopBar(title = group?.name ?: "Group", onBack = onBack) },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-    Column(
-        Modifier.fillMaxSize().padding(padding)
-    ) {
+    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+        VrcxDetailTopBar(title = group?.name ?: "Group", onBack = onBack)
+    Column(Modifier.fillMaxWidth().weight(1f)) {
 
         if (isLoading) {
             LoadingState()
@@ -316,7 +386,11 @@ fun GroupDetailScreen(
         }
 
         when (selectedTab) {
-            0 -> LazyColumn(Modifier.fillMaxSize()) {
+            0 -> when {
+                membersLoading -> LoadingState()
+                membersError != null -> ErrorState(membersError ?: "Failed to load members", viewModel::retryMembers)
+                members.isEmpty() -> EmptyState("No group members")
+                else -> LazyColumn(Modifier.fillMaxSize()) {
                 val canManage = viewModel.canManageMembers(currentGroup)
                 items(members, key = { it.id }) { member ->
                     Row(
@@ -343,7 +417,7 @@ fun GroupDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (canManage) {
+                        if (canManage && viewModel.canRemoveMember(currentGroup, member)) {
                             var menuOpen by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { menuOpen = true }) {
@@ -364,8 +438,13 @@ fun GroupDetailScreen(
                     }
                 }
             }
+            }
             1 -> {
-                if (instances.isEmpty()) {
+                if (instancesLoading) {
+                    LoadingState()
+                } else if (instancesError != null) {
+                    ErrorState(instancesError ?: "Failed to load instances", viewModel::retryInstances)
+                } else if (instances.isEmpty()) {
                     EmptyState("No active group instances")
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
@@ -385,7 +464,11 @@ fun GroupDetailScreen(
                 }
             }
             else -> {
-                if (posts.isEmpty()) {
+                if (postsLoading) {
+                    LoadingState()
+                } else if (postsError != null) {
+                    ErrorState(postsError ?: "Failed to load posts", viewModel::retryPosts)
+                } else if (posts.isEmpty()) {
                     EmptyState("No group posts yet")
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
@@ -414,14 +497,16 @@ fun GroupDetailScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                }
-                            }
-                        }
-                    }
+        }
+    }
+    }
                 }
             }
         }
     }
+    }
+    }
+        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
     }
 
     pendingKickUserId?.let { userId ->

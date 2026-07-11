@@ -29,7 +29,7 @@ fun UserListItem(
     subtitle: String = "",
     tags: List<String> = emptyList(),
     status: String? = null,
-    state: FriendState = FriendState.ONLINE,
+    state: FriendState? = null,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
@@ -54,7 +54,13 @@ fun UserListItem(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        UserAvatar(imageUrl = avatarUrl, status = status, state = state, size = 48.dp)
+        UserAvatar(
+            imageUrl = avatarUrl,
+            status = status,
+            state = state ?: FriendState.OFFLINE,
+            size = 48.dp,
+            showStatusDot = state != null,
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

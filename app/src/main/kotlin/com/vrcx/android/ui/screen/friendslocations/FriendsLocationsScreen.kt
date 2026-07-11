@@ -54,6 +54,7 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -73,6 +74,9 @@ enum class LocationSegment(val label: String) {
     ACTIVE("Active"),
     OFFLINE("Offline"),
 }
+
+private const val WORLD_LOOKUP_WORKER_COUNT = 4
+private const val WORLD_LOOKUP_QUEUE_CAPACITY = 64
 
 private data class LastKnownFriendLocation(
     val location: String,
@@ -106,6 +110,8 @@ class FriendsLocationsViewModel @Inject constructor(
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _worldNames = MutableStateFlow<Map<String, World>>(emptyMap())
+    private val worldLookupQueue = Channel<String>(WORLD_LOOKUP_QUEUE_CAPACITY)
+    private val pendingWorldLookups = mutableSetOf<String>()
 
     private val ownerUserId = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
@@ -202,6 +208,20 @@ class FriendsLocationsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
+        repeat(WORLD_LOOKUP_WORKER_COUNT) {
+            viewModelScope.launch {
+                for (worldId in worldLookupQueue) {
+                    try {
+                        runCatching { worldRepository.getWorld(worldId) }
+                            .onSuccess { world ->
+                                _worldNames.update { it + (worldId to world) }
+                            }
+                    } finally {
+                        pendingWorldLookups.remove(worldId)
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             combine(friendRepository.friends, recentGpsEntries) { friendsMap, gpsEntries ->
                 buildSet {
@@ -216,13 +236,8 @@ class FriendsLocationsViewModel @Inject constructor(
                 }.filter { it.isNotBlank() }
             }.collect { worldIds ->
                 for (worldId in worldIds) {
-                    if (_worldNames.value.containsKey(worldId)) continue
-                    launch {
-                        runCatching { worldRepository.getWorld(worldId) }
-                            .onSuccess { world ->
-                                _worldNames.update { it + (worldId to world) }
-                            }
-                    }
+                    if (_worldNames.value.containsKey(worldId) || !pendingWorldLookups.add(worldId)) continue
+                    worldLookupQueue.send(worldId)
                 }
             }
         }

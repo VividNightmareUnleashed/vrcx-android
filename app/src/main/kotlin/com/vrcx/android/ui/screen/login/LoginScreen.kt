@@ -94,9 +94,12 @@ fun LoginScreen(
 
             when (authState) {
                 is AuthState.RequiresTwoFactor -> {
+                    val phase = authState as AuthState.RequiresTwoFactor
                     TwoFactorCard(
-                        methods = (authState as AuthState.RequiresTwoFactor).methods,
+                        methods = phase.methods,
                         code = twoFactorCode,
+                        isLoading = phase.isVerifying,
+                        errorMessage = phase.errorMessage,
                         onCodeChange = viewModel::updateTwoFactorCode,
                         onSubmit = viewModel::submitTwoFactor,
                         onResendEmail = viewModel::resendEmailCode,
@@ -233,6 +236,8 @@ private fun LoginCard(
 private fun TwoFactorCard(
     methods: List<String>,
     code: String,
+    isLoading: Boolean,
+    errorMessage: String?,
     onCodeChange: (String) -> Unit,
     onSubmit: (useEmail: Boolean) -> Unit,
     onResendEmail: () -> Unit,
@@ -270,14 +275,32 @@ private fun TwoFactorCard(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done,
                 ),
-                keyboardActions = KeyboardActions(onDone = { onSubmit(useEmail) }),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (isValidCode && !isLoading) onSubmit(useEmail) },
+                ),
+                enabled = !isLoading,
             )
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Button(
                 onClick = { onSubmit(useEmail) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = isValidCode,
+                enabled = isValidCode && !isLoading,
             ) {
-                Text("Verify")
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.height(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Text("Verify")
+                }
             }
             if (hasEmail && hasTotp) {
                 TextButton(
@@ -312,7 +335,7 @@ private fun normalizeTwoFactorCode(input: String): String {
     }.take(9)
 }
 
-private fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
+internal fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
     val digitsOnly = code.filter(Char::isDigit)
     return if (useEmail) {
         digitsOnly.length == 6

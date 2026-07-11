@@ -33,10 +33,13 @@ import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ErrorState
+import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +62,12 @@ class AvatarsViewModel @Inject constructor(
     private val _selectedPlatform = MutableStateFlow<String?>(null)
     val selectedPlatform: StateFlow<String?> = _selectedPlatform.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     val filteredAvatars: StateFlow<List<Avatar>> = combine(
         avatarRepository.myAvatars,
         _searchQuery,
@@ -71,7 +80,23 @@ class AvatarsViewModel @Inject constructor(
             .filter { platform == null || it.unityPackages.any { pkg -> pkg.platform == platform } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    init { viewModelScope.launch { avatarRepository.loadMyAvatars() } }
+    init { loadAvatars() }
+
+    fun loadAvatars() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+            try {
+                avatarRepository.loadMyAvatars()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load avatars"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
 
     fun updateSearch(query: String) { _searchQuery.value = query }
     fun toggleVisibility(v: String) { _selectedVisibility.value = if (_selectedVisibility.value == v) null else v }
@@ -85,6 +110,8 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedVisibility by viewModel.selectedVisibility.collectAsStateWithLifecycle()
     val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "My Avatars", onBack = onBack)
@@ -105,7 +132,11 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
             FilterChip(selected = selectedPlatform == "android", onClick = { viewModel.togglePlatform("android") }, label = { Text("Quest") })
         }
 
-        if (avatars.isEmpty()) {
+        if (isLoading) {
+            LoadingState()
+        } else if (error != null) {
+            ErrorState(error ?: "Failed to load avatars", onRetry = viewModel::loadAvatars)
+        } else if (avatars.isEmpty()) {
             EmptyState(message = "No avatars", icon = Icons.Outlined.Face, subtitle = "Your owned avatars will appear here")
         } else {
             LazyVerticalGrid(

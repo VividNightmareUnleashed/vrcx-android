@@ -39,7 +39,9 @@ import com.vrcx.android.ui.screen.search.SearchScreen
 import com.vrcx.android.ui.screen.settings.CreditsScreen
 import com.vrcx.android.ui.screen.settings.SettingsScreen
 import com.vrcx.android.ui.screen.tools.ToolsScreen
+import com.vrcx.android.ui.screen.tools.ScreenshotMetadataScreen
 import com.vrcx.android.ui.screen.world.WorldDetailScreen
+import java.nio.charset.StandardCharsets
 
 object VrcxRoutes {
     const val FEED = "feed"
@@ -65,11 +67,12 @@ object VrcxRoutes {
     const val MODERATION = "moderation"
     const val SETTINGS = "settings"
     const val CREDITS = "credits"
+    const val SCREENSHOT_METADATA = "screenshot_metadata"
 
-    fun userDetail(userId: String) = "user_detail/$userId"
-    fun groupDetail(groupId: String) = "group_detail/$groupId"
-    fun avatarDetail(avatarId: String) = "avatar_detail/$avatarId"
-    fun worldDetail(worldId: String) = "world_detail/$worldId"
+    fun userDetail(userId: String) = "user_detail/${encodeRouteSegment(userId)}"
+    fun groupDetail(groupId: String) = "group_detail/${encodeRouteSegment(groupId)}"
+    fun avatarDetail(avatarId: String) = "avatar_detail/${encodeRouteSegment(avatarId)}"
+    fun worldDetail(worldId: String) = "world_detail/${encodeRouteSegment(worldId)}"
 
     val tabRoutes = setOf(FEED, FRIENDS, SEARCH, NOTIFICATIONS, PROFILE)
 }
@@ -250,6 +253,19 @@ fun VrcxNavGraph(
             GalleryScreen(onBack = onBack)
         }
         composable(
+            VrcxRoutes.SCREENSHOT_METADATA,
+            enterTransition = { subScreenEnterTransition },
+            exitTransition = { subScreenExitTransition },
+            popEnterTransition = { subScreenPopEnterTransition },
+            popExitTransition = { subScreenPopExitTransition },
+        ) {
+            ScreenshotMetadataScreen(
+                onBack = onBack,
+                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+            )
+        }
+        composable(
             VrcxRoutes.CHARTS,
             enterTransition = { subScreenEnterTransition },
             exitTransition = { subScreenExitTransition },
@@ -386,3 +402,22 @@ private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDee
     navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
     navDeepLink { uriPattern = "https://vrchat.com/home/$section/{$argName}" },
 )
+
+internal fun encodeRouteSegment(value: String): String = buildString {
+    value.toByteArray(StandardCharsets.UTF_8).forEach { byte ->
+        val unsigned = byte.toInt() and 0xff
+        val unreserved = unsigned in 'a'.code..'z'.code ||
+            unsigned in 'A'.code..'Z'.code ||
+            unsigned in '0'.code..'9'.code ||
+            unsigned == '-'.code || unsigned == '.'.code || unsigned == '_'.code || unsigned == '~'.code
+        if (unreserved) {
+            append(unsigned.toChar())
+        } else {
+            append('%')
+            append(HEX_DIGITS[unsigned ushr 4])
+            append(HEX_DIGITS[unsigned and 0x0f])
+        }
+    }
+}
+
+private const val HEX_DIGITS = "0123456789ABCDEF"

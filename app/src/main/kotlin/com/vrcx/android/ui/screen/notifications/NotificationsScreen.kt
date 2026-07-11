@@ -1,6 +1,7 @@
 package com.vrcx.android.ui.screen.notifications
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -22,6 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -29,8 +32,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,8 +63,17 @@ fun NotificationsScreen(
     val categoryCounts by viewModel.categoryCounts.collectAsStateWithLifecycle()
     val visibleTypes by viewModel.visibleTypes.collectAsStateWithLifecycle()
     val inviteResponseDialog by viewModel.inviteResponseDialog.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(error, notifications.isNotEmpty()) {
+        if (notifications.isNotEmpty()) error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeError()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+      Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Notifications")
 
         if (categoryCounts.isNotEmpty()) {
@@ -206,6 +221,8 @@ fun NotificationsScreen(
                 }
             }
         }
+      }
+      SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     inviteResponseDialog?.let { dialog ->

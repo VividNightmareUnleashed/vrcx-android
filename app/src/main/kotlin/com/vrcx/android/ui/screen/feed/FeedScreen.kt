@@ -2,6 +2,7 @@ package com.vrcx.android.ui.screen.feed
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,11 +22,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,8 +57,18 @@ fun FeedScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
     val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(error) {
+        error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeError()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+      Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Feed")
 
         // Search bar
@@ -97,6 +112,8 @@ fun FeedScreen(
                     message = "No feed entries yet",
                     icon = Icons.Outlined.DynamicFeed,
                     subtitle = "Activity from your friends will appear here",
+                    actionLabel = if (canLoadMore) "Load older entries" else null,
+                    onAction = if (canLoadMore) viewModel::loadMore else null,
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -119,6 +136,8 @@ fun FeedScreen(
                 }
             }
         }
+      }
+      SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 

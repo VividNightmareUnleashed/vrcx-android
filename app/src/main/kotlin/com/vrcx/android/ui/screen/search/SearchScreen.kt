@@ -216,7 +216,7 @@ fun SearchScreen(
                     subtitle = when (selectedTab) {
                         SearchTab.USERS -> "Search users by name or bio"
                         SearchTab.WORLDS -> "Browse worlds, active worlds, favorites, and your own uploads"
-                        SearchTab.AVATARS -> "Search public avatars or a remote avatar provider"
+                        SearchTab.AVATARS -> avatarSearchSource.hint
                         SearchTab.GROUPS -> "Find VRChat groups"
                     },
                 )
@@ -224,6 +224,8 @@ fun SearchScreen(
                 EmptyState(
                     message = "No results found",
                     icon = Icons.Outlined.SearchOff,
+                    actionLabel = if (currentOffset > 0) "Previous page" else null,
+                    onAction = if (currentOffset > 0) viewModel::previousPage else null,
                 )
             }
         } else {
@@ -256,10 +258,10 @@ fun SearchScreen(
                         )
                     }
                     SearchTab.GROUPS -> items(groups, key = { it.id }) { group ->
-                        WorldListItem(
-                            thumbnailUrl = group.iconUrl,
-                            name = group.name,
-                            authorName = "${group.memberCount} members",
+                        UserListItem(
+                            avatarUrl = group.iconUrl,
+                            displayName = group.name,
+                            subtitle = "${group.memberCount} members",
                             onClick = { onGroupClick(group.id) },
                         )
                     }

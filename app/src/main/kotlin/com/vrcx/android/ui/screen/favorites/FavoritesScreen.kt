@@ -43,6 +43,7 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
@@ -54,10 +55,14 @@ import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import coil3.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import javax.inject.Inject
 
 data class ResolvedFavorite(
@@ -66,6 +71,8 @@ data class ResolvedFavorite(
     val thumbnailUrl: String = "",
     val subtitle: String = "",
     val groupTags: List<String> = emptyList(),
+    val friendState: FriendState? = null,
+    val friendStatus: String? = null,
 )
 
 private data class FavoriteSection(
@@ -90,6 +97,12 @@ class FavoritesViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _warning = MutableStateFlow<String?>(null)
+    val warning: StateFlow<String?> = _warning.asStateFlow()
+
     init {
         viewModelScope.launch {
             favoriteRepository.favoriteGroups.collect { groups ->
@@ -111,26 +124,42 @@ class FavoritesViewModel @Inject constructor(
         // every screen entry and a false-negative empty state on slow or
         // flaky networks.
         viewModelScope.launch { collectAndResolve() }
+        preload()
+    }
+
+    fun retry() {
+        if (!_isLoading.value) preload()
+    }
+
+    private fun preload() {
         viewModelScope.launch {
-            try {
-                // Friend favorites still need per-id resolution because VRChat has no
-                // /users/favorites bulk endpoint, but worlds and avatars get a single
-                // paginated GET each via /worlds/favorites and /avatars/favorites.
-                favoriteRepository.loadFavorites()
-                favoriteRepository.loadFavoriteGroups()
-                favoriteRepository.loadFavoriteWorldsBulk()
-                favoriteRepository.loadFavoriteAvatarsBulk()
-            } catch (_: Exception) {
-                // Prefetch failure is non-fatal: the collector above stays
-                // subscribed, so any entries the repository already has
-                // cached (or loads later) still flow through to the UI.
+            _isLoading.value = true
+            _error.value = null
+            _warning.value = null
+            val failures = supervisorScope {
+                listOf(
+                    async { captureFailure { favoriteRepository.loadFavorites() } },
+                    async { captureFailure { favoriteRepository.loadFavoriteGroups() } },
+                    async { captureFailure { favoriteRepository.loadFavoriteWorldsBulk() } },
+                    async { captureFailure { favoriteRepository.loadFavoriteAvatarsBulk() } },
+                ).awaitAll().filterNotNull()
             }
-            // Only clear the loading flag after the preload attempt finishes
-            // (success OR failure). The UI stays in its loading state until
-            // then so users don't see a false empty state while bulk fetches
-            // are still in flight.
+            when {
+                failures.size == 4 -> _error.value = "Failed to load favorites"
+                failures.isNotEmpty() -> _warning.value =
+                    "Some favorite sections could not be loaded."
+            }
             _isLoading.value = false
         }
+    }
+
+    private suspend fun captureFailure(block: suspend () -> Unit): Throwable? = try {
+        block()
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e
     }
 
     private suspend fun collectAndResolve() {
@@ -171,6 +200,8 @@ class FavoritesViewModel @Inject constructor(
                                     thumbnailUrl = cachedFriend.ref?.displayAvatarUrl().orEmpty(),
                                     subtitle = cachedFriend.ref?.statusDescription ?: "",
                                     groupTags = fav.tags,
+                                    friendState = cachedFriend.state,
+                                    friendStatus = cachedFriend.ref?.status,
                                 )
                             )
                         } else {
@@ -186,7 +217,7 @@ class FavoritesViewModel @Inject constructor(
                             )
                         }
                     }
-                    "world" -> {
+                    "world", "vrcPlusWorld" -> {
                         val world = worldsById[fav.favoriteId]
                         if (world != null) {
                             result.add(
@@ -194,7 +225,7 @@ class FavoritesViewModel @Inject constructor(
                                     favorite = fav,
                                     name = world.name,
                                     thumbnailUrl = world.thumbnailImageUrl,
-                                    subtitle = "by ${world.authorName}",
+                                    subtitle = world.authorName,
                                     groupTags = fav.tags,
                                 )
                             )
@@ -233,7 +264,7 @@ class FavoritesViewModel @Inject constructor(
                 val removed = favoriteRepository.favorites.value.firstOrNull { it.id == favoriteId }
                 favoriteRepository.deleteFavorite(favoriteId)
                 when (removed?.type) {
-                    "world" -> favoriteRepository.dropFavoriteWorldFromCache(removed.favoriteId)
+                    "world", "vrcPlusWorld" -> favoriteRepository.dropFavoriteWorldFromCache(removed.favoriteId)
                     "avatar" -> favoriteRepository.dropFavoriteAvatarFromCache(removed.favoriteId)
                 }
                 _resolvedFavorites.value = _resolvedFavorites.value.filter { it.favorite.id != favoriteId }
@@ -254,6 +285,8 @@ fun FavoritesScreen(
     val resolvedFavorites by viewModel.resolvedFavorites.collectAsStateWithLifecycle()
     val favoriteGroups by viewModel.favoriteGroups.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    val warning by viewModel.warning.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Friends", "Worlds", "Avatars")
     var pendingUnfavorite by remember { mutableStateOf<String?>(null) }
@@ -270,25 +303,46 @@ fun FavoritesScreen(
                 Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(title) })
             }
         }
-        val type = listOf("friend", "world", "avatar")[selectedTab]
-        val filtered = resolvedFavorites.filter { it.favorite.type == type }
-        val sections = remember(filtered, favoriteGroups, type) {
+        val types = when (selectedTab) {
+            0 -> setOf("friend")
+            1 -> setOf("world", "vrcPlusWorld")
+            else -> setOf("avatar")
+        }
+        val typeKey = listOf("friend", "world", "avatar")[selectedTab]
+        val filtered = resolvedFavorites.filter { it.favorite.type in types }
+        val sections = remember(filtered, favoriteGroups, types) {
             buildFavoriteSections(
                 favorites = filtered,
-                groups = favoriteGroups.filter { it.type == type },
+                groups = favoriteGroups.filter { it.type in types },
             )
+        }
+
+        warning?.let { message ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = viewModel::retry) { Text("Retry") }
+            }
         }
 
         UiStateContainer(
             isLoading = isLoading,
-            error = null,
+            error = error,
             isEmpty = filtered.isEmpty(),
+            onRetry = viewModel::retry,
             emptyMessage = "No ${tabs[selectedTab].lowercase()} favorites",
             emptyIcon = Icons.Outlined.FavoriteBorder,
             modifier = Modifier.fillMaxSize(),
         ) {
             LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item(key = "summary-$type") {
+                item(key = "summary-$typeKey") {
                     Text(
                         text = "${filtered.size} favorites${if (sections.size > 1) " across ${sections.size} groups" else ""}",
                         style = MaterialTheme.typography.bodySmall,
@@ -305,6 +359,8 @@ fun FavoritesScreen(
                                 avatarUrl = res.thumbnailUrl.ifEmpty { null },
                                 displayName = res.name,
                                 subtitle = res.subtitle.ifBlank { "Tap to open profile" },
+                                state = res.friendState,
+                                status = res.friendStatus,
                                 onClick = { onUserClick(res.favorite.favoriteId) },
                                 trailing = {
                                     IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {

@@ -35,9 +35,14 @@ import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GroupRepository
 import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ErrorState
+import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -47,10 +52,28 @@ class GroupsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
 ) : ViewModel() {
     val groups: StateFlow<List<Group>> = groupRepository.userGroups
-    init {
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading = _isLoading.asStateFlow()
+    private val _error = MutableStateFlow<String?>(null)
+    val error = _error.asStateFlow()
+
+    init { loadGroups() }
+
+    fun loadGroups() {
         viewModelScope.launch {
-            val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-            groupRepository.loadUserGroups(userId)
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
+                    ?: error("You must be logged in to load groups")
+                groupRepository.loadUserGroups(userId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load groups"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }
@@ -59,9 +82,15 @@ class GroupsViewModel @Inject constructor(
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (String) -> Unit = {}, onBack: () -> Unit = {}) {
     val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Groups", onBack = onBack)
-        if (groups.isEmpty()) {
+        if (isLoading) {
+            LoadingState()
+        } else if (error != null) {
+            ErrorState(error ?: "Failed to load groups", onRetry = viewModel::loadGroups)
+        } else if (groups.isEmpty()) {
             EmptyState(message = "No groups", icon = Icons.Outlined.Group, subtitle = "Join groups in VRChat to see them here")
         } else {
             LazyColumn(Modifier.fillMaxSize()) {

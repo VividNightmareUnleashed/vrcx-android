@@ -13,6 +13,8 @@ import com.vrcx.android.data.repository.matchesCategory
 import com.vrcx.android.data.repository.notificationTypeLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,6 +93,8 @@ class NotificationsViewModel @Inject constructor(
 
     private val _inviteResponseDialog = MutableStateFlow<InviteResponseDialogState?>(null)
     val inviteResponseDialog: StateFlow<InviteResponseDialogState?> = _inviteResponseDialog.asStateFlow()
+    private var inviteDialogJob: Job? = null
+    private var inviteDialogGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -154,6 +158,9 @@ class NotificationsViewModel @Inject constructor(
     }
 
     fun dismissInviteResponseDialog() {
+        inviteDialogGeneration++
+        inviteDialogJob?.cancel()
+        inviteDialogJob = null
         _inviteResponseDialog.value = null
     }
 
@@ -200,16 +207,21 @@ class NotificationsViewModel @Inject constructor(
     }
 
     private fun loadInviteResponseDialog(state: InviteResponseDialogState) {
+        inviteDialogJob?.cancel()
+        val generation = ++inviteDialogGeneration
         _inviteResponseDialog.value = state
-        viewModelScope.launch {
-            runCatching {
-                inviteMessageRepository.getMessages(state.messageType)
-            }.onSuccess { templates ->
+        inviteDialogJob = viewModelScope.launch {
+            try {
+                val templates = inviteMessageRepository.getMessages(state.messageType)
+                if (generation != inviteDialogGeneration || _inviteResponseDialog.value?.notification?.id != state.notification.id) return@launch
                 _inviteResponseDialog.value = state.copy(
                     templates = templates,
                     isLoading = false,
                 )
-            }.onFailure { error ->
+            } catch (e: CancellationException) {
+                throw e
+            } catch (error: Exception) {
+                if (generation != inviteDialogGeneration || _inviteResponseDialog.value?.notification?.id != state.notification.id) return@launch
                 _inviteResponseDialog.value = state.copy(
                     templates = emptyList(),
                     isLoading = false,
@@ -244,4 +256,6 @@ class NotificationsViewModel @Inject constructor(
             }
         }
     }
+
+    fun consumeError() { _error.value = null }
 }
