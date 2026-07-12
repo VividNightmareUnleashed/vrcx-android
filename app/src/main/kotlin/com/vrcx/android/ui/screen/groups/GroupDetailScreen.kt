@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PersonRemove
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,8 +60,9 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.GroupRepository
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.common.relativeTime
-import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxCard
@@ -386,11 +386,15 @@ fun GroupDetailScreen(
         }
 
         when (selectedTab) {
-            0 -> when {
-                membersLoading -> LoadingState()
-                membersError != null -> ErrorState(membersError ?: "Failed to load members", viewModel::retryMembers)
-                members.isEmpty() -> EmptyState("No group members")
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+            0 -> UiStateContainer(
+                isLoading = membersLoading,
+                error = membersError,
+                isEmpty = members.isEmpty(),
+                onRetry = viewModel::retryMembers,
+                emptyMessage = "No group members",
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                LazyColumn(Modifier.fillMaxSize()) {
                 val canManage = viewModel.canManageMembers(currentGroup)
                 items(members, key = { it.id }) { member ->
                     Row(
@@ -439,70 +443,68 @@ fun GroupDetailScreen(
                 }
             }
             }
-            1 -> {
-                if (instancesLoading) {
-                    LoadingState()
-                } else if (instancesError != null) {
-                    ErrorState(instancesError ?: "Failed to load instances", viewModel::retryInstances)
-                } else if (instances.isEmpty()) {
-                    EmptyState("No active group instances")
-                } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(instances, key = { it.instanceId }) { instance ->
-                            VrcxCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Text(instance.world?.name ?: instance.location, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        "${instance.memberCount} members",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+            1 -> UiStateContainer(
+                isLoading = instancesLoading,
+                error = instancesError,
+                isEmpty = instances.isEmpty(),
+                onRetry = viewModel::retryInstances,
+                emptyMessage = "No active group instances",
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(instances, key = { it.instanceId }) { instance ->
+                        VrcxCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(instance.world?.name ?: instance.location, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "${instance.memberCount} members",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
                 }
             }
-            else -> {
-                if (postsLoading) {
-                    LoadingState()
-                } else if (postsError != null) {
-                    ErrorState(postsError ?: "Failed to load posts", viewModel::retryPosts)
-                } else if (posts.isEmpty()) {
-                    EmptyState("No group posts yet")
-                } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(posts, key = { it.id }) { post ->
-                            VrcxCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (post.title.isNotBlank()) {
-                                        Text(post.title, style = MaterialTheme.typography.titleMedium)
-                                    }
-                                    if (post.text.isNotBlank()) {
-                                        Text(post.text, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                    if (post.imageUrl.isNotBlank()) {
-                                        AsyncImage(
-                                            model = post.imageUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .aspectRatio(16f / 9f)
-                                                .clip(RoundedCornerShape(12.dp)),
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                    }
-                                    Text(
-                                        relativeTime(post.updatedAt.ifBlank { post.createdAt }),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            else -> UiStateContainer(
+                isLoading = postsLoading,
+                error = postsError,
+                isEmpty = posts.isEmpty(),
+                onRetry = viewModel::retryPosts,
+                emptyMessage = "No group posts yet",
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(posts, key = { it.id }) { post ->
+                        VrcxCard(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (post.title.isNotBlank()) {
+                                    Text(post.title, style = MaterialTheme.typography.titleMedium)
+                                }
+                                if (post.text.isNotBlank()) {
+                                    Text(post.text, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                if (post.imageUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = post.imageUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(16f / 9f)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                        contentScale = ContentScale.Crop,
                                     )
-        }
-    }
-    }
+                                }
+                                Text(
+                                    relativeTime(post.updatedAt.ifBlank { post.createdAt }),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
     }
     }
     }
@@ -511,21 +513,15 @@ fun GroupDetailScreen(
 
     pendingKickUserId?.let { userId ->
         val displayName = members.firstOrNull { it.userId == userId }?.user?.displayName ?: userId
-        AlertDialog(
-            onDismissRequest = { pendingKickUserId = null },
-            title = { Text("Remove $displayName?") },
-            text = { Text("They'll be removed from this group. They can rejoin if the group allows it.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.kickMember(userId)
-                    pendingKickUserId = null
-                }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
+        ConfirmDialog(
+            title = "Remove $displayName?",
+            message = "They'll be removed from this group. They can rejoin if the group allows it.",
+            confirmLabel = "Remove",
+            onConfirm = {
+                viewModel.kickMember(userId)
+                pendingKickUserId = null
             },
-            dismissButton = {
-                TextButton(onClick = { pendingKickUserId = null }) { Text("Cancel") }
-            },
+            onDismiss = { pendingKickUserId = null },
         )
     }
 }

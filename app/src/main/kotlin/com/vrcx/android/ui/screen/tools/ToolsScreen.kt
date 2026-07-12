@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.db.dao.MemoDao
+import com.vrcx.android.data.db.dao.memosByUserId
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
@@ -87,15 +88,10 @@ class ToolsViewModel @Inject constructor(
                 val initialUser = (authRepository.authState.value as? AuthState.LoggedIn)?.user
                     ?: error("No logged-in user")
                 val ownerUserId = initialUser.id
-                val memos = withContext(Dispatchers.IO) { memoDao.getMemos(ownerUserId) }
+                val memoMap = withContext(Dispatchers.IO) { memoDao.memosByUserId(ownerUserId) }
                 val currentUser = (authRepository.authState.value as? AuthState.LoggedIn)?.user
                     ?.takeIf { it.id == ownerUserId }
                     ?: error("Account changed while preparing export")
-                val prefix = "$ownerUserId:"
-                val memoMap = memos
-                    .asSequence()
-                    .filter { it.odUserId.startsWith(prefix) }
-                    .associate { it.odUserId.removePrefix(prefix) to it.memo }
                 val rows = FriendListExport.rows(
                     currentUserFriends = currentUser.friends,
                     friends = friendRepository.friends.value,

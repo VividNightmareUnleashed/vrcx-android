@@ -6,16 +6,12 @@ import com.vrcx.android.data.db.MIGRATION_1_2
 import com.vrcx.android.data.db.MIGRATION_2_3
 import com.vrcx.android.data.db.MIGRATION_3_4
 import com.vrcx.android.data.db.VrcxDatabase
-import com.vrcx.android.data.db.dao.AvatarHistoryDao
-import com.vrcx.android.data.db.dao.AvatarTagDao
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.CacheDao
-import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.dao.FeedDao
 import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.dao.MemoDao
 import com.vrcx.android.data.db.dao.ModerationDao
-import com.vrcx.android.data.db.dao.MutualGraphDao
 import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.dao.NotificationDao
 import com.vrcx.android.data.preferences.VrcxPreferences
@@ -42,13 +38,9 @@ object DatabaseModule {
     @Provides fun provideFriendLogDao(db: VrcxDatabase): FriendLogDao = db.friendLogDao()
     @Provides fun provideNotificationDao(db: VrcxDatabase): NotificationDao = db.notificationDao()
     @Provides fun provideModerationDao(db: VrcxDatabase): ModerationDao = db.moderationDao()
-    @Provides fun provideAvatarHistoryDao(db: VrcxDatabase): AvatarHistoryDao = db.avatarHistoryDao()
     @Provides fun provideNoteDao(db: VrcxDatabase): NoteDao = db.noteDao()
-    @Provides fun provideMutualGraphDao(db: VrcxDatabase): MutualGraphDao = db.mutualGraphDao()
     @Provides fun provideCacheDao(db: VrcxDatabase): CacheDao = db.cacheDao()
-    @Provides fun provideFavoriteLocalDao(db: VrcxDatabase): FavoriteLocalDao = db.favoriteLocalDao()
     @Provides fun provideMemoDao(db: VrcxDatabase): MemoDao = db.memoDao()
-    @Provides fun provideAvatarTagDao(db: VrcxDatabase): AvatarTagDao = db.avatarTagDao()
     @Provides fun provideFriendNotifyDao(db: VrcxDatabase): FriendNotifyDao = db.friendNotifyDao()
 
     @Provides

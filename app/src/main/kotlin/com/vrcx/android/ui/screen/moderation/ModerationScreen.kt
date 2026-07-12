@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +40,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.repository.ModerationRepository
+import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
@@ -233,16 +233,12 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
 
     // Confirmation dialog
     pendingRemove?.let { moderation ->
-        AlertDialog(
-            onDismissRequest = { pendingRemove = null },
-            title = { Text("Remove Moderation") },
-            text = { Text("Remove ${TAB_LABELS[selectedTabIndex].lowercase()} moderation for ${moderation.targetDisplayName}?") },
-            confirmButton = {
-                TextButton(onClick = { viewModel.remove(moderation); pendingRemove = null }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("Cancel") } },
+        ConfirmDialog(
+            title = "Remove Moderation",
+            message = "Remove ${TAB_LABELS[selectedTabIndex].lowercase()} moderation for ${moderation.targetDisplayName}?",
+            confirmLabel = "Remove",
+            onConfirm = { viewModel.remove(moderation); pendingRemove = null },
+            onDismiss = { pendingRemove = null },
         )
     }
 }

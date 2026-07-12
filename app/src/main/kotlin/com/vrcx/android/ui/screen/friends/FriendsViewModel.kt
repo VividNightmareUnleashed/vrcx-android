@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.data.model.TrustRank
 import com.vrcx.android.data.repository.FriendRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +59,7 @@ class FriendsViewModel @Inject constructor(
                 when (sort) {
                     FriendsSortOption.NAME -> list.sortedBy { it.name.lowercase() }
                     FriendsSortOption.LAST_SEEN -> list.sortedByDescending { it.ref?.lastLogin ?: "" }
-                    FriendsSortOption.TRUST_RANK -> list.sortedBy { trustLevelPriority(it.ref?.tags ?: emptyList()) }
+                    FriendsSortOption.TRUST_RANK -> list.sortedBy { TrustRank.fromTags(it.ref?.tags ?: emptyList()).priority }
                 }
             }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -102,17 +103,12 @@ class FriendsViewModel @Inject constructor(
     }
 
     init {
-        refresh()
+        // The foreground service preloads friends at login and the websocket
+        // keeps them fresh, so only cold-start a fetch when we have nothing yet.
+        // Pull-to-refresh still covers explicit reloads.
+        if (friendRepository.friends.value.isEmpty()) {
+            refresh()
+        }
     }
 }
 
-fun trustLevelPriority(tags: List<String>): Int {
-    return when {
-        tags.contains("system_trust_legend") -> 0
-        tags.contains("system_trust_veteran") -> 1
-        tags.contains("system_trust_trusted") -> 2
-        tags.contains("system_trust_known") -> 3
-        tags.contains("system_trust_basic") -> 4
-        else -> 5
-    }
-}

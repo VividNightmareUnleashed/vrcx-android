@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedEntryType
+import com.vrcx.android.data.repository.activityLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -117,7 +119,7 @@ fun FeedScreen(
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(entries, key = { "${it.type}_${it.id}" }) { entry ->
+                    items(entries, key = { "${it.type.id}_${it.id}" }) { entry ->
                         FeedItem(
                             entry = entry,
                             avatarUrl = entry.thumbnailUrl.ifEmpty { avatarUrls[entry.userId] },
@@ -152,7 +154,7 @@ private fun FeedItem(entry: FeedEntry, avatarUrl: String?, onClick: () -> Unit) 
     ) {
         UserAvatar(
             imageUrl = avatarUrl,
-            state = if (entry.type == "offline") FriendState.OFFLINE else FriendState.ONLINE,
+            state = if (entry.type == FeedEntryType.OFFLINE) FriendState.OFFLINE else FriendState.ONLINE,
             size = 40.dp,
             showStatusDot = false,
         )
@@ -165,15 +167,7 @@ private fun FeedItem(entry: FeedEntry, avatarUrl: String?, onClick: () -> Unit) 
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = when (entry.type) {
-                    "gps" -> "Moved to ${entry.details}"
-                    "status" -> "Status: ${entry.details}"
-                    "online" -> "Came online"
-                    "offline" -> "Went offline"
-                    "bio" -> "Updated bio"
-                    "avatar" -> "Changed avatar"
-                    else -> entry.details
-                },
+                text = entry.activityLabel(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,

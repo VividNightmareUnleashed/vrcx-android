@@ -30,8 +30,10 @@ import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.activityLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -42,7 +44,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -84,46 +85,11 @@ class DashboardViewModel @Inject constructor(
         .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
         .distinctUntilChanged()
         .flatMapLatest { userId ->
-            if (userId.isBlank()) return@flatMapLatest flowOf(emptyList())
-            combine(
-                feedRepository.getGpsFeed(userId, recentActivitySourceLimit),
-                feedRepository.getStatusFeed(userId, recentActivitySourceLimit),
-                feedRepository.getBioFeed(userId, recentActivitySourceLimit),
-                feedRepository.getAvatarFeed(userId, recentActivitySourceLimit),
-                feedRepository.getOnlineOfflineFeed(userId, recentActivitySourceLimit),
-            ) { gps, status, bio, avatar, onlineOffline ->
-                buildList {
-                    gps.forEach { add(FeedEntry(it.id, "gps", it.userId, it.displayName, it.worldName, it.previousLocation, it.createdAt)) }
-                    status.forEach {
-                        add(
-                            FeedEntry(
-                                it.id,
-                                "status",
-                                it.userId,
-                                it.displayName,
-                                "${it.status}: ${it.statusDescription}",
-                                "${it.previousStatus}: ${it.previousStatusDescription}",
-                                it.createdAt,
-                            )
-                        )
-                    }
-                    bio.forEach { add(FeedEntry(it.id, "bio", it.userId, it.displayName, it.bio, it.previousBio, it.createdAt)) }
-                    avatar.forEach {
-                        add(
-                            FeedEntry(
-                                it.id,
-                                "avatar",
-                                it.userId,
-                                it.displayName,
-                                it.avatarName.ifEmpty { "Avatar changed" },
-                                "",
-                                it.createdAt,
-                                it.currentAvatarThumbnailImageUrl,
-                            )
-                        )
-                    }
-                    onlineOffline.forEach { add(FeedEntry(it.id, it.type, it.userId, it.displayName, it.worldName, "", it.createdAt)) }
-                }.sortedByDescending { it.createdAt }.take(recentActivitySourceLimit)
+            if (userId.isBlank()) {
+                flowOf(emptyList())
+            } else {
+                feedRepository.getUnifiedFeed(userId, recentActivitySourceLimit)
+                    .map { it.entries.take(recentActivitySourceLimit) }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -140,9 +106,9 @@ class DashboardViewModel @Inject constructor(
     val activityBreakdown: StateFlow<DashboardActivityBreakdown> = recentEntries
         .map { entries ->
             DashboardActivityBreakdown(
-                moves = entries.count { it.type == "gps" },
-                statusChanges = entries.count { it.type == "status" },
-                avatarChanges = entries.count { it.type == "avatar" },
+                moves = entries.count { it.type == FeedEntryType.GPS },
+                statusChanges = entries.count { it.type == FeedEntryType.STATUS },
+                avatarChanges = entries.count { it.type == FeedEntryType.AVATAR },
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardActivityBreakdown())
@@ -299,7 +265,7 @@ fun DashboardScreen(
                 )
             }
         } else {
-            items(recentEntries, key = { "${it.type}_${it.id}" }) { entry ->
+            items(recentEntries, key = { "${it.type.id}_${it.id}" }) { entry ->
                 VrcxCard(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
@@ -316,14 +282,7 @@ fun DashboardScreen(
                             )
                         }
                         Text(
-                            when (entry.type) {
-                                "gps" -> "Moved to ${entry.details}"
-                                "status" -> entry.details
-                                "online" -> "Came online"
-                                "offline" -> "Went offline"
-                                "avatar" -> entry.details
-                                else -> entry.details
-                            },
+                            entry.activityLabel(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

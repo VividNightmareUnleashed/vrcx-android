@@ -5,7 +5,7 @@ import java.io.EOFException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.time.DateTimeException
-import java.time.Instant
+import com.vrcx.android.data.util.parseInstantMillisOrNull
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -270,13 +270,9 @@ object ScreenshotMetadataReader {
 
     private fun parseDateTime(value: String?): Long? {
         val dateTime = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        return parseInstant(dateTime)
+        return parseInstantMillisOrNull(dateTime)
             ?: parseOffsetDateTime(dateTime)
             ?: parseLocalDateTime(dateTime)
-    }
-
-    private fun parseInstant(value: String): Long? {
-        return runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
     }
 
     private fun parseOffsetDateTime(value: String): Long? {

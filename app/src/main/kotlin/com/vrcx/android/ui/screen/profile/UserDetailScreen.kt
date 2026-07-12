@@ -67,7 +67,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.resolvedWorldId
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.ui.common.prettyVisibility
+import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
@@ -78,15 +82,6 @@ import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
-
-private object UserDetailTabs {
-    const val INFO = 0
-    const val MUTUALS = 1
-    const val GROUPS = 2
-    const val WORLDS = 3
-    const val AVATARS = 4
-    const val FAVORITE_WORLDS = 5
-}
 
 /**
  * Destructive social actions on UserDetailScreen are gated behind a confirm
@@ -151,27 +146,21 @@ fun UserDetailScreen(
 
     pendingDestructiveAction?.let { action ->
         val targetName = user?.displayName ?: "this user"
-        AlertDialog(
-            onDismissRequest = { pendingDestructiveAction = null },
-            title = { Text("${action.verb} $targetName?") },
-            text = { Text(action.consequence) },
-            confirmButton = {
-                TextButton(onClick = {
-                    when (action) {
-                        UserDestructiveAction.Block -> viewModel.blockUser()
-                        UserDestructiveAction.Mute -> viewModel.muteUser()
-                        UserDestructiveAction.HideAvatar -> viewModel.hideAvatar()
-                        UserDestructiveAction.ShowAvatar -> viewModel.showAvatar()
-                        UserDestructiveAction.Unfriend -> viewModel.unfriend()
-                    }
-                    pendingDestructiveAction = null
-                }) {
-                    Text(action.verb, color = MaterialTheme.colorScheme.error)
+        ConfirmDialog(
+            title = "${action.verb} $targetName?",
+            message = action.consequence,
+            confirmLabel = action.verb,
+            onConfirm = {
+                when (action) {
+                    UserDestructiveAction.Block -> viewModel.blockUser()
+                    UserDestructiveAction.Mute -> viewModel.muteUser()
+                    UserDestructiveAction.HideAvatar -> viewModel.hideAvatar()
+                    UserDestructiveAction.ShowAvatar -> viewModel.showAvatar()
+                    UserDestructiveAction.Unfriend -> viewModel.unfriend()
                 }
+                pendingDestructiveAction = null
             },
-            dismissButton = {
-                TextButton(onClick = { pendingDestructiveAction = null }) { Text("Cancel") }
-            },
+            onDismiss = { pendingDestructiveAction = null },
         )
     }
 
@@ -209,39 +198,39 @@ fun UserDetailScreen(
                 // Tabs
                 TabRow(selectedTabIndex = selectedTab) {
                     Tab(
-                        selected = selectedTab == UserDetailTabs.INFO,
-                        onClick = { viewModel.selectTab(UserDetailTabs.INFO) },
+                        selected = selectedTab == UserDetailTab.INFO,
+                        onClick = { viewModel.selectTab(UserDetailTab.INFO) },
                         text = { Text("Info") },
                     )
                     Tab(
-                        selected = selectedTab == UserDetailTabs.MUTUALS,
-                        onClick = { viewModel.selectTab(UserDetailTabs.MUTUALS) },
+                        selected = selectedTab == UserDetailTab.MUTUALS,
+                        onClick = { viewModel.selectTab(UserDetailTab.MUTUALS) },
                         text = { Text("Mutuals") },
                     )
                     Tab(
-                        selected = selectedTab == UserDetailTabs.GROUPS,
-                        onClick = { viewModel.selectTab(UserDetailTabs.GROUPS) },
+                        selected = selectedTab == UserDetailTab.GROUPS,
+                        onClick = { viewModel.selectTab(UserDetailTab.GROUPS) },
                         text = { Text("Groups") },
                     )
                     Tab(
-                        selected = selectedTab == UserDetailTabs.WORLDS,
-                        onClick = { viewModel.selectTab(UserDetailTabs.WORLDS) },
+                        selected = selectedTab == UserDetailTab.WORLDS,
+                        onClick = { viewModel.selectTab(UserDetailTab.WORLDS) },
                         text = { Text("Worlds") },
                     )
                     Tab(
-                        selected = selectedTab == UserDetailTabs.AVATARS,
-                        onClick = { viewModel.selectTab(UserDetailTabs.AVATARS) },
+                        selected = selectedTab == UserDetailTab.AVATARS,
+                        onClick = { viewModel.selectTab(UserDetailTab.AVATARS) },
                         text = { Text("Avatars") },
                     )
                     Tab(
-                        selected = selectedTab == UserDetailTabs.FAVORITE_WORLDS,
-                        onClick = { viewModel.selectTab(UserDetailTabs.FAVORITE_WORLDS) },
+                        selected = selectedTab == UserDetailTab.FAVORITE_WORLDS,
+                        onClick = { viewModel.selectTab(UserDetailTab.FAVORITE_WORLDS) },
                         text = { Text("Fav Worlds") },
                     )
                 }
 
                 when (selectedTab) {
-                    UserDetailTabs.INFO -> InfoTab(
+                    UserDetailTab.INFO -> InfoTab(
                         u = u,
                         note = note,
                         memo = memo,
@@ -251,24 +240,24 @@ fun UserDetailScreen(
                         isSelf = isSelf,
                         onConfirmDestructive = { pendingDestructiveAction = it },
                     )
-                    UserDetailTabs.MUTUALS -> {
-                        if (UserDetailTabs.MUTUALS in loadingTabs && mutualFriends.isEmpty()) LoadingState()
+                    UserDetailTab.MUTUALS -> {
+                        if (UserDetailTab.MUTUALS in loadingTabs && mutualFriends.isEmpty()) LoadingState()
                         else MutualFriendsTab(mutualFriends, onUserClick)
                     }
-                    UserDetailTabs.GROUPS -> {
-                        if (UserDetailTabs.GROUPS in loadingTabs && userGroups.isEmpty()) LoadingState()
+                    UserDetailTab.GROUPS -> {
+                        if (UserDetailTab.GROUPS in loadingTabs && userGroups.isEmpty()) LoadingState()
                         else GroupsTab(userGroups, onGroupClick)
                     }
-                    UserDetailTabs.WORLDS -> {
-                        if (UserDetailTabs.WORLDS in loadingTabs && userWorlds.isEmpty()) LoadingState()
+                    UserDetailTab.WORLDS -> {
+                        if (UserDetailTab.WORLDS in loadingTabs && userWorlds.isEmpty()) LoadingState()
                         else WorldsTab(userWorlds, onWorldClick)
                     }
-                    UserDetailTabs.AVATARS -> {
-                        if (UserDetailTabs.AVATARS in loadingTabs && userAvatars.isEmpty()) LoadingState()
+                    UserDetailTab.AVATARS -> {
+                        if (UserDetailTab.AVATARS in loadingTabs && userAvatars.isEmpty()) LoadingState()
                         else AvatarsTab(userAvatars, onAvatarClick)
                     }
-                    UserDetailTabs.FAVORITE_WORLDS -> {
-                        if (UserDetailTabs.FAVORITE_WORLDS in loadingTabs && favoriteWorldSections.isEmpty()) LoadingState()
+                    UserDetailTab.FAVORITE_WORLDS -> {
+                        if (UserDetailTab.FAVORITE_WORLDS in loadingTabs && favoriteWorldSections.isEmpty()) LoadingState()
                         else FavoriteWorldsTab(
                             sections = favoriteWorldSections,
                             selectedTag = selectedFavoriteWorldTag,
@@ -483,7 +472,7 @@ private fun MutualFriendsTab(mutualFriends: List<VrcUser>, onUserClick: (String)
         LazyColumn(Modifier.fillMaxSize()) {
             items(mutualFriends, key = { it.id }) { mutual ->
                 UserListItem(
-                    avatarUrl = mutual.profilePicOverride.ifEmpty { mutual.currentAvatarThumbnailImageUrl }.ifBlank { null },
+                    avatarUrl = mutual.displayAvatarUrl().ifBlank { null },
                     displayName = mutual.displayName,
                     subtitle = mutual.statusDescription.ifBlank { mutual.status },
                     tags = mutual.tags,
@@ -640,7 +629,7 @@ private fun AvatarsTab(avatars: List<Avatar>, onAvatarClick: (String) -> Unit) {
 
 @Composable
 private fun ProfileHeader(user: VrcUser) {
-    val imageUrl = user.profilePicOverride.ifEmpty { user.currentAvatarThumbnailImageUrl }
+    val imageUrl = user.displayAvatarUrl()
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         AsyncImage(
             model = imageUrl,
@@ -680,11 +669,3 @@ private fun mutualFriendState(user: VrcUser): FriendState =
         else -> FriendState.ONLINE
     }
 
-private fun String.prettyVisibility(): String =
-    replace('-', ' ')
-        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-
-internal fun resolvedWorldId(location: String?, travelingToLocation: String?): String? {
-    val resolved = if (location == "traveling") travelingToLocation else location
-    return resolved?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
-}

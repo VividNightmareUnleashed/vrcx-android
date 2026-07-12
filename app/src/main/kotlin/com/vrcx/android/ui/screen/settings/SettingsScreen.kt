@@ -51,6 +51,7 @@ import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -359,26 +360,16 @@ fun SettingsScreen(
         }
 
         if (showSignOutDialog) {
-            AlertDialog(
-                onDismissRequest = { showSignOutDialog = false },
-                title = { Text("Sign Out?") },
-                text = {
-                    Text(
-                        "Your session will be invalidated on VRChat's side and you'll need " +
-                            "to enter your credentials again to sign back in.",
-                    )
+            ConfirmDialog(
+                title = "Sign Out?",
+                message = "Your session will be invalidated on VRChat's side and you'll need " +
+                    "to enter your credentials again to sign back in.",
+                confirmLabel = "Sign Out",
+                onConfirm = {
+                    showSignOutDialog = false
+                    viewModel.signOut()
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showSignOutDialog = false
-                        viewModel.signOut()
-                    }) {
-                        Text("Sign Out", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
-                },
+                onDismiss = { showSignOutDialog = false },
             )
         }
     }

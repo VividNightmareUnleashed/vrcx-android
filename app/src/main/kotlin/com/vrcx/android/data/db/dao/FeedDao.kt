@@ -67,21 +67,6 @@ interface FeedDao {
     @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :ownerUserId AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String): FeedOnlineOfflineEntity?
 
-    @Query("DELETE FROM feed_gps WHERE ownerUserId = :userId")
-    suspend fun clearGpsFeed(userId: String)
-
-    @Query("DELETE FROM feed_status WHERE ownerUserId = :userId")
-    suspend fun clearStatusFeed(userId: String)
-
-    @Query("DELETE FROM feed_bio WHERE ownerUserId = :userId")
-    suspend fun clearBioFeed(userId: String)
-
-    @Query("DELETE FROM feed_avatar WHERE ownerUserId = :userId")
-    suspend fun clearAvatarFeed(userId: String)
-
-    @Query("DELETE FROM feed_online_offline WHERE ownerUserId = :userId")
-    suspend fun clearOnlineOfflineFeed(userId: String)
-
     @Query("DELETE FROM feed_gps WHERE ownerUserId = :ownerUserId AND id NOT IN (SELECT id FROM feed_gps WHERE ownerUserId = :ownerUserId ORDER BY id DESC LIMIT :limit)")
     suspend fun pruneGps(ownerUserId: String, limit: Int)
 

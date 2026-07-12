@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.vrcx.android.data.model.FriendState
 
 data class VrcxColors(
     // Trust rank colors
@@ -55,12 +56,15 @@ data class VrcxColors(
         else -> trustVisitor
     }
 
-    fun statusColor(status: String?): Color = when (status?.lowercase()) {
-        "join me" -> statusJoinMe
-        "active" -> statusOnline
-        "ask me" -> statusAskMe
-        "busy" -> statusBusy
-        else -> statusOffline
+    fun statusColor(status: String?, state: FriendState = FriendState.ONLINE): Color {
+        if (state == FriendState.OFFLINE) return statusOffline
+        return when (status?.lowercase()) {
+            "join me" -> statusJoinMe
+            "active" -> statusOnline
+            "ask me" -> statusAskMe
+            "busy" -> statusBusy
+            else -> statusOnline
+        }
     }
 }
 

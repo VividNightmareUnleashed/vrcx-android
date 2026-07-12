@@ -1,8 +1,6 @@
 package com.vrcx.android.service
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -15,7 +13,7 @@ import android.os.IBinder
 import android.util.Log
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
-import com.vrcx.android.data.model.FriendContext
+import com.vrcx.android.data.model.FriendTransition
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FeedRepository
@@ -23,6 +21,7 @@ import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.GalleryRepository
 import com.vrcx.android.data.repository.GroupRepository
 import com.vrcx.android.data.repository.InstanceRepository
+import com.vrcx.android.data.repository.NotificationKind
 import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.websocket.PipelineEvent
 import com.vrcx.android.data.websocket.VRChatWebSocket
@@ -77,7 +76,7 @@ class WebSocketForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannels()
+        // NotificationHelper's init registers the shared notification channels.
         notificationHelper = NotificationHelper(this)
     }
 
@@ -198,18 +197,36 @@ class WebSocketForegroundService : Service() {
                     }
                 }
 
+                // Map friend online/location/status transitions to notifications.
+                // FriendRepository resolves userId + display name (tolerating the
+                // lowercase "userid" key) and the location/status comparisons, so
+                // the service no longer re-parses the raw event payload.
+                serviceScope.launch {
+                    friendRepository.friendTransitions.collect { transition ->
+                        if (transition.userId !in notifyEnabledFriendIds) return@collect
+                        val helper = notificationHelper ?: return@collect
+                        when (transition) {
+                            is FriendTransition.CameOnline ->
+                                helper.notifyFriendOnline(transition.displayName)
+                            is FriendTransition.ChangedLocation ->
+                                helper.notifyFriendLocation(transition.displayName, transition.worldName)
+                            is FriendTransition.ChangedStatus ->
+                                helper.notifyFriendStatusChange(transition.displayName, transition.status)
+                        }
+                    }
+                }
+
                 webSocket = VRChatWebSocket(json, okHttpClient).also { ws ->
                     ws.connect(token)
                     // Route WebSocket events to repositories + notifications
                     serviceScope.launch {
                         ws.events.collect { event ->
-                            val previousFriend = previousFriendFor(event)
                             friendRepository.handleEvent(event)
                             notificationRepository.handleEvent(event)
                             authRepository.handleEvent(event)
                             groupRepository.handleEvent(event)
                             handleInstanceAndContentEvents(event)
-                            dispatchNotification(event, previousFriend)
+                            dispatchNotification(event)
                         }
                     }
                 }
@@ -281,19 +298,6 @@ class WebSocketForegroundService : Service() {
             .build()
     }
 
-    private fun createNotificationChannels() {
-        val manager = getSystemService(NotificationManager::class.java)
-
-        listOf(
-            NotificationChannel(CHANNEL_SERVICE, "Background Service", NotificationManager.IMPORTANCE_LOW),
-            NotificationChannel(CHANNEL_FRIEND_ONLINE, "Friend Online", NotificationManager.IMPORTANCE_DEFAULT),
-            NotificationChannel(CHANNEL_FRIEND_OFFLINE, "Friend Offline", NotificationManager.IMPORTANCE_LOW),
-            NotificationChannel(CHANNEL_INVITES, "Invites", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(CHANNEL_FRIEND_REQUEST, "Friend Requests", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(CHANNEL_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
-        ).forEach { manager.createNotificationChannel(it) }
-    }
-
     private fun handleInstanceAndContentEvents(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.ContentRefresh -> {
@@ -324,73 +328,33 @@ class WebSocketForegroundService : Service() {
         }
     }
 
-    private fun previousFriendFor(event: PipelineEvent): FriendContext? {
-        val content = when (event) {
-            is PipelineEvent.FriendUpdate -> event.content?.jsonObject
-            is PipelineEvent.FriendLocation -> event.content?.jsonObject
-            else -> null
-        } ?: return null
-        val userId = content["userId"]?.jsonPrimitive?.content ?: return null
-        return friendRepository.friends.value[userId]
-    }
-
-    private fun dispatchNotification(event: PipelineEvent, previousFriend: FriendContext? = null) {
+    private fun dispatchNotification(event: PipelineEvent) {
         val helper = notificationHelper ?: return
         when (event) {
-            is PipelineEvent.FriendOnline -> {
-                val content = event.content?.jsonObject ?: return
-                val userId = content["userId"]?.jsonPrimitive?.content ?: return
-                if (userId !in notifyEnabledFriendIds) return
-                val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content
-                    ?: friendRepository.friends.value[userId]?.name
-                    ?: return
-                helper.notifyFriendOnline(name)
-            }
             is PipelineEvent.Notification -> {
-                val type = event.content?.jsonObject?.get("type")?.jsonPrimitive?.content
+                val type = event.content?.jsonObject?.get("type")?.jsonPrimitive?.content.orEmpty()
                 val sender = event.content?.jsonObject?.get("senderUsername")?.jsonPrimitive?.content ?: "Someone"
-                when (type) {
-                    "friendRequest" -> if (prefNotifyFriendRequest) helper.notifyFriendRequest(sender)
-                    "invite", "requestInvite" -> if (prefNotifyInvite) helper.notifyInvite(sender)
+                when (NotificationKind.fromType(type)) {
+                    NotificationKind.FRIEND_REQUEST -> if (prefNotifyFriendRequest) helper.notifyFriendRequest(sender)
+                    NotificationKind.INVITE, NotificationKind.REQUEST_INVITE ->
+                        if (prefNotifyInvite) helper.notifyInvite(sender)
+                    NotificationKind.OTHER -> {}
                 }
             }
             is PipelineEvent.NotificationV2 -> {
                 val content = event.content?.jsonObject ?: return
-                val type = content["type"]?.jsonPrimitive?.content
+                val type = content["type"]?.jsonPrimitive?.content.orEmpty()
                 val sender = content["senderUsername"]?.jsonPrimitive?.content ?: "Someone"
                 val title = content["title"]?.jsonPrimitive?.content.orEmpty()
                 val message = content["message"]?.jsonPrimitive?.content.orEmpty()
-                when (type) {
-                    "friendRequest" -> if (prefNotifyFriendRequest) helper.notifyFriendRequest(sender)
-                    "invite", "requestInvite" -> if (prefNotifyInvite) helper.notifyInvite(sender)
-                    else -> helper.notifyGeneral(
+                when (NotificationKind.fromType(type)) {
+                    NotificationKind.FRIEND_REQUEST -> if (prefNotifyFriendRequest) helper.notifyFriendRequest(sender)
+                    NotificationKind.INVITE, NotificationKind.REQUEST_INVITE ->
+                        if (prefNotifyInvite) helper.notifyInvite(sender)
+                    NotificationKind.OTHER -> helper.notifyGeneral(
                         title = title.ifBlank { sender },
-                        text = message.ifBlank { type ?: "Notification" },
+                        text = message.ifBlank { type.ifBlank { "Notification" } },
                     )
-                }
-            }
-            is PipelineEvent.FriendLocation -> {
-                val content = event.content?.jsonObject ?: return
-                val userId = content["userId"]?.jsonPrimitive?.content ?: return
-                if (userId !in notifyEnabledFriendIds) return
-                val location = content["location"]?.jsonPrimitive?.content ?: return
-                if (previousFriend?.ref?.location == location) return
-                if (location == "offline" || location == "private" || location.isEmpty()) return
-                val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content
-                    ?: friendRepository.friends.value[userId]?.name
-                    ?: return
-                val worldName = content["world"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: ""
-                helper.notifyFriendLocation(name, worldName)
-            }
-            is PipelineEvent.FriendUpdate -> {
-                val content = event.content?.jsonObject ?: return
-                val userId = content["userId"]?.jsonPrimitive?.content ?: return
-                if (userId !in notifyEnabledFriendIds) return
-                val newStatus = content["user"]?.jsonObject?.get("status")?.jsonPrimitive?.content ?: return
-                val previous = previousFriend?.ref ?: return
-                if (newStatus != previous.status) {
-                    val name = content["user"]?.jsonObject?.get("displayName")?.jsonPrimitive?.content ?: previous.displayName
-                    helper.notifyFriendStatusChange(name, newStatus)
                 }
             }
             is PipelineEvent.InstanceClosed -> {

@@ -17,12 +17,15 @@ interface AuthApi {
     @GET("auth/user")
     suspend fun getCurrentUser(): JsonElement
 
+    @AuthPhase
     @POST("auth/twofactorauth/totp/verify")
     suspend fun verifyTotp(@Body body: TwoFactorAuthRequest): TwoFactorAuthResponse
 
+    @AuthPhase
     @POST("auth/twofactorauth/otp/verify")
     suspend fun verifyOtp(@Body body: TwoFactorAuthRequest): TwoFactorAuthResponse
 
+    @AuthPhase
     @POST("auth/twofactorauth/emailotp/verify")
     suspend fun verifyEmailOtp(@Body body: TwoFactorAuthRequest): TwoFactorAuthResponse
 

@@ -14,12 +14,16 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.MemoDao
 import com.vrcx.android.data.db.dao.NoteDao
-import com.vrcx.android.data.db.entity.MemoEntity
-import com.vrcx.android.data.db.entity.NoteEntity
+import com.vrcx.android.data.db.dao.getMemo
+import com.vrcx.android.data.db.dao.getNote
+import com.vrcx.android.data.db.dao.isEnabled
+import com.vrcx.android.data.db.dao.save
+import com.vrcx.android.data.db.dao.saveMemo
 import com.vrcx.android.data.cache.ProfilePicCacheManager
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
@@ -46,7 +50,7 @@ import kotlinx.coroutines.supervisorScope
 import java.time.Instant
 import javax.inject.Inject
 
-private object UserDetailTab {
+internal object UserDetailTab {
     const val INFO = 0
     const val MUTUALS = 1
     const val GROUPS = 2
@@ -152,30 +156,24 @@ class UserDetailViewModel @Inject constructor(
                 // Load memo
                 val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: ""
                 if (ownerUserId.isNotEmpty()) {
-                    val memoEntity = memoDao.getMemo("$ownerUserId:$userId")
-                    _memo.value = memoEntity?.memo
-                    val noteEntity = noteDao.get("$ownerUserId:$userId")
+                    _memo.value = memoDao.getMemo(ownerUserId, userId)?.memo
+                    val noteEntity = noteDao.getNote(ownerUserId, userId)
                     _note.value = resolvedUser.note?.takeIf { it.isNotBlank() } ?: noteEntity?.note
                     if (!resolvedUser.note.isNullOrBlank()) {
-                        noteDao.insert(
-                            NoteEntity(
-                                compositeId = "$ownerUserId:$userId",
-                                ownerUserId = ownerUserId,
-                                odUserId = "$ownerUserId:$userId",
-                                displayName = resolvedUser.displayName,
-                                note = resolvedUser.note,
-                                createdAt = Instant.now().toString(),
-                            )
+                        noteDao.save(
+                            ownerId = ownerUserId,
+                            userId = userId,
+                            displayName = resolvedUser.displayName,
+                            note = resolvedUser.note,
+                            createdAt = Instant.now().toString(),
                         )
                     }
-                    // Check notification enabled state
-                    val notifyEntity = friendNotifyDao.get("$ownerUserId:$userId")
-                    _notifyEnabled.value = notifyEntity != null
+                    _notifyEnabled.value = friendNotifyDao.isEnabled(ownerUserId, userId)
                 }
                 // Cache profile picture to disk
                 viewModelScope.launch(Dispatchers.IO) {
                     val u = _user.value ?: return@launch
-                    val imageUrl = u.profilePicOverride.ifEmpty { u.currentAvatarThumbnailImageUrl }
+                    val imageUrl = u.displayAvatarUrl()
                     if (imageUrl.isNotEmpty()) {
                         try { profilePicCacheManager.cacheImage(imageUrl) } catch (_: Exception) {}
                     }
@@ -372,42 +370,21 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
-    fun requestInvite() {
-        viewModelScope.launch {
-            try {
-                notificationApi.sendRequestInvite(userId)
-                _message.value = "Invite requested"
-            } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun requestInvite() = runAction("Invite requested") { notificationApi.sendRequestInvite(userId) }
 
-    fun sendInvite() {
-        viewModelScope.launch {
-            try {
-                notificationRepository.sendInviteToUser(userId)
-                _message.value = "Invite sent"
-            } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun sendInvite() = runAction("Invite sent") { notificationRepository.sendInviteToUser(userId) }
 
     fun saveNote(text: String) {
         viewModelScope.launch {
             try {
                 val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
                 userRepository.saveUserNote(userId, text)
-                noteDao.insert(
-                    NoteEntity(
-                        compositeId = "$ownerUserId:$userId",
-                        ownerUserId = ownerUserId,
-                        odUserId = "$ownerUserId:$userId",
-                        displayName = _user.value?.displayName.orEmpty(),
-                        note = text,
-                        createdAt = Instant.now().toString(),
-                    )
+                noteDao.save(
+                    ownerId = ownerUserId,
+                    userId = userId,
+                    displayName = _user.value?.displayName.orEmpty(),
+                    note = text,
+                    createdAt = Instant.now().toString(),
                 )
                 _note.value = text
                 _user.value = _user.value?.copy(note = text)
@@ -422,12 +399,7 @@ class UserDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-                memoDao.insertMemo(MemoEntity(
-                    odUserId = "$ownerUserId:$userId",
-                    ownerUserId = ownerUserId,
-                    memo = text,
-                    editedAt = Instant.now().toString(),
-                ))
+                memoDao.saveMemo(ownerUserId, userId, text, Instant.now().toString())
                 _memo.value = text
                 _message.value = "Memo saved"
             } catch (e: Exception) {
@@ -448,16 +420,7 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
-    fun sendBoop() {
-        viewModelScope.launch {
-            try {
-                userRepository.sendBoop(userId)
-                _message.value = "Boop sent"
-            } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun sendBoop() = runAction("Boop sent") { userRepository.sendBoop(userId) }
 
     fun sendFriendRequest() {
         viewModelScope.launch {
@@ -489,41 +452,29 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
-    fun blockUser() {
+    private fun runAction(successMessage: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             try {
-                playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "block"))
-                _message.value = "User blocked"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
+                block()
+                _message.value = successMessage
+            } catch (e: Exception) {
+                _message.value = "Failed: ${e.message}"
+            }
         }
     }
 
-    fun muteUser() {
-        viewModelScope.launch {
-            try {
-                playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "mute"))
-                _message.value = "User muted"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
+    private fun moderate(type: String, successMessage: String) =
+        runAction(successMessage) {
+            playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, type))
         }
-    }
 
-    fun hideAvatar() {
-        viewModelScope.launch {
-            try {
-                playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "hideAvatar"))
-                _message.value = "Avatar hidden"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
-    }
+    fun blockUser() = moderate("block", "User blocked")
 
-    fun showAvatar() {
-        viewModelScope.launch {
-            try {
-                playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "showAvatar"))
-                _message.value = "Avatar shown"
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
-    }
+    fun muteUser() = moderate("mute", "User muted")
+
+    fun hideAvatar() = moderate("hideAvatar", "Avatar hidden")
+
+    fun showAvatar() = moderate("showAvatar", "Avatar shown")
 
     fun clearMessage() { _message.value = null }
 }

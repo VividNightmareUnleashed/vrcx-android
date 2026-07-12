@@ -9,7 +9,6 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
 import com.vrcx.android.data.api.model.World
-import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.entity.FavoriteFriendEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +22,6 @@ import javax.inject.Singleton
 @Singleton
 class FavoriteRepository @Inject constructor(
     private val favoriteApi: FavoriteApi,
-    private val favoriteLocalDao: FavoriteLocalDao,
     private val worldApi: WorldApi,
     private val avatarApi: AvatarApi,
 ) {
@@ -229,7 +227,7 @@ class FavoriteRepository @Inject constructor(
         // helpers without relying on callers to remember to invoke them.
         if (existing != null) {
             when (existing.type) {
-                "world" -> _favoriteWorlds.value =
+                "world", "vrcPlusWorld" -> _favoriteWorlds.value =
                     _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
                 "avatar" -> _favoriteAvatars.value =
                     _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
@@ -282,10 +280,6 @@ class FavoriteRepository @Inject constructor(
     private fun defaultFavoriteTags(type: String): List<String> {
         return listOfNotNull(DEFAULT_FAVORITE_TAGS[type])
     }
-
-    fun getLocalFriends(userId: String) = favoriteLocalDao.getFriends(userId)
-    fun getLocalWorlds(userId: String) = favoriteLocalDao.getWorlds(userId)
-    fun getLocalAvatars(userId: String) = favoriteLocalDao.getAvatars(userId)
 
     companion object {
         private val DEFAULT_FAVORITE_TYPES = listOf("friend", "world", "avatar", "vrcPlusWorld")

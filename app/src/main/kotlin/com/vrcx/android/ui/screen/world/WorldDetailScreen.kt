@@ -56,6 +56,8 @@ import androidx.core.content.getSystemService
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Instance
+import com.vrcx.android.ui.common.displayableTags
+import com.vrcx.android.ui.common.platformLabel
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
@@ -156,13 +158,7 @@ fun WorldDetailScreen(
                                 SectionHeader("Platforms")
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     platforms.forEach { platform ->
-                                        val label = when (platform) {
-                                            "standalonewindows" -> "PC"
-                                            "android" -> "Quest"
-                                            "ios" -> "iOS"
-                                            else -> platform
-                                        }
-                                        AssistChip(onClick = {}, label = { Text(label) })
+                                        AssistChip(onClick = {}, label = { Text(platformLabel(platform)) })
             }
         }
                         }
@@ -171,7 +167,7 @@ fun WorldDetailScreen(
                     }
 
                     // Tags
-                    val displayTags = w.tags.filter { !it.startsWith("system_") && !it.startsWith("admin_") && !it.startsWith("author_tag") }
+                    val displayTags = displayableTags(w.tags)
                     if (displayTags.isNotEmpty()) {
                         VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                             Column(Modifier.padding(16.dp)) {

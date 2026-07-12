@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.repository.NotificationCategoryFilter
+import com.vrcx.android.data.repository.NotificationKind
 import com.vrcx.android.data.repository.notificationTypeLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
@@ -184,7 +185,7 @@ fun NotificationsScreen(
                                                     }
                                                 }
                                             }
-                                            notification.type == "friendRequest" -> {
+                                            notification.kind == NotificationKind.FRIEND_REQUEST -> {
                                                 FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
                                                     Text("Accept")
                                                 }
@@ -192,12 +193,12 @@ fun NotificationsScreen(
                                                     Text("Decline")
                                                 }
                                             }
-                                            notification.type == "invite" -> {
+                                            notification.kind == NotificationKind.INVITE -> {
                                                 FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
                                                     Text("Respond")
                                                 }
                                             }
-                                            notification.type == "requestInvite" -> {
+                                            notification.kind == NotificationKind.REQUEST_INVITE -> {
                                                 FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
                                                     Text("Invite")
                                                 }
@@ -206,9 +207,9 @@ fun NotificationsScreen(
                                                 }
                                             }
                                         }
-                                        // friendRequest already exposes Accept + Decline above; the generic
-                                        // Dismiss would be a confusing third option for the same type.
-                                        if (notification.type != "friendRequest") {
+                                        // A friend request already exposes Accept + Decline above; the generic
+                                        // Dismiss would be a confusing third option for the same kind.
+                                        if (notification.kind != NotificationKind.FRIEND_REQUEST) {
                                             OutlinedButton(onClick = { viewModel.hide(notification) }) {
                                                 Text("Dismiss")
                                             }

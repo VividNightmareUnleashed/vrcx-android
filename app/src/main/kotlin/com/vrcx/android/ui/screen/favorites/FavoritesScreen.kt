@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +47,8 @@ import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
 import com.vrcx.android.ui.common.UiStateContainer
+import com.vrcx.android.ui.components.ConfirmDialog
+import com.vrcx.android.ui.common.prettyVisibility
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
@@ -91,8 +92,7 @@ class FavoritesViewModel @Inject constructor(
     private val _resolvedFavorites = MutableStateFlow<List<ResolvedFavorite>>(emptyList())
     val resolvedFavorites: StateFlow<List<ResolvedFavorite>> = _resolvedFavorites.asStateFlow()
 
-    private val _favoriteGroups = MutableStateFlow<List<FavoriteGroup>>(emptyList())
-    val favoriteGroups: StateFlow<List<FavoriteGroup>> = _favoriteGroups.asStateFlow()
+    val favoriteGroups: StateFlow<List<FavoriteGroup>> = favoriteRepository.favoriteGroups
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -104,11 +104,6 @@ class FavoritesViewModel @Inject constructor(
     val warning: StateFlow<String?> = _warning.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            favoriteRepository.favoriteGroups.collect { groups ->
-                _favoriteGroups.value = groups
-            }
-        }
         // Start the favorites flow collector up front so it keeps running even
         // if one of the bulk prefetches below throws. Otherwise a single
         // network hiccup would leave the UI subscribed to nothing for the rest
@@ -261,12 +256,7 @@ class FavoritesViewModel @Inject constructor(
     fun unfavorite(favoriteId: String) {
         viewModelScope.launch {
             try {
-                val removed = favoriteRepository.favorites.value.firstOrNull { it.id == favoriteId }
                 favoriteRepository.deleteFavorite(favoriteId)
-                when (removed?.type) {
-                    "world", "vrcPlusWorld" -> favoriteRepository.dropFavoriteWorldFromCache(removed.favoriteId)
-                    "avatar" -> favoriteRepository.dropFavoriteAvatarFromCache(removed.favoriteId)
-                }
                 _resolvedFavorites.value = _resolvedFavorites.value.filter { it.favorite.id != favoriteId }
             } catch (_: Exception) {}
         }
@@ -393,12 +383,12 @@ fun FavoritesScreen(
     }
 
     pendingUnfavorite?.let { id ->
-        AlertDialog(
-            onDismissRequest = { pendingUnfavorite = null },
-            title = { Text("Remove Favorite") },
-            text = { Text("Remove this from your favorites?") },
-            confirmButton = { TextButton(onClick = { viewModel.unfavorite(id); pendingUnfavorite = null }) { Text("Remove", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { pendingUnfavorite = null }) { Text("Cancel") } },
+        ConfirmDialog(
+            title = "Remove Favorite",
+            message = "Remove this from your favorites?",
+            confirmLabel = "Remove",
+            onConfirm = { viewModel.unfavorite(id); pendingUnfavorite = null },
+            onDismiss = { pendingUnfavorite = null },
         )
     }
 }
@@ -516,6 +506,3 @@ private fun String.prettyFavoriteGroupName(): String =
         else -> replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
 
-private fun String.prettyVisibility(): String =
-    replace('-', ' ')
-        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }

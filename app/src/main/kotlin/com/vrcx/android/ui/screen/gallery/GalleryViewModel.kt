@@ -24,15 +24,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
+import com.vrcx.android.data.util.UploadBytesResult
+import com.vrcx.android.data.util.readUploadBytesBounded
 import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import javax.inject.Inject
 
 enum class GalleryTab { GALLERY, ICONS, EMOJIS, STICKERS, PRINTS, INVENTORY }
 
-internal const val MAX_UPLOAD_SIZE_BYTES = 10_000_000
 internal const val MAX_UPLOAD_DIMENSION = 2_000
-private const val UPLOAD_READ_BUFFER_SIZE = 8 * 1024
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
@@ -90,9 +90,9 @@ class GalleryViewModel @Inject constructor(
     private fun currentUserId(): String? =
         (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
 
-    private fun loadAll() {
+    private fun load(flag: MutableStateFlow<Boolean>, failureMessage: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            flag.value = true
             _error.value = null
             try {
                 val uid = currentUserId()
@@ -102,31 +102,16 @@ class GalleryViewModel @Inject constructor(
                 }
                 galleryRepository.loadAll(uid)
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load gallery"
+                _error.value = e.message ?: failureMessage
             } finally {
-                _isLoading.value = false
+                flag.value = false
             }
         }
     }
 
-    fun refresh() {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            _error.value = null
-            try {
-                val uid = currentUserId()
-                if (uid == null) {
-                    _error.value = "Not logged in"
-                    return@launch
-                }
-                galleryRepository.loadAll(uid)
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to refresh"
-            } finally {
-                _isRefreshing.value = false
-            }
-        }
-    }
+    private fun loadAll() = load(_isLoading, "Failed to load gallery")
+
+    fun refresh() = load(_isRefreshing, "Failed to refresh")
 
     fun selectTab(tab: GalleryTab) {
         _selectedTab.value = tab
@@ -289,13 +274,11 @@ class GalleryViewModel @Inject constructor(
             return UploadReadResult.TooLarge
         }
 
-        val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
-            readUploadBytesBounded(input)
-        } ?: return UploadReadResult.Unreadable
-
-        return bytes?.let {
-            UploadReadResult.Success(PreparedUpload(it, mimeType, fileName))
-        } ?: UploadReadResult.TooLarge
+        return when (val read = readUploadBytesBounded(context.contentResolver.openInputStream(uri))) {
+            UploadBytesResult.Unreadable -> UploadReadResult.Unreadable
+            UploadBytesResult.TooLarge -> UploadReadResult.TooLarge
+            is UploadBytesResult.Success -> UploadReadResult.Success(PreparedUpload(read.bytes, mimeType, fileName))
+        }
     }
 
     private fun resizeUpload(
@@ -377,53 +360,29 @@ class GalleryViewModel @Inject constructor(
         }.getOrNull()
     }
 
-    fun setProfilePic(fileId: String) {
+    private fun setImage(successMessage: String, call: suspend (uid: String) -> Unit) {
         viewModelScope.launch {
             try {
                 val uid = currentUserId() ?: return@launch
-                galleryRepository.setProfilePicOverride(uid, fileId)
-                _snackbarMessage.value = "Profile picture updated"
+                call(uid)
+                _snackbarMessage.value = successMessage
             } catch (e: Exception) {
                 _snackbarMessage.value = "Failed: ${e.message}"
             }
         }
     }
 
-    fun clearProfilePic() {
-        viewModelScope.launch {
-            try {
-                val uid = currentUserId() ?: return@launch
-                galleryRepository.setProfilePicOverride(uid, "")
-                _snackbarMessage.value = "Profile picture cleared"
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun setProfilePic(fileId: String) =
+        setImage("Profile picture updated") { galleryRepository.setProfilePicOverride(it, fileId) }
 
-    fun setUserIcon(fileId: String) {
-        viewModelScope.launch {
-            try {
-                val uid = currentUserId() ?: return@launch
-                galleryRepository.setUserIcon(uid, fileId)
-                _snackbarMessage.value = "User icon updated"
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun clearProfilePic() =
+        setImage("Profile picture cleared") { galleryRepository.setProfilePicOverride(it, "") }
 
-    fun clearUserIcon() {
-        viewModelScope.launch {
-            try {
-                val uid = currentUserId() ?: return@launch
-                galleryRepository.setUserIcon(uid, "")
-                _snackbarMessage.value = "User icon cleared"
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun setUserIcon(fileId: String) =
+        setImage("User icon updated") { galleryRepository.setUserIcon(it, fileId) }
+
+    fun clearUserIcon() =
+        setImage("User icon cleared") { galleryRepository.setUserIcon(it, "") }
 
     fun consumeBundle(itemId: String) {
         viewModelScope.launch {
@@ -482,25 +441,3 @@ internal fun fitUploadDimensions(
     return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }
 
-internal fun readUploadBytesBounded(
-    input: InputStream,
-    maxBytes: Int = MAX_UPLOAD_SIZE_BYTES,
-): ByteArray? {
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(UPLOAD_READ_BUFFER_SIZE)
-    var total = 0
-
-    while (true) {
-        val maxReadable = maxBytes + 1 - total
-        if (maxReadable <= 0) return null
-
-        val read = input.read(buffer, 0, minOf(buffer.size, maxReadable))
-        if (read == -1) break
-
-        total += read
-        if (total > maxBytes) return null
-        output.write(buffer, 0, read)
-    }
-
-    return output.toByteArray()
-}
