@@ -17,9 +17,14 @@ class CookieJarImpl(
     private val lock = Any()
     private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
 
+    // Last state written to the encrypted store, so we can skip the expensive
+    // encrypt/write/fsync when a Set-Cookie doesn't actually change anything.
+    private var lastPersisted: Map<String, String>? = null
+
     init {
         synchronized(lock) {
             loadFromSecureStoreLocked()
+            lastPersisted = serializeStore()
             migrateLegacyPrefsIfNeededLocked()
         }
     }
@@ -55,6 +60,7 @@ class CookieJarImpl(
         synchronized(lock) {
             cookieStore.clear()
             secureSecretsStore.replaceCookiesByHost(emptyMap())
+            lastPersisted = emptyMap()
             prefs.edit().clear().apply()
         }
     }
@@ -69,10 +75,15 @@ class CookieJarImpl(
         return cookie.expiresAt < System.currentTimeMillis()
     }
 
-    private fun persistToPrefsLocked() {
-        val serializedCookies = cookieStore.mapValues { (_, cookies) ->
+    private fun serializeStore(): Map<String, String> =
+        cookieStore.mapValues { (_, cookies) ->
             cookies.joinToString("|") { StoredCookieCodec.serialize(it) }
         }
+
+    private fun persistToPrefsLocked() {
+        val serializedCookies = serializeStore()
+        if (serializedCookies == lastPersisted) return
+        lastPersisted = serializedCookies
         secureSecretsStore.replaceCookiesByHost(serializedCookies)
     }
 

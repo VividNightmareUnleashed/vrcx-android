@@ -22,8 +22,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.model.formatInstanceHint
+import com.vrcx.android.data.model.isTrackableLocation
+import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
@@ -357,34 +360,4 @@ private fun describeOnlineState(friend: VrcUser?): String {
         friend?.location == "traveling" -> "Traveling"
         else -> "Online"
     }
-}
-
-private fun resolvePresenceLocation(user: CurrentUser?): String {
-    return when (user?.location) {
-        "traveling" -> user.travelingToLocation.orEmpty()
-        else -> user?.location.orEmpty()
-    }
-}
-
-private fun resolvePresenceLocation(friend: VrcUser?): String {
-    return when (friend?.location) {
-        "traveling" -> friend.travelingToLocation.orEmpty()
-        else -> friend?.location.orEmpty()
-    }
-}
-
-private fun isTrackableLocation(location: String): Boolean {
-    return location.isNotBlank() &&
-        location != "offline" &&
-        location != "private" &&
-        location != "traveling"
-}
-
-private fun parseWorldId(location: String): String {
-    return location.substringBefore(":").takeIf { it.startsWith("wrld_") }.orEmpty()
-}
-
-private fun formatInstanceHint(location: String): String {
-    val instanceLabel = location.substringAfter(":", "").substringBefore("~")
-    return if (instanceLabel.isBlank()) "" else "instance $instanceLabel"
 }

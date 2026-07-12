@@ -4,16 +4,12 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.vrcx.android.data.db.converter.Converters
-import com.vrcx.android.data.db.dao.AvatarHistoryDao
-import com.vrcx.android.data.db.dao.AvatarTagDao
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.CacheDao
-import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import com.vrcx.android.data.db.dao.FeedDao
 import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.dao.MemoDao
 import com.vrcx.android.data.db.dao.ModerationDao
-import com.vrcx.android.data.db.dao.MutualGraphDao
 import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.dao.NotificationDao
 import com.vrcx.android.data.db.entity.AvatarHistoryEntity
@@ -77,12 +73,8 @@ abstract class VrcxDatabase : RoomDatabase() {
     abstract fun friendLogDao(): FriendLogDao
     abstract fun notificationDao(): NotificationDao
     abstract fun moderationDao(): ModerationDao
-    abstract fun avatarHistoryDao(): AvatarHistoryDao
     abstract fun noteDao(): NoteDao
-    abstract fun mutualGraphDao(): MutualGraphDao
     abstract fun cacheDao(): CacheDao
-    abstract fun favoriteLocalDao(): FavoriteLocalDao
     abstract fun memoDao(): MemoDao
-    abstract fun avatarTagDao(): AvatarTagDao
     abstract fun friendNotifyDao(): FriendNotifyDao
 }

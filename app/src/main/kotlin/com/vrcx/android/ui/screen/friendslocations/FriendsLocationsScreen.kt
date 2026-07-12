@@ -35,7 +35,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
-import com.vrcx.android.data.api.model.CurrentUser
+import com.vrcx.android.data.model.formatInstanceHint
+import com.vrcx.android.data.model.isTrackableLocation
+import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.db.entity.FeedGpsEntity
@@ -471,32 +474,4 @@ private fun buildLastKnownLocations(entries: List<FeedGpsEntity>): Map<String, L
     return latestByUser
 }
 
-private fun resolvePresenceLocation(user: CurrentUser?): String {
-    return when (user?.location) {
-        "traveling" -> user.travelingToLocation.orEmpty()
-        else -> user?.location.orEmpty()
-    }
-}
-
-private fun resolvePresenceLocation(friend: com.vrcx.android.data.api.model.VrcUser?): String {
-    return when (friend?.location) {
-        "traveling" -> friend.travelingToLocation.orEmpty()
-        else -> friend?.location.orEmpty()
-    }
-}
-
-private fun isTrackableLocation(location: String): Boolean {
-    return location.isNotBlank() &&
-        location != "offline" &&
-        location != "private" &&
-        location != "traveling"
-}
-
-private fun parseWorldId(location: String): String {
-    return location.substringBefore(":").takeIf { it.startsWith("wrld_") }.orEmpty()
-}
-
-private fun formatInstanceHint(location: String): String {
-    val instanceLabel = location.substringAfter(":", "").substringBefore("~")
-    return if (instanceLabel.isBlank()) "" else "Instance $instanceLabel"
-}
+// Location-string helpers now live in com.vrcx.android.data.model.VrcLocation.

@@ -30,17 +30,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.api.model.CurrentUser
-import com.vrcx.android.data.db.entity.FeedAvatarEntity
-import com.vrcx.android.data.db.entity.FeedBioEntity
-import com.vrcx.android.data.db.entity.FeedGpsEntity
-import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
-import com.vrcx.android.data.db.entity.FeedStatusEntity
+import com.vrcx.android.data.model.formatInstanceHint
+import com.vrcx.android.data.model.isTrackableLocation
+import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.detailText
+import com.vrcx.android.data.repository.headline
+import com.vrcx.android.data.repository.previousDetailText
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxCard
@@ -76,20 +78,6 @@ enum class GameLogScope(val label: String) {
     CURRENT_WORLD("World"),
     ALL_ACTIVITY("All"),
 }
-
-data class GameLogEntryUi(
-    val id: Long,
-    val type: String,
-    val userId: String,
-    val displayName: String,
-    val headline: String,
-    val details: String,
-    val previousDetails: String = "",
-    val createdAt: String,
-    val thumbnailUrl: String = "",
-    val location: String = "",
-    val worldId: String = "",
-)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -141,21 +129,7 @@ class GameLogViewModel @Inject constructor(
         if (userId.isBlank()) {
             flowOf(emptyList())
         } else {
-            combine(
-                feedRepository.getGpsFeed(userId, maxSize),
-                feedRepository.getStatusFeed(userId, maxSize),
-                feedRepository.getBioFeed(userId, maxSize),
-                feedRepository.getAvatarFeed(userId, maxSize),
-                feedRepository.getOnlineOfflineFeed(userId, maxSize),
-            ) { gps, status, bio, avatar, onlineOffline ->
-                buildList {
-                    gps.forEach { add(it.toGameLogEntry()) }
-                    status.forEach { add(it.toGameLogEntry()) }
-                    bio.forEach { add(it.toGameLogEntry()) }
-                    avatar.forEach { add(it.toGameLogEntry()) }
-                    onlineOffline.forEach { add(it.toGameLogEntry()) }
-                }.sortedByDescending { it.createdAt }
-            }
+            feedRepository.getUnifiedFeed(userId, maxSize).map { it.entries }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -171,7 +145,7 @@ class GameLogViewModel @Inject constructor(
         _range,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val all = values[0] as List<GameLogEntryUi>
+        val all = values[0] as List<FeedEntry>
         val filters = values[1] as Set<*>
         val query = values[2] as String
         val vipOnly = values[3] as Boolean
@@ -186,17 +160,17 @@ class GameLogViewModel @Inject constructor(
         }
 
         all
-            .filter { it.type in filters }
+            .filter { it.type.id in filters }
             .filter { entry -> matchesScope(entry, scope, currentLocation, currentWorldId) }
             .filter { entry ->
-                cutoffMs == null || parseInstantMs(entry.createdAt) >= cutoffMs
+                cutoffMs == null || entry.createdAtEpochMs >= cutoffMs
             }
             .filter { entry ->
                 query.isBlank() ||
                     entry.displayName.contains(query, ignoreCase = true) ||
-                    entry.headline.contains(query, ignoreCase = true) ||
-                    entry.details.contains(query, ignoreCase = true) ||
-                    entry.previousDetails.contains(query, ignoreCase = true) ||
+                    entry.headline().contains(query, ignoreCase = true) ||
+                    entry.detailText().contains(query, ignoreCase = true) ||
+                    entry.previousDetailText().contains(query, ignoreCase = true) ||
                     formatInstanceHint(entry.location).contains(query, ignoreCase = true)
             }
             .filter { entry -> if (vipOnly) entry.userId in vipIds else true }
@@ -209,10 +183,6 @@ class GameLogViewModel @Inject constructor(
     val canLoadMore = combine(filteredEntries, _limit, maxFeedSize) { filtered, limit, maxSize ->
         filtered.size > limit && limit < maxSize * GAME_LOG_SOURCE_COUNT
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    private fun parseInstantMs(iso: String): Long {
-        return runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrDefault(Long.MAX_VALUE)
-    }
 
     init {
         viewModelScope.launch {
@@ -372,7 +342,7 @@ fun GameLogScreen(
             )
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
-                items(entries, key = { "${it.type}_${it.id}" }) { entry ->
+                items(entries, key = { "${it.type.id}_${it.id}" }) { entry ->
                     VrcxCard(
                         modifier = Modifier
                             .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -396,17 +366,19 @@ fun GameLogScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Text(entry.headline, style = MaterialTheme.typography.bodyMedium)
-                            if (entry.details.isNotBlank()) {
+                            Text(entry.headline(), style = MaterialTheme.typography.bodyMedium)
+                            val detail = entry.detailText()
+                            if (detail.isNotBlank()) {
                                 Text(
-                                    entry.details,
+                                    detail,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            if (entry.previousDetails.isNotBlank()) {
+                            val previousDetail = entry.previousDetailText()
+                            if (previousDetail.isNotBlank()) {
                                 Text(
-                                    "Previous: ${entry.previousDetails}",
+                                    "Previous: $previousDetail",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -433,92 +405,8 @@ fun GameLogScreen(
 
 private const val GAME_LOG_SOURCE_COUNT = 5
 
-private fun FeedGpsEntity.toGameLogEntry(): GameLogEntryUi {
-    return GameLogEntryUi(
-        id = id,
-        type = "gps",
-        userId = userId,
-        displayName = displayName,
-        headline = "Location update",
-        details = worldName.ifBlank { formatLocationLabel(location) },
-        previousDetails = formatLocationLabel(previousLocation),
-        createdAt = createdAt,
-        location = location,
-        worldId = parseWorldId(location),
-    )
-}
-
-private fun FeedStatusEntity.toGameLogEntry(): GameLogEntryUi {
-    val currentStatus = listOf(status, statusDescription)
-        .filter { it.isNotBlank() }
-        .joinToString(": ")
-    val previousStatusText = listOf(previousStatus, previousStatusDescription)
-        .filter { it.isNotBlank() }
-        .joinToString(": ")
-    return GameLogEntryUi(
-        id = id,
-        type = "status",
-        userId = userId,
-        displayName = displayName,
-        headline = "Status update",
-        details = currentStatus.ifBlank { "Status changed" },
-        previousDetails = previousStatusText,
-        createdAt = createdAt,
-    )
-}
-
-private fun FeedBioEntity.toGameLogEntry(): GameLogEntryUi {
-    return GameLogEntryUi(
-        id = id,
-        type = "bio",
-        userId = userId,
-        displayName = displayName,
-        headline = "Bio updated",
-        details = bio,
-        previousDetails = previousBio,
-        createdAt = createdAt,
-    )
-}
-
-private fun FeedAvatarEntity.toGameLogEntry(): GameLogEntryUi {
-    return GameLogEntryUi(
-        id = id,
-        type = "avatar",
-        userId = userId,
-        displayName = displayName,
-        headline = "Avatar changed",
-        details = avatarName.ifBlank { "Avatar updated" },
-        createdAt = createdAt,
-        thumbnailUrl = currentAvatarThumbnailImageUrl,
-    )
-}
-
-private fun FeedOnlineOfflineEntity.toGameLogEntry(): GameLogEntryUi {
-    val label = when (type) {
-        "online" -> "Came online"
-        "offline" -> "Went offline"
-        else -> type.replaceFirstChar { it.uppercase() }
-    }
-    return GameLogEntryUi(
-        id = id,
-        type = type,
-        userId = userId,
-        displayName = displayName,
-        headline = label,
-        details = when {
-            worldName.isNotBlank() -> worldName
-            location.isNotBlank() -> formatLocationLabel(location)
-            type == "offline" -> "Offline"
-            else -> "Presence update"
-        },
-        createdAt = createdAt,
-        location = location,
-        worldId = parseWorldId(location),
-    )
-}
-
 private fun matchesScope(
-    entry: GameLogEntryUi,
+    entry: FeedEntry,
     scope: GameLogScope,
     currentLocation: String,
     currentWorldId: String,
@@ -536,38 +424,4 @@ private fun matchesScope(
                 entry.worldId == currentWorldId
         }
     }
-}
-
-private fun resolvePresenceLocation(user: CurrentUser?): String {
-    return when (user?.location) {
-        "traveling" -> user.travelingToLocation.orEmpty()
-        else -> user?.location.orEmpty()
-    }
-}
-
-private fun isTrackableLocation(location: String): Boolean {
-    return location.isNotBlank() &&
-        location != "offline" &&
-        location != "private" &&
-        location != "traveling"
-}
-
-private fun parseWorldId(location: String): String {
-    return location.substringBefore(":").takeIf { it.startsWith("wrld_") }.orEmpty()
-}
-
-private fun formatLocationLabel(location: String): String {
-    val worldId = parseWorldId(location)
-    val instanceHint = formatInstanceHint(location)
-    return when {
-        worldId.isNotBlank() && instanceHint.isNotBlank() -> "$worldId • $instanceHint"
-        worldId.isNotBlank() -> worldId
-        location.isBlank() -> ""
-        else -> location
-    }
-}
-
-private fun formatInstanceHint(location: String): String {
-    val instanceLabel = location.substringAfter(":", "").substringBefore("~")
-    return if (instanceLabel.isBlank()) "" else "instance $instanceLabel"
 }

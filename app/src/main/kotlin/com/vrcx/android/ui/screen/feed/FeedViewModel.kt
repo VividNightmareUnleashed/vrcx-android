@@ -9,6 +9,8 @@ import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.UnifiedFeed
+import com.vrcx.android.data.repository.detailText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -29,8 +31,6 @@ class FeedViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     preferences: VrcxPreferences,
 ) : ViewModel() {
-    private data class FeedPage(val entries: List<FeedEntry>, val sourceSaturated: Boolean)
-
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -98,40 +98,12 @@ class FeedViewModel @Inject constructor(
         currentLimit.coerceAtMost(maxLimit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
 
-    private val feedPage: StateFlow<FeedPage> = combine(userId, queryLimit) { uid, limit ->
+    private val feedPage: StateFlow<UnifiedFeed> = combine(userId, queryLimit) { uid, limit ->
         uid to limit
     }.flatMapLatest { (uid, limit) ->
-        if (uid.isEmpty()) return@flatMapLatest flowOf(FeedPage(emptyList(), false))
-
-        combine(
-            feedRepository.getGpsFeed(uid, limit),
-            feedRepository.getStatusFeed(uid, limit),
-            feedRepository.getBioFeed(uid, limit),
-            feedRepository.getAvatarFeed(uid, limit),
-            feedRepository.getOnlineOfflineFeed(uid, limit),
-        ) { gps, status, bio, avatar, onlineOffline ->
-            val entries = mutableListOf<FeedEntry>()
-            gps.forEach {
-                entries.add(FeedEntry(it.id, "gps", it.userId, it.displayName, it.worldName, it.previousLocation, it.createdAt))
-            }
-            status.forEach {
-                entries.add(FeedEntry(it.id, "status", it.userId, it.displayName, "${it.status}: ${it.statusDescription}", "${it.previousStatus}: ${it.previousStatusDescription}", it.createdAt))
-            }
-            bio.forEach {
-                entries.add(FeedEntry(it.id, "bio", it.userId, it.displayName, it.bio, it.previousBio, it.createdAt))
-            }
-            avatar.forEach {
-                entries.add(FeedEntry(it.id, "avatar", it.userId, it.displayName, it.avatarName.ifEmpty { "Avatar changed" }, "", it.createdAt, it.currentAvatarThumbnailImageUrl))
-            }
-            onlineOffline.forEach {
-                entries.add(FeedEntry(it.id, it.type, it.userId, it.displayName, it.worldName, "", it.createdAt))
-            }
-            FeedPage(
-                entries = entries.sortedByDescending { it.createdAt },
-                sourceSaturated = listOf(gps, status, bio, avatar, onlineOffline).any { it.size >= limit },
-            )
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FeedPage(emptyList(), false))
+        if (uid.isEmpty()) flowOf(UnifiedFeed(emptyList(), false))
+        else feedRepository.getUnifiedFeed(uid, limit)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UnifiedFeed(emptyList(), false))
 
     val feedEntries: StateFlow<List<FeedEntry>> = combine(
         feedPage,
@@ -142,7 +114,7 @@ class FeedViewModel @Inject constructor(
         _feedLimit,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val entries = (values[0] as FeedPage).entries
+        val entries = (values[0] as UnifiedFeed).entries
         val filters = values[1] as Set<*>
         val query = values[2] as String
         val vip = values[3] as Boolean
@@ -150,11 +122,11 @@ class FeedViewModel @Inject constructor(
         val limit = values[5] as Int
 
         entries
-            .filter { it.type in filters }
+            .filter { it.type.id in filters }
             .filter { entry ->
                 if (query.isBlank()) true
                 else entry.displayName.contains(query, ignoreCase = true) ||
-                    entry.details.contains(query, ignoreCase = true)
+                    entry.detailText().contains(query, ignoreCase = true)
             }
             .filter { if (vip) it.userId in vipIds else true }
             .take(limit)

@@ -1,5 +1,6 @@
 package com.vrcx.android.data.repository
 
+import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.GalleryApi
 import com.vrcx.android.data.api.InventoryApi
 import com.vrcx.android.data.api.UserApi
@@ -12,6 +13,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,36 +72,40 @@ class GalleryRepository @Inject constructor(
     }
 
     suspend fun loadInventory() {
-        val items = mutableListOf<InventoryItem>()
-        var offset = 0
-        var pageCount = 0
-
-        while (pageCount < MAX_INVENTORY_PAGES) {
-            val response = inventoryApi.getInventoryItems(
-                n = INVENTORY_PAGE_SIZE,
-                offset = offset,
-            )
-            if (response.data.isEmpty()) break
-
-            items += response.data
-            pageCount++
-            if (response.totalCount > 0 && items.size >= response.totalCount) break
-            offset += response.data.size
+        var totalCount = 0
+        val items = BulkPaginator.fetchAll(
+            pageSize = INVENTORY_PAGE_SIZE,
+            maxPages = MAX_INVENTORY_PAGES,
+            stopOnShortPage = false,
+            stopWhen = { fetched -> totalCount in 1..fetched },
+        ) { offset, n ->
+            val response = inventoryApi.getInventoryItems(n = n, offset = offset)
+            if (response.totalCount > 0) totalCount = response.totalCount
+            response.data
         }
 
         _inventoryItems.value = items
-        val templates = mutableListOf<InventoryTemplate>()
-        items.map(InventoryItem::templateId)
-            .filter(String::isNotBlank)
-            .distinct()
-            .forEach { templateId ->
-                try {
-                    templates += inventoryApi.getInventoryTemplate(templateId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
+        val semaphore = Semaphore(4)
+        val templates = coroutineScope {
+            items.map(InventoryItem::templateId)
+                .filter(String::isNotBlank)
+                .distinct()
+                .map { templateId ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                inventoryApi.getInventoryTemplate(templateId)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
                 }
-            }
+                .awaitAll()
+                .filterNotNull()
+        }
         _inventoryTemplates.value = templates
     }
 

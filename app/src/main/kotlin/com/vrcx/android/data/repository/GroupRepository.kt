@@ -71,31 +71,17 @@ class GroupRepository @Inject constructor(
     suspend fun getGroupInstances(groupId: String): List<GroupInstance> = groupApi.getGroupInstances(groupId)
 
     suspend fun getGroupPosts(groupId: String): List<GroupPost> {
-        val pageSize = 100
-        val maxPages = 50
-        val posts = mutableListOf<GroupPost>()
-        var offset = 0
-        var pages = 0
-        var total: Int? = null
-
-        while (pages < maxPages) {
-            val response = groupApi.getGroupPosts(groupId = groupId, n = pageSize, offset = offset)
-            val pagePosts = response.posts
-            if (response.total > 0) {
-                total = response.total
-            }
-            if (pagePosts.isEmpty()) {
-                break
-            }
-            posts += pagePosts
-            offset += pagePosts.size
-            pages += 1
-            if (total != null && offset >= total) {
-                break
-            }
+        var total = 0
+        return BulkPaginator.fetchAll(
+            pageSize = 100,
+            maxPages = 50,
+            stopOnShortPage = false,
+            stopWhen = { fetched -> total in 1..fetched },
+        ) { offset, count ->
+            val response = groupApi.getGroupPosts(groupId = groupId, n = count, offset = offset)
+            if (response.total > 0) total = response.total
+            response.posts
         }
-
-        return posts
     }
 
     suspend fun joinGroup(groupId: String): Group {

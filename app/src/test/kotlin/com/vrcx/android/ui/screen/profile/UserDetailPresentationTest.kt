@@ -1,5 +1,6 @@
 package com.vrcx.android.ui.screen.profile
 
+import com.vrcx.android.data.model.resolvedWorldId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

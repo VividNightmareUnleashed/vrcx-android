@@ -232,7 +232,7 @@ class NotificationRepositoryTest {
                 )
             )
 
-            repository.resetRuntimeState()
+            repository.clearRuntimeState()
 
             assertEquals(emptyList<VrcNotification>(), repository.notifications.value)
             assertEquals(emptyList<NotificationV2>(), repository.notificationsV2.value)

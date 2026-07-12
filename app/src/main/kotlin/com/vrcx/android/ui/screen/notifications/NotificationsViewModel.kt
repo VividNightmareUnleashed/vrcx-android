@@ -7,6 +7,7 @@ import com.vrcx.android.data.repository.InviteMessageTemplate
 import com.vrcx.android.data.repository.InviteMessageType
 import com.vrcx.android.data.repository.NotificationCategoryCount
 import com.vrcx.android.data.repository.NotificationCategoryFilter
+import com.vrcx.android.data.repository.NotificationKind
 import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.repository.UnifiedNotification
 import com.vrcx.android.data.repository.matchesCategory
@@ -231,15 +232,12 @@ class NotificationsViewModel @Inject constructor(
         }
     }
 
-    private fun inviteMessageTypeFor(notification: UnifiedNotification): InviteMessageType? = when (notification.type) {
-        "invite" -> InviteMessageType.RESPONSE
-        "requestInvite" -> InviteMessageType.REQUEST_RESPONSE
-        else -> null
-    }
+    private fun inviteMessageTypeFor(notification: UnifiedNotification): InviteMessageType? =
+        notification.kind.inviteMessageType
 
-    private fun inviteDialogTitleFor(notification: UnifiedNotification): String = when (notification.type) {
-        "invite" -> "Respond to Invite"
-        "requestInvite" -> "Respond to Invite Request"
+    private fun inviteDialogTitleFor(notification: UnifiedNotification): String = when (notification.kind) {
+        NotificationKind.INVITE -> "Respond to Invite"
+        NotificationKind.REQUEST_INVITE -> "Respond to Invite Request"
         else -> "Send Response"
     }
 

@@ -13,6 +13,10 @@ interface FriendLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCurrent(entry: FriendLogCurrentEntity)
 
+    /** Bulk insert in a single transaction — used for first-time friend-log population. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCurrent(entries: List<FriendLogCurrentEntity>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(entry: FriendLogHistoryEntity)
 
@@ -30,7 +34,4 @@ interface FriendLogDao {
 
     @Query("DELETE FROM friend_log_current WHERE odUserId = :compositeId")
     suspend fun deleteCurrent(compositeId: String)
-
-    @Query("DELETE FROM friend_log_current WHERE ownerUserId = :userId")
-    suspend fun clearCurrent(userId: String)
 }

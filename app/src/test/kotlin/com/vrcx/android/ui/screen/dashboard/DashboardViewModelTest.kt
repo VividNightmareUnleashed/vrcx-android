@@ -6,6 +6,7 @@ import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.UnifiedFeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,11 +83,7 @@ class DashboardViewModelTest {
             whenever(it.friends).thenReturn(friends)
         }
         val feedRepository = mock<FeedRepository>().also {
-            whenever(it.getGpsFeed(any(), any())).thenReturn(flowOf(emptyList()))
-            whenever(it.getStatusFeed(any(), any())).thenReturn(flowOf(emptyList()))
-            whenever(it.getBioFeed(any(), any())).thenReturn(flowOf(emptyList()))
-            whenever(it.getAvatarFeed(any(), any())).thenReturn(flowOf(emptyList()))
-            whenever(it.getOnlineOfflineFeed(any(), any())).thenReturn(flowOf(emptyList()))
+            whenever(it.getUnifiedFeed(any(), any())).thenReturn(flowOf(UnifiedFeed(emptyList(), false)))
         }
         return DashboardViewModel(authRepository, friendRepository, feedRepository)
     }

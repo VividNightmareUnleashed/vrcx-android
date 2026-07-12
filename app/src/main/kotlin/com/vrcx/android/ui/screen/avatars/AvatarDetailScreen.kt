@@ -43,6 +43,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.vrcx.android.ui.common.displayableTags
+import com.vrcx.android.ui.common.platformLabel
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
@@ -148,14 +150,8 @@ fun AvatarDetailScreen(
                                     SectionHeader("Platforms")
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         platforms.distinctBy { it.first }.forEach { (platform, perf) ->
-                                            val label = when (platform) {
-                                                "standalonewindows" -> "PC"
-                                                "android" -> "Quest"
-                                                "ios" -> "iOS"
-                                                else -> platform
-                                            }
                                             val perfLabel = if (perf.isNotEmpty()) " ($perf)" else ""
-                                            AssistChip(onClick = {}, label = { Text("$label$perfLabel") })
+                                            AssistChip(onClick = {}, label = { Text("${platformLabel(platform)}$perfLabel") })
                                         }
                                     }
                                 }
@@ -164,7 +160,7 @@ fun AvatarDetailScreen(
                         }
 
                         // Tags
-                        val displayTags = a.tags.filter { !it.startsWith("system_") && !it.startsWith("admin_") && !it.startsWith("author_tag") }
+                        val displayTags = displayableTags(a.tags)
                         if (displayTags.isNotEmpty()) {
                             VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                                 Column(Modifier.padding(16.dp)) {

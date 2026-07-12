@@ -9,32 +9,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.vrcx.android.ui.theme.TrustFriend
-import com.vrcx.android.ui.theme.TrustKnownUser
-import com.vrcx.android.ui.theme.TrustNewUser
-import com.vrcx.android.ui.theme.TrustTrustedUser
-import com.vrcx.android.ui.theme.TrustUser
-import com.vrcx.android.ui.theme.TrustVisitor
-
-fun trustLevelFromTags(tags: List<String>): Pair<String, Color> {
-    return when {
-        tags.contains("system_trust_legend") || tags.contains("system_trust_veteran") ->
-            "Trusted User" to TrustTrustedUser
-        tags.contains("system_trust_trusted") ->
-            "Known User" to TrustKnownUser
-        tags.contains("system_trust_known") ->
-            "User" to TrustUser
-        tags.contains("system_trust_basic") ->
-            "New User" to TrustNewUser
-        else -> "Visitor" to TrustVisitor
-    }
-}
+import com.vrcx.android.data.model.TrustRank
+import com.vrcx.android.ui.theme.vrcxColors
 
 @Composable
 fun TrustRankBadge(tags: List<String>, modifier: Modifier = Modifier) {
-    val (label, color) = trustLevelFromTags(tags)
+    val rank = TrustRank.fromTags(tags)
+    val color = MaterialTheme.vrcxColors.trustColor(rank.label)
     Box(
         modifier = modifier
             .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
@@ -42,7 +24,7 @@ fun TrustRankBadge(tags: List<String>, modifier: Modifier = Modifier) {
             .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
-            text = label,
+            text = rank.label,
             style = MaterialTheme.typography.labelSmall,
             color = color,
         )

@@ -13,28 +13,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.model.FriendState
-import com.vrcx.android.ui.theme.StatusBusy
-import com.vrcx.android.ui.theme.StatusJoinMe
-import com.vrcx.android.ui.theme.StatusOffline
-import com.vrcx.android.ui.theme.StatusOnline
 import com.vrcx.android.ui.theme.vrcxColors
-
-fun statusColor(status: String?, state: FriendState): Color {
-    if (state == FriendState.OFFLINE) return StatusOffline
-    return when (status) {
-        "join me" -> StatusJoinMe
-        "active" -> StatusOnline
-        "ask me" -> com.vrcx.android.ui.theme.StatusAskMe
-        "busy" -> StatusBusy
-        else -> StatusOnline
-    }
-}
 
 @Composable
 fun UserAvatar(
@@ -80,7 +64,7 @@ fun UserAvatar(
                     .size(12.dp)
                     .align(Alignment.BottomEnd)
                     .clip(CircleShape)
-                    .background(statusColor(status, state))
+                    .background(vrcxColors.statusColor(status, state))
                     .border(2.dp, vrcxColors.panelBackground, CircleShape),
             )
         }

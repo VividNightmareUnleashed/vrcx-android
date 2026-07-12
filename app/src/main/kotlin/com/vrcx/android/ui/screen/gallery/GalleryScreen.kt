@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -70,10 +69,10 @@ import com.vrcx.android.data.api.model.InventoryItem
 import com.vrcx.android.data.api.model.InventoryTemplate
 import com.vrcx.android.data.api.model.VrcPrint
 import com.vrcx.android.data.api.model.imageUrl
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
-import com.vrcx.android.ui.components.ErrorState
-import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 
@@ -187,10 +186,13 @@ fun GalleryScreen(
                 }
             }
 
-            when {
-                isLoading -> LoadingState()
-                error != null -> ErrorState(message = error!!, onRetry = viewModel::refresh)
-                else -> {
+            UiStateContainer(
+                isLoading = isLoading,
+                error = error,
+                isEmpty = false,
+                onRetry = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
                     PullToRefreshBox(
                         isRefreshing = isRefreshing,
                         onRefresh = viewModel::refresh,
@@ -238,7 +240,6 @@ fun GalleryScreen(
                         }
                     }
                 }
-            }
         }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
         if (selectedTab != GalleryTab.INVENTORY && !isLoading) {
@@ -603,28 +604,4 @@ private fun FullscreenImageDialog(
             }
         }
     }
-}
-
-@Composable
-private fun ConfirmDialog(
-    title: String,
-    message: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Confirm", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
 }

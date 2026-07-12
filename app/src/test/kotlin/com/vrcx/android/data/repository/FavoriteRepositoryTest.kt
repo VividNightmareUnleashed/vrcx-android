@@ -5,7 +5,6 @@ import com.vrcx.android.data.api.FavoriteApi
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.World
-import com.vrcx.android.data.db.dao.FavoriteLocalDao
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -21,12 +20,10 @@ import org.mockito.kotlin.whenever
 class FavoriteRepositoryTest {
 
     private val favoriteApi = mock<FavoriteApi>()
-    private val favoriteLocalDao = mock<FavoriteLocalDao>()
     private val worldApi = mock<WorldApi>()
     private val avatarApi = mock<AvatarApi>()
     private val repository = FavoriteRepository(
         favoriteApi = favoriteApi,
-        favoriteLocalDao = favoriteLocalDao,
         worldApi = worldApi,
         avatarApi = avatarApi,
     )

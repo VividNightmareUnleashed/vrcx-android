@@ -11,11 +11,17 @@ import com.vrcx.android.data.db.dao.NotificationDao
 import com.vrcx.android.data.db.entity.NotificationEntity
 import com.vrcx.android.data.db.entity.NotificationV2Entity
 import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.data.api.BulkPaginator
+import com.vrcx.android.data.model.isTrackableLocation
+import com.vrcx.android.data.model.resolvePresenceLocation
+import com.vrcx.android.data.util.parseInstantMillisOrNull
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +50,25 @@ data class UnifiedNotification(
     val seen: Boolean,
     val isV2: Boolean,
     val responses: List<NotificationAction>,
-)
+    /**
+     * True for notifications the app synthesizes locally (e.g. "instance
+     * closed") that the server has never seen. The [id] is an opaque key;
+     * callers consult this flag instead of sniffing an id prefix to decide
+     * whether an action should reach the server or touch Room.
+     */
+    val isLocal: Boolean = false,
+) {
+    /**
+     * [createdAt] parsed to epoch millis once at construction. The unified feed
+     * is sorted by this on every notification event (and by multiple collectors),
+     * so parsing it per comparison was the dominant cost. MIN_VALUE keeps
+     * unparseable timestamps sorted oldest.
+     */
+    val createdAtEpochMs: Long = parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
+
+    /** The actionable kind of this notification, parsed once from [type]. */
+    val kind: NotificationKind = NotificationKind.fromType(type)
+}
 
 private data class InviteContext(
     val location: String,
@@ -88,35 +112,8 @@ class NotificationRepository @Inject constructor(
     val unseenCount = MutableStateFlow(0)
 
     val unifiedNotifications = combine(_notifications, _notificationsV2, _localNotifications) { v1, v2, local ->
-        val fromV1 = v1.map { n ->
-            UnifiedNotification(
-                id = n.id,
-                type = n.type,
-                senderUserId = n.senderUserId,
-                senderUsername = n.senderUsername,
-                message = n.message,
-                title = "",
-                createdAt = n.createdAt,
-                seen = n.seen,
-                isV2 = false,
-                responses = emptyList(),
-            )
-        }
-        val fromV2 = v2.map { n ->
-            UnifiedNotification(
-                id = n.id,
-                type = n.type,
-                senderUserId = n.senderUserId,
-                senderUsername = n.senderUsername,
-                message = n.message,
-                title = n.title,
-                createdAt = n.createdAt,
-                seen = n.seen,
-                isV2 = true,
-                responses = n.responses,
-            )
-        }
-        (fromV1 + fromV2 + local).sortedByDescending { notificationSortKey(it.createdAt) }
+        (v1.map { it.toUnified() } + v2.map { it.toUnified() } + local)
+            .sortedByDescending { it.createdAtEpochMs }
     }
 
     suspend fun restoreNotifications() {
@@ -132,8 +129,6 @@ class NotificationRepository @Inject constructor(
         }
     }
 
-    fun resetRuntimeState() = clearRuntimeState()
-
     fun clearRuntimeState() {
         accountGeneration.incrementAndGet()
         synchronized(stateLock) {
@@ -148,46 +143,48 @@ class NotificationRepository @Inject constructor(
     suspend fun loadNotifications() {
         val userId = currentUserId() ?: return
         val generation = accountGeneration.get()
-        var firstFailure: Throwable? = null
 
-        runCatching {
-            val remoteV1 = loadAllV1Notifications()
-            val committed = synchronized(stateLock) {
-                if (generation != accountGeneration.get() || userId != currentUserId()) null else {
-                    (remoteV1 + _notifications.value)
-                        .filterNot { it.id in removedNotificationIds }
-                        .associateBy { it.id }.values
-                        .sortedByDescending { notificationSortKey(it.createdAt) }
-                        .also { _notifications.value = it }
-                }
-            } ?: return@runCatching
-            notificationDao.replaceNotifications(userId, committed.map { it.toEntity(userId) })
-        }.onFailure { error ->
-            firstFailure = error
-        }
-
-        runCatching {
-            val remoteV2 = loadAllV2Notifications()
-            val committed = synchronized(stateLock) {
-                if (generation != accountGeneration.get() || userId != currentUserId()) null else {
-                    (remoteV2 + _notificationsV2.value)
-                        .filterNot { it.id in removedNotificationIds }
-                        .associateBy { it.id }.values
-                        .sortedByDescending { notificationSortKey(it.createdAt) }
-                        .also { _notificationsV2.value = it }
-                }
-            } ?: return@runCatching
-            notificationDao.replaceNotificationsV2(userId, committed.map { it.toEntity(userId) })
-        }.onFailure { error ->
-            if (firstFailure == null) {
-                firstFailure = error
-            } else {
-                firstFailure?.addSuppressed(error)
+        // Sweep V1 and V2 concurrently instead of back-to-back — each is up to
+        // MAX_REMOTE_PAGES pages with an inter-page rate-limit delay.
+        val failures = coroutineScope {
+            val v1 = async {
+                runCatching {
+                    val remoteV1 = loadAllV1Notifications()
+                    val committed = synchronized(stateLock) {
+                        if (generation != accountGeneration.get() || userId != currentUserId()) null else {
+                            (remoteV1 + _notifications.value)
+                                .filterNot { it.id in removedNotificationIds }
+                                .associateBy { it.id }.values
+                                .sortedByDescending { notificationSortKey(it.createdAt) }
+                                .also { _notifications.value = it }
+                        }
+                    } ?: return@runCatching
+                    notificationDao.replaceNotifications(userId, committed.map { it.toEntity(userId) })
+                }.exceptionOrNull()
             }
+            val v2 = async {
+                runCatching {
+                    val remoteV2 = loadAllV2Notifications()
+                    val committed = synchronized(stateLock) {
+                        if (generation != accountGeneration.get() || userId != currentUserId()) null else {
+                            (remoteV2 + _notificationsV2.value)
+                                .filterNot { it.id in removedNotificationIds }
+                                .associateBy { it.id }.values
+                                .sortedByDescending { notificationSortKey(it.createdAt) }
+                                .also { _notificationsV2.value = it }
+                        }
+                    } ?: return@runCatching
+                    notificationDao.replaceNotificationsV2(userId, committed.map { it.toEntity(userId) })
+                }.exceptionOrNull()
+            }
+            listOfNotNull(v1.await(), v2.await())
         }
 
         recalculateUnseenCount()
-        firstFailure?.let { throw it }
+        failures.firstOrNull()?.let { first ->
+            failures.drop(1).forEach(first::addSuppressed)
+            throw first
+        }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -312,6 +309,7 @@ class NotificationRepository @Inject constructor(
             seen = false,
             isV2 = false,
             responses = emptyList(),
+            isLocal = true,
         )
         _localNotifications.value = (listOf(notification) + _localNotifications.value)
             .take(MAX_LOCAL_NOTIFICATIONS)
@@ -368,35 +366,9 @@ class NotificationRepository @Inject constructor(
 
     suspend fun acceptInvite(notificationId: String, isV2: Boolean) {
         val notification = if (isV2) {
-            _notificationsV2.value.firstOrNull { it.id == notificationId }?.let { n ->
-                UnifiedNotification(
-                    id = n.id,
-                    type = n.type,
-                    senderUserId = n.senderUserId,
-                    senderUsername = n.senderUsername,
-                    message = n.message,
-                    title = n.title,
-                    createdAt = n.createdAt,
-                    seen = n.seen,
-                    isV2 = true,
-                    responses = n.responses,
-                )
-            }
+            _notificationsV2.value.firstOrNull { it.id == notificationId }?.toUnified()
         } else {
-            _notifications.value.firstOrNull { it.id == notificationId }?.let { n ->
-                UnifiedNotification(
-                    id = n.id,
-                    type = n.type,
-                    senderUserId = n.senderUserId,
-                    senderUsername = n.senderUsername,
-                    message = n.message,
-                    title = "",
-                    createdAt = n.createdAt,
-                    seen = n.seen,
-                    isV2 = false,
-                    responses = emptyList(),
-                )
-            }
+            _notifications.value.firstOrNull { it.id == notificationId }?.toUnified()
         } ?: return
         performPrimaryAction(notification)
     }
@@ -407,8 +379,8 @@ class NotificationRepository @Inject constructor(
                 val primaryResponse = notification.responses.firstOrNull() ?: return
                 respondToNotification(notification, primaryResponse.type)
             }
-            notification.type == "friendRequest" -> acceptFriendRequest(notification.id)
-            notification.type == "requestInvite" -> {
+            notification.kind == NotificationKind.FRIEND_REQUEST -> acceptFriendRequest(notification.id)
+            notification.kind == NotificationKind.REQUEST_INVITE -> {
                 acceptRequestInvite(notification)
                 removeFromLists(notification.id)
             }
@@ -438,7 +410,7 @@ class NotificationRepository @Inject constructor(
     }
 
     suspend fun hideUnified(notificationId: String, isV2: Boolean) {
-        if (notificationId.startsWith("local:")) {
+        if (isLocalNotification(notificationId)) {
             removeFromLists(notificationId)
             return
         }
@@ -466,17 +438,8 @@ class NotificationRepository @Inject constructor(
     private suspend fun resolveInviteContext(): InviteContext {
         val currentUser = authRepository.currentUser
             ?: error("Current user is not available")
-        val currentLocation = when (currentUser.location) {
-            "traveling" -> currentUser.travelingToLocation
-            else -> currentUser.location
-        } ?: error("You must be in a world to send invites")
-
-        if (
-            currentLocation.isBlank() ||
-            currentLocation == "offline" ||
-            currentLocation == "private" ||
-            currentLocation == "traveling"
-        ) {
+        val currentLocation = resolvePresenceLocation(currentUser)
+        if (!isTrackableLocation(currentLocation)) {
             error("You must be in a world to send invites")
         }
 
@@ -487,36 +450,24 @@ class NotificationRepository @Inject constructor(
 
     private suspend fun loadAllV1Notifications(): List<VrcNotification> {
         val collected = linkedMapOf<String, VrcNotification>()
-        var offset = 0
-        var page = 0
-        while (page < MAX_REMOTE_PAGES) {
-            val batch = notificationApi.getNotifications(n = PAGE_SIZE, offset = offset)
-            batch.forEach { notification ->
-                if (notification.id.isNotBlank() && notification.id !in collected) {
-                    collected[notification.id] = notification
-                }
+        BulkPaginator.fetchAll(pageSize = PAGE_SIZE, maxPages = MAX_REMOTE_PAGES) { offset, n ->
+            notificationApi.getNotifications(n = n, offset = offset)
+        }.forEach { notification ->
+            if (notification.id.isNotBlank() && notification.id !in collected) {
+                collected[notification.id] = notification
             }
-            if (batch.size < PAGE_SIZE) break
-            offset += PAGE_SIZE
-            page++
         }
         return collected.values.sortedByDescending { it.createdAt }
     }
 
     private suspend fun loadAllV2Notifications(): List<NotificationV2> {
         val collected = linkedMapOf<String, NotificationV2>()
-        var offset = 0
-        var page = 0
-        while (page < MAX_REMOTE_PAGES) {
-            val batch = notificationApi.getNotificationsV2(n = PAGE_SIZE, offset = offset)
-            batch.forEach { notification ->
-                if (notification.id.isNotBlank() && notification.id !in collected) {
-                    collected[notification.id] = notification
-                }
+        BulkPaginator.fetchAll(pageSize = PAGE_SIZE, maxPages = MAX_REMOTE_PAGES) { offset, n ->
+            notificationApi.getNotificationsV2(n = n, offset = offset)
+        }.forEach { notification ->
+            if (notification.id.isNotBlank() && notification.id !in collected) {
+                collected[notification.id] = notification
             }
-            if (batch.size < PAGE_SIZE) break
-            offset += PAGE_SIZE
-            page++
         }
         return collected.values.sortedByDescending { it.createdAt }
     }
@@ -532,7 +483,7 @@ class NotificationRepository @Inject constructor(
     }
 
     private fun markSeenInStorageAsync(notificationId: String) {
-        if (notificationId.startsWith("local:")) return
+        if (isLocalNotification(notificationId)) return
         val userId = currentUserId() ?: return
         storageCommands.trySend {
             notificationDao.markSeen(userId, notificationId)
@@ -541,9 +492,9 @@ class NotificationRepository @Inject constructor(
     }
 
     private fun deleteFromStorageAsync(notificationIds: Collection<String>) {
-        val persistedIds = notificationIds.filter { !it.startsWith("local:") }
-        if (persistedIds.isEmpty()) return
+        if (notificationIds.isEmpty()) return
         val userId = currentUserId() ?: return
+        val persistedIds = notificationIds.toList()
         storageCommands.trySend {
             if (persistedIds.size == 1) {
                 val notificationId = persistedIds.first()
@@ -567,17 +518,56 @@ class NotificationRepository @Inject constructor(
         while (removedNotificationIds.size > MAX_CACHED_NOTIFICATIONS) {
             removedNotificationIds.remove(removedNotificationIds.first())
         }
+        // Capture which removed ids were local before dropping them from the
+        // list, so their ids never reach the server-side storage deletion.
+        val localIds = _localNotifications.value
+            .filter { it.id in idSet && it.isLocal }
+            .mapTo(mutableSetOf()) { it.id }
         _notifications.value = _notifications.value.filter { it.id !in idSet }
         _notificationsV2.value = _notificationsV2.value.filter { it.id !in idSet }
         _localNotifications.value = _localNotifications.value.filter { it.id !in idSet }
-        deleteFromStorageAsync(idSet)
+        deleteFromStorageAsync(idSet - localIds)
         recalculateUnseenCount()
     }
 
     private fun currentUserId(): String? = authRepository.currentUser?.id?.takeIf { it.isNotBlank() }
 
+    /**
+     * True when [notificationId] belongs to a locally-synthesized notification
+     * (see [UnifiedNotification.isLocal]) rather than a server-issued one, so
+     * callers can skip HTTP calls and Room writes for it.
+     */
+    private fun isLocalNotification(notificationId: String): Boolean =
+        _localNotifications.value.any { it.id == notificationId && it.isLocal }
+
     private fun notificationSortKey(createdAt: String): Long =
-        runCatching { Instant.parse(createdAt).toEpochMilli() }.getOrDefault(Long.MIN_VALUE)
+        parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
+
+    private fun VrcNotification.toUnified() = UnifiedNotification(
+        id = id,
+        type = type,
+        senderUserId = senderUserId,
+        senderUsername = senderUsername,
+        message = message,
+        title = "",
+        createdAt = createdAt,
+        seen = seen,
+        isV2 = false,
+        responses = emptyList(),
+    )
+
+    private fun NotificationV2.toUnified() = UnifiedNotification(
+        id = id,
+        type = type,
+        senderUserId = senderUserId,
+        senderUsername = senderUsername,
+        message = message,
+        title = title,
+        createdAt = createdAt,
+        seen = seen,
+        isV2 = true,
+        responses = responses,
+    )
 
     private fun VrcNotification.toEntity(ownerUserId: String) = NotificationEntity(
         id = id,

@@ -51,11 +51,12 @@ import com.vrcx.android.data.screenshot.ScreenshotPosition
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GalleryRepository
+import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
+import com.vrcx.android.data.util.UploadBytesResult
+import com.vrcx.android.data.util.readUploadBytesBounded
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -74,9 +75,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val MAX_GALLERY_UPLOAD_SIZE_BYTES = 10_000_000
-private const val UPLOAD_READ_BUFFER_SIZE = 8 * 1024
 
 data class ScreenshotMetadataUiState(
     val selectedUri: Uri? = null,
@@ -151,7 +149,7 @@ class ScreenshotMetadataViewModel @Inject constructor(
             _uiState.value = state.copy(uploadMessage = "VRC+ is required to upload gallery images.")
             return
         }
-        if (state.fileSizeBytes != null && state.fileSizeBytes > MAX_GALLERY_UPLOAD_SIZE_BYTES) {
+        if (state.fileSizeBytes != null && state.fileSizeBytes > MAX_UPLOAD_SIZE_BYTES) {
             _uiState.value = state.copy(uploadMessage = "Image too large (max 10 MB).")
             return
         }
@@ -170,24 +168,24 @@ class ScreenshotMetadataViewModel @Inject constructor(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
-                        ScreenshotUploadReadResult.Unreadable
+                        UploadBytesResult.Unreadable
                     }
                 }
 
                 val bytes = when (readResult) {
-                    ScreenshotUploadReadResult.Unreadable -> {
+                    UploadBytesResult.Unreadable -> {
                         updateIfCurrent(uri, generation) {
                             it.copy(isUploading = false, uploadMessage = "Unable to open the selected image.")
                         }
                         return@launch
                     }
-                    ScreenshotUploadReadResult.TooLarge -> {
+                    UploadBytesResult.TooLarge -> {
                         updateIfCurrent(uri, generation) {
                             it.copy(isUploading = false, uploadMessage = "Image too large (max 10 MB).")
                         }
                         return@launch
                     }
-                    is ScreenshotUploadReadResult.Success -> readResult.bytes
+                    is UploadBytesResult.Success -> readResult.bytes
                 }
                 if (!isCurrent(uri, generation)) return@launch
                 withContext(Dispatchers.IO) {
@@ -598,34 +596,3 @@ private fun formatCapturedAt(epochMillis: Long): String {
         .format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
 }
 
-internal sealed interface ScreenshotUploadReadResult {
-    data class Success(val bytes: ByteArray) : ScreenshotUploadReadResult
-    data object TooLarge : ScreenshotUploadReadResult
-    data object Unreadable : ScreenshotUploadReadResult
-}
-
-internal fun readUploadBytesBounded(
-    input: InputStream?,
-    maxBytes: Int = MAX_GALLERY_UPLOAD_SIZE_BYTES,
-): ScreenshotUploadReadResult {
-    if (input == null) return ScreenshotUploadReadResult.Unreadable
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(UPLOAD_READ_BUFFER_SIZE)
-    var total = 0
-
-    input.use {
-        while (true) {
-            val maxReadable = maxBytes + 1 - total
-            if (maxReadable <= 0) return ScreenshotUploadReadResult.TooLarge
-
-            val read = it.read(buffer, 0, minOf(buffer.size, maxReadable))
-            if (read == -1) break
-
-            total += read
-            if (total > maxBytes) return ScreenshotUploadReadResult.TooLarge
-            output.write(buffer, 0, read)
-        }
-    }
-
-    return ScreenshotUploadReadResult.Success(output.toByteArray())
-}

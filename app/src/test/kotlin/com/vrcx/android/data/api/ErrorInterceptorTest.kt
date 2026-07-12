@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.Invocation
 
 class ErrorInterceptorTest {
 
@@ -68,19 +69,51 @@ class ErrorInterceptorTest {
     }
 
     @Test
-    fun `401 from two factor verification does not expire the session`() {
+    fun `401 from an AuthPhase-annotated endpoint does not expire the session`() {
         val collected = collectEvents()
         server.enqueue(MockResponse().setResponseCode(401).setBody("bad code"))
 
         val response = client.newCall(
             Request.Builder()
-                .url(server.url("/api/1/auth/twofactorauth/totp/verify"))
+                .url(server.url("/auth/twofactorauth/totp/verify"))
+                .tag(Invocation::class.java, invocationFor("verifyTotp"))
                 .build()
         ).execute()
 
         assertEquals(401, response.code)
         assertEquals(0, collected().size)
         response.close()
+    }
+
+    @Test
+    fun `401 from a non-AuthPhase endpoint expires the session`() {
+        val collected = collectEvents()
+        server.enqueue(MockResponse().setResponseCode(401).setBody("expired"))
+
+        // getAuthToken() is a post-login endpoint with no @AuthPhase marker, so a
+        // 401 there is genuine session expiry and must reach the bus.
+        val response = client.newCall(
+            Request.Builder()
+                .url(server.url("/auth"))
+                .tag(Invocation::class.java, invocationFor("getAuthToken"))
+                .build()
+        ).execute()
+
+        assertEquals(401, response.code)
+        assertEquals(1, collected().size)
+        assertTrue(collected().first() is AuthEvent.Unauthorized)
+        response.close()
+    }
+
+    /**
+     * Builds the Retrofit [Invocation] tag that would accompany a real call to
+     * the named [AuthApi] method, so the interceptor can read its @AuthPhase
+     * annotation exactly as it does in production.
+     */
+    @Suppress("DEPRECATION") // Invocation.of(Method, List) is the only public factory in Retrofit 2.11.
+    private fun invocationFor(methodName: String): Invocation {
+        val method = AuthApi::class.java.declaredMethods.first { it.name == methodName }
+        return Invocation.of(method, emptyList<Any>())
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.vrcx.android.data.cache
 
 import android.content.Context
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
@@ -27,8 +28,10 @@ class ProfilePicCacheManager @Inject constructor(
     private val cacheDir = File(context.filesDir, "profile_pic_cache")
 
     init {
+        // Don't scan/trim the cache dir here: this singleton is constructed on
+        // the main thread at the first Coil request. trimCache() runs on IO
+        // after each cacheImage instead, keeping the directory bounded.
         cacheDir.mkdirs()
-        trimCache()
     }
 
     private fun urlToFilename(url: String): String {
@@ -90,8 +93,7 @@ class ProfilePicCacheManager @Inject constructor(
     ) = withContext(Dispatchers.IO) {
         val urls = friends.values.mapNotNull { friend ->
             val ref = friend.ref ?: return@mapNotNull null
-            ref.profilePicOverride.takeIf { it.isNotEmpty() }
-                ?: ref.currentAvatarThumbnailImageUrl.takeIf { it.isNotEmpty() }
+            ref.displayAvatarUrl().takeIf { it.isNotEmpty() }
         }
         val total = urls.size
         var completed = 0
