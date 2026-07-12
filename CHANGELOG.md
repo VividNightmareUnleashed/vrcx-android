@@ -1,5 +1,93 @@
 # Changelog
 
+## [1.6.0] - 2026-07-12
+
+A large internal quality and performance release. There are no new features
+this time — instead the app got faster in the places you feel most (login,
+refresh, Charts, and searching your activity history), two real bugs got
+fixed, and a substantial amount of duplicated logic was consolidated so future
+changes are less likely to drift or regress. If 1.5.x was about stabilizing
+the app, 1.6.0 is about making it quick and keeping it that way.
+
+### Fixed
+
+- **Launcher icon** — The app icon introduced in 1.5.2 rendered as a broken,
+  half-dark circle with an oversized "X" on adaptive/round launchers. Its
+  foreground artwork wasn't inset into the icon safe zone, so the launcher's
+  circular mask clipped it and the flat dark background bled through. The icon
+  is back to the clean VRCX speech-bubble mark.
+- **Dropped friend notifications** — Friend "came online", location-change,
+  and status-change system notifications could silently fail to fire. VRChat
+  sometimes sends the friend's id under a lowercase `userid` key, but the
+  notification path only read the camelCase `userId`, so those events were
+  dropped even though the rest of the app handled them fine. Friend
+  transitions are now resolved once in the data layer (which already tolerates
+  both spellings) and handed to the notifier as typed events, so these
+  notifications fire reliably.
+
+### Improved
+
+- **Faster login and refresh** — The friend list and the notification inbox
+  now fetch their pages in parallel instead of one after the other, and the
+  paged sweeps no longer stack their inter-page rate-limit delays. On a large
+  friends list or a full inbox, the initial load after login — and every
+  pull-to-refresh — completes noticeably sooner.
+- **Snappier Charts** — Tapping a range chip (Today / 7 days / 30 days / All)
+  used to re-parse every GPS history row dozens of times on the main thread,
+  which could hitch the UI on a busy history. The charts now parse each row
+  once, bucket the data in a single pass, and do it off the main thread, so
+  switching ranges stays smooth.
+- **Smoother Activity History and Feed search** — Typing in the search box no
+  longer re-parses the timestamp of every entry on each keystroke, and the
+  date-range filter compares precomputed values, so searching a long history
+  no longer stutters.
+- **Less redundant work opening the Friends tab** — The Friends tab no longer
+  re-runs the full friend fetch the background service already performed at
+  login (the live websocket keeps it current in between), so it opens faster
+  and does fewer database lookups. Pull-to-refresh still forces a full reload
+  when you want one.
+- **Faster Gallery load** — Inventory item templates are fetched in parallel
+  (a few at a time) instead of one-by-one, so the Gallery's inventory section
+  populates quicker.
+- **Lighter first render and background writes** — The first image the app
+  loads no longer scans the on-disk profile-picture cache on the main thread;
+  the high-frequency feed write path prunes on a schedule and caches your
+  feed-size setting instead of re-reading it on every insert; the first
+  friend-log sync after login writes in a single bulk insert instead of row by
+  row; and the encrypted cookie store skips rewriting itself when nothing
+  changed. Together these trim jank and background churn during heavy
+  real-time activity.
+- **Consistent activity labels** — The Feed and Dashboard now render friend
+  activity through one shared formatter, so a status change or a world move
+  reads the same wherever it appears instead of drifting between screens.
+
+### Under the hood
+
+This release folds a lot of duplicated, slowly-diverging logic into single
+shared implementations. None of it changes what the app does, but it removes
+whole classes of "fix it in one place, forget the other four" bugs:
+
+- **One home for the fiddly stuff** — VRChat location-string parsing,
+  trust-rank decoding, feed and notification presentation, account-scoped
+  database keys, destructive-action confirmation dialogs, ISO-8601 timestamp
+  parsing, and bounded upload reads were each implemented several times over
+  (and had already started to disagree). Each is now a single shared module.
+- **Unified feed pipeline** — Feed, Dashboard, and Activity History build
+  their lists from one repository-level feed merge and one mapper instead of
+  three near-identical copies.
+- **Typed pipeline events** — Friend online/location/status changes are
+  surfaced as typed domain events from the data layer, so the foreground
+  service maps them straight to notifications instead of re-parsing raw JSON
+  (this is what fixed the dropped-notification bug above). Notification kinds
+  and locally-synthesized notifications are now modeled explicitly rather than
+  sniffed from type strings and id prefixes, and login-phase API calls are
+  marked explicitly so a 2FA error can't be mistaken for a session expiry.
+- **Dead code removal** — Unused database access objects, unread flows, and a
+  never-adopted UI-state abstraction were deleted.
+- **Tests** — The unit suite (133 tests, all passing) was updated alongside
+  the refactors, including new coverage for the auth-phase marker and the
+  shared bounded-upload reads.
+
 ## [1.5.2] - 2026-05-12
 
 ### Fixed
