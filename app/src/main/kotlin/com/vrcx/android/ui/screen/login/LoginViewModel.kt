@@ -113,9 +113,16 @@ class LoginViewModel @Inject constructor(
     fun tryResumeSession() {
         viewModelScope.launch {
             authRepository.tryResumeSession()
-            if (authRepository.authState.value !is AuthState.LoggedIn) {
-                maybeAutoLogin()
+            when (authRepository.authState.value) {
+                is AuthState.LoggedIn, is AuthState.RequiresTwoFactor -> return@launch
+                else -> Unit
             }
+            // A stored session that merely failed to reach the server is still
+            // good. Re-logging in with the saved password would throw it away
+            // and drag the user back through the 2FA challenge, so leave it be
+            // and let the next launch (or a manual sign-in) resume it.
+            if (authRepository.hasResumableSession()) return@launch
+            maybeAutoLogin()
         }
     }
 

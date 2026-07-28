@@ -13,20 +13,25 @@ import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.websocket.PipelineEvent
 import com.vrcx.android.service.WebSocketForegroundService
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -65,6 +70,11 @@ class AuthRepository @Inject constructor(
     val authToken: String? get() = _authToken
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // App start and the websocket service both resume on launch. Serialize them
+    // so a single cold start can't run two resumes — each of which calls
+    // onLoginSuccess() and wipes account-scoped runtime state the other filled.
+    private val resumeMutex = Mutex()
 
     @Inject lateinit var avatarRepositoryProvider: Provider<AvatarRepository>
     @Inject lateinit var friendRepositoryProvider: Provider<FriendRepository>
@@ -167,20 +177,12 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun fetchCurrentUser() {
-        try {
-            val response = authApi.getCurrentUser()
-            val jsonObj = response.jsonObject
-            if (jsonObj.containsKey("requiresTwoFactorAuth")) {
-                val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
-                    ?.map { it.jsonPrimitive.content }
-                    ?: emptyList()
-                _authState.value = AuthState.RequiresTwoFactor(methods)
-                return
-            }
-            val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
-            onLoginSuccess(user)
-        } catch (e: Exception) {
-            setErrorUnlessLoggedOut(e.message ?: "Failed to fetch user")
+        when (val check = checkSession()) {
+            is SessionCheck.Active -> onLoginSuccess(check.user)
+            is SessionCheck.TwoFactorRequired ->
+                _authState.value = AuthState.RequiresTwoFactor(check.methods)
+            is SessionCheck.Rejected -> setErrorUnlessLoggedOut(check.message)
+            is SessionCheck.Inconclusive -> setErrorUnlessLoggedOut(check.message)
         }
     }
 
@@ -209,16 +211,46 @@ class AuthRepository @Inject constructor(
         return _currentUser != null && !_authToken.isNullOrBlank() && _authState.value is AuthState.LoggedIn
     }
 
-    suspend fun tryResumeSession() {
-        try {
-            val cookie = cookieJar.getAuthCookie()
-            if (cookie != null) {
-                _authState.value = AuthState.LoggingIn
-                fetchCurrentUser()
+    /** True while a stored cookie session exists that a resume could still revive. */
+    fun hasResumableSession(): Boolean = cookieJar.getAuthCookie() != null
+
+    /**
+     * Revive the stored cookie session on app/service start.
+     *
+     * A cold start after the app has been idle routinely lands while the radio
+     * is still waking up or the device is leaving Doze, so the first request can
+     * fail with no network at all. That is not an expired session — retry a few
+     * times before giving up, and when it still doesn't resolve leave the stored
+     * cookies alone so the next launch (or a retry from the login screen) can
+     * pick the session back up. Only a server-side rejection ends the session.
+     */
+    suspend fun tryResumeSession() = resumeMutex.withLock {
+        if (_authState.value is AuthState.LoggedIn) return@withLock
+        if (!hasResumableSession()) return@withLock
+        _authState.value = AuthState.LoggingIn
+
+        var lastFailure: SessionCheck.Inconclusive? = null
+        for (delayMs in RESUME_RETRY_DELAYS_MS) {
+            if (delayMs > 0) delay(delayMs)
+            when (val check = checkSession()) {
+                is SessionCheck.Active -> {
+                    onLoginSuccess(check.user)
+                    return@withLock
+                }
+                is SessionCheck.TwoFactorRequired -> {
+                    // The cookie is still good; VRChat just wants the second
+                    // factor again. Keep the session so verify2fa can use it.
+                    _authState.value = AuthState.RequiresTwoFactor(check.methods)
+                    return@withLock
+                }
+                is SessionCheck.Rejected -> {
+                    endSession()
+                    return@withLock
+                }
+                is SessionCheck.Inconclusive -> lastFailure = check
             }
-        } catch (_: Exception) {
-            _authState.value = AuthState.NotLoggedIn
         }
+        setErrorUnlessLoggedOut(lastFailure?.message ?: UNREACHABLE_MESSAGE)
     }
 
     suspend fun logout() {
@@ -281,13 +313,36 @@ class AuthRepository @Inject constructor(
         fetchAuthToken()
     }
 
+    /**
+     * A 401 on some unrelated request is only a hint. Re-check `auth/user` and
+     * act on what the *server* says: keep the session unless it is affirmatively
+     * rejected. A network failure, timeout, 429 or 5xx during that re-check
+     * proves nothing — discarding the cookies there would turn a momentary
+     * connectivity blip (Doze, a Wi-Fi/cellular handover while the app sits in
+     * the background) into a permanent sign-out.
+     */
     internal suspend fun handleUnauthorizedSignal() {
         if (!hasPersistedSessionArtifacts()) {
             return
         }
-        if (isSessionStillAccepted()) {
-            return
+        when (val check = checkSession()) {
+            is SessionCheck.Active -> {
+                _currentUser = check.user
+                _authState.value = AuthState.LoggedIn(check.user)
+            }
+            is SessionCheck.TwoFactorRequired -> {
+                // The cookie survives; only the second factor lapsed. Clearing
+                // cookies here would strip the credential that verify2fa needs.
+                _authState.value = AuthState.RequiresTwoFactor(check.methods)
+            }
+            is SessionCheck.Inconclusive -> Unit
+            is SessionCheck.Rejected -> {
+                endSession()
+            }
         }
+    }
+
+    private suspend fun endSession() {
         clearAccountRuntimeState()
         clearAuthSession()
         WebSocketForegroundService.stop(context)
@@ -300,20 +355,42 @@ class AuthRepository @Inject constructor(
             cookieJar.getAuthCookie() != null
     }
 
-    private suspend fun isSessionStillAccepted(): Boolean {
+    /** Outcome of asking VRChat whether the stored session is still usable. */
+    private sealed interface SessionCheck {
+        data class Active(val user: CurrentUser) : SessionCheck
+        data class TwoFactorRequired(val methods: List<String>) : SessionCheck
+        /** The server rejected the credentials — the session is gone for good. */
+        data class Rejected(val message: String) : SessionCheck
+        /** We never got an answer. The session may well still be valid. */
+        data class Inconclusive(val message: String) : SessionCheck
+    }
+
+    private suspend fun checkSession(): SessionCheck {
         return try {
             val response = authApi.getCurrentUser()
             val jsonObj = response.jsonObject
             if (jsonObj.containsKey("requiresTwoFactorAuth")) {
-                false
+                val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
+                    ?.map { it.jsonPrimitive.content }
+                    ?: emptyList()
+                SessionCheck.TwoFactorRequired(methods)
             } else {
-                val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
-                _currentUser = user
-                _authState.value = AuthState.LoggedIn(user)
-                true
+                SessionCheck.Active(json.decodeFromJsonElement(CurrentUser.serializer(), response))
             }
-        } catch (_: Exception) {
-            false
+        } catch (e: HttpException) {
+            if (e.code() == 401 || e.code() == 403) {
+                SessionCheck.Rejected(e.message ?: "Session expired")
+            } else {
+                SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
+            }
+        } catch (e: CancellationException) {
+            // The deduplicator cancels in-flight work on logout/account switch.
+            // Swallow rather than rethrow: this runs inside the long-lived
+            // AuthEvent collector, and cancelling that job would stop every
+            // future unauthorized signal from being handled.
+            SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
+        } catch (e: Exception) {
+            SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
         }
     }
 
@@ -370,5 +447,15 @@ class AuthRepository @Inject constructor(
                 current
             }
         }
+    }
+
+    private companion object {
+        /**
+         * Backoff between session-resume attempts. The first attempt is
+         * immediate; the later ones cover a radio that is still associating
+         * after the process was killed in the background.
+         */
+        val RESUME_RETRY_DELAYS_MS = longArrayOf(0L, 2_000L, 5_000L)
+        const val UNREACHABLE_MESSAGE = "Couldn't reach VRChat"
     }
 }

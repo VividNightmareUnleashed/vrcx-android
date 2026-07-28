@@ -47,12 +47,15 @@ class CookieJarImpl(
         return synchronized(lock) {
             val host = url.host
             val cookies = cookieStore[host] ?: return@synchronized emptyList()
-            val validCookies = cookies.filter { !isExpired(it) && it.matches(url) }
-            if (validCookies.size != cookies.size) {
-                cookieStore[host] = validCookies.toMutableList()
+            // Only expiry evicts. A cookie that doesn't match *this* URL — a
+            // narrower path, a secure cookie on a plaintext request — is still
+            // owed to other requests, so it must not be dropped from the store.
+            val liveCookies = cookies.filter { !isExpired(it) }
+            if (liveCookies.size != cookies.size) {
+                cookieStore[host] = liveCookies.toMutableList()
                 persistToPrefsLocked()
             }
-            validCookies
+            liveCookies.filter { it.matches(url) }
         }
     }
 

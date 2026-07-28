@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Session dropped after the app sat unused** — Leaving the app closed for a
+  while would frequently land you back on the login screen (or a fresh
+  two-factor prompt) even though the saved session had weeks of life left. Any
+  failure to reach VRChat was treated as proof that the session had expired,
+  so a moment without connectivity — the radio still waking up on a cold
+  start, a Doze window, a Wi-Fi to cellular handover in the background — was
+  enough to delete the stored login. The app now distinguishes "VRChat says
+  no" from "VRChat didn't answer": only a rejection from the server ends the
+  session, resuming retries briefly before giving up, and a session that
+  merely couldn't be reached is kept for the next launch. This was most
+  visible with the background service turned off, because the app is then
+  free to be killed while backgrounded and has to restore the session from
+  disk on every launch.
+- **Two-factor prompt wiped the credential needed to answer it** — When VRChat
+  asked for the second factor again, the app cleared its cookies first, which
+  removed the very session cookie the verification call authenticates with,
+  forcing a full username-and-password sign-in. Those cookies are now kept.
+- **Cookies discarded by unrelated requests** — A stored cookie that didn't
+  apply to the request being made was evicted from the jar rather than just
+  skipped for that one request. Only expired cookies are dropped now.
+
 ## [1.6.0] - 2026-07-12
 
 A large internal quality and performance release. There are no new features
