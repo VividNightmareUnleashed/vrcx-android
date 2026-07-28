@@ -16,6 +16,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -145,7 +148,7 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun `unauthorized signal clears session when validation fails`() {
+    fun `unauthorized signal clears session when the server rejects the credentials`() {
         runBlocking {
             whenever(authApi.getCurrentUser())
                 .thenReturn(
@@ -154,7 +157,7 @@ class AuthRepositoryTest {
                         put("displayName", "Test User")
                     }
                 )
-                .thenThrow(RuntimeException("expired"))
+                .thenThrow(httpException(401))
             whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
             repository.login("test-user", "test-password")
 
@@ -165,6 +168,107 @@ class AuthRepositoryTest {
             assertSame(AuthState.NotLoggedIn, repository.authState.value)
         }
     }
+
+    @Test
+    fun `unauthorized signal keeps the session when the recheck cannot reach the server`() {
+        runBlocking {
+            whenever(authApi.getCurrentUser())
+                .thenReturn(
+                    buildJsonObject {
+                        put("id", "usr_test")
+                        put("displayName", "Test User")
+                    }
+                )
+                .thenThrow(RuntimeException("Unable to resolve host"))
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            repository.login("test-user", "test-password")
+
+            repository.handleUnauthorizedSignal()
+
+            // A connectivity blip is not proof the session died — the stored
+            // cookies have to survive it.
+            verify(cookieJar, never()).clearAll()
+            assertTrue(repository.authState.value is AuthState.LoggedIn)
+        }
+    }
+
+    @Test
+    fun `unauthorized signal keeps cookies when only the second factor lapsed`() {
+        runBlocking {
+            whenever(authApi.getCurrentUser())
+                .thenReturn(
+                    buildJsonObject {
+                        put("id", "usr_test")
+                        put("displayName", "Test User")
+                    }
+                )
+                .thenReturn(
+                    buildJsonObject {
+                        put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
+                    }
+                )
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            repository.login("test-user", "test-password")
+
+            repository.handleUnauthorizedSignal()
+
+            // verify2fa authenticates with the auth cookie, so dropping it here
+            // would make the challenge impossible to answer.
+            verify(cookieJar, never()).clearAll()
+            assertTrue(repository.authState.value is AuthState.RequiresTwoFactor)
+        }
+    }
+
+    @Test
+    fun `resume retries a transient failure before giving up on the stored session`() {
+        runBlocking {
+            whenever(cookieJar.getAuthCookie()).thenReturn("authcookie_test")
+            whenever(authApi.getCurrentUser())
+                .thenThrow(RuntimeException("timeout"))
+                .thenReturn(
+                    buildJsonObject {
+                        put("id", "usr_test")
+                        put("displayName", "Test User")
+                    }
+                )
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+
+            repository.tryResumeSession()
+
+            verify(cookieJar, never()).clearAll()
+            assertTrue(repository.authState.value is AuthState.LoggedIn)
+        }
+    }
+
+    @Test
+    fun `resume keeps the stored session when the server stays unreachable`() {
+        runBlocking {
+            whenever(cookieJar.getAuthCookie()).thenReturn("authcookie_test")
+            whenever(authApi.getCurrentUser()).thenThrow(RuntimeException("Unable to resolve host"))
+
+            repository.tryResumeSession()
+
+            verify(cookieJar, never()).clearAll()
+            assertTrue(repository.authState.value is AuthState.Error)
+            assertTrue(repository.hasResumableSession())
+        }
+    }
+
+    @Test
+    fun `resume ends the session only when the server rejects the stored cookie`() {
+        runBlocking {
+            whenever(cookieJar.getAuthCookie()).thenReturn("authcookie_test")
+            whenever(authApi.getCurrentUser()).thenThrow(httpException(401))
+
+            repository.tryResumeSession()
+
+            verify(cookieJar).clearAll()
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
+        }
+    }
+
+    private fun httpException(code: Int): HttpException =
+        HttpException(Response.error<Any>(code, "".toResponseBody(null)))
 
     @Test
     fun `logout invalidates the session server-side before clearing local state`() {
