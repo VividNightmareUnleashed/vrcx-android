@@ -18,7 +18,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 class SearchRepositoryTest {
@@ -39,16 +41,20 @@ class SearchRepositoryTest {
         json = Json { ignoreUnknownKeys = true },
     )
 
+    private fun useRemoteClient(call: Call) {
+        whenever(okHttpClient.newBuilder()).thenReturn(okHttpClientBuilder)
+        whenever(okHttpClientBuilder.cookieJar(any())).thenReturn(okHttpClientBuilder)
+        whenever(okHttpClientBuilder.interceptors()).thenReturn(mutableListOf<Interceptor>())
+        whenever(okHttpClientBuilder.networkInterceptors()).thenReturn(mutableListOf<Interceptor>())
+        whenever(okHttpClientBuilder.build()).thenReturn(remoteAvatarClient)
+        whenever(remoteAvatarClient.newCall(any())).thenReturn(call)
+    }
+
     @Test
     fun `remote avatar provider failures surface as errors`() {
         runBlocking {
             val call = mock<Call>()
-            whenever(okHttpClient.newBuilder()).thenReturn(okHttpClientBuilder)
-            whenever(okHttpClientBuilder.cookieJar(any())).thenReturn(okHttpClientBuilder)
-            whenever(okHttpClientBuilder.interceptors()).thenReturn(mutableListOf<Interceptor>())
-            whenever(okHttpClientBuilder.networkInterceptors()).thenReturn(mutableListOf<Interceptor>())
-            whenever(okHttpClientBuilder.build()).thenReturn(remoteAvatarClient)
-            whenever(remoteAvatarClient.newCall(any())).thenReturn(call)
+            useRemoteClient(call)
             whenever(call.execute()).thenReturn(
                 Response.Builder()
                     .request(Request.Builder().url("https://example.com/provider").build())
@@ -66,6 +72,28 @@ class SearchRepositoryTest {
             assertTrue(error is IOException)
             assertTrue(error?.message.orEmpty().contains("HTTP 500"))
         }
+    }
+
+    @Test
+    fun `remote avatar request and parser share the same result cap`() = runBlocking {
+        val call = mock<Call>()
+        useRemoteClient(call)
+        whenever(call.execute()).thenReturn(
+            Response.Builder()
+                .request(Request.Builder().url("https://example.com/provider").build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body("[]".toResponseBody())
+                .build(),
+        )
+
+        repository.searchRemoteAvatars("needle", "https://example.com/provider")
+
+        val request = argumentCaptor<Request>()
+        verify(remoteAvatarClient).newCall(request.capture())
+        assertEquals("needle", request.firstValue.url.queryParameter("search"))
+        assertEquals("1000", request.firstValue.url.queryParameter("n"))
     }
 
     @Test

@@ -46,24 +46,25 @@ fun SearchScreen(
     onAvatarClick: (String) -> Unit = {},
     onGroupClick: (String) -> Unit = {},
 ) {
-    val query by viewModel.query.collectAsStateWithLifecycle()
-    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
-    val users by viewModel.users.collectAsStateWithLifecycle()
-    val worlds by viewModel.worlds.collectAsStateWithLifecycle()
-    val avatars by viewModel.avatars.collectAsStateWithLifecycle()
-    val groups by viewModel.groups.collectAsStateWithLifecycle()
-    val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
-    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
-    val currentOffset by viewModel.currentOffset.collectAsStateWithLifecycle()
-    val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
-    val searchUsersByBio by viewModel.searchUsersByBio.collectAsStateWithLifecycle()
-    val sortUsersByLastLogin by viewModel.sortUsersByLastLogin.collectAsStateWithLifecycle()
-    val worldMode by viewModel.worldMode.collectAsStateWithLifecycle()
-    val includeWorldLabs by viewModel.includeWorldLabs.collectAsStateWithLifecycle()
-    val worldTag by viewModel.worldTag.collectAsStateWithLifecycle()
-    val avatarSearchSource by viewModel.avatarSearchSource.collectAsStateWithLifecycle()
-    val avatarProviderUrl by viewModel.avatarProviderUrl.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val query = state.query
+    val selectedTab = state.selectedTab
+    val users = state.users
+    val worlds = state.worlds
+    val avatars = state.avatars
+    val groups = state.groups
+    val hasSearched = state.hasSearched
+    val isSearching = state.isSearching
+    val error = state.error
+    val currentOffset = state.currentOffset
+    val hasMore = state.hasMore
+    val searchUsersByBio = state.searchUsersByBio
+    val sortUsersByLastLogin = state.sortUsersByLastLogin
+    val worldMode = state.worldMode
+    val includeWorldLabs = state.includeWorldLabs
+    val worldTag = state.worldTag
+    val avatarSearchSource = state.avatarSearchSource
+    val avatarProviderUrl = state.avatarProviderUrl
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Search")

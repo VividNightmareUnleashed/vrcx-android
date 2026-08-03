@@ -5,16 +5,14 @@ import androidx.room.Room
 import com.vrcx.android.data.db.MIGRATION_1_2
 import com.vrcx.android.data.db.MIGRATION_2_3
 import com.vrcx.android.data.db.MIGRATION_3_4
+import com.vrcx.android.data.db.MIGRATION_4_5
 import com.vrcx.android.data.db.VrcxDatabase
 import com.vrcx.android.data.db.dao.FriendNotifyDao
-import com.vrcx.android.data.db.dao.CacheDao
 import com.vrcx.android.data.db.dao.FeedDao
 import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.dao.MemoDao
-import com.vrcx.android.data.db.dao.ModerationDao
 import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.dao.NotificationDao
-import com.vrcx.android.data.preferences.VrcxPreferences
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -30,22 +28,15 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VrcxDatabase {
         return Room.databaseBuilder(context, VrcxDatabase::class.java, "vrcx.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
     }
 
     @Provides fun provideFeedDao(db: VrcxDatabase): FeedDao = db.feedDao()
     @Provides fun provideFriendLogDao(db: VrcxDatabase): FriendLogDao = db.friendLogDao()
     @Provides fun provideNotificationDao(db: VrcxDatabase): NotificationDao = db.notificationDao()
-    @Provides fun provideModerationDao(db: VrcxDatabase): ModerationDao = db.moderationDao()
     @Provides fun provideNoteDao(db: VrcxDatabase): NoteDao = db.noteDao()
-    @Provides fun provideCacheDao(db: VrcxDatabase): CacheDao = db.cacheDao()
     @Provides fun provideMemoDao(db: VrcxDatabase): MemoDao = db.memoDao()
     @Provides fun provideFriendNotifyDao(db: VrcxDatabase): FriendNotifyDao = db.friendNotifyDao()
 
-    @Provides
-    @Singleton
-    fun provideVrcxPreferences(@ApplicationContext context: Context): VrcxPreferences {
-        return VrcxPreferences(context)
-    }
 }

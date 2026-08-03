@@ -1,16 +1,15 @@
 package com.vrcx.android.ui.common
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import java.time.Duration
+import java.time.Instant
 
-fun relativeTime(createdAt: String): String {
+fun relativeTime(createdAt: String, now: Instant = Instant.now()): String {
     return try {
         val instant = Instant.parse(createdAt)
-        val now = Clock.System.now()
-        val diff = now - instant
-        val minutes = diff.inWholeMinutes
-        val hours = diff.inWholeHours
-        val days = diff.inWholeDays
+        val elapsed = Duration.between(instant, now)
+        val minutes = elapsed.toMinutes()
+        val hours = elapsed.toHours()
+        val days = elapsed.toDays()
         when {
             minutes < 1 -> "now"
             minutes < 60 -> "${minutes}m"

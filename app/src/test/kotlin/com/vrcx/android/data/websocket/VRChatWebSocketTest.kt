@@ -38,10 +38,6 @@ class VRChatWebSocketTest {
             "group-left" to PipelineEvent.GroupLeft::class.java,
             "group-role-updated" to PipelineEvent.GroupRoleUpdated::class.java,
             "group-member-updated" to PipelineEvent.GroupMemberUpdated::class.java,
-            "instance-queue-joined" to PipelineEvent.InstanceQueueJoined::class.java,
-            "instance-queue-position" to PipelineEvent.InstanceQueuePosition::class.java,
-            "instance-queue-ready" to PipelineEvent.InstanceQueueReady::class.java,
-            "instance-queue-left" to PipelineEvent.InstanceQueueLeft::class.java,
             "content-refresh" to PipelineEvent.ContentRefresh::class.java,
             "instance-closed" to PipelineEvent.InstanceClosed::class.java,
         )

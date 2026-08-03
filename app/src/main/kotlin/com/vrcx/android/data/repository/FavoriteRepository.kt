@@ -9,7 +9,7 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
 import com.vrcx.android.data.api.model.World
-import com.vrcx.android.data.db.entity.FavoriteFriendEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +38,6 @@ class FavoriteRepository @Inject constructor(
     val favoriteGroups: StateFlow<List<FavoriteGroup>> = _favoriteGroups.asStateFlow()
 
     private val _favoriteLimits = MutableStateFlow<FavoriteLimits?>(null)
-    val favoriteLimits: StateFlow<FavoriteLimits?> = _favoriteLimits.asStateFlow()
 
     private val _favoriteWorlds = MutableStateFlow<List<World>>(emptyList())
     val favoriteWorlds: StateFlow<List<World>> = _favoriteWorlds.asStateFlow()
@@ -172,19 +171,28 @@ class FavoriteRepository @Inject constructor(
     }
 
     suspend fun addFavorite(type: String, favoriteId: String, tags: List<String> = emptyList()): Favorite {
+        val generation = accountGeneration.get()
         val resolvedTags = if (tags.isNotEmpty()) {
             tags
         } else {
-            runCatching { getPreferredFavoriteTags(type) }
-                .getOrElse { defaultFavoriteTags(type) }
-                .ifEmpty { defaultFavoriteTags(type) }
+            try {
+                getPreferredFavoriteTags(type).ifEmpty { defaultFavoriteTags(type) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                defaultFavoriteTags(type)
+            }
         }
+        ensureCurrentGeneration(generation)
         val favorite = favoriteApi.addFavorite(
             com.vrcx.android.data.api.model.FavoriteAddRequest(type, favoriteId, resolvedTags)
         )
-        _favorites.value = _favorites.value
-            .filterNot { it.type == type && it.favoriteId == favoriteId }
-            .plus(favorite)
+        favoriteMutex.withLock {
+            ensureCurrentGeneration(generation)
+            _favorites.value = _favorites.value
+                .filterNot { it.type == type && it.favoriteId == favoriteId }
+                .plus(favorite)
+        }
         // The bulk caches (_favoriteWorlds, _favoriteAvatars) are populated
         // via /worlds/favorites and /avatars/favorites, which are called only
         // during FavoritesViewModel init. Invalidating the "loaded" flag alone
@@ -197,17 +205,26 @@ class FavoriteRepository @Inject constructor(
             when (type) {
                 "world" -> {
                     val world = worldApi.getWorld(favoriteId)
-                    _favoriteWorlds.value = _favoriteWorlds.value
-                        .filterNot { it.id == world.id } + world
+                    favoriteMutex.withLock {
+                        ensureCurrentGeneration(generation)
+                        _favoriteWorlds.value = _favoriteWorlds.value
+                            .filterNot { it.id == world.id } + world
+                    }
                 }
                 "avatar" -> {
                     val avatar = avatarApi.getAvatar(favoriteId)
-                    _favoriteAvatars.value = _favoriteAvatars.value
-                        .filterNot { it.id == avatar.id } + avatar
+                    favoriteMutex.withLock {
+                        ensureCurrentGeneration(generation)
+                        _favoriteAvatars.value = _favoriteAvatars.value
+                            .filterNot { it.id == avatar.id } + avatar
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             favoriteMutex.withLock {
+                ensureCurrentGeneration(generation)
                 when (type) {
                     "world" -> favoriteWorldsLoaded = false
                     "avatar" -> favoriteAvatarsLoaded = false
@@ -218,19 +235,24 @@ class FavoriteRepository @Inject constructor(
     }
 
     suspend fun deleteFavorite(favoriteId: String) {
-        val existing = _favorites.value.firstOrNull { it.id == favoriteId }
+        val generation = accountGeneration.get()
+        val existing = favoriteMutex.withLock {
+            ensureCurrentGeneration(generation)
+            _favorites.value.firstOrNull { it.id == favoriteId }
+        }
         favoriteApi.deleteFavorite(favoriteId)
-        _favorites.value = _favorites.value.filter { it.id != favoriteId }
-        // Drop the underlying world/avatar from the bulk cache immediately so
-        // the Favorites screen updates without waiting for a full refetch.
-        // This mirrors the intent of the explicit dropFavorite*FromCache
-        // helpers without relying on callers to remember to invoke them.
-        if (existing != null) {
-            when (existing.type) {
-                "world", "vrcPlusWorld" -> _favoriteWorlds.value =
-                    _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
-                "avatar" -> _favoriteAvatars.value =
-                    _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
+        favoriteMutex.withLock {
+            ensureCurrentGeneration(generation)
+            _favorites.value = _favorites.value.filter { it.id != favoriteId }
+            // Drop the underlying world/avatar from the bulk cache immediately
+            // so observers never retain an item that was successfully deleted.
+            if (existing != null) {
+                when (existing.type) {
+                    "world", "vrcPlusWorld" -> _favoriteWorlds.value =
+                        _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
+                    "avatar" -> _favoriteAvatars.value =
+                        _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
+                }
             }
         }
     }
@@ -281,6 +303,12 @@ class FavoriteRepository @Inject constructor(
         return listOfNotNull(DEFAULT_FAVORITE_TAGS[type])
     }
 
+    private fun ensureCurrentGeneration(generation: Long) {
+        if (generation != accountGeneration.get()) {
+            throw CancellationException("Favorite operation invalidated by account change")
+        }
+    }
+
     companion object {
         private val DEFAULT_FAVORITE_TYPES = listOf("friend", "world", "avatar", "vrcPlusWorld")
         private val DEFAULT_FAVORITE_TAGS = mapOf(
@@ -303,14 +331,5 @@ class FavoriteRepository @Inject constructor(
         _favoriteLimits.value = null
         _favoriteWorlds.value = emptyList()
         _favoriteAvatars.value = emptyList()
-    }
-
-    /** Removes the cached entry for a single deleted favorite without re-fetching. */
-    fun dropFavoriteWorldFromCache(worldId: String) {
-        _favoriteWorlds.value = _favoriteWorlds.value.filterNot { it.id == worldId }
-    }
-
-    fun dropFavoriteAvatarFromCache(avatarId: String) {
-        _favoriteAvatars.value = _favoriteAvatars.value.filterNot { it.id == avatarId }
     }
 }

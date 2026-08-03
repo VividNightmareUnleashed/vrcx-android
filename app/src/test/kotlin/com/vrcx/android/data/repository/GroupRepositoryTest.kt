@@ -3,6 +3,9 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.model.Group
+import com.vrcx.android.data.api.model.GroupMember
+import com.vrcx.android.data.api.model.GroupPost
+import com.vrcx.android.data.api.model.GroupPostsResponse
 import com.vrcx.android.data.websocket.PipelineEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -22,6 +25,44 @@ class GroupRepositoryTest {
         groupApi = groupApi,
         dedup = RequestDeduplicator(),
     )
+
+    @Test
+    fun `member page preserves requested offset and reports a full page as having more`() {
+        runBlocking {
+            val members = listOf(
+                GroupMember(id = "gmem_1"),
+                GroupMember(id = "gmem_2"),
+            )
+            whenever(groupApi.getGroupMembers("grp_1", n = 2, offset = 4)).thenReturn(members)
+
+            val page = repository.getGroupMembersPage("grp_1", offset = 4, count = 2)
+
+            assertEquals(members, page.items)
+            assertEquals(6, page.nextOffset)
+            assertEquals(true, page.hasMore)
+            verify(groupApi).getGroupMembers("grp_1", n = 2, offset = 4)
+        }
+    }
+
+    @Test
+    fun `post page uses server total to determine completion`() {
+        runBlocking {
+            val posts = listOf(
+                GroupPost(id = "post_3"),
+                GroupPost(id = "post_4"),
+            )
+            whenever(groupApi.getGroupPosts("grp_1", n = 2, offset = 2)).thenReturn(
+                GroupPostsResponse(posts = posts, total = 5),
+            )
+
+            val page = repository.getGroupPostsPage("grp_1", offset = 2, count = 2)
+
+            assertEquals(posts, page.items)
+            assertEquals(4, page.nextOffset)
+            assertEquals(5, page.total)
+            assertEquals(true, page.hasMore)
+        }
+    }
 
     @Test
     fun `join fallback invalidates cached group before later reads`() {

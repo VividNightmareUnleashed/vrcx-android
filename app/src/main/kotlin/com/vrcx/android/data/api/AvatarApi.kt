@@ -2,8 +2,6 @@ package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.CurrentUser
-import kotlinx.serialization.json.JsonElement
-import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -27,9 +25,4 @@ interface AvatarApi {
     @PUT("avatars/{avatarId}/select")
     suspend fun selectAvatar(@Path("avatarId") avatarId: String): CurrentUser
 
-    @PUT("avatars/{avatarId}/selectFallback")
-    suspend fun selectFallbackAvatar(@Path("avatarId") avatarId: String): CurrentUser
-
-    @DELETE("avatars/{avatarId}")
-    suspend fun deleteAvatar(@Path("avatarId") avatarId: String): JsonElement
 }

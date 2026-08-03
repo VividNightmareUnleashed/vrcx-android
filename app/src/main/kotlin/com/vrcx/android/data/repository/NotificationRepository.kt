@@ -1,78 +1,46 @@
 package com.vrcx.android.data.repository
 
+import android.util.Log
 import com.vrcx.android.data.api.NotificationApi
 import com.vrcx.android.data.api.model.InviteRequest
 import com.vrcx.android.data.api.model.InviteResponseRequest
-import com.vrcx.android.data.api.model.NotificationAction
 import com.vrcx.android.data.api.model.NotificationResponse
 import com.vrcx.android.data.api.model.NotificationV2
 import com.vrcx.android.data.api.model.VrcNotification
 import com.vrcx.android.data.db.dao.NotificationDao
-import com.vrcx.android.data.db.entity.NotificationEntity
-import com.vrcx.android.data.db.entity.NotificationV2Entity
-import com.vrcx.android.data.websocket.PipelineEvent
-import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.model.isTrackableLocation
 import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.util.parseInstantMillisOrNull
+import com.vrcx.android.data.websocket.PipelineEvent
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import java.util.concurrent.atomic.AtomicLong
 
-data class UnifiedNotification(
-    val id: String,
-    val type: String,
-    val senderUserId: String,
-    val senderUsername: String,
-    val message: String,
-    val title: String,
-    val createdAt: String,
-    val seen: Boolean,
-    val isV2: Boolean,
-    val responses: List<NotificationAction>,
-    /**
-     * True for notifications the app synthesizes locally (e.g. "instance
-     * closed") that the server has never seen. The [id] is an opaque key;
-     * callers consult this flag instead of sniffing an id prefix to decide
-     * whether an action should reach the server or touch Room.
-     */
-    val isLocal: Boolean = false,
-) {
-    /**
-     * [createdAt] parsed to epoch millis once at construction. The unified feed
-     * is sorted by this on every notification event (and by multiple collectors),
-     * so parsing it per comparison was the dominant cost. MIN_VALUE keeps
-     * unparseable timestamps sorted oldest.
-     */
-    val createdAtEpochMs: Long = parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
-
-    /** The actionable kind of this notification, parsed once from [type]. */
-    val kind: NotificationKind = NotificationKind.fromType(type)
+private enum class RefreshMode {
+    INCREMENTAL,
+    FULL_RESYNC,
 }
-
-private data class InviteContext(
-    val location: String,
-)
 
 @Singleton
 class NotificationRepository @Inject constructor(
@@ -82,50 +50,54 @@ class NotificationRepository @Inject constructor(
     private val json: Json,
 ) {
     companion object {
+        private const val TAG = "NotificationRepository"
         private const val PAGE_SIZE = 100
         private const val MAX_REMOTE_PAGES = 50
+        private const val PAGE_DELAY_MS = 150L
         private const val MAX_CACHED_NOTIFICATIONS = PAGE_SIZE * MAX_REMOTE_PAGES
         private const val MAX_LOCAL_NOTIFICATIONS = 100
     }
 
     private val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val storageCommands = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+    private val refreshMutex = Mutex()
     private val stateLock = Any()
     private val accountGeneration = AtomicLong(0)
     private val removedNotificationIds = linkedSetOf<String>()
 
+    private data class AccountSnapshot(val userId: String, val generation: Long)
+
+    private var remoteV1: List<VrcNotification> = emptyList()
+    private var remoteV2: List<NotificationV2> = emptyList()
+    private var local: List<UnifiedNotification> = emptyList()
+
+    private val _unifiedNotifications = MutableStateFlow<List<UnifiedNotification>>(emptyList())
+    val unifiedNotifications: StateFlow<List<UnifiedNotification>> = _unifiedNotifications.asStateFlow()
+
     init {
         storageScope.launch {
-            for (command in storageCommands) runCatching { command() }
+            for (command in storageCommands) {
+                try {
+                    command()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    Log.w(TAG, "Notification cache write failed", error)
+                }
+            }
         }
-    }
-
-    private val _notifications = MutableStateFlow<List<VrcNotification>>(emptyList())
-    val notifications: StateFlow<List<VrcNotification>> = _notifications.asStateFlow()
-
-    private val _notificationsV2 = MutableStateFlow<List<NotificationV2>>(emptyList())
-    val notificationsV2: StateFlow<List<NotificationV2>> = _notificationsV2.asStateFlow()
-
-    private val _localNotifications = MutableStateFlow<List<UnifiedNotification>>(emptyList())
-    val localNotifications: StateFlow<List<UnifiedNotification>> = _localNotifications.asStateFlow()
-
-    val unseenCount = MutableStateFlow(0)
-
-    val unifiedNotifications = combine(_notifications, _notificationsV2, _localNotifications) { v1, v2, local ->
-        (v1.map { it.toUnified() } + v2.map { it.toUnified() } + local)
-            .sortedByDescending { it.createdAtEpochMs }
     }
 
     suspend fun restoreNotifications() {
         val userId = currentUserId() ?: return
         val generation = accountGeneration.get()
-        val v1 = notificationDao.getNotifications(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel() }
-        val v2 = notificationDao.getNotificationsV2(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel() }
+        val v1 = notificationDao.getNotifications(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel(json) }
+        val v2 = notificationDao.getNotificationsV2(userId, MAX_CACHED_NOTIFICATIONS).map { it.toModel(json) }
         synchronized(stateLock) {
-            if (generation != accountGeneration.get() || userId != currentUserId()) return
-            _notifications.value = v1.sortedByDescending { notificationSortKey(it.createdAt) }
-            _notificationsV2.value = v2.sortedByDescending { notificationSortKey(it.createdAt) }
-            recalculateUnseenCount()
+            if (!isCurrentAccount(userId, generation)) return
+            remoteV1 = v1
+            remoteV2 = v2
+            publishUnified()
         }
     }
 
@@ -133,138 +105,270 @@ class NotificationRepository @Inject constructor(
         accountGeneration.incrementAndGet()
         synchronized(stateLock) {
             removedNotificationIds.clear()
-            _notifications.value = emptyList()
-            _notificationsV2.value = emptyList()
-            _localNotifications.value = emptyList()
-            unseenCount.value = 0
+            remoteV1 = emptyList()
+            remoteV2 = emptyList()
+            local = emptyList()
+            publishUnified()
         }
     }
 
-    suspend fun loadNotifications() {
-        val userId = currentUserId() ?: return
+    /** Stops at the first cached overlap, or reconciles a full snapshot when a source has no cache. */
+    suspend fun loadNotifications() = refreshMutex.withLock {
+        val userId = currentUserId() ?: return@withLock
         val generation = accountGeneration.get()
+        val (knownV1, knownV2) = synchronized(stateLock) {
+            remoteV1.mapTo(mutableSetOf()) { it.id } to remoteV2.mapTo(mutableSetOf()) { it.id }
+        }
+        val v1Mode = if (knownV1.isEmpty()) RefreshMode.FULL_RESYNC else RefreshMode.INCREMENTAL
+        val v2Mode = if (knownV2.isEmpty()) RefreshMode.FULL_RESYNC else RefreshMode.INCREMENTAL
 
-        // Sweep V1 and V2 concurrently instead of back-to-back — each is up to
-        // MAX_REMOTE_PAGES pages with an inter-page rate-limit delay.
         val failures = coroutineScope {
             val v1 = async {
-                runCatching {
-                    val remoteV1 = loadAllV1Notifications()
-                    val committed = synchronized(stateLock) {
-                        if (generation != accountGeneration.get() || userId != currentUserId()) null else {
-                            (remoteV1 + _notifications.value)
-                                .filterNot { it.id in removedNotificationIds }
-                                .associateBy { it.id }.values
-                                .sortedByDescending { notificationSortKey(it.createdAt) }
-                                .also { _notifications.value = it }
-                        }
-                    } ?: return@runCatching
-                    notificationDao.replaceNotifications(userId, committed.map { it.toEntity(userId) })
-                }.exceptionOrNull()
+                captureFailure {
+                    val fetched = loadNewestV1(
+                        knownIds = knownV1,
+                        stopAtOverlap = v1Mode == RefreshMode.INCREMENTAL,
+                    )
+                    commitV1(userId, generation, fetched, v1Mode)
+                }
             }
             val v2 = async {
-                runCatching {
-                    val remoteV2 = loadAllV2Notifications()
-                    val committed = synchronized(stateLock) {
-                        if (generation != accountGeneration.get() || userId != currentUserId()) null else {
-                            (remoteV2 + _notificationsV2.value)
-                                .filterNot { it.id in removedNotificationIds }
-                                .associateBy { it.id }.values
-                                .sortedByDescending { notificationSortKey(it.createdAt) }
-                                .also { _notificationsV2.value = it }
-                        }
-                    } ?: return@runCatching
-                    notificationDao.replaceNotificationsV2(userId, committed.map { it.toEntity(userId) })
-                }.exceptionOrNull()
+                captureFailure {
+                    val fetched = loadNewestV2(
+                        knownIds = knownV2,
+                        stopAtOverlap = v2Mode == RefreshMode.INCREMENTAL,
+                    )
+                    commitV2(userId, generation, fetched, v2Mode)
+                }
             }
             listOfNotNull(v1.await(), v2.await())
         }
 
-        recalculateUnseenCount()
         failures.firstOrNull()?.let { first ->
             failures.drop(1).forEach(first::addSuppressed)
             throw first
         }
     }
 
-    fun handleEvent(event: PipelineEvent) {
-        synchronized(stateLock) { when (event) {
-            is PipelineEvent.Notification -> handleV1Notification(event)
-            is PipelineEvent.NotificationV2 -> handleV2Notification(event)
-            is PipelineEvent.NotificationV2Delete -> handleV2Delete(event)
-            is PipelineEvent.NotificationV2Update -> handleV2Update(event)
-            is PipelineEvent.SeeNotification -> handleSee(event)
-            is PipelineEvent.HideNotification -> handleHide(event)
-            is PipelineEvent.ResponseNotification -> handleResponse(event)
-            is PipelineEvent.InstanceClosed -> handleInstanceClosed(event)
-            PipelineEvent.ClearNotification -> handleClearNotification()
-            else -> {}
-        } }
+    private suspend fun captureFailure(block: suspend () -> Unit): Exception? = try {
+        block()
+        null
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (failure: Exception) {
+        failure
     }
 
-    private fun handleClearNotification() {
-        val userId = currentUserId() ?: return
+    private suspend fun commitV1(
+        userId: String,
+        generation: Long,
+        fetched: List<VrcNotification>,
+        mode: RefreshMode,
+    ) {
+        val persisted = synchronized(stateLock) {
+            if (!isCurrentAccount(userId, generation)) return
+            val visibleFetched = fetched.filterNot { it.id in removedNotificationIds }
+            remoteV1 = limitV1(mergeV1(remoteV1, visibleFetched))
+            publishUnified()
+            val committedById = remoteV1.associateBy { it.id }
+            if (mode == RefreshMode.FULL_RESYNC) remoteV1
+            else visibleFetched.mapNotNull { committedById[it.id] }
+        }
+        if (!isCurrentAccount(userId, generation)) return
+        val entities = persisted.map { it.toEntity(userId) }
+        when (mode) {
+            RefreshMode.INCREMENTAL -> notificationDao.upsertNotifications(
+                userId,
+                entities,
+                MAX_CACHED_NOTIFICATIONS,
+            )
+            RefreshMode.FULL_RESYNC -> notificationDao.synchronizeNotifications(
+                userId,
+                entities,
+                MAX_CACHED_NOTIFICATIONS,
+            )
+        }
+    }
+
+    private suspend fun commitV2(
+        userId: String,
+        generation: Long,
+        fetched: List<NotificationV2>,
+        mode: RefreshMode,
+    ) {
+        val persisted = synchronized(stateLock) {
+            if (!isCurrentAccount(userId, generation)) return
+            val visibleFetched = fetched.filterNot { it.id in removedNotificationIds }
+            remoteV2 = limitV2(mergeV2(remoteV2, visibleFetched))
+            publishUnified()
+            val committedById = remoteV2.associateBy { it.id }
+            if (mode == RefreshMode.FULL_RESYNC) remoteV2
+            else visibleFetched.mapNotNull { committedById[it.id] }
+        }
+        if (!isCurrentAccount(userId, generation)) return
+        val entities = persisted.map { it.toEntity(userId, json) }
+        when (mode) {
+            RefreshMode.INCREMENTAL -> notificationDao.upsertNotificationsV2(
+                userId,
+                entities,
+                MAX_CACHED_NOTIFICATIONS,
+            )
+            RefreshMode.FULL_RESYNC -> notificationDao.synchronizeNotificationsV2(
+                userId,
+                entities,
+                MAX_CACHED_NOTIFICATIONS,
+            )
+        }
+    }
+
+    private fun mergeV1(
+        current: List<VrcNotification>,
+        fetched: List<VrcNotification>,
+    ): List<VrcNotification> {
+        val merged = current.associateByTo(linkedMapOf()) { it.id }
+        fetched.forEach { notification ->
+            val wasSeen = merged[notification.id]?.seen == true
+            merged[notification.id] = notification.copy(seen = notification.seen || wasSeen)
+        }
+        return merged.values.toList()
+    }
+
+    private fun mergeV2(
+        current: List<NotificationV2>,
+        fetched: List<NotificationV2>,
+    ): List<NotificationV2> {
+        val merged = current.associateByTo(linkedMapOf()) { it.id }
+        fetched.forEach { notification ->
+            val existing = merged[notification.id]
+            val freshest = freshestV2(existing, notification)
+            merged[notification.id] = freshest.copy(seen = freshest.seen || existing?.seen == true)
+        }
+        return merged.values.toList()
+    }
+
+    private fun freshestV2(existing: NotificationV2?, fetched: NotificationV2): NotificationV2 {
+        if (existing == null) return fetched
+        if (existing.version != fetched.version) return if (existing.version > fetched.version) existing else fetched
+        val existingUpdated = notificationSortKey(existing.updatedAt)
+        val fetchedUpdated = notificationSortKey(fetched.updatedAt)
+        return if (existingUpdated > fetchedUpdated) existing else fetched
+    }
+
+    private suspend fun loadNewestV1(
+        knownIds: Set<String>,
+        stopAtOverlap: Boolean,
+    ): List<VrcNotification> = loadNewest(
+        knownIds = knownIds,
+        stopAtOverlap = stopAtOverlap,
+        idOf = VrcNotification::id,
+        fetchPage = { offset -> notificationApi.getNotifications(n = PAGE_SIZE, offset = offset) },
+    )
+
+    private suspend fun loadNewestV2(
+        knownIds: Set<String>,
+        stopAtOverlap: Boolean,
+    ): List<NotificationV2> = loadNewest(
+        knownIds = knownIds,
+        stopAtOverlap = stopAtOverlap,
+        idOf = NotificationV2::id,
+        fetchPage = { offset -> notificationApi.getNotificationsV2(n = PAGE_SIZE, offset = offset) },
+    )
+
+    private suspend fun <T> loadNewest(
+        knownIds: Set<String>,
+        stopAtOverlap: Boolean,
+        idOf: (T) -> String,
+        fetchPage: suspend (offset: Int) -> List<T>,
+    ): List<T> {
+        val collected = linkedMapOf<String, T>()
+        var offset = 0
+        repeat(MAX_REMOTE_PAGES) {
+            val page = fetchPage(offset)
+            page.forEach { item ->
+                val id = idOf(item)
+                if (id.isNotBlank()) collected.putIfAbsent(id, item)
+            }
+            val overlaps = stopAtOverlap && page.any { idOf(it) in knownIds }
+            if (page.isEmpty() || page.size < PAGE_SIZE || overlaps) return collected.values.toList()
+            offset += page.size
+            delay(PAGE_DELAY_MS)
+        }
+        return collected.values.toList()
+    }
+
+    fun handleEvent(event: PipelineEvent) {
+        val account = accountSnapshot() ?: return
+        synchronized(stateLock) {
+            if (!account.isCurrent()) return
+            when (event) {
+                is PipelineEvent.Notification -> handleV1Notification(event, account)
+                is PipelineEvent.NotificationV2 -> handleV2Notification(event, account)
+                is PipelineEvent.NotificationV2Delete -> handleV2Delete(event, account)
+                is PipelineEvent.NotificationV2Update -> handleV2Update(event, account)
+                is PipelineEvent.SeeNotification -> event.content?.jsonPrimitive?.content
+                    ?.let { markSeen(it, account) }
+                is PipelineEvent.HideNotification -> event.content?.jsonPrimitive?.content
+                    ?.let { removeFromLists(it, account) }
+                is PipelineEvent.ResponseNotification -> event.content?.jsonObject
+                    ?.get("notificationId")
+                    ?.jsonPrimitive
+                    ?.content
+                    ?.let { removeFromLists(it, account) }
+                is PipelineEvent.InstanceClosed -> handleInstanceClosed(event)
+                PipelineEvent.ClearNotification -> handleClearNotification(account)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun handleClearNotification(account: AccountSnapshot) {
         accountGeneration.incrementAndGet()
         removedNotificationIds.clear()
-        _notifications.value = emptyList()
-        _notificationsV2.value = emptyList()
-        _localNotifications.value = emptyList()
-        unseenCount.value = 0
+        remoteV1 = emptyList()
+        remoteV2 = emptyList()
+        local = emptyList()
+        publishUnified()
         storageCommands.trySend {
-            notificationDao.deleteNotificationsForUser(userId)
-            notificationDao.deleteNotificationsV2ForUser(userId)
+            notificationDao.deleteNotificationsForUser(account.userId)
+            notificationDao.deleteNotificationsV2ForUser(account.userId)
         }
     }
 
-    private fun handleV1Notification(event: PipelineEvent.Notification) {
-        val notif = try {
+    private fun handleV1Notification(event: PipelineEvent.Notification, account: AccountSnapshot) {
+        val notification = runCatching {
             event.content?.let { json.decodeFromJsonElement(VrcNotification.serializer(), it) }
-        } catch (_: Exception) {
-            null
-        } ?: return
-        _notifications.value = (_notifications.value.filter { it.id != notif.id } + notif)
-            .sortedByDescending { notificationSortKey(it.createdAt) }
-        persistNotificationAsync(notif)
-        recalculateUnseenCount()
+        }.getOrNull() ?: return
+        removedNotificationIds.remove(notification.id)
+        remoteV1 = limitV1(mergeV1(remoteV1, listOf(notification)))
+        publishUnified()
+        persistNotificationAsync(notification, account.userId)
     }
 
-    private fun handleV2Notification(event: PipelineEvent.NotificationV2) {
-        val notif = try {
+    private fun handleV2Notification(event: PipelineEvent.NotificationV2, account: AccountSnapshot) {
+        val notification = runCatching {
             event.content?.let { json.decodeFromJsonElement(NotificationV2.serializer(), it) }
-        } catch (_: Exception) {
-            null
-        } ?: return
-        val updated = _notificationsV2.value.toMutableList()
-        val existing = updated.indexOfFirst { it.id == notif.id }
-        if (existing >= 0) {
-            updated[existing] = notif
-        } else {
-            updated += notif
-        }
-        _notificationsV2.value = updated.sortedByDescending { notificationSortKey(it.createdAt) }
-        persistNotificationV2Async(notif)
-        recalculateUnseenCount()
+        }.getOrNull() ?: return
+        removedNotificationIds.remove(notification.id)
+        remoteV2 = limitV2(mergeV2(remoteV2, listOf(notification)))
+        publishUnified()
+        persistNotificationV2Async(notification, account.userId)
     }
 
-    private fun handleV2Delete(event: PipelineEvent.NotificationV2Delete) {
-        val ids = try {
+    private fun handleV2Delete(event: PipelineEvent.NotificationV2Delete, account: AccountSnapshot) {
+        val ids = runCatching {
             event.content?.jsonObject?.get("ids")?.jsonArray
-                ?.mapNotNull { it.jsonPrimitive.content }
-                ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
-        removeFromLists(ids)
+                ?.map { it.jsonPrimitive.content }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+        removeFromLists(ids, account)
     }
 
-    private fun handleV2Update(event: PipelineEvent.NotificationV2Update) {
+    private fun handleV2Update(event: PipelineEvent.NotificationV2Update, account: AccountSnapshot) {
         val obj = event.content?.jsonObject ?: return
         val id = obj["id"]?.jsonPrimitive?.content ?: return
         val updatesJson = obj["updates"]?.jsonObject ?: return
-        val existing = _notificationsV2.value.firstOrNull { it.id == id }
-        val existingObject = existing?.let {
-            json.encodeToJsonElement(NotificationV2.serializer(), it).jsonObject
-        } ?: return
+        val existing = remoteV2.firstOrNull { it.id == id } ?: return
+        val existingObject = json.encodeToJsonElement(NotificationV2.serializer(), existing).jsonObject
         val updated = runCatching {
             json.decodeFromJsonElement(
                 NotificationV2.serializer(),
@@ -275,121 +379,87 @@ class NotificationRepository @Inject constructor(
                 },
             )
         }.getOrNull() ?: return
-        _notificationsV2.value = (_notificationsV2.value.filter { it.id != id } + updated)
-            .sortedByDescending { notificationSortKey(it.createdAt) }
-        persistNotificationV2Async(updated)
-        recalculateUnseenCount()
-    }
-
-    private fun handleSee(event: PipelineEvent.SeeNotification) {
-        val id = event.content?.jsonPrimitive?.content ?: return
-        markSeen(id)
-    }
-
-    private fun handleHide(event: PipelineEvent.HideNotification) {
-        val id = event.content?.jsonPrimitive?.content ?: return
-        removeFromLists(id)
-    }
-
-    private fun handleResponse(event: PipelineEvent.ResponseNotification) {
-        val id = event.content?.jsonObject?.get("notificationId")?.jsonPrimitive?.content ?: return
-        removeFromLists(id)
+        remoteV2 = remoteV2.map { if (it.id == id) updated else it }
+        publishUnified()
+        persistNotificationV2Async(updated, account.userId)
     }
 
     private fun handleInstanceClosed(event: PipelineEvent.InstanceClosed) {
         val location = event.content?.jsonObject?.get("instanceLocation")?.jsonPrimitive?.content.orEmpty()
+        val now = Instant.now()
         val notification = UnifiedNotification(
-            id = "local:instance.closed:${Instant.now()}",
+            id = "local:instance.closed:$now",
             type = "instance.closed",
             senderUserId = "",
             senderUsername = "System",
             message = location.ifBlank { "A queued instance closed" },
             title = "Instance Closed",
-            createdAt = Instant.now().toString(),
+            createdAt = now.toString(),
             seen = false,
-            isV2 = false,
+            source = NotificationSource.LOCAL,
             responses = emptyList(),
-            isLocal = true,
         )
-        _localNotifications.value = (listOf(notification) + _localNotifications.value)
-            .take(MAX_LOCAL_NOTIFICATIONS)
-        recalculateUnseenCount()
+        local = (listOf(notification) + local).take(MAX_LOCAL_NOTIFICATIONS)
+        publishUnified()
     }
 
-    private fun markSeen(id: String) {
-        _notifications.value = _notifications.value.map {
-            if (it.id == id) it.copy(seen = true) else it
-        }
-        _notificationsV2.value = _notificationsV2.value.map {
-            if (it.id == id) it.copy(seen = true) else it
-        }
-        _localNotifications.value = _localNotifications.value.map {
-            if (it.id == id) it.copy(seen = true) else it
-        }
-        markSeenInStorageAsync(id)
-        recalculateUnseenCount()
-    }
-
-    private fun recalculateUnseenCount() {
-        unseenCount.value = _notifications.value.count { !it.seen } +
-            _notificationsV2.value.count { !it.seen } +
-            _localNotifications.value.count { !it.seen }
-    }
-
-    suspend fun acceptFriendRequest(notificationId: String) {
-        notificationApi.acceptFriendRequest(notificationId)
-        removeFromLists(notificationId)
-    }
-
-    suspend fun hideNotification(notificationId: String) {
-        notificationApi.hideNotification(notificationId)
-        removeFromLists(notificationId)
-    }
-
-    suspend fun seeNotification(notificationId: String) {
-        notificationApi.seeNotification(notificationId)
-        markSeen(notificationId)
+    private fun markSeen(id: String, account: AccountSnapshot) {
+        remoteV1 = remoteV1.map { if (it.id == id) it.copy(seen = true) else it }
+        remoteV2 = remoteV2.map { if (it.id == id) it.copy(seen = true) else it }
+        local = local.map { if (it.id == id) it.copy(seen = true) else it }
+        publishUnified()
+        markSeenInStorageAsync(id, account.userId)
     }
 
     suspend fun sendInviteToUser(userId: String, messageSlot: Int? = null) {
         notificationApi.sendInvite(userId, createInvitePayload(messageSlot))
     }
 
-    suspend fun sendInviteResponse(notificationId: String, responseSlot: Int) {
+    suspend fun sendInviteResponse(notification: UnifiedNotification, responseSlot: Int) {
+        require(notification.source == NotificationSource.V1) { "Saved invite responses require a V1 notification" }
+        val account = accountSnapshot() ?: return
         notificationApi.sendInviteResponse(
-            notificationId = notificationId,
+            notificationId = notification.id,
             body = InviteResponseRequest(responseSlot = responseSlot),
         )
-        notificationApi.hideNotification(notificationId)
-        removeFromLists(notificationId)
-    }
-
-    suspend fun acceptInvite(notificationId: String, isV2: Boolean) {
-        val notification = if (isV2) {
-            _notificationsV2.value.firstOrNull { it.id == notificationId }?.toUnified()
-        } else {
-            _notifications.value.firstOrNull { it.id == notificationId }?.toUnified()
-        } ?: return
-        performPrimaryAction(notification)
+        if (!account.isCurrent()) return
+        notificationApi.hideNotification(notification.id)
+        removeFromLists(notification.id, account)
     }
 
     suspend fun performPrimaryAction(notification: UnifiedNotification) {
+        val account = accountSnapshot() ?: return
         when {
-            notification.isV2 -> {
+            notification.source == NotificationSource.V2 -> {
                 val primaryResponse = notification.responses.firstOrNull() ?: return
-                respondToNotification(notification, primaryResponse.type)
+                respondToNotification(notification, primaryResponse.type, account)
             }
-            notification.kind == NotificationKind.FRIEND_REQUEST -> acceptFriendRequest(notification.id)
+            notification.kind == NotificationKind.FRIEND_REQUEST -> {
+                notificationApi.acceptFriendRequest(notification.id)
+                removeFromLists(notification.id, account)
+            }
             notification.kind == NotificationKind.REQUEST_INVITE -> {
-                acceptRequestInvite(notification)
-                removeFromLists(notification.id)
+                sendInviteToUser(notification.senderUserId)
+                if (!account.isCurrent()) return
+                notificationApi.hideNotification(notification.id)
+                removeFromLists(notification.id, account)
             }
         }
     }
 
     suspend fun respondToNotification(notification: UnifiedNotification, responseType: String) {
-        if (!notification.isV2) return
+        val account = accountSnapshot() ?: return
+        respondToNotification(notification, responseType, account)
+    }
+
+    private suspend fun respondToNotification(
+        notification: UnifiedNotification,
+        responseType: String,
+        account: AccountSnapshot,
+    ) {
+        if (notification.source != NotificationSource.V2) return
         val response = notification.responses.firstOrNull { it.type == responseType } ?: return
+        if (!account.isCurrent()) return
         notificationApi.sendNotificationResponse(
             notification.id,
             NotificationResponse(
@@ -397,257 +467,131 @@ class NotificationRepository @Inject constructor(
                 responseData = response.data,
             ),
         )
-        removeFromLists(notification.id)
+        removeFromLists(notification.id, account)
     }
 
-    suspend fun declineInvite(notificationId: String, isV2: Boolean) {
-        if (isV2) {
-            notificationApi.hideNotificationV2(notificationId)
-        } else {
-            notificationApi.hideNotification(notificationId)
+    suspend fun hide(notification: UnifiedNotification) {
+        val account = accountSnapshot() ?: return
+        when (notification.source) {
+            NotificationSource.V1 -> notificationApi.hideNotification(notification.id)
+            NotificationSource.V2 -> notificationApi.hideNotificationV2(notification.id)
+            NotificationSource.LOCAL -> Unit
         }
-        removeFromLists(notificationId)
-    }
-
-    suspend fun hideUnified(notificationId: String, isV2: Boolean) {
-        if (isLocalNotification(notificationId)) {
-            removeFromLists(notificationId)
-            return
-        }
-        if (isV2) {
-            notificationApi.hideNotificationV2(notificationId)
-        } else {
-            notificationApi.hideNotification(notificationId)
-        }
-        removeFromLists(notificationId)
-    }
-
-    private suspend fun acceptRequestInvite(notification: UnifiedNotification) {
-        sendInviteToUser(notification.senderUserId)
-        notificationApi.hideNotification(notification.id)
+        removeFromLists(notification.id, account)
     }
 
     private suspend fun createInvitePayload(messageSlot: Int?): InviteRequest {
-        val context = resolveInviteContext()
-        return InviteRequest(
-            instanceId = context.location,
-            messageSlot = messageSlot,
-        )
+        return InviteRequest(instanceId = resolveInviteLocation(), messageSlot = messageSlot)
     }
 
-    private suspend fun resolveInviteContext(): InviteContext {
-        val currentUser = authRepository.currentUser
-            ?: error("Current user is not available")
+    private suspend fun resolveInviteLocation(): String {
+        val currentUser = authRepository.currentUser ?: error("Current user is not available")
         val currentLocation = resolvePresenceLocation(currentUser)
-        if (!isTrackableLocation(currentLocation)) {
-            error("You must be in a world to send invites")
-        }
-
-        return InviteContext(
-            location = currentLocation,
-        )
+        if (!isTrackableLocation(currentLocation)) error("You must be in a world to send invites")
+        return currentLocation
     }
 
-    private suspend fun loadAllV1Notifications(): List<VrcNotification> {
-        val collected = linkedMapOf<String, VrcNotification>()
-        BulkPaginator.fetchAll(pageSize = PAGE_SIZE, maxPages = MAX_REMOTE_PAGES) { offset, n ->
-            notificationApi.getNotifications(n = n, offset = offset)
-        }.forEach { notification ->
-            if (notification.id.isNotBlank() && notification.id !in collected) {
-                collected[notification.id] = notification
-            }
-        }
-        return collected.values.sortedByDescending { it.createdAt }
-    }
-
-    private suspend fun loadAllV2Notifications(): List<NotificationV2> {
-        val collected = linkedMapOf<String, NotificationV2>()
-        BulkPaginator.fetchAll(pageSize = PAGE_SIZE, maxPages = MAX_REMOTE_PAGES) { offset, n ->
-            notificationApi.getNotificationsV2(n = n, offset = offset)
-        }.forEach { notification ->
-            if (notification.id.isNotBlank() && notification.id !in collected) {
-                collected[notification.id] = notification
-            }
-        }
-        return collected.values.sortedByDescending { it.createdAt }
-    }
-
-    private fun persistNotificationAsync(notification: VrcNotification) {
-        val userId = currentUserId() ?: return
-        storageCommands.trySend { notificationDao.insertNotification(notification.toEntity(userId)) }
-    }
-
-    private fun persistNotificationV2Async(notification: NotificationV2) {
-        val userId = currentUserId() ?: return
-        storageCommands.trySend { notificationDao.insertNotificationV2(notification.toEntity(userId)) }
-    }
-
-    private fun markSeenInStorageAsync(notificationId: String) {
-        if (isLocalNotification(notificationId)) return
-        val userId = currentUserId() ?: return
-        storageCommands.trySend {
-            notificationDao.markSeen(userId, notificationId)
-            notificationDao.markSeenV2(userId, notificationId)
+    private fun persistNotificationAsync(notification: VrcNotification, ownerUserId: String) {
+        enqueueStorage {
+            notificationDao.upsertNotifications(
+                ownerUserId,
+                listOf(notification.toEntity(ownerUserId)),
+                MAX_CACHED_NOTIFICATIONS,
+            )
         }
     }
 
-    private fun deleteFromStorageAsync(notificationIds: Collection<String>) {
+    private fun persistNotificationV2Async(notification: NotificationV2, ownerUserId: String) {
+        enqueueStorage {
+            notificationDao.upsertNotificationsV2(
+                ownerUserId,
+                listOf(notification.toEntity(ownerUserId, json)),
+                MAX_CACHED_NOTIFICATIONS,
+            )
+        }
+    }
+
+    private fun markSeenInStorageAsync(notificationId: String, ownerUserId: String) {
+        enqueueStorage {
+            notificationDao.markSeen(ownerUserId, notificationId)
+            notificationDao.markSeenV2(ownerUserId, notificationId)
+        }
+    }
+
+    private fun deleteFromStorageAsync(notificationIds: Collection<String>, ownerUserId: String) {
         if (notificationIds.isEmpty()) return
-        val userId = currentUserId() ?: return
         val persistedIds = notificationIds.toList()
-        storageCommands.trySend {
+        enqueueStorage {
             if (persistedIds.size == 1) {
-                val notificationId = persistedIds.first()
-                notificationDao.deleteNotification(userId, notificationId)
-                notificationDao.deleteNotificationV2(userId, notificationId)
+                notificationDao.deleteNotification(ownerUserId, persistedIds.first())
+                notificationDao.deleteNotificationV2(ownerUserId, persistedIds.first())
             } else {
-                notificationDao.deleteNotifications(userId, persistedIds)
-                notificationDao.deleteNotificationsV2(userId, persistedIds)
+                notificationDao.deleteNotifications(ownerUserId, persistedIds)
+                notificationDao.deleteNotificationsV2(ownerUserId, persistedIds)
             }
         }
     }
 
-    private fun removeFromLists(notificationId: String) {
-        removeFromLists(listOf(notificationId))
+    private fun enqueueStorage(command: suspend () -> Unit) {
+        storageCommands.trySend(command)
     }
 
-    private fun removeFromLists(notificationIds: Collection<String>) {
+    private fun removeFromLists(notificationId: String, account: AccountSnapshot) =
+        removeFromLists(listOf(notificationId), account)
+
+    private fun removeFromLists(
+        notificationIds: Collection<String>,
+        account: AccountSnapshot,
+    ) {
         if (notificationIds.isEmpty()) return
-        val idSet = notificationIds.toSet()
-        removedNotificationIds.addAll(idSet)
-        while (removedNotificationIds.size > MAX_CACHED_NOTIFICATIONS) {
-            removedNotificationIds.remove(removedNotificationIds.first())
+        synchronized(stateLock) {
+            if (account.isCurrent()) {
+                val idSet = notificationIds.toSet()
+                removedNotificationIds.addAll(idSet)
+                while (removedNotificationIds.size > MAX_CACHED_NOTIFICATIONS) {
+                    removedNotificationIds.remove(removedNotificationIds.first())
+                }
+                remoteV1 = remoteV1.filter { it.id !in idSet }
+                remoteV2 = remoteV2.filter { it.id !in idSet }
+                local = local.filter { it.id !in idSet }
+                publishUnified()
+            }
         }
-        // Capture which removed ids were local before dropping them from the
-        // list, so their ids never reach the server-side storage deletion.
-        val localIds = _localNotifications.value
-            .filter { it.id in idSet && it.isLocal }
-            .mapTo(mutableSetOf()) { it.id }
-        _notifications.value = _notifications.value.filter { it.id !in idSet }
-        _notificationsV2.value = _notificationsV2.value.filter { it.id !in idSet }
-        _localNotifications.value = _localNotifications.value.filter { it.id !in idSet }
-        deleteFromStorageAsync(idSet - localIds)
-        recalculateUnseenCount()
+        deleteFromStorageAsync(notificationIds, account.userId)
     }
+
+    private fun publishUnified() {
+        _unifiedNotifications.value = (
+            remoteV1.map { it.toUnified() } +
+                remoteV2.map { it.toUnified() } +
+                local
+            ).sortedByDescending { it.createdAtEpochMs }
+    }
+
+    private fun limitV1(notifications: List<VrcNotification>): List<VrcNotification> =
+        if (notifications.size <= MAX_CACHED_NOTIFICATIONS) notifications
+        else notifications.sortedByDescending { notificationSortKey(it.createdAt) }
+            .take(MAX_CACHED_NOTIFICATIONS)
+
+    private fun limitV2(notifications: List<NotificationV2>): List<NotificationV2> =
+        if (notifications.size <= MAX_CACHED_NOTIFICATIONS) notifications
+        else notifications.sortedByDescending { notificationSortKey(it.createdAt) }
+            .take(MAX_CACHED_NOTIFICATIONS)
 
     private fun currentUserId(): String? = authRepository.currentUser?.id?.takeIf { it.isNotBlank() }
 
-    /**
-     * True when [notificationId] belongs to a locally-synthesized notification
-     * (see [UnifiedNotification.isLocal]) rather than a server-issued one, so
-     * callers can skip HTTP calls and Room writes for it.
-     */
-    private fun isLocalNotification(notificationId: String): Boolean =
-        _localNotifications.value.any { it.id == notificationId && it.isLocal }
+    private fun accountSnapshot(): AccountSnapshot? {
+        val generation = accountGeneration.get()
+        val userId = currentUserId() ?: return null
+        return AccountSnapshot(userId, generation).takeIf { it.isCurrent() }
+    }
+
+    private fun AccountSnapshot.isCurrent(): Boolean = isCurrentAccount(userId, generation)
+
+    private fun isCurrentAccount(userId: String, generation: Long): Boolean =
+        generation == accountGeneration.get() && userId == currentUserId()
 
     private fun notificationSortKey(createdAt: String): Long =
         parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
 
-    private fun VrcNotification.toUnified() = UnifiedNotification(
-        id = id,
-        type = type,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        message = message,
-        title = "",
-        createdAt = createdAt,
-        seen = seen,
-        isV2 = false,
-        responses = emptyList(),
-    )
-
-    private fun NotificationV2.toUnified() = UnifiedNotification(
-        id = id,
-        type = type,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        message = message,
-        title = title,
-        createdAt = createdAt,
-        seen = seen,
-        isV2 = true,
-        responses = responses,
-    )
-
-    private fun VrcNotification.toEntity(ownerUserId: String) = NotificationEntity(
-        id = id,
-        ownerUserId = ownerUserId,
-        type = type,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        receiverUserId = receiverUserId,
-        message = message,
-        details = details?.toString().orEmpty(),
-        seen = seen,
-        createdAt = createdAt,
-    )
-
-    private fun NotificationEntity.toModel() = VrcNotification(
-        createdAt = createdAt,
-        details = details.toJsonElementOrNull(),
-        id = id,
-        message = message,
-        receiverUserId = receiverUserId,
-        seen = seen,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        type = type,
-    )
-
-    private fun NotificationV2.toEntity(ownerUserId: String) = NotificationV2Entity(
-        id = id,
-        ownerUserId = ownerUserId,
-        version = version,
-        type = type,
-        category = category,
-        isSystem = isSystem,
-        ignoreDND = ignoreDND,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        receiverUserId = receiverUserId,
-        relatedNotificationsId = relatedNotificationsId,
-        title = title,
-        message = message,
-        seen = seen,
-        responsesJson = json.encodeToString(ListSerializer(NotificationAction.serializer()), responses),
-        responseDataJson = responseData?.toString().orEmpty(),
-        expiresAt = expiresAt,
-        expiryAfterSeen = expiryAfterSeen,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-    )
-
-    private fun NotificationV2Entity.toModel() = NotificationV2(
-        id = id,
-        version = version,
-        type = type,
-        category = category,
-        isSystem = isSystem,
-        ignoreDND = ignoreDND,
-        senderUserId = senderUserId,
-        senderUsername = senderUsername,
-        receiverUserId = receiverUserId,
-        relatedNotificationsId = relatedNotificationsId,
-        title = title,
-        message = message,
-        seen = seen,
-        responses = responsesJson.toNotificationActions(),
-        responseData = responseDataJson.toJsonElementOrNull(),
-        expiresAt = expiresAt,
-        expiryAfterSeen = expiryAfterSeen,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-    )
-
-    private fun String.toJsonElementOrNull(): JsonElement? {
-        if (isBlank()) return null
-        return runCatching { json.parseToJsonElement(this) }.getOrNull()
-    }
-
-    private fun String.toNotificationActions(): List<NotificationAction> {
-        if (isBlank()) return emptyList()
-        return runCatching {
-            json.decodeFromString(ListSerializer(NotificationAction.serializer()), this)
-        }.getOrDefault(emptyList())
-    }
 }

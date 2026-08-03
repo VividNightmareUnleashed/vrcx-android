@@ -2,16 +2,12 @@ package com.vrcx.android.ui.screen.world
 
 import androidx.lifecycle.SavedStateHandle
 import com.vrcx.android.data.repository.WorldRepository
-import kotlinx.coroutines.Dispatchers
+import com.vrcx.android.ui.common.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -20,17 +16,9 @@ import org.mockito.kotlin.verify
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorldDetailViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+    private val testDispatcher = mainDispatcherRule.dispatcher
 
     @Test
     fun `browserLaunchUrl includes both worldId and instanceId in canonical form`() {

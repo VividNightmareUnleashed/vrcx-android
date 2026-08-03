@@ -7,7 +7,6 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -72,7 +71,7 @@ class DedupInterceptorTest {
     }
 
     @Test
-    fun `does not cache POST or PUT responses`() {
+    fun `does not cache POST responses`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(404))
 
@@ -90,25 +89,5 @@ class DedupInterceptorTest {
         ).execute().close()
 
         assertEquals(2, server.requestCount)
-    }
-
-    @Test
-    fun `clears a cached failure when the resource later returns 200`() {
-        // Simulate a transient outage: first request gets 404 (cached), then we
-        // manually clear via a successful response, then the next request hits.
-        server.enqueue(MockResponse().setResponseCode(404))
-
-        client.newCall(Request.Builder().url(server.url("/r")).build()).execute().close()
-        assertTrue(deduplicator.getCachedFailure(server.url("/r").toString()) == 404)
-
-        // After enqueueing a 200 and forcing a fresh fetch by clearing the
-        // failure cache directly, the interceptor sends and clears.
-        deduplicator.invalidateFailure(server.url("/r").toString())
-        server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
-        val third = client.newCall(Request.Builder().url(server.url("/r")).build()).execute()
-        assertEquals(200, third.code)
-        // Now there should be no cached failure for that URL.
-        assertEquals(null, deduplicator.getCachedFailure(server.url("/r").toString()))
-        third.close()
     }
 }

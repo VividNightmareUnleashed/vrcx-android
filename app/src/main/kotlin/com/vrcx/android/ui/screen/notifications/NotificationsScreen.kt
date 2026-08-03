@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.repository.NotificationCategoryFilter
 import com.vrcx.android.data.repository.NotificationKind
+import com.vrcx.android.data.repository.NotificationSource
 import com.vrcx.android.data.repository.notificationTypeLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
@@ -173,7 +174,7 @@ fun NotificationsScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         when {
-                                            notification.isV2 -> {
+                                            notification.source == NotificationSource.V2 -> {
                                                 notification.responses.forEach { response ->
                                                     val label = response.text.ifBlank {
                                                         notificationTypeLabel(response.type)

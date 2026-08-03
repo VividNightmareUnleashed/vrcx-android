@@ -16,12 +16,12 @@ import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GalleryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
@@ -30,7 +30,28 @@ import com.vrcx.android.data.util.readUploadBytesBounded
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 
-enum class GalleryTab { GALLERY, ICONS, EMOJIS, STICKERS, PRINTS, INVENTORY }
+enum class GalleryTab(val label: String) {
+    GALLERY("Gallery"),
+    ICONS("Icons"),
+    EMOJIS("Emojis"),
+    STICKERS("Stickers"),
+    PRINTS("Prints"),
+    INVENTORY("Inventory"),
+}
+
+data class GalleryTabState(
+    val isLoaded: Boolean = false,
+    val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val error: String? = null,
+)
+
+data class GalleryUiState(
+    val selectedTab: GalleryTab = GalleryTab.GALLERY,
+    val tabs: Map<GalleryTab, GalleryTabState> = GalleryTab.entries.associateWith { GalleryTabState() },
+) {
+    val selectedTabState: GalleryTabState get() = tabs.getValue(selectedTab)
+}
 
 internal const val MAX_UPLOAD_DIMENSION = 2_000
 
@@ -41,20 +62,11 @@ class GalleryViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
-    private val _selectedTab = MutableStateFlow(GalleryTab.GALLERY)
-    val selectedTab: StateFlow<GalleryTab> = _selectedTab.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    private val _uiState = MutableStateFlow(GalleryUiState())
+    val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
 
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
@@ -63,58 +75,69 @@ class GalleryViewModel @Inject constructor(
     val fullscreenImageUrl: StateFlow<String?> = _fullscreenImageUrl.asStateFlow()
 
     val galleryImages: StateFlow<List<GalleryImage>> = galleryRepository.galleryImages
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val iconImages: StateFlow<List<GalleryImage>> = galleryRepository.iconImages
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val emojiImages: StateFlow<List<GalleryImage>> = galleryRepository.emojiImages
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val stickerImages: StateFlow<List<GalleryImage>> = galleryRepository.stickerImages
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val prints: StateFlow<List<VrcPrint>> = galleryRepository.prints
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val inventoryItems: StateFlow<List<InventoryItem>> = galleryRepository.inventoryItems
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val inventoryTemplates: StateFlow<List<InventoryTemplate>> = galleryRepository.inventoryTemplates
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        loadAll()
+        loadTab(GalleryTab.GALLERY)
     }
 
     private fun currentUserId(): String? =
         (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
 
-    private fun load(flag: MutableStateFlow<Boolean>, failureMessage: String) {
+    fun refresh() = loadTab(_uiState.value.selectedTab, forceRefresh = true)
+
+    fun retry() = refresh()
+
+    fun selectTab(tab: GalleryTab) {
+        loadTab(tab)
+        _uiState.update { it.copy(selectedTab = tab) }
+    }
+
+    private fun loadTab(tab: GalleryTab, forceRefresh: Boolean = false) {
+        val current = _uiState.value.tabs.getValue(tab)
+        if (current.isLoading || current.isRefreshing || (!forceRefresh && current.isLoaded)) return
+
+        updateTab(tab) { state ->
+            state.copy(
+                isLoading = !state.isLoaded,
+                isRefreshing = state.isLoaded,
+                error = null,
+            )
+        }
         viewModelScope.launch {
-            flag.value = true
-            _error.value = null
             try {
-                val uid = currentUserId()
-                if (uid == null) {
-                    _error.value = "Not logged in"
-                    return@launch
+                reloadTab(tab)
+                updateTab(tab) {
+                    it.copy(
+                        isLoaded = true,
+                        isLoading = false,
+                        isRefreshing = false,
+                        error = null,
+                    )
                 }
-                galleryRepository.loadAll(uid)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _error.value = e.message ?: failureMessage
-            } finally {
-                flag.value = false
+                updateTab(tab) {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        error = e.message ?: "Failed to load ${tab.label.lowercase()}",
+                    )
+                }
             }
         }
     }
 
-    private fun loadAll() = load(_isLoading, "Failed to load gallery")
-
-    fun refresh() = load(_isRefreshing, "Failed to refresh")
-
-    fun selectTab(tab: GalleryTab) {
-        _selectedTab.value = tab
+    private fun updateTab(tab: GalleryTab, transform: (GalleryTabState) -> GalleryTabState) {
+        _uiState.update { state ->
+            state.copy(tabs = state.tabs + (tab to transform(state.tabs.getValue(tab))))
+        }
     }
 
     fun showFullscreen(url: String) {
@@ -135,6 +158,8 @@ class GalleryViewModel @Inject constructor(
                 galleryRepository.deleteFile(fileId)
                 reloadTab(tab)
                 _snackbarMessage.value = "Image deleted"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Delete failed: ${e.message}"
             }
@@ -148,6 +173,8 @@ class GalleryViewModel @Inject constructor(
                 val uid = currentUserId() ?: return@launch
                 galleryRepository.loadPrints(uid)
                 _snackbarMessage.value = "Print deleted"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Delete failed: ${e.message}"
             }
@@ -170,9 +197,15 @@ class GalleryViewModel @Inject constructor(
                 val upload = prepareUpload(uri, sourceMimeType, sourceFileName) ?: return@launch
                 galleryRepository.uploadFile(tag, upload.bytes, upload.mimeType, upload.fileName)
                 _snackbarMessage.value = "Image uploaded"
-                runCatching { reloadTab(tab) }.onFailure { error ->
+                try {
+                    reloadTab(tab)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (error: Exception) {
                     _snackbarMessage.value = "Image uploaded, but refresh failed: ${error.message}"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Upload failed: ${e.message}"
             } finally {
@@ -199,10 +232,16 @@ class GalleryViewModel @Inject constructor(
                 if (uid == null) {
                     _snackbarMessage.value = "Print uploaded, but refresh requires signing in again"
                 } else {
-                    runCatching { galleryRepository.loadPrints(uid) }.onFailure { error ->
+                    try {
+                        galleryRepository.loadPrints(uid)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (error: Exception) {
                         _snackbarMessage.value = "Print uploaded, but refresh failed: ${error.message}"
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Upload failed: ${e.message}"
             } finally {
@@ -366,6 +405,8 @@ class GalleryViewModel @Inject constructor(
                 val uid = currentUserId() ?: return@launch
                 call(uid)
                 _snackbarMessage.value = successMessage
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Failed: ${e.message}"
             }
@@ -390,6 +431,8 @@ class GalleryViewModel @Inject constructor(
                 galleryRepository.consumeBundle(itemId)
                 galleryRepository.loadInventory()
                 _snackbarMessage.value = "Bundle consumed"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _snackbarMessage.value = "Failed: ${e.message}"
             }
@@ -403,7 +446,7 @@ class GalleryViewModel @Inject constructor(
             GalleryTab.EMOJIS -> galleryRepository.loadEmojis()
             GalleryTab.STICKERS -> galleryRepository.loadStickers()
             GalleryTab.PRINTS -> {
-                val uid = currentUserId() ?: return
+                val uid = currentUserId() ?: error("Not logged in")
                 galleryRepository.loadPrints(uid)
             }
             GalleryTab.INVENTORY -> galleryRepository.loadInventory()
@@ -440,4 +483,3 @@ internal fun fitUploadDimensions(
     val scale = minOf(maxDimension.toFloat() / width, maxDimension.toFloat() / height)
     return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }
-

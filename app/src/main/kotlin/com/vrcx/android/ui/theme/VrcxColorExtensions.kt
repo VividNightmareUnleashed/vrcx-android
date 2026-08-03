@@ -41,10 +41,6 @@ data class VrcxColors(
     val navActive: Color = Color(0xFF262626),
     val navActiveContent: Color = Color(0xFFFAFAFA),
     val navInactiveContent: Color = Color(0xFFA1A1A1),
-
-    // Shimmer
-    val shimmerBase: Color = Color(0xFF2A2A3C),
-    val shimmerHighlight: Color = Color(0xFF3A3A50),
 ) {
     fun trustColor(trustLevel: String): Color = when (trustLevel) {
         "Visitor" -> trustVisitor

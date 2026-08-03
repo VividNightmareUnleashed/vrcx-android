@@ -30,6 +30,9 @@ class GalleryRepository @Inject constructor(
     private val inventoryApi: InventoryApi,
     private val userApi: UserApi,
 ) {
+    private val stateLock = Any()
+    private var accountGeneration = 0L
+
     private val _galleryImages = MutableStateFlow<List<GalleryImage>>(emptyList())
     val galleryImages: StateFlow<List<GalleryImage>> = _galleryImages.asStateFlow()
 
@@ -51,27 +54,33 @@ class GalleryRepository @Inject constructor(
     private val _inventoryTemplates = MutableStateFlow<List<InventoryTemplate>>(emptyList())
     val inventoryTemplates: StateFlow<List<InventoryTemplate>> = _inventoryTemplates.asStateFlow()
 
-    suspend fun loadGallery() {
-        _galleryImages.value = galleryApi.getFileList(tag = "gallery").reversed()
+    suspend fun loadGallery() = loadImages("gallery", currentGeneration(), _galleryImages)
+
+    suspend fun loadIcons() = loadImages("icon", currentGeneration(), _iconImages)
+
+    suspend fun loadEmojis() = loadImages("emoji", currentGeneration(), _emojiImages)
+
+    suspend fun loadStickers() = loadImages("sticker", currentGeneration(), _stickerImages)
+
+    suspend fun loadPrints(userId: String) = loadPrints(userId, currentGeneration())
+
+    suspend fun loadInventory() = loadInventory(currentGeneration())
+
+    private suspend fun loadImages(
+        tag: String,
+        generation: Long,
+        destination: MutableStateFlow<List<GalleryImage>>,
+    ) {
+        val images = galleryApi.getFileList(tag = tag).reversed()
+        publishIfCurrent(generation) { destination.value = images }
     }
 
-    suspend fun loadIcons() {
-        _iconImages.value = galleryApi.getFileList(tag = "icon").reversed()
+    private suspend fun loadPrints(userId: String, generation: Long) {
+        val prints = galleryApi.getPrints(userId)
+        publishIfCurrent(generation) { _prints.value = prints }
     }
 
-    suspend fun loadEmojis() {
-        _emojiImages.value = galleryApi.getFileList(tag = "emoji").reversed()
-    }
-
-    suspend fun loadStickers() {
-        _stickerImages.value = galleryApi.getFileList(tag = "sticker").reversed()
-    }
-
-    suspend fun loadPrints(userId: String) {
-        _prints.value = galleryApi.getPrints(userId)
-    }
-
-    suspend fun loadInventory() {
+    private suspend fun loadInventory(generation: Long) {
         var totalCount = 0
         val items = BulkPaginator.fetchAll(
             pageSize = INVENTORY_PAGE_SIZE,
@@ -79,12 +88,12 @@ class GalleryRepository @Inject constructor(
             stopOnShortPage = false,
             stopWhen = { fetched -> totalCount in 1..fetched },
         ) { offset, n ->
+            ensureCurrentGeneration(generation)
             val response = inventoryApi.getInventoryItems(n = n, offset = offset)
             if (response.totalCount > 0) totalCount = response.totalCount
             response.data
         }
 
-        _inventoryItems.value = items
         val semaphore = Semaphore(4)
         val templates = coroutineScope {
             items.map(InventoryItem::templateId)
@@ -94,6 +103,7 @@ class GalleryRepository @Inject constructor(
                     async {
                         semaphore.withPermit {
                             try {
+                                ensureCurrentGeneration(generation)
                                 inventoryApi.getInventoryTemplate(templateId)
                             } catch (e: CancellationException) {
                                 throw e
@@ -106,48 +116,55 @@ class GalleryRepository @Inject constructor(
                 .awaitAll()
                 .filterNotNull()
         }
-        _inventoryTemplates.value = templates
-    }
-
-    suspend fun loadAll(userId: String) {
-        val results = coroutineScope {
-            listOf<suspend () -> Unit>(
-                { loadGallery() },
-                { loadIcons() },
-                { loadEmojis() },
-                { loadStickers() },
-                { loadPrints(userId) },
-                { loadInventory() },
-            ).map { load -> async { runCatching { load() } } }.awaitAll()
-        }
-        if (results.all { it.isFailure }) {
-            val first = results.firstNotNullOf { it.exceptionOrNull() }
-            results.drop(1).mapNotNull { it.exceptionOrNull() }.forEach(first::addSuppressed)
-            throw first
+        publishIfCurrent(generation) {
+            _inventoryItems.value = items
+            _inventoryTemplates.value = templates
         }
     }
 
     fun clearRuntimeState() {
-        _galleryImages.value = emptyList()
-        _iconImages.value = emptyList()
-        _emojiImages.value = emptyList()
-        _stickerImages.value = emptyList()
-        _prints.value = emptyList()
-        _inventoryItems.value = emptyList()
-        _inventoryTemplates.value = emptyList()
+        synchronized(stateLock) {
+            accountGeneration++
+            _galleryImages.value = emptyList()
+            _iconImages.value = emptyList()
+            _emojiImages.value = emptyList()
+            _stickerImages.value = emptyList()
+            _prints.value = emptyList()
+            _inventoryItems.value = emptyList()
+            _inventoryTemplates.value = emptyList()
+        }
     }
 
     suspend fun handleContentRefresh(contentType: String, userId: String) {
+        val generation = currentGeneration()
         try {
             when (contentType) {
-                "gallery" -> loadGallery()
-                "icon" -> loadIcons()
-                "emoji" -> loadEmojis()
-                "sticker" -> loadStickers()
-                "print", "prints" -> loadPrints(userId)
-                "inventory" -> loadInventory()
+                "gallery" -> loadImages("gallery", generation, _galleryImages)
+                "icon" -> loadImages("icon", generation, _iconImages)
+                "emoji" -> loadImages("emoji", generation, _emojiImages)
+                "sticker" -> loadImages("sticker", generation, _stickerImages)
+                "print", "prints" -> loadPrints(userId, generation)
+                "inventory" -> loadInventory(generation)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {}
+    }
+
+    private fun currentGeneration(): Long = synchronized(stateLock) { accountGeneration }
+
+    private fun ensureCurrentGeneration(generation: Long) {
+        synchronized(stateLock) {
+            if (generation != accountGeneration) {
+                throw CancellationException("Gallery load invalidated by account change")
+            }
+        }
+    }
+
+    private inline fun publishIfCurrent(generation: Long, publish: () -> Unit) {
+        synchronized(stateLock) {
+            if (generation == accountGeneration) publish()
+        }
     }
 
     suspend fun deleteFile(fileId: String) {

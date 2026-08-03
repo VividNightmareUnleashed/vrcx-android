@@ -80,8 +80,8 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
     fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
-    fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_INVITE, v) } }
-    fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifySetting(VrcxPreferences.NOTIFY_FRIEND_REQUEST, v) } }
+    fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifyInvite(v) } }
+    fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifyFriendRequest(v) } }
     fun setMaxFeedSize(size: Int) { viewModelScope.launch { preferences.setMaxFeedSize(size) } }
     fun setAutoLogin(enabled: Boolean) { viewModelScope.launch { preferences.setAutoLogin(enabled) } }
 

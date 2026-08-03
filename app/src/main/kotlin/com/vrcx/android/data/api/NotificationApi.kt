@@ -31,14 +31,8 @@ interface NotificationApi {
         @Query("type") type: String? = null,
     ): List<NotificationV2>
 
-    @PUT("auth/user/notifications/{notificationId}/see")
-    suspend fun seeNotification(@Path("notificationId") notificationId: String): JsonElement
-
     @PUT("auth/user/notifications/{notificationId}/hide")
     suspend fun hideNotification(@Path("notificationId") notificationId: String): JsonElement
-
-    @POST("notifications/{notificationId}/see")
-    suspend fun seeNotificationV2(@Path("notificationId") notificationId: String): JsonElement
 
     @DELETE("notifications/{notificationId}")
     suspend fun hideNotificationV2(@Path("notificationId") notificationId: String): JsonElement

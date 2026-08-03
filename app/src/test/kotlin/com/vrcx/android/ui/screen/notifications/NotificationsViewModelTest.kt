@@ -3,20 +3,16 @@ package com.vrcx.android.ui.screen.notifications
 import com.vrcx.android.data.api.model.NotificationAction
 import com.vrcx.android.data.repository.InviteMessageRepository
 import com.vrcx.android.data.repository.NotificationRepository
+import com.vrcx.android.data.repository.NotificationSource
 import com.vrcx.android.data.repository.UnifiedNotification
-import kotlinx.coroutines.Dispatchers
+import com.vrcx.android.ui.common.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertNull
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
-import org.mockito.kotlin.eq
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
@@ -25,50 +21,30 @@ import org.mockito.kotlin.whenever
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+    private val testDispatcher = mainDispatcherRule.dispatcher
 
     @Test
     fun `declineFriendRequest hides the V1 notification via the repository`() = runTest(testDispatcher) {
-        val notification = friendRequestNotification("notif_1", isV2 = false)
+        val notification = friendRequestNotification("notif_1", NotificationSource.V1)
         val (vm, repo) = buildViewModel()
 
         vm.declineFriendRequest(notification)
         advanceUntilIdle()
 
-        verify(repo).hideUnified(eq("notif_1"), eq(false))
-    }
-
-    @Test
-    fun `declineFriendRequest forwards the V2 flag for newer notification format`() = runTest(testDispatcher) {
-        val notification = friendRequestNotification("notif_v2", isV2 = true)
-        val (vm, repo) = buildViewModel()
-
-        vm.declineFriendRequest(notification)
-        advanceUntilIdle()
-
-        verify(repo).hideUnified(eq("notif_v2"), eq(true))
+        verify(repo).hide(notification)
     }
 
     @Test
     fun `dismissed invite dialog is not reopened by its template load`() = runTest(testDispatcher) {
-        val (vm, _) = buildViewModel()
         val inviteRepository = mock<InviteMessageRepository>()
         whenever(inviteRepository.getMessages(any())).thenReturn(emptyList())
         val repo = mock<NotificationRepository>().also {
             whenever(it.unifiedNotifications).thenReturn(MutableStateFlow(emptyList()))
         }
         val tested = NotificationsViewModel(repo, inviteRepository)
-        val invite = friendRequestNotification("invite_1", false).copy(type = "invite")
+        val invite = friendRequestNotification("invite_1", NotificationSource.V1).copy(type = "invite")
 
         tested.openInviteResponseDialog(invite)
         tested.dismissInviteResponseDialog()
@@ -86,7 +62,7 @@ class NotificationsViewModelTest {
         return vm to repo
     }
 
-    private fun friendRequestNotification(id: String, isV2: Boolean): UnifiedNotification = UnifiedNotification(
+    private fun friendRequestNotification(id: String, source: NotificationSource): UnifiedNotification = UnifiedNotification(
         id = id,
         type = "friendRequest",
         senderUserId = "usr_sender",
@@ -95,7 +71,7 @@ class NotificationsViewModelTest {
         title = "",
         createdAt = "2026-04-16T00:00:00Z",
         seen = false,
-        isV2 = isV2,
+        source = source,
         responses = emptyList<NotificationAction>(),
     )
 }

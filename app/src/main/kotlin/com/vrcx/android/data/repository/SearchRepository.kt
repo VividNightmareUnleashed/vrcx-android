@@ -22,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okio.Buffer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -98,7 +99,7 @@ class SearchRepository @Inject constructor(
         val httpUrl = providerUrl.toHttpUrlOrNull()
             ?.newBuilder()
             ?.setQueryParameter("search", query)
-            ?.setQueryParameter("n", "5000")
+            ?.setQueryParameter("n", MAX_REMOTE_AVATARS.toString())
             ?.build()
             ?: throw IllegalArgumentException("Enter a valid remote avatar provider URL.")
 
@@ -121,7 +122,13 @@ class SearchRepository @Inject constructor(
                 if (contentLength > MAX_REMOTE_RESPONSE_BYTES) {
                     throw IOException("Remote avatar provider response is too large.")
                 }
-                val bytes = responseBody.source().readByteArray(MAX_REMOTE_RESPONSE_BYTES + 1L)
+                val source = responseBody.source()
+                val buffer = Buffer()
+                while (buffer.size <= MAX_REMOTE_RESPONSE_BYTES) {
+                    val remaining = MAX_REMOTE_RESPONSE_BYTES + 1L - buffer.size
+                    if (source.read(buffer, minOf(8_192L, remaining)) == -1L) break
+                }
+                val bytes = buffer.readByteArray()
                 if (bytes.size > MAX_REMOTE_RESPONSE_BYTES) {
                     throw IOException("Remote avatar provider response is too large.")
                 }

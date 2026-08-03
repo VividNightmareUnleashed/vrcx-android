@@ -59,11 +59,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
-internal val MODERATION_TYPES = listOf("block", "mute", "hideAvatar", "showAvatar", "interactOff", "interactOn")
-internal val TAB_LABELS = listOf("Blocked", "Muted", "Hide Avatar", "Show Avatar", "Interact Off", "Interact On")
+internal data class ModerationTab(val type: String, val label: String)
+
+internal val MODERATION_TABS = listOf(
+    ModerationTab("block", "Blocked"),
+    ModerationTab("mute", "Muted"),
+    ModerationTab("hideAvatar", "Hide Avatar"),
+    ModerationTab("showAvatar", "Show Avatar"),
+    ModerationTab("interactOff", "Interact Off"),
+    ModerationTab("interactOn", "Interact On"),
+)
 
 internal fun moderationTabIndex(selectedType: String): Int =
-    MODERATION_TYPES.indexOf(selectedType).takeIf { it >= 0 } ?: 0
+    MODERATION_TABS.indexOfFirst { it.type == selectedType }.takeIf { it >= 0 } ?: 0
 
 @HiltViewModel
 class ModerationViewModel @Inject constructor(
@@ -151,6 +159,7 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
     val countsByType by viewModel.countsByType.collectAsStateWithLifecycle()
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val selectedTabIndex = moderationTabIndex(selectedType)
+    val selectedTab = MODERATION_TABS[selectedTabIndex]
     var pendingRemove by remember { mutableStateOf<PlayerModeration?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -181,13 +190,13 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
             containerColor = MaterialTheme.colorScheme.surfaceContainer
                 .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
         ) {
-            MODERATION_TYPES.forEachIndexed { index, type ->
-                val count = countsByType[type] ?: 0
+            MODERATION_TABS.forEach { tab ->
+                val count = countsByType[tab.type] ?: 0
                 Tab(
-                    selected = selectedType == type,
-                    onClick = { viewModel.selectType(type) },
+                    selected = selectedType == tab.type,
+                    onClick = { viewModel.selectType(tab.type) },
                     text = {
-                        Text(if (count > 0) "${TAB_LABELS[index]} ($count)" else TAB_LABELS[index])
+                        Text(if (count > 0) "${tab.label} ($count)" else tab.label)
                     },
                 )
             }
@@ -207,7 +216,7 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
                 onRetry = viewModel::refresh,
             )
         } else if (moderations.isEmpty()) {
-            EmptyState(message = "No ${TAB_LABELS[selectedTabIndex].lowercase()} users", icon = Icons.Outlined.Block)
+            EmptyState(message = "No ${selectedTab.label.lowercase()} users", icon = Icons.Outlined.Block)
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(moderations, key = { it.id }) { mod ->
@@ -235,7 +244,7 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
     pendingRemove?.let { moderation ->
         ConfirmDialog(
             title = "Remove Moderation",
-            message = "Remove ${TAB_LABELS[selectedTabIndex].lowercase()} moderation for ${moderation.targetDisplayName}?",
+            message = "Remove ${selectedTab.label.lowercase()} moderation for ${moderation.targetDisplayName}?",
             confirmLabel = "Remove",
             onConfirm = { viewModel.remove(moderation); pendingRemove = null },
             onDismiss = { pendingRemove = null },

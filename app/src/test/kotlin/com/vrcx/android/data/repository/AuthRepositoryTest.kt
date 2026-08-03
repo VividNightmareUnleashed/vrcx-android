@@ -10,6 +10,7 @@ import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.websocket.PipelineEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -21,6 +22,7 @@ import retrofit2.HttpException
 import retrofit2.Response
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -132,6 +134,29 @@ class AuthRepositoryTest {
             verify(authInterceptor).clearBasicAuth()
             assertTrue(repository.authState.value is AuthState.LoggedIn)
         }
+    }
+
+    @Test
+    fun `password login propagates cancellation without publishing an error`(): Unit = runBlocking {
+        whenever(authApi.getCurrentUser()).thenThrow(CancellationException("cancelled"))
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.login("test-user", "test-password") }
+        }
+
+        verify(authInterceptor).clearBasicAuth()
+        assertTrue(repository.authState.value !is AuthState.Error)
+    }
+
+    @Test
+    fun `session recheck propagates cancellation`(): Unit = runBlocking {
+        whenever(authApi.getCurrentUser()).thenThrow(CancellationException("cancelled"))
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.fetchCurrentUser() }
+        }
+
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
     }
 
     @Test
@@ -303,6 +328,22 @@ class AuthRepositoryTest {
             verify(favoriteRepository).clearRuntimeState()
             assertSame(AuthState.NotLoggedIn, repository.authState.value)
         }
+    }
+
+    @Test
+    fun `logout clears local state before propagating cancellation`(): Unit = runBlocking {
+        authApi.stub {
+            onBlocking { logout() } doThrow CancellationException("cancelled")
+        }
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.logout() }
+        }
+
+        verify(cookieJar).clearAll()
+        verify(dedup).clearCache()
+        verify(favoriteRepository).clearRuntimeState()
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
     }
 
     private suspend fun stubLoginFollowUp() {

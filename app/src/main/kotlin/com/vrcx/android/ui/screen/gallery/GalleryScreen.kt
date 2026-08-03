@@ -82,11 +82,10 @@ fun GalleryScreen(
     viewModel: GalleryViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
 ) {
-    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val selectedTab = uiState.selectedTab
+    val selectedTabState = uiState.selectedTabState
     val isUploading by viewModel.isUploading.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
     val fullscreenImageUrl by viewModel.fullscreenImageUrl.collectAsStateWithLifecycle()
 
@@ -159,13 +158,13 @@ fun GalleryScreen(
                 },
             )
 
-            val tabLabels = listOf(
-                "Gallery" to galleryImages.size,
-                "Icons" to iconImages.size,
-                "Emojis" to emojiImages.size,
-                "Stickers" to stickerImages.size,
-                "Prints" to prints.size,
-                "Inventory" to inventoryItems.size,
+            val tabCounts = listOf(
+                galleryImages.size,
+                iconImages.size,
+                emojiImages.size,
+                stickerImages.size,
+                prints.size,
+                inventoryItems.size,
             )
 
             ScrollableTabRow(
@@ -179,22 +178,37 @@ fun GalleryScreen(
                         selected = selectedTab == tab,
                         onClick = { viewModel.selectTab(tab) },
                         text = {
-                            val (label, count) = tabLabels[index]
-                            Text(if (count > 0) "$label ($count)" else label)
+                            val count = tabCounts[index]
+                            Text(if (count > 0) "${tab.label} ($count)" else tab.label)
                         },
                     )
                 }
             }
 
+            if (selectedTabState.isLoaded && selectedTabState.error != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = selectedTabState.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::retry) { Text("Retry") }
+                }
+            }
+
             UiStateContainer(
-                isLoading = isLoading,
-                error = error,
+                isLoading = selectedTabState.isLoading,
+                error = selectedTabState.error.takeUnless { selectedTabState.isLoaded },
                 isEmpty = false,
-                onRetry = viewModel::refresh,
+                onRetry = viewModel::retry,
                 modifier = Modifier.fillMaxSize(),
             ) {
                     PullToRefreshBox(
-                        isRefreshing = isRefreshing,
+                        isRefreshing = selectedTabState.isRefreshing,
                         onRefresh = viewModel::refresh,
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -242,7 +256,7 @@ fun GalleryScreen(
                 }
         }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
-        if (selectedTab != GalleryTab.INVENTORY && !isLoading) {
+        if (selectedTab != GalleryTab.INVENTORY && !selectedTabState.isLoading) {
             FloatingActionButton(
                 onClick = { if (!isUploading) imagePicker.launch("image/*") },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),

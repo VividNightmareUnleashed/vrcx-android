@@ -70,3 +70,24 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         }
     }
 }
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        listOf(
+            "moderation",
+            "avatar_history",
+            "mutual_graph_friends",
+            "mutual_graph_links",
+            "cache_avatar",
+            "cache_world",
+            "favorite_world",
+            "favorite_avatar",
+            "favorite_friend",
+            "world_memos",
+            "avatar_memos",
+            "avatar_tags",
+        ).forEach { table ->
+            database.execSQL("DROP TABLE IF EXISTS `$table`")
+        }
+    }
+}

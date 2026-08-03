@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -90,25 +91,24 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
         val context = LocalContext.current
         val vrcxColors = MaterialTheme.vrcxColors
 
-        val navController = androidx.navigation.compose.rememberNavController()
         val loginViewModel: LoginViewModel = hiltViewModel()
         val authState by loginViewModel.authState.collectAsStateWithLifecycle()
-        val isLoggedIn = authState is AuthState.LoggedIn
+        val loggedInUserId = (authState as? AuthState.LoggedIn)?.user?.id
+        val isLoggedIn = loggedInUserId != null
         val backgroundServiceEnabled by appViewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
             loginViewModel.tryResumeSession()
         }
 
-        LaunchedEffect(isLoggedIn, backgroundServiceEnabled) {
-            if (isLoggedIn) {
-                WebSocketForegroundService.stop(context)
-                delay(1000)
-                if (backgroundServiceEnabled) {
-                    WebSocketForegroundService.start(context)
-                } else {
-                    WebSocketForegroundService.startNonForeground(context)
-                }
+        LaunchedEffect(loggedInUserId, backgroundServiceEnabled) {
+            WebSocketForegroundService.stop(context)
+            if (loggedInUserId == null) return@LaunchedEffect
+            delay(1000)
+            if (backgroundServiceEnabled) {
+                WebSocketForegroundService.start(context)
+            } else {
+                WebSocketForegroundService.startNonForeground(context)
             }
         }
 
@@ -127,6 +127,9 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
         }
 
         if (isLoggedIn) {
+            val navController = key(loggedInUserId) {
+                androidx.navigation.compose.rememberNavController()
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -190,10 +193,7 @@ fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {
                 }
             }
         } else {
-            LoginScreen(
-                viewModel = loginViewModel,
-                onLoginSuccess = { /* Auth state change triggers recomposition */ },
-            )
+            LoginScreen(viewModel = loginViewModel)
         }
         }
     }

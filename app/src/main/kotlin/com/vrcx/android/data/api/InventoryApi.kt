@@ -1,6 +1,5 @@
 package com.vrcx.android.data.api
 
-import com.vrcx.android.data.api.model.InventoryItem
 import com.vrcx.android.data.api.model.InventoryResponse
 import com.vrcx.android.data.api.model.InventoryTemplate
 import kotlinx.serialization.json.JsonElement
@@ -16,9 +15,6 @@ interface InventoryApi {
         @Query("offset") offset: Int = 0,
         @Query("order") order: String = "newest",
     ): InventoryResponse
-
-    @GET("inventory/{itemId}")
-    suspend fun getInventoryItem(@Path("itemId") itemId: String): InventoryItem
 
     @GET("inventory/template/{templateId}")
     suspend fun getInventoryTemplate(@Path("templateId") templateId: String): InventoryTemplate

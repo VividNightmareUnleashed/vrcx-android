@@ -54,21 +54,3 @@ data class UnityPackage(
     val scanStatus: String = "",
     val performanceRating: String = "",
 )
-
-@Serializable
-data class WorldSearchResult(
-    val authorId: String = "",
-    val authorName: String = "",
-    val capacity: Int = 0,
-    val description: String = "",
-    val favorites: Int = 0,
-    val heat: Int = 0,
-    val id: String = "",
-    val imageUrl: String = "",
-    val name: String = "",
-    val occupants: Int = 0,
-    val popularity: Int = 0,
-    val releaseStatus: String = "",
-    val tags: List<String> = emptyList(),
-    val thumbnailImageUrl: String = "",
-)

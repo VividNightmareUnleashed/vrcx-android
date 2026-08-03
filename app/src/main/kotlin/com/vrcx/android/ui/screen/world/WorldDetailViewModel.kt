@@ -7,6 +7,7 @@ import com.vrcx.android.data.api.model.Instance
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.WorldRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +45,8 @@ class WorldDetailViewModel @Inject constructor(
             try {
                 worldRepository.selfInvite(worldId, instanceId)
                 _message.value = "Invite sent — check your VRChat notifications"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Self invite failed: ${e.message}"
             }
@@ -70,6 +73,8 @@ class WorldDetailViewModel @Inject constructor(
                 if (instanceIds.isNotEmpty()) {
                     _instances.value = worldRepository.getInstances(worldId, instanceIds)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load world"
             } finally {

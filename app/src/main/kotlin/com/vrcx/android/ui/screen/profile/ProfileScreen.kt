@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
@@ -27,7 +28,6 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Edit
@@ -69,6 +69,7 @@ import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -100,6 +101,8 @@ class ProfileViewModel @Inject constructor(
                 userApi.saveCurrentUser(uid, payload)
                 authRepository.fetchCurrentUser()
                 _message.value = successMessage
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
             }
@@ -222,7 +225,7 @@ fun ProfileScreen(
 
                 NavItem(Icons.Default.Home, "Dashboard") { onNavigate("dashboard") }
                 NavItem(Icons.Default.History, "Activity History") { onNavigate("game_log") }
-                NavItem(Icons.Default.ViewList, "Friends Roster") { onNavigate("player_list") }
+                NavItem(Icons.AutoMirrored.Filled.ViewList, "Friends Roster") { onNavigate("player_list") }
                 NavItem(Icons.Default.Build, "Tools") { onNavigate("tools") }
                 NavItem(Icons.Default.Favorite, "Favorites") { onNavigate("favorites") }
                 NavItem(Icons.Default.Group, "Groups") { onNavigate("groups") }

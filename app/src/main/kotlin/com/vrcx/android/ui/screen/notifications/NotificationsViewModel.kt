@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -45,7 +46,7 @@ class NotificationsViewModel @Inject constructor(
     val selectedTypes: StateFlow<Set<String>> = _selectedTypes.asStateFlow()
 
     val categoryCounts: StateFlow<List<NotificationCategoryCount>> = notificationRepository.unifiedNotifications
-        .combine(MutableStateFlow(Unit)) { notifs, _ ->
+        .map { notifs ->
             NotificationCategoryFilter.entries.map { filter ->
                 NotificationCategoryCount(
                     filter = filter,
@@ -102,6 +103,8 @@ class NotificationsViewModel @Inject constructor(
             // Hydrate from Room first so the inbox isn't empty after a cold start.
             try {
                 notificationRepository.restoreNotifications()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to restore notifications"
             } finally {
@@ -122,22 +125,14 @@ class NotificationsViewModel @Inject constructor(
     }
 
     fun performPrimaryAction(notification: UnifiedNotification) {
-        viewModelScope.launch {
-            runCatching {
-                notificationRepository.performPrimaryAction(notification)
-            }.onFailure { error ->
-                _error.value = error.message ?: "Failed to handle notification"
-            }
+        launchAction("Failed to handle notification") {
+            notificationRepository.performPrimaryAction(notification)
         }
     }
 
     fun respond(notification: UnifiedNotification, responseType: String) {
-        viewModelScope.launch {
-            runCatching {
-                notificationRepository.respondToNotification(notification, responseType)
-            }.onFailure { error ->
-                _error.value = error.message ?: "Failed to respond to notification"
-            }
+        launchAction("Failed to respond to notification") {
+            notificationRepository.respondToNotification(notification, responseType)
         }
     }
 
@@ -168,26 +163,23 @@ class NotificationsViewModel @Inject constructor(
     fun sendInviteResponse(template: InviteMessageTemplate) {
         val state = _inviteResponseDialog.value ?: return
         viewModelScope.launch {
-            runCatching {
+            try {
                 notificationRepository.sendInviteResponse(
-                    notificationId = state.notification.id,
+                    notification = state.notification,
                     responseSlot = template.slot,
                 )
-            }.onSuccess {
                 _inviteResponseDialog.value = null
-            }.onFailure { error ->
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
                 _error.value = error.message ?: "Failed to send invite response"
             }
         }
     }
 
     fun hide(notification: UnifiedNotification) {
-        viewModelScope.launch {
-            runCatching {
-                notificationRepository.hideUnified(notification.id, notification.isV2)
-            }.onFailure { error ->
-                _error.value = error.message ?: "Failed to dismiss notification"
-            }
+        launchAction("Failed to dismiss notification") {
+            notificationRepository.hide(notification)
         }
     }
 
@@ -198,12 +190,8 @@ class NotificationsViewModel @Inject constructor(
      * the request open.
      */
     fun declineFriendRequest(notification: UnifiedNotification) {
-        viewModelScope.launch {
-            runCatching {
-                notificationRepository.hideUnified(notification.id, notification.isV2)
-            }.onFailure { error ->
-                _error.value = error.message ?: "Failed to decline friend request"
-            }
+        launchAction("Failed to decline friend request") {
+            notificationRepository.hide(notification)
         }
     }
 
@@ -242,15 +230,30 @@ class NotificationsViewModel @Inject constructor(
     }
 
     fun refresh() {
+        if (_isRefreshing.value) return
+        _isRefreshing.value = true
         viewModelScope.launch {
-            _isRefreshing.value = true
             _error.value = null
             try {
                 notificationRepository.loadNotifications()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load notifications"
             } finally {
                 _isRefreshing.value = false
+            }
+        }
+    }
+
+    private fun launchAction(fallbackMessage: String, action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                _error.value = error.message ?: fallbackMessage
             }
         }
     }

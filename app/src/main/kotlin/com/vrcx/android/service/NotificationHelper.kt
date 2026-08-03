@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
 import java.util.concurrent.atomic.AtomicInteger
@@ -124,10 +123,6 @@ class NotificationHelper(private val context: Context) {
     }
 
     private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
-
         listOf(
             NotificationChannel(WebSocketForegroundService.CHANNEL_SERVICE, "Background Service", NotificationManager.IMPORTANCE_LOW),
             NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_ONLINE, "Friend Online", NotificationManager.IMPORTANCE_DEFAULT),
@@ -139,7 +134,7 @@ class NotificationHelper(private val context: Context) {
     }
 
     companion object {
-        const val BOOT_RECONNECT_NOTIFICATION_ID = 99
-        const val SERVICE_RECONNECT_NOTIFICATION_ID = 98
+        private const val BOOT_RECONNECT_NOTIFICATION_ID = 99
+        private const val SERVICE_RECONNECT_NOTIFICATION_ID = 98
     }
 }

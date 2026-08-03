@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,9 +54,7 @@ fun FriendsScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val friends by viewModel.filteredFriends.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
-    val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
-    val activeCount by viewModel.activeCount.collectAsStateWithLifecycle()
-    val offlineCount by viewModel.offlineCount.collectAsStateWithLifecycle()
+    val counts by viewModel.counts.collectAsStateWithLifecycle()
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
     val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
 
@@ -72,17 +70,17 @@ fun FriendsScreen(
             Tab(
                 selected = selectedTab == FriendsTab.ONLINE,
                 onClick = { viewModel.selectTab(FriendsTab.ONLINE) },
-                text = { Text("Online ($onlineCount)") },
+                text = { Text("Online (${counts.online})") },
             )
             Tab(
                 selected = selectedTab == FriendsTab.ACTIVE,
                 onClick = { viewModel.selectTab(FriendsTab.ACTIVE) },
-                text = { Text("Active ($activeCount)") },
+                text = { Text("Active (${counts.active})") },
             )
             Tab(
                 selected = selectedTab == FriendsTab.OFFLINE,
                 onClick = { viewModel.selectTab(FriendsTab.OFFLINE) },
-                text = { Text("Offline ($offlineCount)") },
+                text = { Text("Offline (${counts.offline})") },
             )
         }
 
@@ -107,7 +105,7 @@ fun FriendsScreen(
 
             var sortMenuExpanded by remember { mutableStateOf(false) }
             IconButton(onClick = { sortMenuExpanded = true }) {
-                Icon(Icons.Outlined.Sort, contentDescription = "Sort")
+                Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Sort")
             }
             DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
                 FriendsSortOption.entries.forEach { option ->

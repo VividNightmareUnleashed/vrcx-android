@@ -1,10 +1,7 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.Instance
-import com.vrcx.android.data.api.model.CreateInstanceRequest
-import com.vrcx.android.data.api.model.InstanceShortName
 import kotlinx.serialization.json.JsonElement
-import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -16,18 +13,6 @@ interface InstanceApi {
         @Path("worldId") worldId: String,
         @Path("instanceId") instanceId: String,
     ): Instance
-
-    @GET("instances/{shortName}")
-    suspend fun getInstanceByShortName(@Path("shortName") shortName: String): Instance
-
-    @POST("instances")
-    suspend fun createInstance(@Body body: CreateInstanceRequest): Instance
-
-    @GET("instances/{worldId}:{instanceId}/shortName")
-    suspend fun getInstanceShortName(
-        @Path("worldId") worldId: String,
-        @Path("instanceId") instanceId: String,
-    ): InstanceShortName
 
     @POST("invite/myself/to/{worldId}:{instanceId}")
     suspend fun selfInvite(

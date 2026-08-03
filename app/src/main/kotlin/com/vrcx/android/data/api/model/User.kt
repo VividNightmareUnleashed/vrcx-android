@@ -7,40 +7,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 @Serializable
-data class UserBadge(
-    val badgeDescription: String = "",
-    val badgeId: String = "",
-    val badgeImageUrl: String = "",
-    val badgeName: String = "",
-    val showcased: Boolean = false,
-)
-
-@Serializable
-data class PastDisplayName(
-    val displayName: String = "",
-    @SerialName("updated_at") val updatedAt: String = "",
-)
-
-@Serializable
-data class UserPresence(
-    val avatarThumbnail: String = "",
-    val currentAvatarTags: JsonElement? = null,
-    val debugflag: String = "",
-    val displayName: String = "",
-    val groups: List<String> = emptyList(),
-    val id: String = "",
-    val instance: String = "",
-    val instanceType: String = "",
-    val platform: String = "",
-    val profilePicOverride: String = "",
-    val status: String = "",
-    val travelingToInstance: String = "",
-    val travelingToWorld: String = "",
-    val userIcon: String = "",
-    val world: String = "",
-)
-
-@Serializable
 data class VrcUser(
     val ageVerificationStatus: String = "",
     val ageVerified: Boolean = false,

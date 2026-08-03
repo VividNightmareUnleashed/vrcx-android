@@ -30,13 +30,6 @@ data class FavoriteAddRequest(
 )
 
 @Serializable
-data class FavoriteGroupUpdateRequest(
-    val displayName: String,
-    val visibility: String,
-    val tags: List<String>,
-)
-
-@Serializable
 data class FavoriteLimits(
     val defaultMaxFavoriteGroups: Map<String, Int> = emptyMap(),
     val defaultMaxFavoritesPerGroup: Map<String, Int> = emptyMap(),

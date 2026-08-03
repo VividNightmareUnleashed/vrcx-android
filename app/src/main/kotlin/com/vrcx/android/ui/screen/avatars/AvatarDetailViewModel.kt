@@ -67,6 +67,8 @@ class AvatarDetailViewModel @Inject constructor(
             try {
                 avatarRepository.selectAvatar(avatarId)
                 _message.value = "Avatar selected"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
             }
@@ -84,6 +86,8 @@ class AvatarDetailViewModel @Inject constructor(
                     favoriteRepository.addFavorite("avatar", avatarId)
                     _message.value = "Added to favorites"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _message.value = "Failed: ${e.message}"
             }

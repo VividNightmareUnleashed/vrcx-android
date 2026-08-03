@@ -76,6 +76,69 @@ class DatabaseMigrationTest {
         context.deleteDatabase(dbName)
     }
 
+    @Test
+    fun `migration 4 to 5 drops unreachable tables and preserves live data`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "migration-4-5-test.db"
+        context.deleteDatabase(dbName)
+
+        val droppedTables = listOf(
+            "moderation",
+            "avatar_history",
+            "mutual_graph_friends",
+            "mutual_graph_links",
+            "cache_avatar",
+            "cache_world",
+            "favorite_world",
+            "favorite_avatar",
+            "favorite_friend",
+            "world_memos",
+            "avatar_memos",
+            "avatar_tags",
+        )
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        droppedTables.forEach { table ->
+                            db.execSQL("CREATE TABLE `$table` (`id` TEXT NOT NULL PRIMARY KEY)")
+                            db.execSQL("INSERT INTO `$table` (`id`) VALUES ('legacy')")
+                        }
+                        db.execSQL("CREATE TABLE `notes` (`id` TEXT NOT NULL PRIMARY KEY)")
+                        db.execSQL("CREATE TABLE `memos` (`id` TEXT NOT NULL PRIMARY KEY)")
+                        db.execSQL("CREATE TABLE `friend_notify` (`id` TEXT NOT NULL PRIMARY KEY)")
+                        db.execSQL("INSERT INTO `notes` (`id`) VALUES ('note')")
+                        db.execSQL("INSERT INTO `memos` (`id`) VALUES ('memo')")
+                        db.execSQL("INSERT INTO `friend_notify` (`id`) VALUES ('notify')")
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int,
+                    ) = Unit
+                })
+                .build()
+        )
+
+        helper.writableDatabase.use { db ->
+            MIGRATION_4_5.migrate(db)
+
+            droppedTables.forEach { table ->
+                assertEquals(0, countRows(db, tableCountQuery(table)))
+            }
+            assertEquals(1, countRows(db, "SELECT COUNT(*) FROM notes"))
+            assertEquals(1, countRows(db, "SELECT COUNT(*) FROM memos"))
+            assertEquals(1, countRows(db, "SELECT COUNT(*) FROM friend_notify"))
+        }
+
+        context.deleteDatabase(dbName)
+    }
+
+    private fun tableCountQuery(table: String): String =
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'"
+
     private fun countRows(db: SupportSQLiteDatabase, sql: String): Int {
         db.query(sql).use { cursor ->
             cursor.moveToFirst()

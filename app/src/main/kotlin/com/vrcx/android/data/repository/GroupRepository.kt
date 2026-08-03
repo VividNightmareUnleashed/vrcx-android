@@ -10,6 +10,7 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.websocket.PipelineEvent
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,64 +65,81 @@ class GroupRepository @Inject constructor(
         if (generation == accountGeneration.get()) groupCache[groupId] = group
         return group
     }
-    suspend fun getGroupMembers(groupId: String): List<GroupMember> =
-        BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
-            groupApi.getGroupMembers(groupId, n = count, offset = offset)
-        }
+    suspend fun getGroupMembersPage(
+        groupId: String,
+        offset: Int = 0,
+        count: Int = GROUP_PAGE_SIZE,
+    ): GroupPage<GroupMember> {
+        val members = groupApi.getGroupMembers(groupId, n = count, offset = offset)
+        return GroupPage(
+            items = members,
+            nextOffset = offset + members.size,
+            hasMore = members.size == count,
+        )
+    }
+
     suspend fun getGroupInstances(groupId: String): List<GroupInstance> = groupApi.getGroupInstances(groupId)
 
-    suspend fun getGroupPosts(groupId: String): List<GroupPost> {
-        var total = 0
-        return BulkPaginator.fetchAll(
-            pageSize = 100,
-            maxPages = 50,
-            stopOnShortPage = false,
-            stopWhen = { fetched -> total in 1..fetched },
-        ) { offset, count ->
-            val response = groupApi.getGroupPosts(groupId = groupId, n = count, offset = offset)
-            if (response.total > 0) total = response.total
-            response.posts
-        }
+    suspend fun getGroupPostsPage(
+        groupId: String,
+        offset: Int = 0,
+        count: Int = GROUP_PAGE_SIZE,
+    ): GroupPage<GroupPost> {
+        val response = groupApi.getGroupPosts(groupId = groupId, n = count, offset = offset)
+        val nextOffset = offset + response.posts.size
+        val authoritativeTotal = response.total.takeIf { it >= nextOffset }
+        return GroupPage(
+            items = response.posts,
+            nextOffset = nextOffset,
+            total = authoritativeTotal,
+            hasMore = authoritativeTotal?.let { nextOffset < it } ?: (response.posts.size == count),
+        )
     }
 
     suspend fun joinGroup(groupId: String): Group {
         val currentGroup = findKnownGroup(groupId)
         groupApi.joinGroup(groupId)
-        return runCatching { refreshGroup(groupId) }
-            .getOrElse {
-                invalidateCachedGroup(groupId)
-                val optimisticMembershipStatus = inferJoinedMembershipStatus(currentGroup)
-                val optimisticGroup = buildOptimisticGroup(
-                    groupId = groupId,
-                    previousGroup = currentGroup,
-                    membershipStatus = optimisticMembershipStatus,
-                )
-                if (optimisticMembershipStatus == "member") {
-                    _userGroups.value = if (_userGroups.value.any { it.matchesGroupId(groupId) }) {
-                        _userGroups.value.map { group ->
-                            if (group.matchesGroupId(groupId)) optimisticGroup else group
-                        }
-                    } else {
-                        _userGroups.value + optimisticGroup
+        return try {
+            refreshGroup(groupId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            invalidateCachedGroup(groupId)
+            val optimisticMembershipStatus = inferJoinedMembershipStatus(currentGroup)
+            val optimisticGroup = buildOptimisticGroup(
+                groupId = groupId,
+                previousGroup = currentGroup,
+                membershipStatus = optimisticMembershipStatus,
+            )
+            if (optimisticMembershipStatus == "member") {
+                _userGroups.value = if (_userGroups.value.any { it.matchesGroupId(groupId) }) {
+                    _userGroups.value.map { group ->
+                        if (group.matchesGroupId(groupId)) optimisticGroup else group
                     }
+                } else {
+                    _userGroups.value + optimisticGroup
                 }
-                optimisticGroup
             }
+            optimisticGroup
+        }
     }
 
     suspend fun leaveGroup(groupId: String): Group {
         val currentGroup = findKnownGroup(groupId)
         groupApi.leaveGroup(groupId)
-        return runCatching { refreshGroup(groupId) }
-            .getOrElse {
-                invalidateCachedGroup(groupId)
-                _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
-                buildOptimisticGroup(
-                    groupId = groupId,
-                    previousGroup = currentGroup,
-                    membershipStatus = "",
-                )
-            }
+        return try {
+            refreshGroup(groupId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            invalidateCachedGroup(groupId)
+            _userGroups.value = _userGroups.value.filterNot { it.matchesGroupId(groupId) }
+            buildOptimisticGroup(
+                groupId = groupId,
+                previousGroup = currentGroup,
+                membershipStatus = "",
+            )
+        }
     }
 
     /**
@@ -130,7 +148,14 @@ class GroupRepository @Inject constructor(
      * the permission). Callers should treat false as "not your call to make".
      */
     suspend fun kickGroupMember(groupId: String, userId: String): Boolean {
-        return runCatching { groupApi.kickGroupMember(groupId, userId) }.isSuccess
+        return try {
+            groupApi.kickGroupMember(groupId, userId)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -144,6 +169,8 @@ class GroupRepository @Inject constructor(
                     scope.launch {
                         try {
                             refreshUserGroupsIfCurrent(ownerId, generation)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (_: Exception) {}
                     }
                 }
@@ -156,38 +183,34 @@ class GroupRepository @Inject constructor(
             is PipelineEvent.GroupRoleUpdated -> {
                 val groupId = event.content?.jsonObject?.get("role")
                     ?.jsonObject?.get("groupId")?.jsonPrimitive?.content ?: return
-                val ownerId = ownerUserId
-                val generation = accountGeneration.get()
-                scope.launch {
-                    try {
-                        val updated = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
-                        if (ownerUserId == ownerId && generation == accountGeneration.get()) {
-                            groupCache[groupId] = updated
-                            _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
-                        }
-                    } catch (e: Exception) {
-                        Log.d(TAG, "Failed to refresh group on role update: ${e.message}")
-                    }
-                }
+                refreshGroupAfterUpdate(groupId, updateType = "role")
             }
             is PipelineEvent.GroupMemberUpdated -> {
                 val groupId = event.content?.jsonObject?.get("member")
                     ?.jsonObject?.get("groupId")?.jsonPrimitive?.content ?: return
-                val ownerId = ownerUserId
-                val generation = accountGeneration.get()
-                scope.launch {
-                    try {
-                        val updated = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
-                        if (ownerUserId == ownerId && generation == accountGeneration.get()) {
-                            groupCache[groupId] = updated
-                            _userGroups.value = _userGroups.value.map { if (it.matchesGroupId(groupId)) updated else it }
-                        }
-                    } catch (e: Exception) {
-                        Log.d(TAG, "Failed to refresh group on member update: ${e.message}")
-                    }
-                }
+                refreshGroupAfterUpdate(groupId, updateType = "member")
             }
             else -> {}
+        }
+    }
+
+    private fun refreshGroupAfterUpdate(groupId: String, updateType: String) {
+        val ownerId = ownerUserId
+        val generation = accountGeneration.get()
+        scope.launch {
+            try {
+                val updated = dedup.dedupGet("group:$groupId") { groupApi.getGroup(groupId) }
+                if (ownerUserId == ownerId && generation == accountGeneration.get()) {
+                    groupCache[groupId] = updated
+                    _userGroups.value = _userGroups.value.map { group ->
+                        if (group.matchesGroupId(groupId)) updated else group
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to refresh group on $updateType update: ${e.message}")
+            }
         }
     }
 
@@ -284,3 +307,10 @@ class GroupRepository @Inject constructor(
         const val GROUP_PAGE_SIZE = 100
     }
 }
+
+data class GroupPage<T>(
+    val items: List<T>,
+    val nextOffset: Int,
+    val total: Int? = null,
+    val hasMore: Boolean,
+)

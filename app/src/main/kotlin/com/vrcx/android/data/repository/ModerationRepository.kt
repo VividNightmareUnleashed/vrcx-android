@@ -2,7 +2,6 @@ package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.model.PlayerModeration
-import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.UnPlayerModerationRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,54 +13,43 @@ import javax.inject.Singleton
 class ModerationRepository @Inject constructor(
     private val playerModerationApi: PlayerModerationApi,
 ) {
+    private val stateLock = Any()
+    private var accountGeneration = 0L
+
     private val _moderations = MutableStateFlow<List<PlayerModeration>>(emptyList())
     val moderations: StateFlow<List<PlayerModeration>> = _moderations.asStateFlow()
 
     suspend fun loadModerations() {
-        _moderations.value = playerModerationApi.getPlayerModerations()
+        val generation = currentGeneration()
+        val moderations = playerModerationApi.getPlayerModerations()
+        publishIfCurrent(generation) { _moderations.value = moderations }
     }
 
     fun clearRuntimeState() {
-        _moderations.value = emptyList()
-    }
-
-    suspend fun blockUser(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "block"))
-        loadModerations()
-    }
-
-    suspend fun muteUser(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "mute"))
-        loadModerations()
+        synchronized(stateLock) {
+            accountGeneration++
+            _moderations.value = emptyList()
+        }
     }
 
     suspend fun deleteModeration(moderation: PlayerModeration) {
+        val generation = currentGeneration()
         playerModerationApi.unmoderatePlayer(
             UnPlayerModerationRequest(
                 moderated = moderation.targetUserId,
                 type = moderation.type,
             )
         )
-        _moderations.value = _moderations.value.filter { it.id != moderation.id }
+        publishIfCurrent(generation) {
+            _moderations.value = _moderations.value.filter { it.id != moderation.id }
+        }
     }
 
-    suspend fun interactOn(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "interactOn"))
-        loadModerations()
-    }
+    private fun currentGeneration(): Long = synchronized(stateLock) { accountGeneration }
 
-    suspend fun interactOff(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "interactOff"))
-        loadModerations()
-    }
-
-    suspend fun showAvatar(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "showAvatar"))
-        loadModerations()
-    }
-
-    suspend fun hideAvatar(userId: String) {
-        playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, "hideAvatar"))
-        loadModerations()
+    private inline fun publishIfCurrent(generation: Long, publish: () -> Unit) {
+        synchronized(stateLock) {
+            if (generation == accountGeneration) publish()
+        }
     }
 }

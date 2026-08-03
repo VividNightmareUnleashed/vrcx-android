@@ -16,15 +16,3 @@ data class TwoFactorAuthRequest(
 data class AuthToken(
     val token: String = "",
 )
-
-/**
- * When 2FA is required, the API returns a partial user object with
- * requiresTwoFactorAuth field listing the available methods.
- */
-@Serializable
-data class AuthResponse(
-    val requiresTwoFactorAuth: List<String> = emptyList(),
-    // If 2FA not required, full CurrentUser fields are returned
-    val id: String? = null,
-    val displayName: String? = null,
-)

@@ -11,9 +11,6 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 
 interface AuthApi {
-    @GET("config")
-    suspend fun getConfig(): JsonElement
-
     @GET("auth/user")
     suspend fun getCurrentUser(): JsonElement
 

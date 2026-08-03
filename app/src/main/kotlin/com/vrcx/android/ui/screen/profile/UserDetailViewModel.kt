@@ -3,357 +3,238 @@ package com.vrcx.android.ui.screen.profile
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.api.AvatarApi
-import com.vrcx.android.data.api.FavoriteApi
-import com.vrcx.android.data.api.FriendApi
-import com.vrcx.android.data.api.GroupApi
-import com.vrcx.android.data.api.NotificationApi
-import com.vrcx.android.data.api.PlayerModerationApi
-import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Group
-import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.VrcUser
-import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.api.model.World
-import com.vrcx.android.data.db.dao.FriendNotifyDao
-import com.vrcx.android.data.db.dao.MemoDao
-import com.vrcx.android.data.db.dao.NoteDao
-import com.vrcx.android.data.db.dao.getMemo
-import com.vrcx.android.data.db.dao.getNote
-import com.vrcx.android.data.db.dao.isEnabled
-import com.vrcx.android.data.db.dao.save
-import com.vrcx.android.data.db.dao.saveMemo
-import com.vrcx.android.data.cache.ProfilePicCacheManager
-import com.vrcx.android.data.repository.AuthRepository
-import com.vrcx.android.data.repository.AuthState
-import com.vrcx.android.data.repository.FavoriteRepository
-import com.vrcx.android.data.repository.FriendRepository
-import com.vrcx.android.data.repository.NotificationRepository
-import com.vrcx.android.data.repository.UserRepository
+import com.vrcx.android.data.repository.FavoriteWorldLoadResult
+import com.vrcx.android.data.repository.FavoriteWorldSection
+import com.vrcx.android.data.repository.UserDetailAction
+import com.vrcx.android.data.repository.UserDetailRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
-import java.time.Instant
 import javax.inject.Inject
 
-internal object UserDetailTab {
-    const val INFO = 0
-    const val MUTUALS = 1
-    const val GROUPS = 2
-    const val WORLDS = 3
-    const val AVATARS = 4
-    const val FAVORITE_WORLDS = 5
+enum class UserDetailTab(val label: String) {
+    INFO("Info"),
+    MUTUALS("Mutuals"),
+    GROUPS("Groups"),
+    WORLDS("Worlds"),
+    AVATARS("Avatars"),
+    FAVORITE_WORLDS("Fav Worlds"),
 }
 
-data class FavoriteWorldSection(
-    val tag: String,
-    val displayName: String,
-    val visibility: String,
-    val worlds: List<World>,
+data class UserDetailUiState(
+    val user: VrcUser? = null,
+    val isLoading: Boolean = true,
+    val message: String? = null,
+    val selectedTab: UserDetailTab = UserDetailTab.INFO,
+    val mutualFriends: List<VrcUser> = emptyList(),
+    val userGroups: List<Group> = emptyList(),
+    val userWorlds: List<World> = emptyList(),
+    val userAvatars: List<Avatar> = emptyList(),
+    val favoriteWorldSections: List<FavoriteWorldSection> = emptyList(),
+    val selectedFavoriteWorldTag: String? = null,
+    val isFavorited: Boolean = false,
+    val favoriteEntryId: String? = null,
+    val memo: String? = null,
+    val note: String? = null,
+    val notifyEnabled: Boolean = false,
+    val loadingTabs: Set<UserDetailTab> = emptySet(),
+    val loadedTabs: Set<UserDetailTab> = emptySet(),
+    val isSelf: Boolean = false,
 )
 
 @HiltViewModel
 class UserDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val userRepository: UserRepository,
-    private val avatarApi: AvatarApi,
-    private val favoriteApi: FavoriteApi,
-    private val friendApi: FriendApi,
-    private val playerModerationApi: PlayerModerationApi,
-    private val groupApi: GroupApi,
-    private val worldApi: WorldApi,
-    private val notificationApi: NotificationApi,
-    private val notificationRepository: NotificationRepository,
-    private val favoriteRepository: FavoriteRepository,
-    private val authRepository: AuthRepository,
-    private val noteDao: NoteDao,
-    private val memoDao: MemoDao,
-    private val friendNotifyDao: FriendNotifyDao,
-    private val friendRepository: FriendRepository,
-    private val profilePicCacheManager: ProfilePicCacheManager,
+    private val userDetailRepository: UserDetailRepository,
 ) : ViewModel() {
-
     val userId: String = savedStateHandle.get<String>("userId") ?: ""
 
-    private val _user = MutableStateFlow<VrcUser?>(null)
-    val user: StateFlow<VrcUser?> = _user.asStateFlow()
+    private val _uiState = MutableStateFlow(UserDetailUiState())
+    val uiState: StateFlow<UserDetailUiState> = _uiState.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
-
-    private val _selectedTab = MutableStateFlow(0)
-    val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()
-
-    private val _userGroups = MutableStateFlow<List<Group>>(emptyList())
-    val userGroups: StateFlow<List<Group>> = _userGroups.asStateFlow()
-
-    private val _userWorlds = MutableStateFlow<List<World>>(emptyList())
-    val userWorlds: StateFlow<List<World>> = _userWorlds.asStateFlow()
-
-    private val _mutualFriends = MutableStateFlow<List<VrcUser>>(emptyList())
-    val mutualFriends: StateFlow<List<VrcUser>> = _mutualFriends.asStateFlow()
-
-    private val _userAvatars = MutableStateFlow<List<Avatar>>(emptyList())
-    val userAvatars: StateFlow<List<Avatar>> = _userAvatars.asStateFlow()
-
-    private val _favoriteWorldSections = MutableStateFlow<List<FavoriteWorldSection>>(emptyList())
-    val favoriteWorldSections: StateFlow<List<FavoriteWorldSection>> = _favoriteWorldSections.asStateFlow()
-
-    private val _selectedFavoriteWorldTag = MutableStateFlow<String?>(null)
-    val selectedFavoriteWorldTag: StateFlow<String?> = _selectedFavoriteWorldTag.asStateFlow()
-
-    private val _isFavorited = MutableStateFlow(false)
-    val isFavorited: StateFlow<Boolean> = _isFavorited.asStateFlow()
-
-    private val _memo = MutableStateFlow<String?>(null)
-    val memo: StateFlow<String?> = _memo.asStateFlow()
-
-    private val _note = MutableStateFlow<String?>(null)
-    val note: StateFlow<String?> = _note.asStateFlow()
-
-    private val _notifyEnabled = MutableStateFlow(false)
-    val notifyEnabled: StateFlow<Boolean> = _notifyEnabled.asStateFlow()
-
-    private val _loadingTabs = MutableStateFlow<Set<Int>>(emptySet())
-    val loadingTabs: StateFlow<Set<Int>> = _loadingTabs.asStateFlow()
-    private val tabJobs = mutableMapOf<Int, Job>()
-
-    val isSelf: StateFlow<Boolean> = authRepository.authState
-        .map { state -> (state as? AuthState.LoggedIn)?.user?.id == userId }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private var favoriteEntryId: String? = null
+    private var profileJob: Job? = null
+    private var profileGeneration = 0L
 
     init {
+        observeSelfStatus()
         observeFavoriteStatus()
         loadFavoriteStatus()
         loadUser()
     }
 
     fun loadUser() {
-        viewModelScope.launch {
-            _isLoading.value = true
+        val generation = ++profileGeneration
+        profileJob?.cancel()
+        profileJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             try {
-                val resolvedUser = userRepository.getUser(userId, forceRefresh = true)
-                _user.value = resolvedUser
-                // Load memo
-                val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: ""
-                if (ownerUserId.isNotEmpty()) {
-                    _memo.value = memoDao.getMemo(ownerUserId, userId)?.memo
-                    val noteEntity = noteDao.getNote(ownerUserId, userId)
-                    _note.value = resolvedUser.note?.takeIf { it.isNotBlank() } ?: noteEntity?.note
-                    if (!resolvedUser.note.isNullOrBlank()) {
-                        noteDao.save(
-                            ownerId = ownerUserId,
-                            userId = userId,
-                            displayName = resolvedUser.displayName,
-                            note = resolvedUser.note,
-                            createdAt = Instant.now().toString(),
-                        )
-                    }
-                    _notifyEnabled.value = friendNotifyDao.isEnabled(ownerUserId, userId)
+                val profile = userDetailRepository.loadProfile(userId)
+                if (generation != profileGeneration) return@launch
+                _uiState.update { state ->
+                    state.copy(
+                        user = profile.user,
+                        note = profile.note,
+                        memo = profile.memo,
+                        notifyEnabled = profile.notifyEnabled,
+                        message = profile.localDataError?.let { "Failed to load user: $it" } ?: state.message,
+                    )
                 }
-                // Cache profile picture to disk
-                viewModelScope.launch(Dispatchers.IO) {
-                    val u = _user.value ?: return@launch
-                    val imageUrl = u.displayAvatarUrl()
-                    if (imageUrl.isNotEmpty()) {
-                        try { profilePicCacheManager.cacheImage(imageUrl) } catch (_: Exception) {}
-                    }
+                viewModelScope.launch {
+                    try {
+                        userDetailRepository.cacheProfilePicture(profile.user)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {}
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = "Failed to load user: ${e.message}"
+                if (generation == profileGeneration) {
+                    _uiState.update { it.copy(message = "Failed to load user: ${e.message}") }
+                }
             } finally {
-                _isLoading.value = false
+                if (generation == profileGeneration) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
         }
     }
 
-    fun selectTab(tab: Int) {
-        _selectedTab.value = tab
+    fun selectTab(tab: UserDetailTab) {
         when (tab) {
-            UserDetailTab.MUTUALS -> if (_mutualFriends.value.isEmpty()) loadMutualFriends()
-            UserDetailTab.GROUPS -> if (_userGroups.value.isEmpty()) loadGroups()
-            UserDetailTab.WORLDS -> if (_userWorlds.value.isEmpty()) loadWorlds()
-            UserDetailTab.AVATARS -> if (_userAvatars.value.isEmpty()) loadAvatars()
-            UserDetailTab.FAVORITE_WORLDS -> if (_favoriteWorldSections.value.isEmpty()) loadFavoriteWorlds()
+            UserDetailTab.INFO -> Unit
+            UserDetailTab.MUTUALS -> loadTab(
+                tab = tab,
+                failureMessage = "Failed to load mutual friends",
+                load = { userDetailRepository.loadMutualFriends(userId) },
+                apply = { state, users -> state.copy(mutualFriends = users) },
+            )
+            UserDetailTab.GROUPS -> loadTab(
+                tab = tab,
+                failureMessage = "Failed to load groups",
+                load = { userDetailRepository.loadGroups(userId) },
+                apply = { state, groups -> state.copy(userGroups = groups) },
+            )
+            UserDetailTab.WORLDS -> loadTab(
+                tab = tab,
+                failureMessage = "Failed to load worlds",
+                load = { userDetailRepository.loadWorlds(userId) },
+                apply = { state, worlds -> state.copy(userWorlds = worlds) },
+            )
+            UserDetailTab.AVATARS -> loadTab(
+                tab = tab,
+                failureMessage = "Failed to load avatars",
+                load = { userDetailRepository.loadAvatars(userId) },
+                apply = { state, avatars -> state.copy(userAvatars = avatars) },
+            )
+            UserDetailTab.FAVORITE_WORLDS -> loadTab(
+                tab = tab,
+                failureMessage = "Failed to load favorite worlds",
+                load = { userDetailRepository.loadFavoriteWorlds(userId) },
+                apply = ::applyFavoriteWorlds,
+            )
         }
+        _uiState.update { it.copy(selectedTab = tab) }
+    }
+
+    private fun <T> loadTab(
+        tab: UserDetailTab,
+        failureMessage: String,
+        load: suspend () -> T,
+        apply: (UserDetailUiState, T) -> UserDetailUiState,
+    ) {
+        val state = _uiState.value
+        if (tab in state.loadedTabs || tab in state.loadingTabs) return
+        _uiState.update { it.copy(loadingTabs = it.loadingTabs + tab) }
+        viewModelScope.launch {
+            try {
+                val result = load()
+                _uiState.update { state ->
+                    val updated = apply(state, result)
+                    updated.copy(
+                        loadingTabs = updated.loadingTabs - tab,
+                        loadedTabs = updated.loadedTabs + tab,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        loadingTabs = it.loadingTabs - tab,
+                        message = "$failureMessage: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applyFavoriteWorlds(
+        state: UserDetailUiState,
+        result: FavoriteWorldLoadResult,
+    ): UserDetailUiState {
+        val selectedTag = state.selectedFavoriteWorldTag?.takeIf { selected ->
+            result.sections.any { it.tag == selected }
+        } ?: result.sections.firstOrNull()?.tag
+        return state.copy(
+            favoriteWorldSections = result.sections,
+            selectedFavoriteWorldTag = selectedTag,
+            message = result.warning ?: state.message,
+        )
     }
 
     fun selectFavoriteWorldGroup(tag: String) {
-        _selectedFavoriteWorldTag.value = tag
-    }
-
-    private fun launchTabLoad(tab: Int, block: suspend () -> Unit) {
-        if (tabJobs[tab]?.isActive == true) return
-
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            val currentJob = coroutineContext[Job] ?: return@launch
-            _loadingTabs.update { it + tab }
-            try {
-                block()
-            } finally {
-                _loadingTabs.update { it - tab }
-                tabJobs.remove(tab, currentJob)
-            }
-        }
-        tabJobs[tab] = job
-        job.start()
-    }
-
-    private fun loadMutualFriends() {
-        launchTabLoad(UserDetailTab.MUTUALS) {
-            try {
-                _mutualFriends.value = userRepository.getMutualFriends(userId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed to load mutual friends: ${e.message}"
-            }
-        }
-    }
-
-    private fun loadGroups() {
-        launchTabLoad(UserDetailTab.GROUPS) {
-            try {
-                _userGroups.value = groupApi.getUserGroups(userId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed to load groups: ${e.message}"
-            }
-        }
-    }
-
-    private fun loadWorlds() {
-        launchTabLoad(UserDetailTab.WORLDS) {
-            try {
-                _userWorlds.value = worldApi.getWorlds(user = userId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed to load worlds: ${e.message}"
-            }
-        }
-    }
-
-    private fun loadAvatars() {
-        launchTabLoad(UserDetailTab.AVATARS) {
-            try {
-                _userAvatars.value = avatarApi.getAvatars(
-                    user = userId,
-                    releaseStatus = "all",
-                    n = 100,
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed to load avatars: ${e.message}"
-            }
-        }
-    }
-
-    private fun loadFavoriteWorlds() {
-        launchTabLoad(UserDetailTab.FAVORITE_WORLDS) favoriteWorldLoad@{
-            try {
-                val groups = favoriteApi.getFavoriteGroups(
-                    type = "world",
-                    ownerId = userId,
-                ).filter { it.type == "world" }
-
-                if (groups.isEmpty()) {
-                    _favoriteWorldSections.value = emptyList()
-                    _selectedFavoriteWorldTag.value = null
-                    return@favoriteWorldLoad
-                }
-
-                val sectionResults = supervisorScope {
-                    groups.map { group ->
-                        async {
-                            runCatching {
-                                FavoriteWorldSection(
-                                    tag = group.name,
-                                    displayName = group.displayName.ifBlank { group.name },
-                                    visibility = group.visibility,
-                                    worlds = favoriteApi.getFavoriteWorlds(
-                                        tag = group.name,
-                                        ownerId = userId,
-                                    ),
-                                )
-                            }
-                        }
-                    }.awaitAll()
-                }
-                val sections = sectionResults
-                    .mapNotNull { it.getOrNull() }
-                    .filter { it.worlds.isNotEmpty() }
-                val hadFailures = sectionResults.any { it.isFailure }
-
-                _favoriteWorldSections.value = sections
-                _selectedFavoriteWorldTag.value =
-                    _selectedFavoriteWorldTag.value?.takeIf { selectedTag ->
-                        sections.any { it.tag == selectedTag }
-                    } ?: sections.firstOrNull()?.tag
-                if (hadFailures) {
-                    _message.value = if (sections.isEmpty()) {
-                        "Failed to load favorite worlds"
-                    } else {
-                        "Some favorite world groups could not be loaded"
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _favoriteWorldSections.value = emptyList()
-                _selectedFavoriteWorldTag.value = null
-                _message.value = "Failed to load favorite worlds: ${e.message}"
-            }
-        }
+        _uiState.update { it.copy(selectedFavoriteWorldTag = tag) }
     }
 
     fun toggleFavorite() {
         viewModelScope.launch {
+            val state = _uiState.value
             try {
-                if (_isFavorited.value && favoriteEntryId != null) {
-                    favoriteRepository.deleteFavorite(favoriteEntryId!!)
-                    _message.value = "Removed from favorites"
+                if (state.isFavorited && state.favoriteEntryId != null) {
+                    userDetailRepository.deleteFavorite(state.favoriteEntryId)
+                    showMessage("Removed from favorites")
                 } else {
-                    favoriteRepository.addFavorite("friend", userId)
-                    _message.value = "Added to favorites"
+                    userDetailRepository.addFriendFavorite(userId)
+                    showMessage("Added to favorites")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
+                showMessage("Failed: ${e.message}")
             }
         }
     }
 
     private fun observeFavoriteStatus() {
         viewModelScope.launch {
-            favoriteRepository.favorites.collect { favorites ->
+            userDetailRepository.favorites.collect { favorites ->
                 val favorite = favorites.firstOrNull {
                     it.type == "friend" && it.favoriteId == userId
                 }
-                favoriteEntryId = favorite?.id
-                _isFavorited.value = favorite != null
+                _uiState.update {
+                    it.copy(
+                        favoriteEntryId = favorite?.id,
+                        isFavorited = favorite != null,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun observeSelfStatus() {
+        viewModelScope.launch {
+            userDetailRepository.observeIsSelf(userId).collect { isSelf ->
+                _uiState.update { it.copy(isSelf = isSelf) }
             }
         }
     }
@@ -361,36 +242,31 @@ class UserDetailViewModel @Inject constructor(
     private fun loadFavoriteStatus() {
         viewModelScope.launch {
             try {
-                favoriteRepository.loadFavorites(type = "friend")
+                userDetailRepository.loadFavoriteStatus()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // The user profile remains usable when favorite metadata fails.
+                // Favorite metadata is optional for the rest of the profile.
             }
         }
     }
 
-    fun requestInvite() = runAction("Invite requested") { notificationApi.sendRequestInvite(userId) }
-
-    fun sendInvite() = runAction("Invite sent") { notificationRepository.sendInviteToUser(userId) }
-
     fun saveNote(text: String) {
         viewModelScope.launch {
             try {
-                val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-                userRepository.saveUserNote(userId, text)
-                noteDao.save(
-                    ownerId = ownerUserId,
-                    userId = userId,
-                    displayName = _user.value?.displayName.orEmpty(),
-                    note = text,
-                    createdAt = Instant.now().toString(),
-                )
-                _note.value = text
-                _user.value = _user.value?.copy(note = text)
-                _message.value = if (text.isBlank()) "Note cleared" else "Note saved"
+                val user = _uiState.value.user
+                if (!userDetailRepository.saveNote(userId, user?.displayName.orEmpty(), text)) return@launch
+                _uiState.update {
+                    it.copy(
+                        note = text,
+                        user = it.user?.copy(note = text),
+                        message = if (text.isBlank()) "Note cleared" else "Note saved",
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
+                showMessage("Failed: ${e.message}")
             }
         }
     }
@@ -398,12 +274,12 @@ class UserDetailViewModel @Inject constructor(
     fun saveMemo(text: String) {
         viewModelScope.launch {
             try {
-                val ownerUserId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id ?: return@launch
-                memoDao.saveMemo(ownerUserId, userId, text, Instant.now().toString())
-                _memo.value = text
-                _message.value = "Memo saved"
+                if (!userDetailRepository.saveMemo(userId, text)) return@launch
+                _uiState.update { it.copy(memo = text, message = "Memo saved") }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
+                showMessage("Failed: ${e.message}")
             }
         }
     }
@@ -411,70 +287,72 @@ class UserDetailViewModel @Inject constructor(
     fun toggleNotify() {
         viewModelScope.launch {
             try {
-                val newState = friendRepository.toggleFriendNotify(userId)
-                _notifyEnabled.value = newState
-                _message.value = if (newState) "Notifications enabled" else "Notifications disabled"
+                val enabled = userDetailRepository.toggleNotify(userId)
+                _uiState.update {
+                    it.copy(
+                        notifyEnabled = enabled,
+                        message = if (enabled) "Notifications enabled" else "Notifications disabled",
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
+                showMessage("Failed: ${e.message}")
             }
         }
     }
 
-    fun sendBoop() = runAction("Boop sent") { userRepository.sendBoop(userId) }
+    fun requestInvite() = runAction(UserDetailAction.REQUEST_INVITE, "Invite requested")
 
-    fun sendFriendRequest() {
+    fun sendInvite() = runAction(UserDetailAction.SEND_INVITE, "Invite sent")
+
+    fun sendBoop() = runAction(UserDetailAction.SEND_BOOP, "Boop sent")
+
+    fun sendFriendRequest() = runAction(
+        UserDetailAction.SEND_FRIEND_REQUEST,
+        "Friend request sent",
+        refreshProfile = true,
+    )
+
+    fun cancelFriendRequest() = runAction(
+        UserDetailAction.CANCEL_FRIEND_REQUEST,
+        "Friend request cancelled",
+        refreshProfile = true,
+    )
+
+    fun unfriend() = runAction(UserDetailAction.UNFRIEND, "Unfriended", refreshProfile = true)
+
+    fun blockUser() = runAction(UserDetailAction.BLOCK, "User blocked")
+
+    fun muteUser() = runAction(UserDetailAction.MUTE, "User muted")
+
+    fun hideAvatar() = runAction(UserDetailAction.HIDE_AVATAR, "Avatar hidden")
+
+    fun showAvatar() = runAction(UserDetailAction.SHOW_AVATAR, "Avatar shown")
+
+    private fun runAction(
+        action: UserDetailAction,
+        successMessage: String,
+        refreshProfile: Boolean = false,
+    ) {
         viewModelScope.launch {
             try {
-                friendApi.sendFriendRequest(userId)
-                _message.value = "Friend request sent"
-                loadUser()
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
-    }
-
-    fun cancelFriendRequest() {
-        viewModelScope.launch {
-            try {
-                friendApi.cancelFriendRequest(userId)
-                _message.value = "Friend request cancelled"
-                loadUser()
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
-    }
-
-    fun unfriend() {
-        viewModelScope.launch {
-            try {
-                friendApi.deleteFriend(userId)
-                _message.value = "Unfriended"
-                loadUser()
-            } catch (e: Exception) { _message.value = "Failed: ${e.message}" }
-        }
-    }
-
-    private fun runAction(successMessage: String, block: suspend () -> Unit) {
-        viewModelScope.launch {
-            try {
-                block()
-                _message.value = successMessage
+                userDetailRepository.performAction(action, userId)
+                showMessage(successMessage)
+                if (refreshProfile) loadUser()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
+                showMessage("Failed: ${e.message}")
             }
         }
     }
 
-    private fun moderate(type: String, successMessage: String) =
-        runAction(successMessage) {
-            playerModerationApi.sendPlayerModeration(PlayerModerationRequest(userId, type))
-        }
+    fun clearMessage() {
+        _uiState.update { it.copy(message = null) }
+    }
 
-    fun blockUser() = moderate("block", "User blocked")
-
-    fun muteUser() = moderate("mute", "User muted")
-
-    fun hideAvatar() = moderate("hideAvatar", "Avatar hidden")
-
-    fun showAvatar() = moderate("showAvatar", "Avatar shown")
-
-    fun clearMessage() { _message.value = null }
+    private fun showMessage(message: String) {
+        _uiState.update { it.copy(message = message) }
+    }
 }

@@ -6,8 +6,11 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Base64
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class AuthInterceptor : Interceptor {
+@Singleton
+class AuthInterceptor @Inject constructor() : Interceptor {
 
     private val basicAuth = AtomicReference<String?>(null)
 

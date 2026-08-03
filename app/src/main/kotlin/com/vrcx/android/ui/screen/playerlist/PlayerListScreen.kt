@@ -60,6 +60,18 @@ enum class PlayerListScope(val label: String) {
     FRIENDS("Friends"),
 }
 
+private data class PlayerListCriteria(
+    val query: String,
+    val selectedStates: Set<FriendState>,
+    val scope: PlayerListScope,
+    val sort: RosterSort,
+)
+
+private data class PlayerListLocation(
+    val location: String,
+    val worldId: String,
+)
+
 @HiltViewModel
 class PlayerListViewModel @Inject constructor(
     authRepository: AuthRepository,
@@ -105,57 +117,58 @@ class PlayerListViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    val players: StateFlow<List<FriendContext>> = combine(
-        friendRepository.friends,
+    private val criteria = combine(
         _searchQuery,
         _selectedStates,
         _scope,
         _sort,
-        currentLocation,
-        currentWorldId,
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val friends = values[0] as Map<String, FriendContext>
-        val query = values[1] as String
-        val selectedStates = values[2] as Set<FriendState>
-        val scope = values[3] as PlayerListScope
-        val sort = values[4] as RosterSort
-        val activeLocation = values[5] as String
-        val activeWorldId = values[6] as String
+    ) { query, selectedStates, scope, sort ->
+        PlayerListCriteria(query, selectedStates, scope, sort)
+    }
 
+    private val activeLocation = combine(currentLocation, currentWorldId) { location, worldId ->
+        PlayerListLocation(location, worldId)
+    }
+
+    val players: StateFlow<List<FriendContext>> = combine(
+        friendRepository.friends,
+        criteria,
+        activeLocation,
+    ) { friends, criteria, active ->
         friends.values
             .filter { friend ->
-                when (scope) {
+                when (criteria.scope) {
                     PlayerListScope.SAME_INSTANCE -> {
-                        isTrackableLocation(activeLocation) &&
+                        isTrackableLocation(active.location) &&
                             friend.state == FriendState.ONLINE &&
-                            resolvePresenceLocation(friend.ref) == activeLocation
+                            resolvePresenceLocation(friend.ref) == active.location
                     }
                     PlayerListScope.SAME_WORLD -> {
-                        activeWorldId.isNotBlank() &&
+                        active.worldId.isNotBlank() &&
                             friend.state == FriendState.ONLINE &&
-                            parseWorldId(resolvePresenceLocation(friend.ref)) == activeWorldId
+                            parseWorldId(resolvePresenceLocation(friend.ref)) == active.worldId
                     }
-                    PlayerListScope.FRIENDS -> friend.state in selectedStates
+                    PlayerListScope.FRIENDS -> friend.state in criteria.selectedStates
                 }
             }
             .filter { friend ->
-                query.isBlank() ||
-                    friend.name.contains(query, ignoreCase = true) ||
-                    describePlayerScope(friend, scope, activeLocation).contains(query, ignoreCase = true) ||
-                    friend.ref?.statusDescription.orEmpty().contains(query, ignoreCase = true)
+                criteria.query.isBlank() ||
+                    friend.name.contains(criteria.query, ignoreCase = true) ||
+                    describePlayerScope(friend, criteria.scope, active.location)
+                        .contains(criteria.query, ignoreCase = true) ||
+                    friend.ref?.statusDescription.orEmpty().contains(criteria.query, ignoreCase = true)
             }
             .sortedWith(
-                when (scope) {
+                when (criteria.scope) {
                     PlayerListScope.SAME_INSTANCE ->
                         compareBy<FriendContext>({ !it.isVIP }, { it.name.lowercase() })
                     PlayerListScope.SAME_WORLD ->
                         compareBy<FriendContext>(
-                            { resolvePresenceLocation(it.ref) != activeLocation },
+                            { resolvePresenceLocation(it.ref) != active.location },
                             { !it.isVIP },
                             { it.name.lowercase() },
                         )
-                    PlayerListScope.FRIENDS -> when (sort) {
+                    PlayerListScope.FRIENDS -> when (criteria.sort) {
                         RosterSort.PRESENCE -> compareBy<FriendContext>(
                             { stateRank(it.state) },
                             { !it.isVIP },

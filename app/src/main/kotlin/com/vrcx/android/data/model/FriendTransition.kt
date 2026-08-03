@@ -23,6 +23,12 @@ sealed interface FriendTransition {
         override val displayName: String,
     ) : FriendTransition
 
+    /** The friend's offline event remained valid through the confirmation delay. */
+    data class CameOffline(
+        override val userId: String,
+        override val displayName: String,
+    ) : FriendTransition
+
     /** The friend moved to a new, real world instance (not offline/private). */
     data class ChangedLocation(
         override val userId: String,
