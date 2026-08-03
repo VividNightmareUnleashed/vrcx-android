@@ -37,10 +37,6 @@ sealed class PipelineEvent {
     data class GroupMemberUpdated(override val content: JsonElement?) : PipelineEvent()
 
     // Instance events
-    data class InstanceQueueJoined(override val content: JsonElement?) : PipelineEvent()
-    data class InstanceQueuePosition(override val content: JsonElement?) : PipelineEvent()
-    data class InstanceQueueReady(override val content: JsonElement?) : PipelineEvent()
-    data class InstanceQueueLeft(override val content: JsonElement?) : PipelineEvent()
     data class InstanceClosed(override val content: JsonElement?) : PipelineEvent()
 
     // Other events

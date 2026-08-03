@@ -31,9 +31,6 @@ interface GalleryApi {
         @Query("offset") offset: Int = 0,
     ): List<VrcPrint>
 
-    @GET("prints/{printId}")
-    suspend fun getPrint(@Path("printId") printId: String): VrcPrint
-
     @DELETE("prints/{printId}")
     suspend fun deletePrint(@Path("printId") printId: String): JsonElement
 

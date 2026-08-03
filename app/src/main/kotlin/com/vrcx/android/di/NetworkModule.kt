@@ -1,13 +1,11 @@
 package com.vrcx.android.di
 
-import android.content.Context
 import com.vrcx.android.BuildConfig
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEventBus
 import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.AvatarApi
-import com.vrcx.android.data.api.AvatarModerationApi
 import com.vrcx.android.data.api.DedupInterceptor
 import com.vrcx.android.data.api.ErrorInterceptor
 import com.vrcx.android.data.api.FavoriteApi
@@ -23,11 +21,9 @@ import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.UserAgentInterceptor
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.WorldApi
-import com.vrcx.android.data.security.SecureSecretsStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -53,23 +49,6 @@ object NetworkModule {
         encodeDefaults = true
         coerceInputValues = true
     }
-
-    @Provides
-    @Singleton
-    fun provideCookieJar(
-        @ApplicationContext context: Context,
-        secureSecretsStore: SecureSecretsStore,
-    ): CookieJarImpl {
-        return CookieJarImpl(context, secureSecretsStore)
-    }
-
-    @Provides
-    @Singleton
-    fun provideAuthInterceptor(): AuthInterceptor = AuthInterceptor()
-
-    @Provides
-    @Singleton
-    fun provideRequestDeduplicator(): RequestDeduplicator = RequestDeduplicator()
 
     @Provides
     @Singleton
@@ -190,7 +169,4 @@ object NetworkModule {
     @Singleton
     fun provideInviteMessageApi(retrofit: Retrofit): InviteMessageApi = retrofit.create(InviteMessageApi::class.java)
 
-    @Provides
-    @Singleton
-    fun provideAvatarModerationApi(retrofit: Retrofit): AvatarModerationApi = retrofit.create(AvatarModerationApi::class.java)
 }

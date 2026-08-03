@@ -3,31 +3,25 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.model.VrcUser
-import com.vrcx.android.data.db.accountScopedKey
-import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.disable
 import com.vrcx.android.data.db.dao.enable
 import com.vrcx.android.data.db.dao.isEnabled
-import com.vrcx.android.data.db.entityIdFromScopedKey
-import com.vrcx.android.data.db.entity.FeedAvatarEntity
-import com.vrcx.android.data.db.entity.FeedBioEntity
-import com.vrcx.android.data.db.entity.FeedGpsEntity
-import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
-import com.vrcx.android.data.db.entity.FeedStatusEntity
-import com.vrcx.android.data.db.entity.FriendLogCurrentEntity
-import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.model.FriendTransition
+import com.vrcx.android.data.model.worldIdOrNull
 import com.vrcx.android.data.websocket.PipelineEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,35 +34,30 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import com.vrcx.android.data.model.TrustRank
-import com.vrcx.android.data.model.worldIdOrNull
-import com.vrcx.android.data.util.parseInstantMillisOrNull
-import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class FriendRepository @Inject constructor(
+class FriendRepository @Inject internal constructor(
     private val friendApi: FriendApi,
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
-    private val feedRepository: FeedRepository,
     private val favoriteRepository: FavoriteRepository,
-    private val friendLogDao: FriendLogDao,
     private val friendNotifyDao: FriendNotifyDao,
+    private val friendLogSynchronizer: FriendLogSynchronizer,
+    private val activityRecorder: FriendActivityRecorder,
     private val json: Json,
 ) {
-    private data class FriendLogSnapshot(
-        val compositeId: String,
-        val userId: String,
-        val displayName: String,
-        val trustLevel: String,
-        val friendNumber: Int,
+    private data class ActiveFriendsLoad(
+        val ownerId: String,
+        val generation: Long,
+        val deferred: Deferred<Unit>,
     )
 
     var ownerUserId: String = ""
@@ -77,43 +66,14 @@ class FriendRepository @Inject constructor(
     private val friendsRevision = AtomicLong(0)
     private val pendingOfflineJobs = ConcurrentHashMap<String, Job>()
     private val OFFLINE_DELAY_MS = 5000L
-    private val DEDUP_WINDOW_MS = 10_000L
-    /**
-     * Outer horizon for DB-level GPS dedup. If the latest matching row in the
-     * DB is older than this, we always allow a new write (revisits after a
-     * long enough gap are always worth recording, and a pipeline re-emit
-     * that arrives this much later is too stale to be the same event).
-     * Inside the window we still need a second signal to tell a re-emit
-     * from a short private/offline hop — see [lastFilteredTransitionAt].
-     */
-    private val GPS_REVISIT_WINDOW = java.time.Duration.ofMinutes(5)
-    private val recentFeedWrites = ConcurrentHashMap<String, Long>()
-    /**
-     * Per-user timestamp of the last transition into a state we don't
-     * persist to the GPS feed — `offline` (via [handleFriendOffline]),
-     * `private`/`active` (via [handleFriendActive]), or a `FriendLocation`
-     * payload whose destination is `offline`/`private`.
-     *
-     * A pipeline re-emit of the same GPS event would NOT produce one of
-     * these hops (the in-memory state already matches and the relevant
-     * handler short-circuits), so a recorded hop newer than the latest
-     * DB row is positive evidence that the current write is a real
-     * revisit (e.g. `wrld_X -> private -> wrld_X`) rather than a duplicate.
-     *
-     * Entries are process-local; the map is cleared alongside
-     * [recentFeedWrites] on [loadFriendsList] / logout to match the
-     * lifetime of the rest of the friend runtime state.
-     */
-    private val lastFilteredTransitionAt = ConcurrentHashMap<String, Long>()
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
     private val _notifyEnabledIds = MutableStateFlow<Set<String>>(emptySet())
 
     private val friendsMutex = Mutex()
+    private val friendsLoadMutex = Mutex()
+    private var activeFriendsLoad: ActiveFriendsLoad? = null
     private val _friends = MutableStateFlow<Map<String, FriendContext>>(emptyMap())
     val friends: StateFlow<Map<String, FriendContext>> = _friends.asStateFlow()
-
-    private val _confirmedOfflineEvents = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 16)
-    val confirmedOfflineEvents: SharedFlow<Pair<String, String>> = _confirmedOfflineEvents.asSharedFlow()
 
     // Domain transitions the foreground service maps to system notifications.
     // Emitting them here (where userId/displayName and the location/status
@@ -140,8 +100,7 @@ class FriendRepository @Inject constructor(
         pendingOfflineJobs.values.forEach(Job::cancel)
         pendingOfflineJobs.clear()
         ownerUserId = ""
-        recentFeedWrites.clear()
-        lastFilteredTransitionAt.clear()
+        activityRecorder.reset()
         _favoriteFriendIds.value = emptySet()
         _notifyEnabledIds.value = emptySet()
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -153,9 +112,32 @@ class FriendRepository @Inject constructor(
         val ownerId = ensureOwnerUserId()
         if (ownerId.isEmpty()) return
         val generation = accountGeneration.get()
+        val deferred = friendsLoadMutex.withLock {
+            activeFriendsLoad
+                ?.takeIf { it.ownerId == ownerId && it.generation == generation && it.deferred.isActive }
+                ?.deferred
+                ?: scope.async { loadFriendsList(ownerId, generation) }.also {
+                    activeFriendsLoad = ActiveFriendsLoad(ownerId, generation, it)
+                }
+        }
+        try {
+            deferred.await()
+        } finally {
+            // A cancelled waiter must not detach the still-running shared load;
+            // later callers should continue to coalesce onto it.
+            if (deferred.isCompleted) {
+                withContext(NonCancellable) {
+                    friendsLoadMutex.withLock {
+                        if (activeFriendsLoad?.deferred === deferred) activeFriendsLoad = null
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun loadFriendsList(ownerId: String, generation: Long) {
         val revision = friendsRevision.get()
-        recentFeedWrites.clear()
-        lastFilteredTransitionAt.clear()
+        activityRecorder.reset()
         // Fetch online and offline friends concurrently — each sweep also
         // sleeps between pages, so serial fetches roughly double login latency.
         val (onlineFriends, offlineFriends) = coroutineScope {
@@ -174,7 +156,6 @@ class FriendRepository @Inject constructor(
 
         val friendMap = mutableMapOf<String, FriendContext>()
         for (user in onlineFriends) {
-            userRepository.cacheUser(user)
             friendMap[user.id] = FriendContext(
                 id = user.id,
                 name = user.displayName,
@@ -183,7 +164,6 @@ class FriendRepository @Inject constructor(
             )
         }
         for (user in offlineFriends) {
-            userRepository.cacheUser(user)
             if (!friendMap.containsKey(user.id)) {
                 friendMap[user.id] = FriendContext(
                     id = user.id,
@@ -195,23 +175,33 @@ class FriendRepository @Inject constructor(
         }
         friendsMutex.withLock {
             if (ownerId != ownerUserId || generation != accountGeneration.get() || revision != friendsRevision.get()) return
+            userRepository.cacheUsers(friendMap.values.mapNotNull { it.ref })
             _friends.value = decorateFriendMap(friendMap)
             friendsRevision.incrementAndGet()
         }
-        syncFriendLog(ownerId, friendMap)
+        if (!isCurrentAccount(ownerId, generation)) return
+        friendLogSynchronizer.synchronize(ownerId, friendMap)
 
+        if (!isCurrentAccount(ownerId, generation)) return
         try {
             favoriteRepository.loadFavorites(type = "friend")
-        } catch (_: Exception) {}
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
 
-        // Load notification-enabled friend IDs
+        if (!isCurrentAccount(ownerId, generation)) return
         try {
-            if (ownerId.isNotEmpty()) {
-                val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerId)
-                _notifyEnabledIds.value = enabledIds.toSet()
+            val enabledIds = friendNotifyDao.getEnabledFriendIdsSnapshot(ownerId).toSet()
+            friendsMutex.withLock {
+                if (!isCurrentAccount(ownerId, generation)) return
+                _notifyEnabledIds.value = enabledIds
                 _friends.value = decorateFriendMap(_friends.value)
             }
-        } catch (_: Exception) {}
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
     }
 
     suspend fun toggleFriendNotify(friendUserId: String): Boolean {
@@ -282,7 +272,7 @@ class FriendRepository @Inject constructor(
             )
         }
         if (user != null) userRepository.cacheUser(user)
-        writeFeedOnlineOffline(userId, displayName, "online", location)
+        activityRecorder.recordOnlineOffline(ownerUserId, userId, displayName, "online", location)
         _friendTransitions.tryEmit(FriendTransition.CameOnline(userId, displayName))
     }
 
@@ -328,9 +318,9 @@ class FriendRepository @Inject constructor(
                 // rather than at event arrival so transient flickers that
                 // get rescinded during OFFLINE_DELAY_MS don't produce phantom
                 // hops.
-                lastFilteredTransitionAt[userId] = System.currentTimeMillis()
-                writeFeedOnlineOffline(userId, displayName, "offline", "")
-                _confirmedOfflineEvents.emit(userId to displayName)
+                activityRecorder.markFilteredTransition(userId)
+                activityRecorder.recordOnlineOffline(ownerId, userId, displayName, "offline", "")
+                _friendTransitions.emit(FriendTransition.CameOffline(userId, displayName))
             }
             pendingOfflineJobs.remove(userId)
         }
@@ -364,7 +354,7 @@ class FriendRepository @Inject constructor(
         // menu, Quest social, etc.). Record as a filtered hop so a later
         // return to a previously-visited world is treated as a real
         // revisit rather than a pipeline re-emit.
-        lastFilteredTransitionAt[userId] = System.currentTimeMillis()
+        activityRecorder.markFilteredTransition(userId)
     }
 
     private suspend fun handleFriendUpdate(event: PipelineEvent.FriendUpdate) {
@@ -374,12 +364,15 @@ class FriendRepository @Inject constructor(
 
         val previous = updateFriend(userId) { it.copy(ref = user, name = user.displayName) }
         userRepository.cacheUser(user)
-        syncFriendLogCurrent(
-            previous = previous,
-            userId = userId,
-            displayName = user.displayName,
-            tags = user.tags,
-        )
+        ensureOwnerUserId().takeIf { it.isNotEmpty() }?.let { ownerId ->
+            friendLogSynchronizer.synchronizeUpdatedFriend(
+                ownerId = ownerId,
+                previous = previous,
+                userId = userId,
+                displayName = user.displayName,
+                tags = user.tags,
+            )
+        }
 
         val prevRef = previous.ref ?: return
         // Notify on any online-status change (join-me / ask-me / busy). This is a
@@ -391,16 +384,32 @@ class FriendRepository @Inject constructor(
         // Status change (skip offline transitions — handled by online/offline events)
         if ((user.status != prevRef.status || user.statusDescription != prevRef.statusDescription)
             && user.status != "offline" && prevRef.status != "offline") {
-            writeFeedStatus(userId, user.displayName, user.status, user.statusDescription, prevRef.status, prevRef.statusDescription)
+            activityRecorder.recordStatus(
+                ownerId = ownerUserId,
+                userId = userId,
+                displayName = user.displayName,
+                status = user.status,
+                statusDescription = user.statusDescription,
+                previousStatus = prevRef.status,
+                previousStatusDescription = prevRef.statusDescription,
+            )
         }
         // Bio change (skip if either is empty — initial load artifact)
         if (user.bio != prevRef.bio && user.bio.isNotEmpty() && prevRef.bio.isNotEmpty()) {
-            writeFeedBio(userId, user.displayName, user.bio, prevRef.bio)
+            activityRecorder.recordBio(ownerUserId, userId, user.displayName, user.bio, prevRef.bio)
         }
         // Avatar change
         if (user.currentAvatarThumbnailImageUrl != prevRef.currentAvatarThumbnailImageUrl
             && user.currentAvatarThumbnailImageUrl.isNotEmpty()) {
-            writeFeedAvatar(userId, user.displayName, user.currentAvatarImageUrl, user.currentAvatarThumbnailImageUrl, prevRef.currentAvatarImageUrl, prevRef.currentAvatarThumbnailImageUrl)
+            activityRecorder.recordAvatar(
+                ownerId = ownerUserId,
+                userId = userId,
+                displayName = user.displayName,
+                imageUrl = user.currentAvatarImageUrl,
+                thumbnailUrl = user.currentAvatarThumbnailImageUrl,
+                previousImageUrl = prevRef.currentAvatarImageUrl,
+                previousThumbnailUrl = prevRef.currentAvatarThumbnailImageUrl,
+            )
         }
     }
 
@@ -447,14 +456,14 @@ class FriendRepository @Inject constructor(
             location == "offline" || location == "private"
         if (isFilteredDestination && location != previousLocation) {
             // Remember that this friend briefly passed through an
-            // un-persisted state; writeFeedGps uses this to tell an honest
+            // un-persisted state; the activity recorder uses this to tell an honest
             // revisit apart from a pipeline re-emit.
-            lastFilteredTransitionAt[userId] = System.currentTimeMillis()
+            activityRecorder.markFilteredTransition(userId)
         }
 
         // Only write GPS feed for actual world locations, not "private" or "offline"
         if (!isFilteredDestination && location != previousLocation) {
-            writeFeedGps(userId, displayName, location!!, worldName, previousLocation)
+            activityRecorder.recordGps(ownerUserId, userId, displayName, location!!, worldName, previousLocation)
             _friendTransitions.tryEmit(FriendTransition.ChangedLocation(userId, displayName, worldName))
         }
     }
@@ -473,14 +482,18 @@ class FriendRepository @Inject constructor(
                 notifyEnabled = userId in _notifyEnabledIds.value,
             )
         }
-        syncFriendAdded(userId, user)
+        ensureOwnerUserId().takeIf { it.isNotEmpty() }?.let { ownerId ->
+            friendLogSynchronizer.recordAdded(ownerId, userId, user)
+        }
     }
 
     private suspend fun handleFriendDelete(event: PipelineEvent.FriendDelete) {
         val content = event.content?.jsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
         cancelPendingOffline(userId)
-        syncFriendRemoved(userId)
+        ensureOwnerUserId().takeIf { it.isNotEmpty() }?.let { ownerId ->
+            friendLogSynchronizer.recordRemoved(ownerId, userId)
+        }
         friendsMutex.withLock {
             val current = _friends.value.toMutableMap()
             current.remove(userId)
@@ -572,423 +585,6 @@ class FriendRepository @Inject constructor(
         return ownerUserId
     }
 
-    private suspend fun syncFriendLog(ownerId: String, friendMap: Map<String, FriendContext>) {
-        val currentEntries = friendLogDao.getCurrentFriends(ownerId)
-        val currentByCompositeId = currentEntries.associateBy { it.odUserId }
-        if (currentEntries.isEmpty()) {
-            friendLogDao.insertCurrent(
-                friendMap.values.map { ctx ->
-                    createCurrentEntry(
-                        ownerId = ownerId,
-                        userId = ctx.id,
-                        displayName = ctx.ref?.displayName ?: ctx.name,
-                        tags = ctx.ref?.tags ?: emptyList(),
-                        friendNumber = 0,
-                    )
-                }
-            )
-            return
-        }
-
-        var nextFriendNumber = (currentEntries.maxOfOrNull { it.friendNumber } ?: 0) + 1
-        val seenCompositeIds = mutableSetOf<String>()
-
-        friendMap.values.forEach { ctx ->
-            val compositeId = compositeId(ownerId, ctx.id)
-            val existing = currentByCompositeId[compositeId]
-            val displayName = ctx.ref?.displayName ?: ctx.name
-            val tags = ctx.ref?.tags ?: emptyList()
-            seenCompositeIds += compositeId
-
-            if (existing == null) {
-                val snapshot = FriendLogSnapshot(
-                    compositeId = compositeId,
-                    userId = ctx.id,
-                    displayName = displayName,
-                    trustLevel = trustLevelLabel(tags),
-                    friendNumber = nextFriendNumber++,
-                )
-                insertFriendHistory(ownerId, "Friend", snapshot)
-                friendLogDao.insertCurrent(snapshot.toCurrentEntry(ownerId))
-                return@forEach
-            }
-
-            recordFriendChanges(ownerId, existing, ctx.id, displayName, tags)
-        }
-
-        currentEntries
-            .filter { it.odUserId !in seenCompositeIds }
-            .forEach { missing ->
-                insertFriendHistory(
-                    ownerId = ownerId,
-                    type = "Unfriend",
-                    snapshot = FriendLogSnapshot(
-                        compositeId = missing.odUserId,
-                        userId = missing.odUserId.entityIdFromScopedKey(),
-                        displayName = missing.odDisplayName,
-                        trustLevel = missing.trustLevel,
-                        friendNumber = missing.friendNumber,
-                    ),
-                )
-                friendLogDao.deleteCurrent(missing.odUserId)
-            }
-    }
-
-    private suspend fun syncFriendCurrent(
-        userId: String,
-        displayName: String,
-        tags: List<String>,
-    ) {
-        val ownerId = ensureOwnerUserId()
-        if (ownerId.isEmpty()) return
-
-        val compositeId = compositeId(ownerId, userId)
-        val existing = friendLogDao.getCurrent(compositeId)
-        if (existing == null) {
-            friendLogDao.insertCurrent(
-                createCurrentEntry(
-                    ownerId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    tags = tags,
-                    friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
-                )
-            )
-            return
-        }
-
-        recordFriendChanges(ownerId, existing, userId, displayName, tags)
-    }
-
-    /**
-     * Records display-name / trust-level history rows for an existing friend
-     * whose current entry is [existing], then refreshes that current entry —
-     * but only when something actually changed. Shared by [syncFriendLog] and
-     * [syncFriendCurrent].
-     */
-    private suspend fun recordFriendChanges(
-        ownerId: String,
-        existing: FriendLogCurrentEntity,
-        userId: String,
-        displayName: String,
-        tags: List<String>,
-    ) {
-        val compositeId = compositeId(ownerId, userId)
-        val trustLevel = trustLevelLabel(tags)
-
-        if (existing.odDisplayName != displayName && existing.odDisplayName.isNotBlank()) {
-            insertFriendHistory(
-                ownerId = ownerId,
-                type = "DisplayName",
-                snapshot = FriendLogSnapshot(
-                    compositeId = compositeId,
-                    userId = userId,
-                    displayName = displayName,
-                    trustLevel = trustLevel,
-                    friendNumber = existing.friendNumber,
-                ),
-                previousDisplayName = existing.odDisplayName,
-            )
-        }
-
-        if (existing.trustLevel != trustLevel &&
-            existing.trustLevel.isNotBlank() &&
-            trustLevel.isNotBlank()
-        ) {
-            insertFriendHistory(
-                ownerId = ownerId,
-                type = "TrustLevel",
-                snapshot = FriendLogSnapshot(
-                    compositeId = compositeId,
-                    userId = userId,
-                    displayName = displayName,
-                    trustLevel = trustLevel,
-                    friendNumber = existing.friendNumber,
-                ),
-                previousTrustLevel = existing.trustLevel,
-            )
-        }
-
-        if (existing.odDisplayName != displayName || existing.trustLevel != trustLevel) {
-            friendLogDao.insertCurrent(
-                createCurrentEntry(
-                    ownerId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    tags = tags,
-                    friendNumber = existing.friendNumber,
-                )
-            )
-        }
-    }
-
-    private suspend fun syncFriendLogCurrent(
-        previous: FriendContext,
-        userId: String,
-        displayName: String,
-        tags: List<String>,
-    ) {
-        val previousDisplayName = previous.ref?.displayName ?: previous.name
-        val previousTrustLevel = trustLevelLabel(previous.ref?.tags ?: emptyList())
-        if (previousDisplayName == displayName && previousTrustLevel == trustLevelLabel(tags)) {
-            return
-        }
-        syncFriendCurrent(userId, displayName, tags)
-    }
-
-    private suspend fun syncFriendAdded(userId: String, user: VrcUser?) {
-        val ownerId = ensureOwnerUserId()
-        if (ownerId.isEmpty()) return
-
-        val compositeId = compositeId(ownerId, userId)
-        if (friendLogDao.getCurrent(compositeId) != null) {
-            return
-        }
-
-        val snapshot = FriendLogSnapshot(
-            compositeId = compositeId,
-            userId = userId,
-            displayName = user?.displayName ?: userId,
-            trustLevel = trustLevelLabel(user?.tags ?: emptyList()),
-            friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
-        )
-        insertFriendHistory(ownerId, "Friend", snapshot)
-        friendLogDao.insertCurrent(snapshot.toCurrentEntry(ownerId))
-    }
-
-    private suspend fun syncFriendRemoved(userId: String) {
-        val ownerId = ensureOwnerUserId()
-        if (ownerId.isEmpty()) return
-
-        val compositeId = compositeId(ownerId, userId)
-        val existing = friendLogDao.getCurrent(compositeId) ?: return
-        insertFriendHistory(
-            ownerId = ownerId,
-            type = "Unfriend",
-            snapshot = FriendLogSnapshot(
-                compositeId = compositeId,
-                userId = userId,
-                displayName = existing.odDisplayName,
-                trustLevel = existing.trustLevel,
-                friendNumber = existing.friendNumber,
-            ),
-        )
-        friendLogDao.deleteCurrent(compositeId)
-    }
-
-    private suspend fun insertFriendHistory(
-        ownerId: String,
-        type: String,
-        snapshot: FriendLogSnapshot,
-        previousDisplayName: String = "",
-        previousTrustLevel: String = "",
-    ) {
-        friendLogDao.insertHistory(
-            FriendLogHistoryEntity(
-                ownerUserId = ownerId,
-                type = type,
-                odUserId = snapshot.compositeId,
-                displayName = snapshot.displayName,
-                previousDisplayName = previousDisplayName,
-                trustLevel = snapshot.trustLevel,
-                previousTrustLevel = previousTrustLevel,
-                friendNumber = snapshot.friendNumber,
-                createdAt = Instant.now().toString(),
-            )
-        )
-    }
-
-    private fun createCurrentEntry(
-        ownerId: String,
-        userId: String,
-        displayName: String,
-        tags: List<String>,
-        friendNumber: Int,
-    ): FriendLogCurrentEntity {
-        return FriendLogCurrentEntity(
-            odUserId = compositeId(ownerId, userId),
-            ownerUserId = ownerId,
-            odDisplayName = displayName,
-            trustLevel = trustLevelLabel(tags),
-            friendNumber = friendNumber,
-        )
-    }
-
-    private fun FriendLogSnapshot.toCurrentEntry(ownerId: String): FriendLogCurrentEntity {
-        return FriendLogCurrentEntity(
-            odUserId = compositeId,
-            ownerUserId = ownerId,
-            odDisplayName = displayName,
-            trustLevel = trustLevel,
-            friendNumber = friendNumber,
-        )
-    }
-
-    private fun compositeId(ownerId: String, userId: String): String = accountScopedKey(ownerId, userId)
-
-    private fun trustLevelLabel(tags: List<String>): String = TrustRank.fromTags(tags).label
-
-    private fun shouldWriteFeed(key: String): Boolean {
-        val now = System.currentTimeMillis()
-        var allowed = false
-        recentFeedWrites.compute(key) { _, lastWrite ->
-            if (lastWrite != null && now - lastWrite < DEDUP_WINDOW_MS) {
-                allowed = false
-                lastWrite
-            } else {
-                allowed = true
-                now
-            }
-        }
-        if (allowed && recentFeedWrites.size > 500) {
-            recentFeedWrites.entries.removeIf { now - it.value > DEDUP_WINDOW_MS }
-        }
-        return allowed
-    }
-
-    private fun writeFeedOnlineOffline(userId: String, displayName: String, type: String, location: String) {
-        val ownerId = ownerUserId
-        if (ownerId.isEmpty()) return
-        if (!shouldWriteFeed("onoff:$userId:$type")) return
-        scope.launch {
-            // DB-level dedup guard: if the most recent row for this friend
-            // already records the same online/offline transition we're about
-            // to write, drop it. Catches VRChat's occasional repeats that
-            // land outside the in-memory DEDUP_WINDOW_MS and survives app
-            // restarts / re-logins (when recentFeedWrites gets cleared).
-            val latest = feedRepository.getLatestOnlineOffline(ownerId, userId)
-            if (latest != null && latest.type == type && latest.location == location) return@launch
-            feedRepository.insertOnlineOffline(
-                FeedOnlineOfflineEntity(
-                    ownerUserId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    type = type,
-                    location = location,
-                    worldName = "",
-                    time = "",
-                    groupName = "",
-                    createdAt = java.time.Instant.now().toString(),
-                )
-            )
-        }
-    }
-
-    private fun writeFeedGps(userId: String, displayName: String, location: String, worldName: String, previousLocation: String) {
-        val ownerId = ownerUserId
-        if (ownerId.isEmpty()) return
-        if (!shouldWriteFeed("gps:$userId:$location")) return
-        scope.launch {
-            // Two signals tell a pipeline re-emit apart from a real revisit
-            // through a filtered (offline/private) state, since both arrive
-            // at the DB with identical content:
-            //   1. Age of the matching row. Past the outer GPS_REVISIT_WINDOW,
-            //      always treat as a legit revisit (re-emits don't lag that
-            //      long, and the cost of a stray duplicate row is low relative
-            //      to silently dropping a real event).
-            //   2. A recorded filtered hop since the latest row. When
-            //      handleFriendLocation saw the friend hit `offline`/`private`
-            //      we stamp [lastFilteredTransitionAt]. A re-emit wouldn't
-            //      produce one of those (the in-memory state already matches
-            //      and handleFriendLocation short-circuits), so a hop newer
-            //      than the latest DB row is positive evidence that this is
-            //      the friend legitimately coming back from a gap.
-            val latest = feedRepository.getLatestGps(ownerId, userId)
-            if (latest != null &&
-                latest.location == location &&
-                latest.worldName == worldName &&
-                latest.previousLocation == previousLocation
-            ) {
-                val latestMillis = parseInstantMillisOrNull(latest.createdAt)
-                if (latestMillis != null) {
-                    val now = System.currentTimeMillis()
-                    val withinWindow = now - latestMillis < GPS_REVISIT_WINDOW.toMillis()
-                    val hopAfterLatest = (lastFilteredTransitionAt[userId] ?: 0L) > latestMillis
-                    if (withinWindow && !hopAfterLatest) return@launch
-                }
-                // Unparseable createdAt: fall through and write rather than
-                // silently drop a potentially real revisit.
-            }
-            feedRepository.insertGps(
-                FeedGpsEntity(
-                    ownerUserId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    location = location,
-                    worldName = worldName,
-                    previousLocation = previousLocation,
-                    time = "",
-                    groupName = "",
-                    createdAt = java.time.Instant.now().toString(),
-                )
-            )
-        }
-    }
-
-    private fun writeFeedStatus(userId: String, displayName: String, status: String, statusDescription: String, previousStatus: String, previousStatusDescription: String) {
-        val ownerId = ownerUserId
-        if (ownerId.isEmpty()) return
-        if (!shouldWriteFeed("status:$userId:$status:$statusDescription")) return
-        scope.launch {
-            val latest = feedRepository.getLatestStatus(ownerId, userId)
-            if (latest != null && latest.status == status && latest.statusDescription == statusDescription) return@launch
-            feedRepository.insertStatus(
-                FeedStatusEntity(
-                    ownerUserId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    status = status,
-                    statusDescription = statusDescription,
-                    previousStatus = previousStatus,
-                    previousStatusDescription = previousStatusDescription,
-                    createdAt = java.time.Instant.now().toString(),
-                )
-            )
-        }
-    }
-
-    private fun writeFeedBio(userId: String, displayName: String, bio: String, previousBio: String) {
-        val ownerId = ownerUserId
-        if (ownerId.isEmpty()) return
-        if (!shouldWriteFeed("bio:$userId:${bio.hashCode()}")) return
-        scope.launch {
-            val latest = feedRepository.getLatestBio(ownerId, userId)
-            if (latest != null && latest.bio == bio) return@launch
-            feedRepository.insertBio(
-                FeedBioEntity(
-                    ownerUserId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    bio = bio,
-                    previousBio = previousBio,
-                    createdAt = java.time.Instant.now().toString(),
-                )
-            )
-        }
-    }
-
-    private fun writeFeedAvatar(userId: String, displayName: String, imageUrl: String, thumbnailUrl: String, previousImageUrl: String, previousThumbnailUrl: String) {
-        val ownerId = ownerUserId
-        if (ownerId.isEmpty()) return
-        if (!shouldWriteFeed("avatar:$userId:$thumbnailUrl")) return
-        scope.launch {
-            val latest = feedRepository.getLatestAvatar(ownerId, userId)
-            if (latest != null &&
-                latest.currentAvatarImageUrl == imageUrl &&
-                latest.currentAvatarThumbnailImageUrl == thumbnailUrl
-            ) return@launch
-            feedRepository.insertAvatar(
-                FeedAvatarEntity(
-                    ownerUserId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    currentAvatarImageUrl = imageUrl,
-                    currentAvatarThumbnailImageUrl = thumbnailUrl,
-                    previousCurrentAvatarImageUrl = previousImageUrl,
-                    previousCurrentAvatarThumbnailImageUrl = previousThumbnailUrl,
-                    createdAt = java.time.Instant.now().toString(),
-                )
-            )
-        }
-    }
+    private fun isCurrentAccount(ownerId: String, generation: Long): Boolean =
+        ownerId == ownerUserId && generation == accountGeneration.get()
 }

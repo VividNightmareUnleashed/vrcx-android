@@ -20,13 +20,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** The five kinds of friend-activity feed row, keyed by the persisted [id]. */
-enum class FeedEntryType(val id: String) {
-    GPS("gps"),
-    STATUS("status"),
-    BIO("bio"),
-    AVATAR("avatar"),
-    ONLINE("online"),
-    OFFLINE("offline");
+enum class FeedEntryType(val id: String, val label: String) {
+    GPS("gps", "Location"),
+    STATUS("status", "Status"),
+    BIO("bio", "Bio"),
+    AVATAR("avatar", "Avatar"),
+    ONLINE("online", "Online"),
+    OFFLINE("offline", "Offline");
 
     companion object {
         private val byId = entries.associateBy { it.id }

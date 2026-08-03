@@ -39,7 +39,7 @@ class NotificationPresentationTest {
             title = "",
             createdAt = "",
             seen = false,
-            isV2 = false,
+            source = NotificationSource.V1,
             responses = emptyList(),
         )
 

@@ -3,17 +3,44 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.GalleryApi
 import com.vrcx.android.data.api.InventoryApi
 import com.vrcx.android.data.api.UserApi
+import com.vrcx.android.data.api.model.GalleryImage
 import com.vrcx.android.data.api.model.InventoryItem
 import com.vrcx.android.data.api.model.InventoryResponse
 import com.vrcx.android.data.api.model.InventoryTemplate
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 class GalleryRepositoryTest {
+
+    @Test
+    fun `late gallery result cannot repopulate state after account clear`() = runTest {
+        val galleryApi = mock<GalleryApi>()
+        val repository = GalleryRepository(galleryApi, mock(), mock())
+        val requestStarted = CompletableDeferred<Unit>()
+        val releaseRequest = CompletableDeferred<Unit>()
+        whenever(galleryApi.getFileList(tag = "gallery")).doSuspendableAnswer {
+            requestStarted.complete(Unit)
+            releaseRequest.await()
+            listOf(GalleryImage(id = "file_old_account"))
+        }
+
+        val load = async(start = CoroutineStart.UNDISPATCHED) { repository.loadGallery() }
+        requestStarted.await()
+        repository.clearRuntimeState()
+        releaseRequest.complete(Unit)
+        load.await()
+
+        assertTrue(repository.galleryImages.value.isEmpty())
+    }
 
     @Test
     fun `loadInventory paginates wrapped results and resolves each template once`() = runTest {
@@ -40,27 +67,18 @@ class GalleryRepositoryTest {
     }
 
     @Test
-    fun `defaultFileNameFor picks a JPEG extension for image jpeg`() {
-        assertEquals("image.jpg", GalleryRepository.defaultFileNameFor("image/jpeg"))
-        assertEquals("image.jpg", GalleryRepository.defaultFileNameFor("image/jpg"))
-        // Mixed case should still resolve correctly.
-        assertEquals("image.jpg", GalleryRepository.defaultFileNameFor("Image/JPEG"))
-    }
-
-    @Test
-    fun `defaultFileNameFor picks a webp extension for image webp`() {
-        assertEquals("image.webp", GalleryRepository.defaultFileNameFor("image/webp"))
-    }
-
-    @Test
-    fun `defaultFileNameFor picks a gif extension for image gif`() {
-        assertEquals("image.gif", GalleryRepository.defaultFileNameFor("image/gif"))
-    }
-
-    @Test
-    fun `defaultFileNameFor falls back to png for image png and unknown types`() {
-        assertEquals("image.png", GalleryRepository.defaultFileNameFor("image/png"))
-        assertEquals("image.png", GalleryRepository.defaultFileNameFor("application/octet-stream"))
-        assertEquals("image.png", GalleryRepository.defaultFileNameFor(""))
+    fun `defaultFileNameFor maps supported and fallback MIME types`() {
+        listOf(
+            "image/jpeg" to "image.jpg",
+            "image/jpg" to "image.jpg",
+            "Image/JPEG" to "image.jpg",
+            "image/webp" to "image.webp",
+            "image/gif" to "image.gif",
+            "image/png" to "image.png",
+            "application/octet-stream" to "image.png",
+            "" to "image.png",
+        ).forEach { (mimeType, expected) ->
+            assertEquals(expected, GalleryRepository.defaultFileNameFor(mimeType))
+        }
     }
 }

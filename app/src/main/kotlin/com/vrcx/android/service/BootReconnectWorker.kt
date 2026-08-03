@@ -106,7 +106,6 @@ class BootReconnectWorker(
     }
 
     private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             WebSocketForegroundService.CHANNEL_SERVICE,

@@ -57,6 +57,8 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -88,6 +90,14 @@ private data class LastKnownFriendLocation(
     val createdAt: String,
 )
 
+private data class LocationCriteria(
+    val segment: LocationSegment,
+    val query: String,
+    val worlds: Map<String, World>,
+    val activeLocation: String,
+    val lastKnown: Map<String, LastKnownFriendLocation>,
+)
+
 data class LocationGroup(
     val location: String,
     val worldId: String,
@@ -100,6 +110,7 @@ data class LocationGroup(
 )
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class FriendsLocationsViewModel @Inject constructor(
     authRepository: AuthRepository,
     private val friendRepository: FriendRepository,
@@ -141,21 +152,21 @@ class FriendsLocationsViewModel @Inject constructor(
         .map { entries -> buildLastKnownLocations(entries) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val locationGroups: StateFlow<List<LocationGroup>> = combine(
-        friendRepository.friends,
+    private val locationCriteria = combine(
         _selectedSegment,
         _searchQuery,
         _worldNames,
         currentLocation,
         lastKnownLocations,
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val friendsMap = values[0] as Map<String, FriendContext>
-        val segment = values[1] as LocationSegment
-        val query = values[2] as String
-        val worlds = values[3] as Map<String, World>
-        val activeLocation = values[4] as String
-        val lastKnown = values[5] as Map<String, LastKnownFriendLocation>
+    ) { segment, query, worlds, activeLocation, lastKnown ->
+        LocationCriteria(segment, query, worlds, activeLocation, lastKnown)
+    }
+
+    val locationGroups: StateFlow<List<LocationGroup>> = combine(
+        friendRepository.friends,
+        locationCriteria,
+    ) { friendsMap, criteria ->
+        val segment = criteria.segment
 
         val filtered = when (segment) {
             LocationSegment.ONLINE -> friendsMap.values.filter { friend ->
@@ -168,12 +179,12 @@ class FriendsLocationsViewModel @Inject constructor(
                     isTrackableLocation(resolvePresenceLocation(friend.ref))
             }
             LocationSegment.SAME_INSTANCE -> {
-                if (!isTrackableLocation(activeLocation)) {
+                if (!isTrackableLocation(criteria.activeLocation)) {
                     emptyList()
                 } else {
                     friendsMap.values.filter { friend ->
                         friend.state == FriendState.ONLINE &&
-                            resolvePresenceLocation(friend.ref) == activeLocation
+                            resolvePresenceLocation(friend.ref) == criteria.activeLocation
                     }
                 }
             }
@@ -191,21 +202,21 @@ class FriendsLocationsViewModel @Inject constructor(
                     locationHint = "Website presence",
                 )
             )
-            LocationSegment.OFFLINE -> buildOfflineGroups(filtered, lastKnown, worlds)
+            LocationSegment.OFFLINE -> buildOfflineGroups(filtered, criteria.lastKnown, criteria.worlds)
             else -> buildWorldGroups(
                 friends = filtered,
-                worlds = worlds,
-                currentLocation = if (segment == LocationSegment.SAME_INSTANCE) activeLocation else "",
+                worlds = criteria.worlds,
+                currentLocation = if (segment == LocationSegment.SAME_INSTANCE) criteria.activeLocation else "",
             )
         }
 
-        if (query.isBlank()) {
+        if (criteria.query.isBlank()) {
             groups
         } else {
             groups.filter { group ->
-                group.worldName.contains(query, ignoreCase = true) ||
-                    group.locationHint.contains(query, ignoreCase = true) ||
-                    group.friends.any { it.name.contains(query, ignoreCase = true) }
+                group.worldName.contains(criteria.query, ignoreCase = true) ||
+                    group.locationHint.contains(criteria.query, ignoreCase = true) ||
+                    group.friends.any { it.name.contains(criteria.query, ignoreCase = true) }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -215,10 +226,11 @@ class FriendsLocationsViewModel @Inject constructor(
             viewModelScope.launch {
                 for (worldId in worldLookupQueue) {
                     try {
-                        runCatching { worldRepository.getWorld(worldId) }
-                            .onSuccess { world ->
-                                _worldNames.update { it + (worldId to world) }
-                            }
+                        val world = worldRepository.getWorld(worldId)
+                        _worldNames.update { it + (worldId to world) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
                     } finally {
                         pendingWorldLookups.remove(worldId)
                     }

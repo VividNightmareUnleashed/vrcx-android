@@ -1,7 +1,5 @@
 package com.vrcx.android.data.api.model
 
-import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -44,29 +42,4 @@ data class InstancePlatforms(
     val android: Int = 0,
     val ios: Int = 0,
     val standalonewindows: Int = 0,
-)
-
-@Serializable
-data class InstanceShortName(
-    val secureName: String = "",
-    val shortName: String = "",
-)
-
-@Serializable
-@OptIn(ExperimentalSerializationApi::class)
-data class CreateInstanceRequest(
-    val worldId: String,
-    val type: String,
-    val region: String,
-    val ownerId: String,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val roleIds: List<String>? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val groupAccessType: String? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val queueEnabled: Boolean? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val ageGate: Boolean? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val displayName: String? = null,
 )

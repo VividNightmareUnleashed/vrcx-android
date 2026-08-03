@@ -11,13 +11,7 @@ import com.vrcx.android.data.db.entity.NotificationV2Entity
 @Dao
 interface NotificationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertNotification(entry: NotificationEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotifications(entries: List<NotificationEntity>)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertNotificationV2(entry: NotificationV2Entity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotificationsV2(entries: List<NotificationV2Entity>)
@@ -52,19 +46,82 @@ interface NotificationDao {
     @Query("UPDATE notifications_v2 SET seen = 1 WHERE ownerUserId = :userId AND id = :notificationId")
     suspend fun markSeenV2(userId: String, notificationId: String)
 
+    @Query(
+        """
+        DELETE FROM notifications
+        WHERE ownerUserId = :userId AND id NOT IN (
+            SELECT id FROM notifications
+            WHERE ownerUserId = :userId
+            ORDER BY rowid DESC
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun trimNotifications(userId: String, limit: Int)
+
+    @Query(
+        """
+        DELETE FROM notifications_v2
+        WHERE ownerUserId = :userId AND id NOT IN (
+            SELECT id FROM notifications_v2
+            WHERE ownerUserId = :userId
+            ORDER BY rowid DESC
+            LIMIT :limit
+        )
+        """
+    )
+    suspend fun trimNotificationsV2(userId: String, limit: Int)
+
+    /** Upserts only the fetched page and bounds the owner's retained history. */
     @Transaction
-    suspend fun replaceNotifications(userId: String, entries: List<NotificationEntity>) {
-        deleteNotificationsForUser(userId)
-        if (entries.isNotEmpty()) {
-            insertNotifications(entries.asReversed())
+    suspend fun upsertNotifications(
+        userId: String,
+        entriesNewestFirst: List<NotificationEntity>,
+        limit: Int,
+    ) {
+        if (entriesNewestFirst.isNotEmpty()) {
+            insertNotifications(entriesNewestFirst.asReversed())
         }
+        trimNotifications(userId, limit)
     }
 
+    /** Upserts only the fetched page and bounds the owner's retained history. */
     @Transaction
-    suspend fun replaceNotificationsV2(userId: String, entries: List<NotificationV2Entity>) {
-        deleteNotificationsV2ForUser(userId)
-        if (entries.isNotEmpty()) {
-            insertNotificationsV2(entries.asReversed())
+    suspend fun upsertNotificationsV2(
+        userId: String,
+        entriesNewestFirst: List<NotificationV2Entity>,
+        limit: Int,
+    ) {
+        if (entriesNewestFirst.isNotEmpty()) {
+            insertNotificationsV2(entriesNewestFirst.asReversed())
         }
+        trimNotificationsV2(userId, limit)
+    }
+
+    /** Reconciles an explicitly requested full snapshot without delete/reinsert churn. */
+    @Transaction
+    suspend fun synchronizeNotifications(
+        userId: String,
+        entriesNewestFirst: List<NotificationEntity>,
+        limit: Int,
+    ) {
+        val snapshotIds = entriesNewestFirst.map { it.id }.toSet()
+        val staleIds = getNotifications(userId, limit).map { it.id }.filterNot(snapshotIds::contains)
+        // Keep each IN clause below SQLite's traditional 999 bind-parameter limit.
+        staleIds.chunked(900).forEach { deleteNotifications(userId, it) }
+        upsertNotifications(userId, entriesNewestFirst, limit)
+    }
+
+    /** Reconciles an explicitly requested full snapshot without delete/reinsert churn. */
+    @Transaction
+    suspend fun synchronizeNotificationsV2(
+        userId: String,
+        entriesNewestFirst: List<NotificationV2Entity>,
+        limit: Int,
+    ) {
+        val snapshotIds = entriesNewestFirst.map { it.id }.toSet()
+        val staleIds = getNotificationsV2(userId, limit).map { it.id }.filterNot(snapshotIds::contains)
+        staleIds.chunked(900).forEach { deleteNotificationsV2(userId, it) }
+        upsertNotificationsV2(userId, entriesNewestFirst, limit)
     }
 }

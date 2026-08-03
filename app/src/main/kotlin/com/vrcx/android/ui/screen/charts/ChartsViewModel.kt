@@ -13,6 +13,7 @@ import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +95,8 @@ class ChartsViewModel @Inject constructor(
                 val history = feedDao.getAllGpsFeed(userId).first()
                 points = withContext(Dispatchers.Default) { history.map { it.toGpsPoint(zone) } }
                 recomputeCharts()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to load chart data"
             } finally {

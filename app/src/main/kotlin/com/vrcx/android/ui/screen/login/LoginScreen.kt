@@ -47,7 +47,6 @@ import com.vrcx.android.ui.theme.vrcxColors
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
-    onLoginSuccess: () -> Unit = {},
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val username by viewModel.username.collectAsStateWithLifecycle()
@@ -57,11 +56,7 @@ fun LoginScreen(
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(authState) {
-        when (val state = authState) {
-            is AuthState.LoggedIn -> onLoginSuccess()
-            is AuthState.Error -> snackbarHostState.showSnackbar(state.message)
-            else -> {}
-        }
+        (authState as? AuthState.Error)?.let { snackbarHostState.showSnackbar(it.message) }
     }
 
     Scaffold(

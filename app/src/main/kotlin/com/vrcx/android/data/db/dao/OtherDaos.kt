@@ -4,25 +4,10 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.vrcx.android.data.db.entity.CacheAvatarEntity
-import com.vrcx.android.data.db.entity.CacheWorldEntity
 import com.vrcx.android.data.db.entity.FriendNotifyEntity
 import com.vrcx.android.data.db.entity.MemoEntity
-import com.vrcx.android.data.db.entity.ModerationEntity
 import com.vrcx.android.data.db.entity.NoteEntity
 import kotlinx.coroutines.flow.Flow
-
-@Dao
-interface ModerationDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(entry: ModerationEntity)
-
-    @Query("SELECT * FROM moderation WHERE ownerUserId = :userId")
-    fun getAll(userId: String): Flow<List<ModerationEntity>>
-
-    @Query("DELETE FROM moderation WHERE odUserId = :compositeId")
-    suspend fun delete(compositeId: String)
-}
 
 @Dao
 interface NoteDao {
@@ -37,27 +22,6 @@ interface NoteDao {
 
     @Query("DELETE FROM notes WHERE compositeId = :compositeId")
     suspend fun delete(compositeId: String)
-}
-
-@Dao
-interface CacheDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAvatar(entry: CacheAvatarEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertWorld(entry: CacheWorldEntity)
-
-    @Query("SELECT * FROM cache_avatar WHERE id = :id")
-    suspend fun getAvatar(id: String): CacheAvatarEntity?
-
-    @Query("SELECT * FROM cache_world WHERE id = :id")
-    suspend fun getWorld(id: String): CacheWorldEntity?
-
-    @Query("DELETE FROM cache_avatar")
-    suspend fun clearAvatarCache()
-
-    @Query("DELETE FROM cache_world")
-    suspend fun clearWorldCache()
 }
 
 @Dao

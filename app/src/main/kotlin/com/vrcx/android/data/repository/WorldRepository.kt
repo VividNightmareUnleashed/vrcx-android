@@ -5,16 +5,12 @@ import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Instance
 import com.vrcx.android.data.api.model.World
-import com.vrcx.android.data.db.dao.CacheDao
-import com.vrcx.android.data.db.entity.CacheWorldEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,15 +19,12 @@ import javax.inject.Singleton
 class WorldRepository @Inject constructor(
     private val worldApi: WorldApi,
     private val instanceApi: InstanceApi,
-    private val cacheDao: CacheDao,
-    private val json: Json,
     private val dedup: RequestDeduplicator,
 ) {
     private data class CachedWorld(val value: World, val cachedAtMillis: Long)
 
     private val worldCache = ConcurrentHashMap<String, CachedWorld>()
     private val accountGeneration = AtomicLong(0)
-    private val legacyCachePurged = AtomicBoolean(false)
 
     suspend fun getWorld(worldId: String, forceRefresh: Boolean = false): World {
         val now = System.currentTimeMillis()
@@ -39,8 +32,6 @@ class WorldRepository @Inject constructor(
             worldCache[worldId]?.takeIf { now - it.cachedAtMillis < WORLD_CACHE_TTL_MS }
                 ?.let { return it.value }
         }
-        purgeLegacyCacheOnce()
-
         val generation = accountGeneration.get()
         val world = dedup.dedupGet("world:$worldId") { worldApi.getWorld(worldId) }
         if (generation == accountGeneration.get()) {
@@ -49,19 +40,9 @@ class WorldRepository @Inject constructor(
         return world
     }
 
-    fun getCachedWorld(worldId: String): World? = worldCache[worldId]
-        ?.takeIf { System.currentTimeMillis() - it.cachedAtMillis < WORLD_CACHE_TTL_MS }
-        ?.value
-
     fun clearRuntimeState() {
         accountGeneration.incrementAndGet()
         worldCache.clear()
-    }
-
-    private suspend fun purgeLegacyCacheOnce() {
-        if (!legacyCachePurged.compareAndSet(false, true)) return
-        runCatching { cacheDao.clearWorldCache() }
-            .onFailure { legacyCachePurged.set(false) }
     }
 
     /** Parse instance IDs from the World.instances field (List<[instanceId, nUsers]>). */
@@ -89,6 +70,8 @@ class WorldRepository @Inject constructor(
                 async {
                     try {
                         instanceApi.getInstance(worldId, instanceId)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         null
                     }

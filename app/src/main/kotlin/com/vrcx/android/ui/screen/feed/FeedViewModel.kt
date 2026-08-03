@@ -7,11 +7,13 @@ import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UnifiedFeed
 import com.vrcx.android.data.repository.detailText
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,8 +25,17 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+private data class FeedCriteria(
+    val filters: Set<FeedEntryType>,
+    val query: String,
+    val vipOnly: Boolean,
+    val vipFriendIds: Set<String>,
+)
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
@@ -44,7 +55,6 @@ class FeedViewModel @Inject constructor(
     val vipOnly: StateFlow<Boolean> = _vipOnly.asStateFlow()
 
     private val _feedLimit = MutableStateFlow(100)
-    val feedLimit: StateFlow<Int> = _feedLimit.asStateFlow()
 
     private val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
@@ -63,6 +73,8 @@ class FeedViewModel @Inject constructor(
             _error.value = null
             try {
                 friendRepository.loadFriendsList()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to refresh"
             } finally {
@@ -87,8 +99,8 @@ class FeedViewModel @Inject constructor(
         (state as? AuthState.LoggedIn)?.user?.id ?: ""
     }
 
-    private val _activeFilters = MutableStateFlow(setOf("gps", "status", "bio", "avatar", "online", "offline"))
-    val activeFilters: StateFlow<Set<String>> = _activeFilters.asStateFlow()
+    private val _activeFilters = MutableStateFlow(FeedEntryType.entries.toSet())
+    val activeFilters: StateFlow<Set<FeedEntryType>> = _activeFilters.asStateFlow()
 
     private val vipFriendIds: StateFlow<Set<String>> = friendRepository.friends.map { friends ->
         friends.values.filter { it.isVIP }.map { it.id }.toSet()
@@ -105,30 +117,28 @@ class FeedViewModel @Inject constructor(
         else feedRepository.getUnifiedFeed(uid, limit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UnifiedFeed(emptyList(), false))
 
-    val feedEntries: StateFlow<List<FeedEntry>> = combine(
-        feedPage,
+    private val criteria = combine(
         _activeFilters,
         _searchQuery,
         _vipOnly,
         vipFriendIds,
-        _feedLimit,
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val entries = (values[0] as UnifiedFeed).entries
-        val filters = values[1] as Set<*>
-        val query = values[2] as String
-        val vip = values[3] as Boolean
-        val vipIds = values[4] as Set<*>
-        val limit = values[5] as Int
+    ) { filters, query, vipOnly, vipFriendIds ->
+        FeedCriteria(filters, query, vipOnly, vipFriendIds)
+    }
 
-        entries
-            .filter { it.type.id in filters }
+    val feedEntries: StateFlow<List<FeedEntry>> = combine(
+        feedPage,
+        criteria,
+        _feedLimit,
+    ) { page, criteria, limit ->
+        page.entries
+            .filter { it.type in criteria.filters }
             .filter { entry ->
-                if (query.isBlank()) true
-                else entry.displayName.contains(query, ignoreCase = true) ||
-                    entry.detailText().contains(query, ignoreCase = true)
+                if (criteria.query.isBlank()) true
+                else entry.displayName.contains(criteria.query, ignoreCase = true) ||
+                    entry.detailText().contains(criteria.query, ignoreCase = true)
             }
-            .filter { if (vip) it.userId in vipIds else true }
+            .filter { if (criteria.vipOnly) it.userId in criteria.vipFriendIds else true }
             .take(limit)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -136,7 +146,7 @@ class FeedViewModel @Inject constructor(
         page.sourceSaturated && currentLimit < maxLimit
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    fun toggleFilter(filter: String) {
+    fun toggleFilter(filter: FeedEntryType) {
         val current = _activeFilters.value.toMutableSet()
         if (current.contains(filter)) current.remove(filter) else current.add(filter)
         _activeFilters.value = current

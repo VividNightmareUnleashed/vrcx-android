@@ -25,6 +25,4 @@ interface FriendApi {
     @DELETE("auth/user/friends/{userId}")
     suspend fun deleteFriend(@Path("userId") userId: String): JsonElement
 
-    @GET("user/{userId}/friendStatus")
-    suspend fun getFriendStatus(@Path("userId") userId: String): JsonElement
 }

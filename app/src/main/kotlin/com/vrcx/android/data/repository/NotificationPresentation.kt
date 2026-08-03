@@ -1,5 +1,33 @@
 package com.vrcx.android.data.repository
 
+import com.vrcx.android.data.api.model.NotificationAction
+import com.vrcx.android.data.util.parseInstantMillisOrNull
+
+enum class NotificationSource {
+    V1,
+    V2,
+    LOCAL,
+}
+
+data class UnifiedNotification(
+    val id: String,
+    val type: String,
+    val senderUserId: String,
+    val senderUsername: String,
+    val message: String,
+    val title: String,
+    val createdAt: String,
+    val seen: Boolean,
+    val source: NotificationSource,
+    val responses: List<NotificationAction>,
+) {
+    /** Unparseable timestamps deliberately sort behind every valid timestamp. */
+    val createdAtEpochMs: Long = parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
+
+    /** The actionable kind is immutable, so parse it only once. */
+    val kind: NotificationKind = NotificationKind.fromType(type)
+}
+
 /**
  * The actionable kinds of notification, parsed once from the raw VRChat `type`
  * string at the repository boundary. Capabilities (accept / decline / invite

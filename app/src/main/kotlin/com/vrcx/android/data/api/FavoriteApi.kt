@@ -4,7 +4,6 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteAddRequest
 import com.vrcx.android.data.api.model.FavoriteGroup
-import com.vrcx.android.data.api.model.FavoriteGroupUpdateRequest
 import com.vrcx.android.data.api.model.FavoriteLimits
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
@@ -13,7 +12,6 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
-import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -42,21 +40,6 @@ interface FavoriteApi {
         @Query("type") type: String? = null,
         @Query("ownerId") ownerId: String? = null,
     ): List<FavoriteGroup>
-
-    @PUT("favorite/group/{type}/{groupName}/{userId}")
-    suspend fun saveFavoriteGroup(
-        @Path("type") type: String,
-        @Path("groupName") groupName: String,
-        @Path("userId") userId: String,
-        @Body body: FavoriteGroupUpdateRequest,
-    ): JsonElement
-
-    @DELETE("favorite/group/{type}/{groupName}/{userId}")
-    suspend fun clearFavoriteGroup(
-        @Path("type") type: String,
-        @Path("groupName") groupName: String,
-        @Path("userId") userId: String,
-    ): JsonElement
 
     @GET("worlds/favorites")
     suspend fun getFavoriteWorlds(

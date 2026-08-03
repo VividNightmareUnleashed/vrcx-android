@@ -16,6 +16,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -80,7 +82,6 @@ class AuthRepository @Inject constructor(
     @Inject lateinit var friendRepositoryProvider: Provider<FriendRepository>
     @Inject lateinit var galleryRepositoryProvider: Provider<GalleryRepository>
     @Inject lateinit var groupRepositoryProvider: Provider<GroupRepository>
-    @Inject lateinit var instanceRepositoryProvider: Provider<InstanceRepository>
     @Inject lateinit var moderationRepositoryProvider: Provider<ModerationRepository>
     @Inject lateinit var notificationRepositoryProvider: Provider<NotificationRepository>
     @Inject lateinit var userRepositoryProvider: Provider<UserRepository>
@@ -122,6 +123,9 @@ class AuthRepository @Inject constructor(
             // Full login successful
             val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
             onLoginSuccess(user)
+        } catch (e: CancellationException) {
+            authInterceptor.clearBasicAuth()
+            throw e
         } catch (e: Exception) {
             authInterceptor.clearBasicAuth()
             setErrorUnlessLoggedOut(e.message ?: "Login failed")
@@ -156,6 +160,8 @@ class AuthRepository @Inject constructor(
             } else {
                 setTwoFactorError("Verification failed")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             setTwoFactorError(e.message ?: "Verification failed")
         }
@@ -171,6 +177,8 @@ class AuthRepository @Inject constructor(
             } else {
                 setTwoFactorError("Verification failed")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             setTwoFactorError(e.message ?: "Verification failed")
         }
@@ -190,7 +198,9 @@ class AuthRepository @Inject constructor(
         try {
             val token = authApi.getAuthToken()
             _authToken = token.token
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             // Token fetch failed, WebSocket won't connect
         }
     }
@@ -257,19 +267,25 @@ class AuthRepository @Inject constructor(
         // Best-effort server invalidation before local cleanup so a stolen cookie
         // can't outlive the user's intent. Network failure must not block sign-out
         // (the user might be logging out specifically because they have no network).
+        var cancellation: CancellationException? = null
         try {
             authApi.logout()
+        } catch (e: CancellationException) {
+            cancellation = e
         } catch (_: Exception) {
-            // Swallow: local state still gets cleared below.
+            // Local state still gets cleared below.
         }
-        clearAccountRuntimeState()
-        clearAuthSession()
-        // Stop the websocket service so every logout path — explicit sign-out
-        // from Profile/Settings, interceptor-driven 401, etc. — tears down the
-        // background socket + persistent notification. Callers no longer need
-        // to remember to do this themselves.
-        WebSocketForegroundService.stop(context)
-        _authState.value = AuthState.NotLoggedIn
+        withContext(NonCancellable) {
+            clearAccountRuntimeState()
+            clearAuthSession()
+            // Stop the websocket service so every logout path — explicit sign-out
+            // from Profile/Settings, interceptor-driven 401, etc. — tears down the
+            // background socket + persistent notification. Callers no longer need
+            // to remember to do this themselves.
+            WebSocketForegroundService.stop(context)
+            _authState.value = AuthState.NotLoggedIn
+        }
+        cancellation?.let { throw it }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -309,7 +325,6 @@ class AuthRepository @Inject constructor(
         clearAccountRuntimeState()
         _currentUser = user
         _authState.value = AuthState.LoggedIn(user)
-        preferences.setLastUserId(user.id)
         fetchAuthToken()
     }
 
@@ -384,11 +399,7 @@ class AuthRepository @Inject constructor(
                 SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
             }
         } catch (e: CancellationException) {
-            // The deduplicator cancels in-flight work on logout/account switch.
-            // Swallow rather than rethrow: this runs inside the long-lived
-            // AuthEvent collector, and cancelling that job would stop every
-            // future unauthorized signal from being handled.
-            SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
+            throw e
         } catch (e: Exception) {
             SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
         }
@@ -413,7 +424,6 @@ class AuthRepository @Inject constructor(
         if (::friendRepositoryProvider.isInitialized) friendRepositoryProvider.get().clearRuntimeState()
         if (::galleryRepositoryProvider.isInitialized) galleryRepositoryProvider.get().clearRuntimeState()
         if (::groupRepositoryProvider.isInitialized) groupRepositoryProvider.get().clearRuntimeState()
-        if (::instanceRepositoryProvider.isInitialized) instanceRepositoryProvider.get().clearRuntimeState()
         if (::moderationRepositoryProvider.isInitialized) moderationRepositoryProvider.get().clearRuntimeState()
         if (::notificationRepositoryProvider.isInitialized) notificationRepositoryProvider.get().clearRuntimeState()
         if (::userRepositoryProvider.isInitialized) userRepositoryProvider.get().clearCache()

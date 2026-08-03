@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
@@ -21,24 +22,20 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vr
 
 @Singleton
 class VrcxPreferences @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
 ) {
     private val dataStore get() = context.dataStore
     private val preferences = dataStore.data.catch { error ->
         if (error is IOException) emit(emptyPreferences()) else throw error
     }
 
-    // Auth
-    val lastUserId: Flow<String?> = preferences.map { it[LAST_USER_ID] }
-    suspend fun setLastUserId(userId: String) = dataStore.edit { it[LAST_USER_ID] = userId }
-
     // Notification settings
     val notifyInvite: Flow<Boolean> = preferences.map { it[NOTIFY_INVITE] ?: true }
     val notifyFriendRequest: Flow<Boolean> = preferences.map { it[NOTIFY_FRIEND_REQUEST] ?: true }
 
-    suspend fun setNotifySetting(key: Preferences.Key<Boolean>, value: Boolean) {
-        dataStore.edit { it[key] = value }
-    }
+    suspend fun setNotifyInvite(enabled: Boolean) = dataStore.edit { it[NOTIFY_INVITE] = enabled }
+    suspend fun setNotifyFriendRequest(enabled: Boolean) =
+        dataStore.edit { it[NOTIFY_FRIEND_REQUEST] = enabled }
 
     // Appearance
     val themeMode: Flow<String> = preferences.map { it[THEME_MODE] ?: "dark" }
@@ -76,16 +73,15 @@ class VrcxPreferences @Inject constructor(
     }
 
     companion object {
-        val LAST_USER_ID = stringPreferencesKey("last_user_id")
-        val NOTIFY_INVITE = booleanPreferencesKey("notify_invite")
-        val NOTIFY_FRIEND_REQUEST = booleanPreferencesKey("notify_friend_request")
-        val THEME_MODE = stringPreferencesKey("theme_mode")
-        val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
-        val MAX_FEED_SIZE = intPreferencesKey("max_feed_size")
-        val AUTO_LOGIN = booleanPreferencesKey("auto_login")
-        val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
-        val WALLPAPER_SCALE_MODE = stringPreferencesKey("wallpaper_scale_mode")
-        val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
+        private val NOTIFY_INVITE = booleanPreferencesKey("notify_invite")
+        private val NOTIFY_FRIEND_REQUEST = booleanPreferencesKey("notify_friend_request")
+        private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
+        private val MAX_FEED_SIZE = intPreferencesKey("max_feed_size")
+        private val AUTO_LOGIN = booleanPreferencesKey("auto_login")
+        private val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
+        private val WALLPAPER_SCALE_MODE = stringPreferencesKey("wallpaper_scale_mode")
+        private val BACKGROUND_SERVICE_ENABLED = booleanPreferencesKey("background_service_enabled")
         private val SAVED_USERNAME = stringPreferencesKey("saved_username")
         private val SAVED_PASSWORD = stringPreferencesKey("saved_password")
     }

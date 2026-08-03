@@ -11,6 +11,8 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
 import retrofit2.Response
 import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Deduplicates identical GET requests within a time window and caches
@@ -20,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap
  * - Pending GET requests are merged (same URL returns same response)
  * - 404/403 responses are cached for 15 minutes
  */
-class RequestDeduplicator {
+@Singleton
+class RequestDeduplicator @Inject constructor() {
 
     private data class FailureEntry(
         val statusCode: Int,
@@ -49,13 +52,6 @@ class RequestDeduplicator {
             return@synchronized null
         }
         entry.statusCode
-    }
-
-    /**
-     * Record a failure for caching.
-     */
-    fun cacheFailure(url: String, statusCode: Int) {
-        cacheFailureIfCurrent(url, statusCode, currentGeneration())
     }
 
     fun currentGeneration(): Long = synchronized(stateLock) { generation }
@@ -136,11 +132,6 @@ class RequestDeduplicator {
         requestsToCancel.forEach { pendingRequest ->
             pendingRequest.deferred.cancel(CancellationException("Request cache cleared"))
         }
-    }
-
-    /** Removes a single cached failure — used when a previously failing URL succeeds. */
-    fun invalidateFailure(key: String) {
-        synchronized(stateLock) { failureCache.remove(key) }
     }
 
     fun invalidateFailure(key: String, expectedGeneration: Long): Boolean = synchronized(stateLock) {

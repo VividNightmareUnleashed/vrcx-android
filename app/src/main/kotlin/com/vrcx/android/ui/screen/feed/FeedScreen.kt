@@ -95,11 +95,11 @@ fun FeedScreen(
                 leadingIcon = if (vipOnly) {{ Icon(Icons.Outlined.Star, contentDescription = null, Modifier.padding(0.dp)) }} else null,
             )
             // Type chips
-            listOf("gps", "status", "bio", "avatar", "online", "offline").forEach { filter ->
+            FeedEntryType.entries.forEach { filter ->
                 FilterChip(
-                    selected = filters.contains(filter),
+                    selected = filter in filters,
                     onClick = { viewModel.toggleFilter(filter) },
-                    label = { Text(filter.replaceFirstChar { it.uppercase() }) },
+                    label = { Text(filter.label) },
                 )
             }
         }

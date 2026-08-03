@@ -32,28 +32,12 @@ interface UserApi {
         @Body body: UpdateCurrentUserRequest,
     ): CurrentUser
 
-    @GET("users/{userId}/mutuals")
-    suspend fun getMutualCounts(@Path("userId") userId: String): JsonElement
-
     @GET("users/{userId}/mutuals/friends")
     suspend fun getMutualFriends(
         @Path("userId") userId: String,
         @Query("n") n: Int = 100,
         @Query("offset") offset: Int = 0,
     ): List<VrcUser>
-
-    @GET("users/{userId}/mutuals/groups")
-    suspend fun getMutualGroups(
-        @Path("userId") userId: String,
-        @Query("n") n: Int = 100,
-        @Query("offset") offset: Int = 0,
-    ): JsonElement
-
-    @GET("userNotes")
-    suspend fun getUserNotes(
-        @Query("n") n: Int = 100,
-        @Query("offset") offset: Int = 0,
-    ): JsonElement
 
     @POST("userNotes")
     suspend fun saveUserNote(@Body body: Map<String, String>): JsonElement
@@ -62,11 +46,5 @@ interface UserApi {
     suspend fun sendBoop(
         @Path("userId") userId: String,
         @Body body: Map<String, String> = emptyMap(),
-    ): JsonElement
-
-    @POST("feedback/{userId}/user")
-    suspend fun reportUser(
-        @Path("userId") userId: String,
-        @Body body: Map<String, String>,
     ): JsonElement
 }

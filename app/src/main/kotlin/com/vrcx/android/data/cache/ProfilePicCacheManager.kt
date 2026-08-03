@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -50,16 +51,23 @@ class ProfilePicCacheManager @Inject constructor(
     }
 
     suspend fun cacheImage(url: String) = withContext(Dispatchers.IO) {
-        val file = File(cacheDir, urlToFilename(url))
-        if (file.exists() && file.length() > 0) return@withContext
+        cacheImage(url, trimAfterWrite = true)
+    }
 
-        val tempFile = File(cacheDir, "${urlToFilename(url)}.tmp")
+    private fun cacheImage(url: String, trimAfterWrite: Boolean) {
+        val filename = urlToFilename(url)
+        val file = File(cacheDir, filename)
+        if (file.exists() && file.length() > 0) return
+
+        val tempFile = File(cacheDir, "$filename.tmp")
+        tempFile.delete()
         try {
             val request = Request.Builder().url(url).build()
             val response = okHttpClient.newCall(request).execute()
             response.use { resp ->
-                if (!resp.isSuccessful) return@withContext
-                resp.body?.byteStream()?.use { input ->
+                if (!resp.isSuccessful) return
+                val body = resp.body ?: return
+                body.byteStream().use { input ->
                     tempFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
@@ -68,7 +76,9 @@ class ProfilePicCacheManager @Inject constructor(
             if (tempFile.length() > 0) {
                 if (tempFile.renameTo(file)) {
                     file.setLastModified(System.currentTimeMillis())
-                    trimCache()
+                    if (trimAfterWrite) trimCache()
+                } else {
+                    tempFile.delete()
                 }
             } else {
                 tempFile.delete()
@@ -94,26 +104,32 @@ class ProfilePicCacheManager @Inject constructor(
         val urls = friends.values.mapNotNull { friend ->
             val ref = friend.ref ?: return@mapNotNull null
             ref.displayAvatarUrl().takeIf { it.isNotEmpty() }
-        }
+        }.distinct()
         val total = urls.size
         var completed = 0
+        val progressLock = Any()
         val semaphore = Semaphore(4)
 
-        coroutineScope {
-            urls.map { url ->
-                async {
-                    semaphore.withPermit {
-                        try {
-                            cacheImage(url)
-                        } catch (_: Exception) {
-                        }
-                        synchronized(this@ProfilePicCacheManager) {
-                            completed++
-                            onProgress(completed, total)
+        try {
+            coroutineScope {
+                urls.map { url ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                cacheImage(url, trimAfterWrite = false)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                            }
+                            synchronized(progressLock) {
+                                onProgress(++completed, total)
+                            }
                         }
                     }
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
+        } finally {
+            trimCache()
         }
     }
 

@@ -7,18 +7,14 @@ import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UnifiedFeed
-import kotlinx.coroutines.Dispatchers
+import com.vrcx.android.ui.common.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -27,17 +23,9 @@ import org.mockito.kotlin.whenever
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+    private val testDispatcher = mainDispatcherRule.dispatcher
 
     @Test
     fun `friendCounts groups friends by enum state, not name strings`() = runTest(testDispatcher) {

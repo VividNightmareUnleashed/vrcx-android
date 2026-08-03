@@ -16,11 +16,9 @@ import com.vrcx.android.R
 import com.vrcx.android.data.model.FriendTransition
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
-import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.GalleryRepository
 import com.vrcx.android.data.repository.GroupRepository
-import com.vrcx.android.data.repository.InstanceRepository
 import com.vrcx.android.data.repository.NotificationKind
 import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.websocket.PipelineEvent
@@ -29,6 +27,7 @@ import com.vrcx.android.data.websocket.WebSocketState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
@@ -47,11 +46,9 @@ class WebSocketForegroundService : Service() {
 
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var friendRepository: FriendRepository
-    @Inject lateinit var feedRepository: FeedRepository
     @Inject lateinit var notificationRepository: NotificationRepository
     @Inject lateinit var groupRepository: GroupRepository
     @Inject lateinit var galleryRepository: GalleryRepository
-    @Inject lateinit var instanceRepository: InstanceRepository
     @Inject lateinit var json: Json
     @Inject @Named("webSocketOkHttpClient") lateinit var okHttpClient: OkHttpClient
     @Inject lateinit var preferences: VrcxPreferences
@@ -92,14 +89,6 @@ class WebSocketForegroundService : Service() {
                 setRequestedMode(REQUESTED_MODE_NON_FOREGROUND)
                 isForegroundMode = false
                 startWebSocket(foreground = false)
-            }
-            ACTION_STOP -> {
-                setRequestedMode(REQUESTED_MODE_NONE)
-                startupJob?.cancel()
-                startupJob = null
-                webSocket?.disconnect()
-                webSocket = null
-                stopSelf()
             }
             null -> {
                 if (requestedMode() == REQUESTED_MODE_FOREGROUND) {
@@ -164,9 +153,11 @@ class WebSocketForegroundService : Service() {
                 friendRepository.ownerUserId = userId
                 groupRepository.ownerUserId = userId
 
-                runCatching {
+                try {
                     friendRepository.loadFriendsList()
-                }.onFailure { error ->
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
                     Log.w(TAG, "Failed to preload friends list", error)
                 }
 
@@ -188,15 +179,6 @@ class WebSocketForegroundService : Service() {
                     }
                 }
 
-                // Dispatch offline notifications after 5-second confirmation delay
-                serviceScope.launch {
-                    friendRepository.confirmedOfflineEvents.collect { (offlineUserId, name) ->
-                        if (offlineUserId in notifyEnabledFriendIds) {
-                            notificationHelper?.notifyFriendOffline(name)
-                        }
-                    }
-                }
-
                 // Map friend online/location/status transitions to notifications.
                 // FriendRepository resolves userId + display name (tolerating the
                 // lowercase "userid" key) and the location/status comparisons, so
@@ -208,6 +190,8 @@ class WebSocketForegroundService : Service() {
                         when (transition) {
                             is FriendTransition.CameOnline ->
                                 helper.notifyFriendOnline(transition.displayName)
+                            is FriendTransition.CameOffline ->
+                                helper.notifyFriendOffline(transition.displayName)
                             is FriendTransition.ChangedLocation ->
                                 helper.notifyFriendLocation(transition.displayName, transition.worldName)
                             is FriendTransition.ChangedStatus ->
@@ -225,7 +209,7 @@ class WebSocketForegroundService : Service() {
                             notificationRepository.handleEvent(event)
                             authRepository.handleEvent(event)
                             groupRepository.handleEvent(event)
-                            handleInstanceAndContentEvents(event)
+                            handleContentRefresh(event)
                             dispatchNotification(event)
                         }
                     }
@@ -298,34 +282,11 @@ class WebSocketForegroundService : Service() {
             .build()
     }
 
-    private fun handleInstanceAndContentEvents(event: PipelineEvent) {
-        when (event) {
-            is PipelineEvent.ContentRefresh -> {
-                val contentType = event.content?.jsonObject?.get("contentType")?.jsonPrimitive?.content ?: return
-                val userId = authRepository.currentUser?.id ?: return
-                serviceScope.launch { galleryRepository.handleContentRefresh(contentType, userId) }
-            }
-            is PipelineEvent.InstanceQueueJoined, is PipelineEvent.InstanceQueuePosition -> {
-                val obj = event.content?.jsonObject ?: return
-                val loc = obj["instanceLocation"]?.jsonPrimitive?.content ?: return
-                val pos = obj["position"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-                val size = obj["queueSize"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-                instanceRepository.handleQueueUpdate(loc, pos, size)
-            }
-            is PipelineEvent.InstanceQueueReady -> {
-                val loc = event.content?.jsonObject?.get("instanceLocation")?.jsonPrimitive?.content ?: return
-                instanceRepository.handleQueueReady(loc)
-            }
-            is PipelineEvent.InstanceQueueLeft -> {
-                val loc = event.content?.jsonObject?.get("instanceLocation")?.jsonPrimitive?.content ?: return
-                instanceRepository.handleQueueLeft(loc)
-            }
-            is PipelineEvent.InstanceClosed -> {
-                val loc = event.content?.jsonObject?.get("instanceLocation")?.jsonPrimitive?.content
-                Log.d(TAG, "Instance closed: $loc")
-            }
-            else -> {}
-        }
+    private fun handleContentRefresh(event: PipelineEvent) {
+        if (event !is PipelineEvent.ContentRefresh) return
+        val contentType = event.content?.jsonObject?.get("contentType")?.jsonPrimitive?.content ?: return
+        val userId = authRepository.currentUser?.id ?: return
+        serviceScope.launch { galleryRepository.handleContentRefresh(contentType, userId) }
     }
 
     private fun dispatchNotification(event: PipelineEvent) {
@@ -383,10 +344,9 @@ class WebSocketForegroundService : Service() {
     }
 
     companion object {
-        const val ACTION_START = "com.vrcx.android.START_WEBSOCKET"
-        const val ACTION_START_NON_FOREGROUND = "com.vrcx.android.START_WEBSOCKET_NON_FOREGROUND"
-        const val ACTION_STOP = "com.vrcx.android.STOP_WEBSOCKET"
-        const val NOTIFICATION_ID = 1
+        private const val ACTION_START = "com.vrcx.android.START_WEBSOCKET"
+        private const val ACTION_START_NON_FOREGROUND = "com.vrcx.android.START_WEBSOCKET_NON_FOREGROUND"
+        private const val NOTIFICATION_ID = 1
         const val CHANNEL_SERVICE = "vrcx_service"
         const val CHANNEL_FRIEND_ONLINE = "vrcx_friend_online"
         const val CHANNEL_FRIEND_OFFLINE = "vrcx_friend_offline"
@@ -436,12 +396,11 @@ class WebSocketForegroundService : Service() {
             }
         }
 
-        fun hasTimedOut(context: Context): Boolean = context
-            .getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
-            .getBoolean(KEY_STOPPED_BY_TIMEOUT, false)
-
         fun restartAfterTimeoutIfNeeded(context: Context): Boolean {
-            if (!hasTimedOut(context)) return false
+            val hasTimedOut = context
+                .getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(KEY_STOPPED_BY_TIMEOUT, false)
+            if (!hasTimedOut) return false
             val started = start(context)
             if (started) {
                 context.getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)

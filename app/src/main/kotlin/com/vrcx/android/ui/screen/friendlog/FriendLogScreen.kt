@@ -49,11 +49,13 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
 private val ALL_TYPES = setOf("Friend", "Unfriend", "DisplayName", "TrustLevel")
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class FriendLogViewModel @Inject constructor(
     authRepository: AuthRepository,
     friendLogDao: FriendLogDao,

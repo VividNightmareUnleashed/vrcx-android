@@ -38,6 +38,7 @@ import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.detailText
@@ -79,6 +80,20 @@ enum class GameLogScope(val label: String) {
     ALL_ACTIVITY("All"),
 }
 
+private data class GameLogFilterCriteria(
+    val filters: Set<FeedEntryType>,
+    val query: String,
+    val vipOnly: Boolean,
+    val vipFriendIds: Set<String>,
+)
+
+private data class GameLogLocationCriteria(
+    val scope: GameLogScope,
+    val currentLocation: String,
+    val currentWorldId: String,
+    val range: ActivityRange,
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class GameLogViewModel @Inject constructor(
@@ -93,8 +108,8 @@ class GameLogViewModel @Inject constructor(
     private val _vipOnly = MutableStateFlow(false)
     val vipOnly: StateFlow<Boolean> = _vipOnly.asStateFlow()
 
-    private val _filters = MutableStateFlow(setOf("gps", "status", "bio", "avatar", "online", "offline"))
-    val filters: StateFlow<Set<String>> = _filters.asStateFlow()
+    private val _filters = MutableStateFlow(FeedEntryType.entries.toSet())
+    val filters: StateFlow<Set<FeedEntryType>> = _filters.asStateFlow()
 
     private val _range = MutableStateFlow(ActivityRange.LAST_7)
     val range: StateFlow<ActivityRange> = _range.asStateFlow()
@@ -133,47 +148,50 @@ class GameLogViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val filteredEntries = combine(
-        allEntries,
+    private val filterCriteria = combine(
         _filters,
         _searchQuery,
         _vipOnly,
         vipFriendIds,
+    ) { filters, query, vipOnly, vipFriendIds ->
+        GameLogFilterCriteria(filters, query, vipOnly, vipFriendIds)
+    }
+
+    private val locationCriteria = combine(
         _scope,
         currentLocation,
         currentWorldId,
         _range,
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val all = values[0] as List<FeedEntry>
-        val filters = values[1] as Set<*>
-        val query = values[2] as String
-        val vipOnly = values[3] as Boolean
-        val vipIds = values[4] as Set<*>
-        val scope = values[5] as GameLogScope
-        val currentLocation = values[6] as String
-        val currentWorldId = values[7] as String
-        val range = values[8] as ActivityRange
+    ) { scope, currentLocation, currentWorldId, range ->
+        GameLogLocationCriteria(scope, currentLocation, currentWorldId, range)
+    }
 
-        val cutoffMs = range.days?.let {
+    private val filteredEntries = combine(
+        allEntries,
+        filterCriteria,
+        locationCriteria,
+    ) { all, filter, location ->
+        val cutoffMs = location.range.days?.let {
             System.currentTimeMillis() - it.toLong() * 24L * 60L * 60L * 1000L
         }
 
         all
-            .filter { it.type.id in filters }
-            .filter { entry -> matchesScope(entry, scope, currentLocation, currentWorldId) }
+            .filter { it.type in filter.filters }
+            .filter { entry ->
+                matchesScope(entry, location.scope, location.currentLocation, location.currentWorldId)
+            }
             .filter { entry ->
                 cutoffMs == null || entry.createdAtEpochMs >= cutoffMs
             }
             .filter { entry ->
-                query.isBlank() ||
-                    entry.displayName.contains(query, ignoreCase = true) ||
-                    entry.headline().contains(query, ignoreCase = true) ||
-                    entry.detailText().contains(query, ignoreCase = true) ||
-                    entry.previousDetailText().contains(query, ignoreCase = true) ||
-                    formatInstanceHint(entry.location).contains(query, ignoreCase = true)
+                filter.query.isBlank() ||
+                    entry.displayName.contains(filter.query, ignoreCase = true) ||
+                    entry.headline().contains(filter.query, ignoreCase = true) ||
+                    entry.detailText().contains(filter.query, ignoreCase = true) ||
+                    entry.previousDetailText().contains(filter.query, ignoreCase = true) ||
+                    formatInstanceHint(entry.location).contains(filter.query, ignoreCase = true)
             }
-            .filter { entry -> if (vipOnly) entry.userId in vipIds else true }
+            .filter { entry -> if (filter.vipOnly) entry.userId in filter.vipFriendIds else true }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val entries = combine(filteredEntries, _limit) { filtered, limit ->
@@ -200,7 +218,7 @@ class GameLogViewModel @Inject constructor(
         _vipOnly.value = !_vipOnly.value
     }
 
-    fun toggleFilter(filter: String) {
+    fun toggleFilter(filter: FeedEntryType) {
         val current = _filters.value.toMutableSet()
         if (filter in current) current.remove(filter) else current.add(filter)
         _filters.value = current
@@ -311,18 +329,11 @@ fun GameLogScreen(
                     null
                 },
             )
-            listOf(
-                "gps" to "Location",
-                "status" to "Status",
-                "bio" to "Bio",
-                "avatar" to "Avatar",
-                "online" to "Online",
-                "offline" to "Offline",
-            ).forEach { (filter, label) ->
+            FeedEntryType.entries.forEach { filter ->
                 FilterChip(
                     selected = filter in filters,
                     onClick = { viewModel.toggleFilter(filter) },
-                    label = { Text(label) },
+                    label = { Text(filter.label) },
                 )
             }
         }

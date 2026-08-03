@@ -95,8 +95,6 @@ private val DarkVrcxColors = VrcxColors(
     navActive = Color(0xFF262626),
     navActiveContent = Color(0xFFFAFAFA),
     navInactiveContent = Color(0xFFA1A1A1),
-    shimmerBase = Color(0xFF262626),
-    shimmerHighlight = Color(0xFF404040),
 )
 
 private val LightVrcxColors = VrcxColors(
@@ -112,8 +110,6 @@ private val LightVrcxColors = VrcxColors(
     navActive = VrcxLightPrimary.copy(alpha = 0.10f),
     navActiveContent = VrcxLightPrimary,
     navInactiveContent = Color(0xFF556071),
-    shimmerBase = VrcxLightSurfaceContainerHigh,
-    shimmerHighlight = VrcxLightSurfaceContainerHighest,
 )
 
 @Composable

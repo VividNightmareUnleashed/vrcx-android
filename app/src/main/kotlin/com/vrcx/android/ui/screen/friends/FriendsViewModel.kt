@@ -7,10 +7,12 @@ import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.model.TrustRank
 import com.vrcx.android.data.repository.FriendRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
@@ -18,6 +20,7 @@ import javax.inject.Inject
 
 enum class FriendsTab { ONLINE, ACTIVE, OFFLINE }
 enum class FriendsSortOption { NAME, LAST_SEEN, TRUST_RANK }
+data class FriendCounts(val online: Int = 0, val active: Int = 0, val offline: Int = 0)
 
 @HiltViewModel
 class FriendsViewModel @Inject constructor(
@@ -64,17 +67,14 @@ class FriendsViewModel @Inject constructor(
             }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val onlineCount: StateFlow<Int> = friendRepository.friends.combine(MutableStateFlow(Unit)) { friends, _ ->
-        friends.values.count { it.state == FriendState.ONLINE }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val activeCount: StateFlow<Int> = friendRepository.friends.combine(MutableStateFlow(Unit)) { friends, _ ->
-        friends.values.count { it.state == FriendState.ACTIVE }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val offlineCount: StateFlow<Int> = friendRepository.friends.combine(MutableStateFlow(Unit)) { friends, _ ->
-        friends.values.count { it.state == FriendState.OFFLINE }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val counts: StateFlow<FriendCounts> = friendRepository.friends.map { friends ->
+        val states = friends.values.groupingBy { it.state }.eachCount()
+        FriendCounts(
+            online = states[FriendState.ONLINE] ?: 0,
+            active = states[FriendState.ACTIVE] ?: 0,
+            offline = states[FriendState.OFFLINE] ?: 0,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FriendCounts())
 
     fun selectTab(tab: FriendsTab) { _selectedTab.value = tab }
     fun updateSearch(query: String) { _searchQuery.value = query }
@@ -84,6 +84,8 @@ class FriendsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 friendRepository.toggleFriendNotify(friendUserId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("FriendsViewModel", "Failed to toggle notify for $friendUserId", e)
             }
@@ -95,6 +97,8 @@ class FriendsViewModel @Inject constructor(
             _isRefreshing.value = true
             try {
                 friendRepository.loadFriendsList()
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             } finally {
                 _isRefreshing.value = false
@@ -111,4 +115,3 @@ class FriendsViewModel @Inject constructor(
         }
     }
 }
-

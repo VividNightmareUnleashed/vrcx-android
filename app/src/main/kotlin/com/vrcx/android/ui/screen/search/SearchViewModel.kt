@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class SearchTab { USERS, WORLDS, AVATARS, GROUPS }
@@ -44,355 +45,322 @@ enum class AvatarSearchSource(val label: String, val hint: String) {
     ),
 }
 
+data class SearchUiState(
+    val query: String = "",
+    val selectedTab: SearchTab = SearchTab.USERS,
+    val users: List<UserSearchResult> = emptyList(),
+    val worlds: List<World> = emptyList(),
+    val avatars: List<Avatar> = emptyList(),
+    val groups: List<GroupSearchResult> = emptyList(),
+    val isSearching: Boolean = false,
+    val hasSearched: Boolean = false,
+    val error: String? = null,
+    val currentOffset: Int = 0,
+    val hasMore: Boolean = false,
+    val searchUsersByBio: Boolean = false,
+    val sortUsersByLastLogin: Boolean = false,
+    val worldMode: WorldSearchMode = WorldSearchMode.SEARCH,
+    val includeWorldLabs: Boolean = false,
+    val worldTag: String = "",
+    val avatarSearchSource: AvatarSearchSource = AvatarSearchSource.MY_AVATARS,
+    val avatarProviderUrl: String = "",
+)
+
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
 ) : ViewModel() {
 
+    private data class WorldSearchKey(
+        val query: String,
+        val mode: WorldSearchMode,
+        val includeLabs: Boolean,
+        val tag: String,
+    )
+
+    private class FilteredWorldSession(val key: WorldSearchKey) {
+        val matches = mutableListOf<World>()
+        var sourceOffset = 0
+        var exhausted = false
+    }
+
+    private data class RemoteAvatarCache(
+        val query: String,
+        val providerUrl: String,
+        val items: List<Avatar>,
+    )
+
+    private sealed interface SearchResult {
+        val hasMore: Boolean
+
+        data class Users(val items: List<UserSearchResult>, override val hasMore: Boolean) : SearchResult
+        data class Worlds(val items: List<World>, override val hasMore: Boolean) : SearchResult
+        data class Avatars(val items: List<Avatar>, override val hasMore: Boolean) : SearchResult
+        data class Groups(val items: List<GroupSearchResult>, override val hasMore: Boolean) : SearchResult
+    }
+
     private val pageSize = 10
     private val worldSourcePageSize = 50
-    private var remoteAvatarResults: List<Avatar> = emptyList()
+    private var remoteAvatarCache: RemoteAvatarCache? = null
+    private var filteredWorldSession: FilteredWorldSession? = null
     private var searchJob: Job? = null
     private var searchGeneration = 0L
 
-    private val _query = MutableStateFlow("")
-    val query: StateFlow<String> = _query.asStateFlow()
+    private val _uiState = MutableStateFlow(SearchUiState())
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    private val _selectedTab = MutableStateFlow(SearchTab.USERS)
-    val selectedTab: StateFlow<SearchTab> = _selectedTab.asStateFlow()
-
-    private val _users = MutableStateFlow<List<UserSearchResult>>(emptyList())
-    val users: StateFlow<List<UserSearchResult>> = _users.asStateFlow()
-
-    private val _worlds = MutableStateFlow<List<World>>(emptyList())
-    val worlds: StateFlow<List<World>> = _worlds.asStateFlow()
-
-    private val _avatars = MutableStateFlow<List<Avatar>>(emptyList())
-    val avatars: StateFlow<List<Avatar>> = _avatars.asStateFlow()
-
-    private val _groups = MutableStateFlow<List<GroupSearchResult>>(emptyList())
-    val groups: StateFlow<List<GroupSearchResult>> = _groups.asStateFlow()
-
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
-
-    private val _hasSearched = MutableStateFlow(false)
-    val hasSearched: StateFlow<Boolean> = _hasSearched.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
-
-    private val _currentOffset = MutableStateFlow(0)
-    val currentOffset: StateFlow<Int> = _currentOffset.asStateFlow()
-
-    private val _hasMore = MutableStateFlow(false)
-    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
-
-    private val _searchUsersByBio = MutableStateFlow(false)
-    val searchUsersByBio: StateFlow<Boolean> = _searchUsersByBio.asStateFlow()
-
-    private val _sortUsersByLastLogin = MutableStateFlow(false)
-    val sortUsersByLastLogin: StateFlow<Boolean> = _sortUsersByLastLogin.asStateFlow()
-
-    private val _worldMode = MutableStateFlow(WorldSearchMode.SEARCH)
-    val worldMode: StateFlow<WorldSearchMode> = _worldMode.asStateFlow()
-
-    private val _includeWorldLabs = MutableStateFlow(false)
-    val includeWorldLabs: StateFlow<Boolean> = _includeWorldLabs.asStateFlow()
-
-    private val _worldTag = MutableStateFlow("")
-    val worldTag: StateFlow<String> = _worldTag.asStateFlow()
-
-    private val _avatarSearchSource = MutableStateFlow(AvatarSearchSource.MY_AVATARS)
-    val avatarSearchSource: StateFlow<AvatarSearchSource> = _avatarSearchSource.asStateFlow()
-
-    private val _avatarProviderUrl = MutableStateFlow("")
-    val avatarProviderUrl: StateFlow<String> = _avatarProviderUrl.asStateFlow()
-
-    private data class WorldPageResult(
-        val items: List<World>,
-        val hasMore: Boolean,
-    )
-
-    fun updateQuery(query: String) {
-        _query.value = query
-        _currentOffset.value = 0
-        debounceSearch()
+    fun updateQuery(query: String) = updateCriteria(immediate = false, resetRemoteAvatars = true) {
+        it.copy(query = query)
     }
 
-    fun selectTab(tab: SearchTab) {
-        _selectedTab.value = tab
-        _currentOffset.value = 0
-        scheduleSearch(immediate = true)
+    fun selectTab(tab: SearchTab) = updateCriteria(immediate = true) { it.copy(selectedTab = tab) }
+
+    fun setSearchUsersByBio(enabled: Boolean) = updateCriteria(immediate = true) {
+        it.copy(searchUsersByBio = enabled)
     }
 
-    fun setSearchUsersByBio(enabled: Boolean) {
-        _searchUsersByBio.value = enabled
-        _currentOffset.value = 0
-        scheduleSearch(immediate = true)
+    fun setSortUsersByLastLogin(enabled: Boolean) = updateCriteria(immediate = true) {
+        it.copy(sortUsersByLastLogin = enabled)
     }
 
-    fun setSortUsersByLastLogin(enabled: Boolean) {
-        _sortUsersByLastLogin.value = enabled
-        _currentOffset.value = 0
-        scheduleSearch(immediate = true)
+    fun setWorldMode(mode: WorldSearchMode) = updateCriteria(immediate = true) { it.copy(worldMode = mode) }
+
+    fun setIncludeWorldLabs(enabled: Boolean) = updateCriteria(immediate = true) {
+        it.copy(includeWorldLabs = enabled)
     }
 
-    fun setWorldMode(mode: WorldSearchMode) {
-        _worldMode.value = mode
-        _currentOffset.value = 0
-        scheduleSearch(immediate = true)
-    }
+    fun setWorldTag(tag: String) = updateCriteria(immediate = false) { it.copy(worldTag = tag) }
 
-    fun setIncludeWorldLabs(enabled: Boolean) {
-        _includeWorldLabs.value = enabled
-        _currentOffset.value = 0
-        scheduleSearch(immediate = true)
-    }
+    fun setAvatarSearchSource(source: AvatarSearchSource) =
+        updateCriteria(immediate = true, resetRemoteAvatars = true) { it.copy(avatarSearchSource = source) }
 
-    fun setWorldTag(tag: String) {
-        _worldTag.value = tag
-        _currentOffset.value = 0
-        debounceSearch()
-    }
-
-    fun setAvatarSearchSource(source: AvatarSearchSource) {
-        _avatarSearchSource.value = source
-        _currentOffset.value = 0
-        remoteAvatarResults = emptyList()
-        scheduleSearch(immediate = true)
-    }
-
-    fun setAvatarProviderUrl(url: String) {
-        _avatarProviderUrl.value = url
-        _currentOffset.value = 0
-        remoteAvatarResults = emptyList()
-        debounceSearch()
-    }
+    fun setAvatarProviderUrl(url: String) =
+        updateCriteria(immediate = false, resetRemoteAvatars = true) { it.copy(avatarProviderUrl = url) }
 
     fun nextPage() {
-        _currentOffset.value += pageSize
+        if (searchJob?.isActive == true || !_uiState.value.hasMore) return
+        _uiState.update { it.copy(currentOffset = it.currentOffset + pageSize) }
         scheduleSearch(immediate = true, useRemoteAvatarCache = true)
     }
 
     fun previousPage() {
-        _currentOffset.value = (_currentOffset.value - pageSize).coerceAtLeast(0)
+        if (searchJob?.isActive == true || _uiState.value.currentOffset == 0) return
+        _uiState.update { it.copy(currentOffset = (it.currentOffset - pageSize).coerceAtLeast(0)) }
         scheduleSearch(immediate = true, useRemoteAvatarCache = true)
     }
 
-    fun retry() {
-        scheduleSearch(immediate = true)
-    }
+    fun retry() = scheduleSearch(immediate = true, useRemoteAvatarCache = true)
 
-    private fun debounceSearch() {
-        scheduleSearch(immediate = false)
+    private inline fun updateCriteria(
+        immediate: Boolean,
+        resetRemoteAvatars: Boolean = false,
+        transform: (SearchUiState) -> SearchUiState,
+    ) {
+        _uiState.update { transform(it).copy(currentOffset = 0) }
+        filteredWorldSession = null
+        if (resetRemoteAvatars) remoteAvatarCache = null
+        scheduleSearch(immediate = immediate)
     }
 
     private fun scheduleSearch(immediate: Boolean, useRemoteAvatarCache: Boolean = false) {
         searchJob?.cancel()
         val generation = ++searchGeneration
-        _isSearching.value = false
-        val validationError = validateSearchState()
+        _uiState.update { it.copy(isSearching = false) }
+        val state = _uiState.value
+        val validationError = validateSearchState(state)
         if (validationError != null) {
-            clearCurrentResults()
-            _error.value = validationError
-            _hasSearched.value = false
-            _hasMore.value = false
+            _uiState.value = clearCurrentResults(state).copy(
+                error = validationError,
+                hasSearched = false,
+                hasMore = false,
+            )
             return
         }
-        if (!isSearchReady()) {
-            clearCurrentResults()
-            _error.value = null
-            _hasSearched.value = false
-            _hasMore.value = false
+        if (!isSearchReady(state)) {
+            _uiState.value = clearCurrentResults(state).copy(
+                error = null,
+                hasSearched = false,
+                hasMore = false,
+            )
             return
         }
 
-        if (immediate) {
-            searchJob = viewModelScope.launch {
-                search(
-                    generation = generation,
-                    useRemoteAvatarCache = useRemoteAvatarCache,
-                )
-            }
-        } else {
-            searchJob = viewModelScope.launch {
-                delay(300)
-                search(generation = generation)
-            }
+        searchJob = viewModelScope.launch {
+            if (!immediate) delay(300)
+            search(generation, useRemoteAvatarCache)
         }
     }
 
-    private fun isSearchReady(): Boolean {
-        val trimmedQuery = _query.value.trim()
-        return when (_selectedTab.value) {
+    private fun isSearchReady(state: SearchUiState): Boolean {
+        val trimmedQuery = state.query.trim()
+        return when (state.selectedTab) {
             SearchTab.USERS -> trimmedQuery.length >= 2
-            SearchTab.WORLDS -> _worldMode.value != WorldSearchMode.SEARCH || trimmedQuery.length >= 2 || _worldTag.value.isNotBlank()
-            SearchTab.AVATARS -> {
-                if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
-                    trimmedQuery.length >= 3 && _avatarProviderUrl.value.isNotBlank()
-                } else {
-                    trimmedQuery.length >= 2
-                }
+            SearchTab.WORLDS ->
+                state.worldMode != WorldSearchMode.SEARCH || trimmedQuery.length >= 2 || state.worldTag.isNotBlank()
+            SearchTab.AVATARS -> if (state.avatarSearchSource == AvatarSearchSource.REMOTE) {
+                trimmedQuery.length >= 3 && state.avatarProviderUrl.isNotBlank()
+            } else {
+                trimmedQuery.length >= 2
             }
             SearchTab.GROUPS -> trimmedQuery.length >= 2
         }
     }
 
-    private fun validateSearchState(): String? {
-        return if (
-            _selectedTab.value == SearchTab.AVATARS &&
-            _avatarSearchSource.value == AvatarSearchSource.REMOTE &&
-            _query.value.trim().length >= 3 &&
-            _avatarProviderUrl.value.isBlank()
+    private fun validateSearchState(state: SearchUiState): String? =
+        if (
+            state.selectedTab == SearchTab.AVATARS &&
+            state.avatarSearchSource == AvatarSearchSource.REMOTE &&
+            state.query.trim().length >= 3 &&
+            state.avatarProviderUrl.isBlank()
         ) {
             "Enter a remote avatar provider URL to search that source."
         } else {
             null
         }
-    }
 
-    private suspend fun search(generation: Long, useRemoteAvatarCache: Boolean = false) {
+    private suspend fun search(generation: Long, useRemoteAvatarCache: Boolean) {
         if (!isCurrentSearch(generation)) return
-        _isSearching.value = true
-        _error.value = null
-        var completed = false
+        _uiState.update { it.copy(isSearching = true, error = null) }
+        val request = _uiState.value
         try {
-            val q = _query.value.trim()
-            val offset = _currentOffset.value
-            when (_selectedTab.value) {
+            val query = request.query.trim()
+            val offset = request.currentOffset
+            val result = when (request.selectedTab) {
                 SearchTab.USERS -> {
-                    val results = searchRepository.searchUsers(
-                        query = q,
+                    val items = searchRepository.searchUsers(
+                        query = query,
                         n = pageSize + 1,
                         offset = offset,
-                        searchByBio = _searchUsersByBio.value,
-                        sortByLastLogin = _sortUsersByLastLogin.value,
+                        searchByBio = request.searchUsersByBio,
+                        sortByLastLogin = request.sortUsersByLastLogin,
                     )
-                    if (!isCurrentSearch(generation)) return
-                    _users.value = results.take(pageSize)
-                    _hasMore.value = results.size > pageSize
+                    SearchResult.Users(items.take(pageSize), items.size > pageSize)
                 }
-                SearchTab.WORLDS -> {
-                    val result = loadWorldPage(query = q, offset = offset)
-                    if (!isCurrentSearch(generation)) return
-                    _worlds.value = result.items
-                    _hasMore.value = result.hasMore
-                }
-                SearchTab.AVATARS -> {
-                    if (_avatarSearchSource.value == AvatarSearchSource.REMOTE) {
-                        val results = if (!useRemoteAvatarCache || remoteAvatarResults.isEmpty()) {
-                            searchRepository.searchRemoteAvatars(
-                                query = q,
-                                providerUrl = _avatarProviderUrl.value.trim(),
-                            )
-                        } else {
-                            remoteAvatarResults
-                        }
-                        if (!isCurrentSearch(generation)) return
-                        remoteAvatarResults = results
-                        _avatars.value = remoteAvatarResults.drop(offset).take(pageSize)
-                        _hasMore.value = offset + pageSize < remoteAvatarResults.size
-                    } else {
-                        val results = searchRepository.searchAvatars(q, n = pageSize + 1, offset = offset)
-                        if (!isCurrentSearch(generation)) return
-                        _avatars.value = results.take(pageSize)
-                        _hasMore.value = results.size > pageSize
-                    }
-                }
+                SearchTab.WORLDS -> loadWorldPage(request, generation)
+                SearchTab.AVATARS -> loadAvatarPage(request, query, offset, useRemoteAvatarCache, generation)
                 SearchTab.GROUPS -> {
-                    val results = searchRepository.searchGroups(q, n = pageSize + 1, offset = offset)
-                    if (!isCurrentSearch(generation)) return
-                    _groups.value = results.take(pageSize)
-                    _hasMore.value = results.size > pageSize
+                    val items = searchRepository.searchGroups(query, n = pageSize + 1, offset = offset)
+                    SearchResult.Groups(items.take(pageSize), items.size > pageSize)
                 }
             }
-            completed = true
+            if (!isCurrentSearch(generation)) return
+            _uiState.update { current -> publishResult(current, result) }
         } catch (e: CancellationException) {
+            if (isCurrentSearch(generation)) _uiState.update { it.copy(isSearching = false) }
             throw e
         } catch (e: Exception) {
             if (isCurrentSearch(generation)) {
-                _error.value = e.message ?: "Search failed"
-                completed = true
-            }
-        } finally {
-            if (isCurrentSearch(generation)) {
-                _isSearching.value = false
-                if (completed) {
-                    _hasSearched.value = true
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Search failed",
+                        isSearching = false,
+                        hasSearched = true,
+                    )
                 }
             }
         }
     }
 
-    private fun isCurrentSearch(generation: Long): Boolean =
-        generation == searchGeneration
-
-    private fun clearCurrentResults() {
-        when (_selectedTab.value) {
-            SearchTab.USERS -> _users.value = emptyList()
-            SearchTab.WORLDS -> _worlds.value = emptyList()
-            SearchTab.AVATARS -> {
-                _avatars.value = emptyList()
-                if (_avatarSearchSource.value != AvatarSearchSource.REMOTE) {
-                    remoteAvatarResults = emptyList()
-                }
-            }
-            SearchTab.GROUPS -> _groups.value = emptyList()
+    private suspend fun loadAvatarPage(
+        request: SearchUiState,
+        query: String,
+        offset: Int,
+        useRemoteAvatarCache: Boolean,
+        generation: Long,
+    ): SearchResult.Avatars {
+        if (request.avatarSearchSource != AvatarSearchSource.REMOTE) {
+            val items = searchRepository.searchAvatars(query, n = pageSize + 1, offset = offset)
+            return SearchResult.Avatars(items.take(pageSize), items.size > pageSize)
         }
+        val providerUrl = request.avatarProviderUrl.trim()
+        val cached = remoteAvatarCache?.takeIf {
+            it.query == query && it.providerUrl == providerUrl
+        }
+        val items = if (useRemoteAvatarCache && cached != null) {
+            cached.items
+        } else {
+            val fetched = searchRepository.searchRemoteAvatars(
+                query = query,
+                providerUrl = providerUrl,
+            )
+            if (!isCurrentSearch(generation)) throw CancellationException("Search replaced")
+            remoteAvatarCache = RemoteAvatarCache(query, providerUrl, fetched)
+            fetched
+        }
+        return SearchResult.Avatars(
+            items = items.drop(offset).take(pageSize),
+            hasMore = offset + pageSize < items.size,
+        )
     }
 
-    private suspend fun loadWorldPage(query: String, offset: Int): WorldPageResult {
-        val mode = _worldMode.value.name.lowercase()
-        val tag = _worldTag.value
-        val includeLabs = _includeWorldLabs.value
-
-        if (_worldMode.value == WorldSearchMode.SEARCH || query.isBlank()) {
-            val results = searchRepository.searchWorlds(
+    private suspend fun loadWorldPage(request: SearchUiState, generation: Long): SearchResult.Worlds {
+        val query = request.query.trim()
+        val mode = request.worldMode.name.lowercase()
+        if (request.worldMode == WorldSearchMode.SEARCH || query.isBlank()) {
+            filteredWorldSession = null
+            val items = searchRepository.searchWorlds(
                 query = query,
                 n = pageSize + 1,
-                offset = offset,
+                offset = request.currentOffset,
                 mode = mode,
-                includeLabs = includeLabs,
-                tag = tag,
+                includeLabs = request.includeWorldLabs,
+                tag = request.worldTag,
             )
-            return WorldPageResult(
-                items = results.take(pageSize),
-                hasMore = results.size > pageSize,
-            )
+            return SearchResult.Worlds(items.take(pageSize), items.size > pageSize)
         }
 
-        val targetMatchCount = offset + pageSize + 1
-        val matchedResults = mutableListOf<World>()
-        var sourceOffset = 0
-
-        while (matchedResults.size < targetMatchCount) {
-            val results = searchRepository.searchWorlds(
+        val key = WorldSearchKey(query, request.worldMode, request.includeWorldLabs, request.worldTag)
+        val session = filteredWorldSession?.takeIf { it.key == key }
+            ?: FilteredWorldSession(key).also { filteredWorldSession = it }
+        val targetMatchCount = request.currentOffset + pageSize + 1
+        while (session.matches.size < targetMatchCount && !session.exhausted) {
+            val items = searchRepository.searchWorlds(
                 query = query,
                 n = worldSourcePageSize,
-                offset = sourceOffset,
+                offset = session.sourceOffset,
                 mode = mode,
-                includeLabs = includeLabs,
-                tag = tag,
+                includeLabs = request.includeWorldLabs,
+                tag = request.worldTag,
             )
-            if (results.isEmpty()) {
+            if (!isCurrentSearch(generation)) throw CancellationException("Search replaced")
+            if (items.isEmpty()) {
+                session.exhausted = true
                 break
             }
-
-            matchedResults += results.filter { world ->
+            session.matches += items.filter { world ->
                 world.name.contains(query, ignoreCase = true) ||
                     world.authorName.contains(query, ignoreCase = true)
             }
-
-            sourceOffset += results.size
-            if (results.size < worldSourcePageSize) {
-                break
-            }
+            session.sourceOffset += items.size
+            if (items.size < worldSourcePageSize) session.exhausted = true
         }
-
-        return WorldPageResult(
-            items = matchedResults.drop(offset).take(pageSize),
-            hasMore = matchedResults.size > offset + pageSize,
+        return SearchResult.Worlds(
+            items = session.matches.drop(request.currentOffset).take(pageSize),
+            hasMore = session.matches.size > request.currentOffset + pageSize,
         )
     }
+
+    private fun publishResult(state: SearchUiState, result: SearchResult): SearchUiState {
+        val common = state.copy(
+            hasMore = result.hasMore,
+            isSearching = false,
+            hasSearched = true,
+            error = null,
+        )
+        return when (result) {
+            is SearchResult.Users -> common.copy(users = result.items)
+            is SearchResult.Worlds -> common.copy(worlds = result.items)
+            is SearchResult.Avatars -> common.copy(avatars = result.items)
+            is SearchResult.Groups -> common.copy(groups = result.items)
+        }
+    }
+
+    private fun clearCurrentResults(state: SearchUiState): SearchUiState = when (state.selectedTab) {
+        SearchTab.USERS -> state.copy(users = emptyList())
+        SearchTab.WORLDS -> state.copy(worlds = emptyList())
+        SearchTab.AVATARS -> state.copy(avatars = emptyList())
+        SearchTab.GROUPS -> state.copy(groups = emptyList())
+    }
+
+    private fun isCurrentSearch(generation: Long): Boolean = generation == searchGeneration
 }

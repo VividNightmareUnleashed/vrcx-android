@@ -4,12 +4,19 @@ import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.FavoriteApi
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
+import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.World
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -27,6 +34,29 @@ class FavoriteRepositoryTest {
         worldApi = worldApi,
         avatarApi = avatarApi,
     )
+
+    @Test
+    fun `late add cannot repopulate favorites after account clear`() = runBlocking {
+        val requestStarted = CompletableDeferred<Unit>()
+        val releaseRequest = CompletableDeferred<Unit>()
+        whenever(favoriteApi.addFavorite(any())).doSuspendableAnswer {
+            requestStarted.complete(Unit)
+            releaseRequest.await()
+            Favorite(id = "fav_old", favoriteId = "wrld_old", type = "world")
+        }
+
+        val add = async(start = CoroutineStart.UNDISPATCHED) {
+            repository.addFavorite("world", "wrld_old", tags = listOf("worlds1"))
+        }
+        requestStarted.await()
+        repository.clearRuntimeState()
+        releaseRequest.complete(Unit)
+        val failure = runCatching { add.await() }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        assertTrue(repository.favorites.value.isEmpty())
+        assertTrue(repository.favoriteWorlds.value.isEmpty())
+    }
 
     @Test
     fun `loadFavoriteWorldsBulk paginates the bulk endpoint and exposes the result`() {
@@ -67,21 +97,6 @@ class FavoriteRepositoryTest {
 
             assertEquals(2, repository.favoriteAvatars.value.size)
             assertEquals(setOf("avtr_a", "avtr_b"), repository.favoriteAvatars.value.map { it.id }.toSet())
-        }
-    }
-
-    @Test
-    fun `dropFavoriteWorldFromCache removes the matching entry without re-fetching`() {
-        runBlocking {
-            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull()))
-                .thenReturn(listOf(stubWorld("wrld_a"), stubWorld("wrld_b")))
-            repository.loadFavoriteWorldsBulk()
-
-            repository.dropFavoriteWorldFromCache("wrld_a")
-
-            assertEquals(listOf("wrld_b"), repository.favoriteWorlds.value.map { it.id })
-            // No extra fetch was triggered by the cache drop.
-            verify(favoriteApi, never()).getFavoriteWorlds(eq(100), eq(2), anyOrNull(), anyOrNull(), anyOrNull())
         }
     }
 

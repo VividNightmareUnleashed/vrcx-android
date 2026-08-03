@@ -20,12 +20,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
@@ -70,6 +70,7 @@ import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.resolvedWorldId
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.data.repository.FavoriteWorldSection
 import com.vrcx.android.ui.common.prettyVisibility
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
@@ -121,23 +122,14 @@ fun UserDetailScreen(
     onGroupClick: (String) -> Unit = {},
     onAvatarClick: (String) -> Unit = {},
 ) {
-    val user by viewModel.user.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val user = state.user
+    val isLoading = state.isLoading
     var pendingDestructiveAction by remember { mutableStateOf<UserDestructiveAction?>(null) }
-    val message by viewModel.message.collectAsStateWithLifecycle()
-    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
-    val mutualFriends by viewModel.mutualFriends.collectAsStateWithLifecycle()
-    val userGroups by viewModel.userGroups.collectAsStateWithLifecycle()
-    val userWorlds by viewModel.userWorlds.collectAsStateWithLifecycle()
-    val userAvatars by viewModel.userAvatars.collectAsStateWithLifecycle()
-    val favoriteWorldSections by viewModel.favoriteWorldSections.collectAsStateWithLifecycle()
-    val selectedFavoriteWorldTag by viewModel.selectedFavoriteWorldTag.collectAsStateWithLifecycle()
-    val isFavorited by viewModel.isFavorited.collectAsStateWithLifecycle()
-    val memo by viewModel.memo.collectAsStateWithLifecycle()
-    val note by viewModel.note.collectAsStateWithLifecycle()
-    val notifyEnabled by viewModel.notifyEnabled.collectAsStateWithLifecycle()
-    val loadingTabs by viewModel.loadingTabs.collectAsStateWithLifecycle()
-    val isSelf by viewModel.isSelf.collectAsStateWithLifecycle()
+    val message = state.message
+    val selectedTab = state.selectedTab
+    val isSelf = state.isSelf
+    val isFavorited = state.isFavorited
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -196,71 +188,48 @@ fun UserDetailScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Tabs
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(
-                        selected = selectedTab == UserDetailTab.INFO,
-                        onClick = { viewModel.selectTab(UserDetailTab.INFO) },
-                        text = { Text("Info") },
-                    )
-                    Tab(
-                        selected = selectedTab == UserDetailTab.MUTUALS,
-                        onClick = { viewModel.selectTab(UserDetailTab.MUTUALS) },
-                        text = { Text("Mutuals") },
-                    )
-                    Tab(
-                        selected = selectedTab == UserDetailTab.GROUPS,
-                        onClick = { viewModel.selectTab(UserDetailTab.GROUPS) },
-                        text = { Text("Groups") },
-                    )
-                    Tab(
-                        selected = selectedTab == UserDetailTab.WORLDS,
-                        onClick = { viewModel.selectTab(UserDetailTab.WORLDS) },
-                        text = { Text("Worlds") },
-                    )
-                    Tab(
-                        selected = selectedTab == UserDetailTab.AVATARS,
-                        onClick = { viewModel.selectTab(UserDetailTab.AVATARS) },
-                        text = { Text("Avatars") },
-                    )
-                    Tab(
-                        selected = selectedTab == UserDetailTab.FAVORITE_WORLDS,
-                        onClick = { viewModel.selectTab(UserDetailTab.FAVORITE_WORLDS) },
-                        text = { Text("Fav Worlds") },
-                    )
+                TabRow(selectedTabIndex = selectedTab.ordinal) {
+                    UserDetailTab.entries.forEach { tab ->
+                        Tab(
+                            selected = selectedTab == tab,
+                            onClick = { viewModel.selectTab(tab) },
+                            text = { Text(tab.label) },
+                        )
+                    }
                 }
 
                 when (selectedTab) {
                     UserDetailTab.INFO -> InfoTab(
                         u = u,
-                        note = note,
-                        memo = memo,
-                        notifyEnabled = notifyEnabled,
+                        note = state.note,
+                        memo = state.memo,
+                        notifyEnabled = state.notifyEnabled,
                         viewModel = viewModel,
                         onWorldClick = onWorldClick,
                         isSelf = isSelf,
                         onConfirmDestructive = { pendingDestructiveAction = it },
                     )
                     UserDetailTab.MUTUALS -> {
-                        if (UserDetailTab.MUTUALS in loadingTabs && mutualFriends.isEmpty()) LoadingState()
-                        else MutualFriendsTab(mutualFriends, onUserClick)
+                        if (UserDetailTab.MUTUALS in state.loadingTabs && state.mutualFriends.isEmpty()) LoadingState()
+                        else MutualFriendsTab(state.mutualFriends, onUserClick)
                     }
                     UserDetailTab.GROUPS -> {
-                        if (UserDetailTab.GROUPS in loadingTabs && userGroups.isEmpty()) LoadingState()
-                        else GroupsTab(userGroups, onGroupClick)
+                        if (UserDetailTab.GROUPS in state.loadingTabs && state.userGroups.isEmpty()) LoadingState()
+                        else GroupsTab(state.userGroups, onGroupClick)
                     }
                     UserDetailTab.WORLDS -> {
-                        if (UserDetailTab.WORLDS in loadingTabs && userWorlds.isEmpty()) LoadingState()
-                        else WorldsTab(userWorlds, onWorldClick)
+                        if (UserDetailTab.WORLDS in state.loadingTabs && state.userWorlds.isEmpty()) LoadingState()
+                        else WorldsTab(state.userWorlds, onWorldClick)
                     }
                     UserDetailTab.AVATARS -> {
-                        if (UserDetailTab.AVATARS in loadingTabs && userAvatars.isEmpty()) LoadingState()
-                        else AvatarsTab(userAvatars, onAvatarClick)
+                        if (UserDetailTab.AVATARS in state.loadingTabs && state.userAvatars.isEmpty()) LoadingState()
+                        else AvatarsTab(state.userAvatars, onAvatarClick)
                     }
                     UserDetailTab.FAVORITE_WORLDS -> {
-                        if (UserDetailTab.FAVORITE_WORLDS in loadingTabs && favoriteWorldSections.isEmpty()) LoadingState()
+                        if (UserDetailTab.FAVORITE_WORLDS in state.loadingTabs && state.favoriteWorldSections.isEmpty()) LoadingState()
                         else FavoriteWorldsTab(
-                            sections = favoriteWorldSections,
-                            selectedTag = selectedFavoriteWorldTag,
+                            sections = state.favoriteWorldSections,
+                            selectedTag = state.selectedFavoriteWorldTag,
                             onSelectGroup = viewModel::selectFavoriteWorldGroup,
                             onWorldClick = onWorldClick,
                         )
@@ -395,7 +364,7 @@ private fun InfoTab(
                 }
             }
             FilledTonalButton(onClick = { viewModel.sendInvite() }) {
-                Icon(Icons.Default.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Invite")
+                Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Invite")
             }
             OutlinedButton(onClick = { viewModel.requestInvite() }) {
                 Text("Request Invite")
@@ -404,7 +373,7 @@ private fun InfoTab(
                 Icon(Icons.Default.Block, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Block")
             }
             OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.Mute) }) {
-                Icon(Icons.Default.VolumeOff, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Mute")
+                Icon(Icons.AutoMirrored.Filled.VolumeOff, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Mute")
             }
             OutlinedButton(onClick = { onConfirmDestructive(UserDestructiveAction.ShowAvatar) }) {
                 Icon(Icons.Outlined.Visibility, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Show Avatar")
@@ -668,4 +637,3 @@ private fun mutualFriendState(user: VrcUser): FriendState =
         user.location == "private" || user.state.equals("active", ignoreCase = true) -> FriendState.ACTIVE
         else -> FriendState.ONLINE
     }
-

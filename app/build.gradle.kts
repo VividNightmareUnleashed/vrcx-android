@@ -18,8 +18,6 @@ android {
         versionCode = 12
         versionName = "1.6.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
@@ -79,7 +77,6 @@ dependencies {
     implementation(composeBom)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
@@ -88,7 +85,6 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
-    implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
 
     // Hilt
@@ -110,7 +106,6 @@ dependencies {
     // Serialization
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.datetime)
 
     // DataStore
     implementation(libs.datastore.preferences)
@@ -124,16 +119,12 @@ dependencies {
     // WorkManager
     implementation(libs.work.runtime.ktx)
 
-    // Charts
-    implementation(libs.vico.compose.m3)
-
     // Testing
     testImplementation(libs.junit4)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.kotlin)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
-    testImplementation(libs.room.testing)
     testImplementation(libs.work.testing)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)

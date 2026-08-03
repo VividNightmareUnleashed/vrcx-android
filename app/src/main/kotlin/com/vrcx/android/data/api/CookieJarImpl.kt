@@ -3,12 +3,16 @@ package com.vrcx.android.data.api
 import android.content.Context
 import android.content.SharedPreferences
 import com.vrcx.android.data.security.SecureSecretsStore
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
-class CookieJarImpl(
-    context: Context,
+@Singleton
+class CookieJarImpl @Inject constructor(
+    @ApplicationContext context: Context,
     private val secureSecretsStore: SecureSecretsStore,
 ) : CookieJar {
 
