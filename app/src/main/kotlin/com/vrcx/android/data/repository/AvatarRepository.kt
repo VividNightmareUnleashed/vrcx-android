@@ -27,9 +27,7 @@ class AvatarRepository @Inject constructor(
 
     suspend fun loadMyAvatars() {
         val generation = accountGeneration.get()
-        val avatars = BulkPaginator.fetchAll(pageSize = AVATAR_PAGE_SIZE) { offset, count ->
-            avatarApi.getAvatars(user = "me", releaseStatus = "all", n = count, offset = offset)
-        }
+        val avatars = getUserAvatars("me")
         if (generation == accountGeneration.get()) _myAvatars.value = avatars
     }
 
@@ -42,6 +40,21 @@ class AvatarRepository @Inject constructor(
     suspend fun selectAvatar(avatarId: String) {
         avatarApi.selectAvatar(avatarId)
     }
+
+    /**
+     * Pages `GET avatars?user=[userId]` to exhaustion and returns the result.
+     * Read-only: it doesn't touch [myAvatars] or the cache, so it is safe to
+     * call for another user's profile.
+     *
+     * Pass `"me"` for the logged-in user. For anyone else, what VRChat returns
+     * is unverified — desktop VRCX doesn't use this endpoint for other users at
+     * all, it queries a third-party avatar database by `authorId`. Confirm the
+     * live response before relying on the non-self case.
+     */
+    suspend fun getUserAvatars(userId: String): List<Avatar> =
+        BulkPaginator.fetchAll(pageSize = AVATAR_PAGE_SIZE) { offset, count ->
+            avatarApi.getAvatars(user = userId, releaseStatus = "all", n = count, offset = offset)
+        }
 
     suspend fun getAvatar(avatarId: String, forceRefresh: Boolean = false): Avatar {
         val now = System.currentTimeMillis()

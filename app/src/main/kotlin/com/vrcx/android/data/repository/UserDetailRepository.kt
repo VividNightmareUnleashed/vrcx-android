@@ -1,18 +1,12 @@
 package com.vrcx.android.data.repository
 
-import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.BulkPaginator
 import com.vrcx.android.data.api.FavoriteApi
-import com.vrcx.android.data.api.FriendApi
-import com.vrcx.android.data.api.GroupApi
-import com.vrcx.android.data.api.NotificationApi
-import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.Group
-import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.api.model.displayAvatarUrl
@@ -32,6 +26,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,32 +52,15 @@ data class FavoriteWorldLoadResult(
     val warning: String? = null,
 )
 
-enum class UserDetailAction {
-    REQUEST_INVITE,
-    SEND_INVITE,
-    SEND_BOOP,
-    SEND_FRIEND_REQUEST,
-    CANCEL_FRIEND_REQUEST,
-    UNFRIEND,
-    BLOCK,
-    MUTE,
-    HIDE_AVATAR,
-    SHOW_AVATAR,
-}
-
 /** Owns the remote/local policy for one user-profile feature. */
 @Singleton
 class UserDetailRepository @Inject constructor(
     private val userRepository: UserRepository,
-    private val avatarApi: AvatarApi,
+    private val avatarRepository: AvatarRepository,
     private val favoriteApi: FavoriteApi,
-    private val friendApi: FriendApi,
-    private val groupApi: GroupApi,
+    private val groupRepository: GroupRepository,
     private val worldApi: WorldApi,
-    private val notificationApi: NotificationApi,
-    private val notificationRepository: NotificationRepository,
     private val favoriteRepository: FavoriteRepository,
-    private val playerModerationApi: PlayerModerationApi,
     private val authRepository: AuthRepository,
     private val noteDao: NoteDao,
     private val memoDao: MemoDao,
@@ -143,11 +122,7 @@ class UserDetailRepository @Inject constructor(
     suspend fun loadMutualFriends(userId: String): List<VrcUser> =
         userRepository.getMutualFriends(userId)
 
-    suspend fun loadGroups(userId: String): List<Group> = BulkPaginator.fetchAll(
-        pageSize = PROFILE_PAGE_SIZE,
-    ) { offset, count ->
-        groupApi.getUserGroups(userId = userId, n = count, offset = offset)
-    }
+    suspend fun loadGroups(userId: String): List<Group> = groupRepository.getUserGroups(userId)
 
     suspend fun loadWorlds(userId: String): List<World> = BulkPaginator.fetchAll(
         pageSize = PROFILE_PAGE_SIZE,
@@ -155,16 +130,7 @@ class UserDetailRepository @Inject constructor(
         worldApi.getWorlds(n = count, offset = offset, user = userId)
     }
 
-    suspend fun loadAvatars(userId: String): List<Avatar> = BulkPaginator.fetchAll(
-        pageSize = PROFILE_PAGE_SIZE,
-    ) { offset, count ->
-        avatarApi.getAvatars(
-            n = count,
-            offset = offset,
-            user = userId,
-            releaseStatus = "all",
-        )
-    }
+    suspend fun loadAvatars(userId: String): List<Avatar> = avatarRepository.getUserAvatars(userId)
 
     suspend fun loadFavoriteWorlds(userId: String): FavoriteWorldLoadResult {
         val groups = BulkPaginator.fetchAll<FavoriteGroup>(pageSize = PROFILE_PAGE_SIZE) { offset, count ->
@@ -177,6 +143,10 @@ class UserDetailRepository @Inject constructor(
         }.filter { it.type == "world" }
         if (groups.isEmpty()) return FavoriteWorldLoadResult(emptyList())
 
+        // Bounded: OkHttp caps at 5 requests per host app-wide, so an unbounded
+        // fan-out here queues rather than parallelises and can starve the
+        // profile's other tab loads.
+        val gate = Semaphore(FAVORITE_GROUP_CONCURRENCY)
         val results = supervisorScope {
             groups.map { group ->
                 async {
@@ -186,13 +156,15 @@ class UserDetailRepository @Inject constructor(
                                 tag = group.name,
                                 displayName = group.displayName.ifBlank { group.name },
                                 visibility = group.visibility,
-                                worlds = BulkPaginator.fetchAll(pageSize = PROFILE_PAGE_SIZE) { offset, count ->
-                                    favoriteApi.getFavoriteWorlds(
-                                        n = count,
-                                        offset = offset,
-                                        tag = group.name,
-                                        ownerId = userId,
-                                    )
+                                worlds = gate.withPermit {
+                                    BulkPaginator.fetchAll(pageSize = PROFILE_PAGE_SIZE) { offset, count ->
+                                        favoriteApi.getFavoriteWorlds(
+                                            n = count,
+                                            offset = offset,
+                                            tag = group.name,
+                                            ownerId = userId,
+                                        )
+                                    }
                                 },
                             )
                         )
@@ -252,33 +224,11 @@ class UserDetailRepository @Inject constructor(
 
     suspend fun toggleNotify(userId: String): Boolean = friendRepository.toggleFriendNotify(userId)
 
-    suspend fun performAction(action: UserDetailAction, userId: String) {
-        when (action) {
-            UserDetailAction.REQUEST_INVITE -> notificationApi.sendRequestInvite(userId)
-            UserDetailAction.SEND_INVITE -> notificationRepository.sendInviteToUser(userId)
-            UserDetailAction.SEND_BOOP -> userRepository.sendBoop(userId)
-            UserDetailAction.SEND_FRIEND_REQUEST -> friendApi.sendFriendRequest(userId)
-            UserDetailAction.CANCEL_FRIEND_REQUEST -> friendApi.cancelFriendRequest(userId)
-            UserDetailAction.UNFRIEND -> friendApi.deleteFriend(userId)
-            UserDetailAction.BLOCK -> playerModerationApi.sendPlayerModeration(
-                PlayerModerationRequest(userId, "block")
-            )
-            UserDetailAction.MUTE -> playerModerationApi.sendPlayerModeration(
-                PlayerModerationRequest(userId, "mute")
-            )
-            UserDetailAction.HIDE_AVATAR -> playerModerationApi.sendPlayerModeration(
-                PlayerModerationRequest(userId, "hideAvatar")
-            )
-            UserDetailAction.SHOW_AVATAR -> playerModerationApi.sendPlayerModeration(
-                PlayerModerationRequest(userId, "showAvatar")
-            )
-        }
-    }
-
     private fun currentUserId(): String? =
         (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
 
     private companion object {
         const val PROFILE_PAGE_SIZE = 100
+        const val FAVORITE_GROUP_CONCURRENCY = 4
     }
 }

@@ -4,6 +4,23 @@
 
 ### Fixed
 
+- **Blocking or muting from a profile didn't reach the Moderation screen** —
+  The profile screen sent the moderation straight to VRChat without telling
+  the rest of the app, so the Moderation screen kept showing the list as it
+  was before: a freshly blocked user was missing until you pulled to refresh
+  or reopened the screen. Moderations now publish the row VRChat returns, so
+  the list is correct immediately — and because the app no longer re-downloads
+  the whole moderation list after every block, the action completes in one
+  request instead of two.
+- **A moderation that worked could still report "Failed"** — Blocking, muting
+  or hiding an avatar was followed by a second request to re-read the list,
+  and a failure of that second request was reported as though the block
+  itself had failed, inviting a retry that blocked the person twice. The
+  moderation's own result is now what determines success.
+- **Double-tapping a profile action sent it twice** — Request invite, send
+  invite, boop, and the friend-request buttons have no confirmation step, so
+  an impatient second tap sent a second request. One profile action now runs
+  at a time.
 - **Session dropped after the app sat unused** — Leaving the app closed for a
   while would frequently land you back on the login screen (or a fresh
   two-factor prompt) even though the saved session had weeks of life left. Any

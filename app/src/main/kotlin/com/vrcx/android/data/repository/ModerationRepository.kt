@@ -2,6 +2,7 @@ package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.model.PlayerModeration
+import com.vrcx.android.data.api.model.PlayerModerationRequest
 import com.vrcx.android.data.api.model.UnPlayerModerationRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,25 @@ class ModerationRepository @Inject constructor(
         synchronized(stateLock) {
             accountGeneration++
             _moderations.value = emptyList()
+        }
+    }
+
+    /**
+     * Applies a moderation and publishes the created row, so screens observing
+     * [moderations] see it. Callers must come through here rather than hitting
+     * PlayerModerationApi directly — the profile screen bypassing this left the
+     * Moderation screen showing stale rows after a block.
+     *
+     * The POST returns the created moderation, so this publishes that rather
+     * than re-fetching the whole list, mirroring [deleteModeration].
+     */
+    suspend fun moderate(userId: String, apiValue: String) {
+        val generation = currentGeneration()
+        val created = playerModerationApi.sendPlayerModeration(
+            PlayerModerationRequest(userId, apiValue)
+        )
+        publishIfCurrent(generation) {
+            _moderations.value = _moderations.value.filterNot { it.id == created.id } + created
         }
     }
 

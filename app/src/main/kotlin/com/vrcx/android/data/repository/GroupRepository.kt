@@ -40,16 +40,30 @@ class GroupRepository @Inject constructor(
     private val _userGroups = MutableStateFlow<List<Group>>(emptyList())
     val userGroups: StateFlow<List<Group>> = _userGroups.asStateFlow()
 
-    suspend fun loadUserGroups(userId: String) {
+    /**
+     * Loads [userId]'s groups into [userGroups], the flow backing the logged-in
+     * user's Groups tab. Named for what it publishes to: calling it with anyone
+     * else's id repoints `ownerUserId`, which routes pipeline group refreshes.
+     * For another user's profile use [getUserGroups] instead.
+     */
+    suspend fun loadMyGroups(userId: String) {
         val generation = accountGeneration.get()
         ownerUserId = userId
-        val groups = BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
-            groupApi.getUserGroups(userId, n = count, offset = offset)
-        }
+        val groups = getUserGroups(userId)
         if (ownerUserId == userId && generation == accountGeneration.get()) {
             _userGroups.value = groups
         }
     }
+
+    /**
+     * All of [userId]'s groups, paginated. Read-only: it doesn't set
+     * `ownerUserId` or publish to `_userGroups`, so it is safe to call for
+     * someone else's profile.
+     */
+    suspend fun getUserGroups(userId: String): List<Group> =
+        BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
+            groupApi.getUserGroups(userId, n = count, offset = offset)
+        }
 
     fun clearRuntimeState() {
         accountGeneration.incrementAndGet()
@@ -235,9 +249,7 @@ class GroupRepository @Inject constructor(
         if (ownerUserId != ownerId || generation != accountGeneration.get()) {
             return
         }
-        val groups = BulkPaginator.fetchAll(pageSize = GROUP_PAGE_SIZE) { offset, count ->
-            groupApi.getUserGroups(ownerId, n = count, offset = offset)
-        }
+        val groups = getUserGroups(ownerId)
         if (ownerUserId == ownerId && generation == accountGeneration.get()) {
             _userGroups.value = groups
         }

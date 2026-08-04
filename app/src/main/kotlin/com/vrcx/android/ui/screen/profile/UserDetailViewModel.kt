@@ -9,7 +9,7 @@ import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.FavoriteWorldLoadResult
 import com.vrcx.android.data.repository.FavoriteWorldSection
-import com.vrcx.android.data.repository.UserDetailAction
+import com.vrcx.android.data.repository.UserActionPerformer
 import com.vrcx.android.data.repository.UserDetailRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -55,6 +55,7 @@ data class UserDetailUiState(
 class UserDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val userDetailRepository: UserDetailRepository,
+    private val actionPerformer: UserActionPerformer,
 ) : ViewModel() {
     val userId: String = savedStateHandle.get<String>("userId") ?: ""
 
@@ -63,6 +64,7 @@ class UserDetailViewModel @Inject constructor(
 
     private var profileJob: Job? = null
     private var profileGeneration = 0L
+    private var actionJob: Job? = null
 
     init {
         observeSelfStatus()
@@ -302,42 +304,46 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
-    fun requestInvite() = runAction(UserDetailAction.REQUEST_INVITE, "Invite requested")
+    fun requestInvite() = runAction("Invite requested") { actionPerformer.requestInvite(userId) }
 
-    fun sendInvite() = runAction(UserDetailAction.SEND_INVITE, "Invite sent")
+    fun sendInvite() = runAction("Invite sent") { actionPerformer.sendInvite(userId) }
 
-    fun sendBoop() = runAction(UserDetailAction.SEND_BOOP, "Boop sent")
+    fun sendBoop() = runAction("Boop sent") { actionPerformer.sendBoop(userId) }
 
-    fun sendFriendRequest() = runAction(
-        UserDetailAction.SEND_FRIEND_REQUEST,
-        "Friend request sent",
-        refreshProfile = true,
-    )
+    fun sendFriendRequest() = runAction("Friend request sent", refreshProfile = true) {
+        actionPerformer.sendFriendRequest(userId)
+    }
 
-    fun cancelFriendRequest() = runAction(
-        UserDetailAction.CANCEL_FRIEND_REQUEST,
-        "Friend request cancelled",
-        refreshProfile = true,
-    )
+    fun cancelFriendRequest() = runAction("Friend request cancelled", refreshProfile = true) {
+        actionPerformer.cancelFriendRequest(userId)
+    }
 
-    fun unfriend() = runAction(UserDetailAction.UNFRIEND, "Unfriended", refreshProfile = true)
+    fun unfriend() = runAction("Unfriended", refreshProfile = true) {
+        actionPerformer.unfriend(userId)
+    }
 
-    fun blockUser() = runAction(UserDetailAction.BLOCK, "User blocked")
+    fun blockUser() = runAction("User blocked") { actionPerformer.block(userId) }
 
-    fun muteUser() = runAction(UserDetailAction.MUTE, "User muted")
+    fun muteUser() = runAction("User muted") { actionPerformer.mute(userId) }
 
-    fun hideAvatar() = runAction(UserDetailAction.HIDE_AVATAR, "Avatar hidden")
+    fun hideAvatar() = runAction("Avatar hidden") { actionPerformer.hideAvatar(userId) }
 
-    fun showAvatar() = runAction(UserDetailAction.SHOW_AVATAR, "Avatar shown")
+    fun showAvatar() = runAction("Avatar shown") { actionPerformer.showAvatar(userId) }
 
+    /**
+     * Runs one profile write action. Only one runs at a time — several of these
+     * are plain buttons with no confirm dialog, and a double tap would otherwise
+     * send the request twice.
+     */
     private fun runAction(
-        action: UserDetailAction,
         successMessage: String,
         refreshProfile: Boolean = false,
+        perform: suspend () -> Unit,
     ) {
-        viewModelScope.launch {
+        if (actionJob?.isActive == true) return
+        actionJob = viewModelScope.launch {
             try {
-                userDetailRepository.performAction(action, userId)
+                perform()
                 showMessage(successMessage)
                 if (refreshProfile) loadUser()
             } catch (e: CancellationException) {

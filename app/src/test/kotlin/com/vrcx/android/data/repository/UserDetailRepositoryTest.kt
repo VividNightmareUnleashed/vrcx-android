@@ -2,10 +2,8 @@ package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.FavoriteApi
-import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.GroupApi
-import com.vrcx.android.data.api.NotificationApi
-import com.vrcx.android.data.api.PlayerModerationApi
+import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.CurrentUser
@@ -163,15 +161,11 @@ class UserDetailRepositoryTest {
         )
         return UserDetailRepository(
             userRepository = userRepository,
-            avatarApi = avatarApi,
+            avatarRepository = AvatarRepository(avatarApi, RequestDeduplicator()),
             favoriteApi = favoriteApi,
-            friendApi = mock<FriendApi>(),
-            groupApi = groupApi,
+            groupRepository = GroupRepository(groupApi, RequestDeduplicator()),
             worldApi = worldApi,
-            notificationApi = mock<NotificationApi>(),
-            notificationRepository = mock<NotificationRepository>(),
             favoriteRepository = favoriteRepository,
-            playerModerationApi = mock<PlayerModerationApi>(),
             authRepository = authRepository,
             noteDao = noteDao,
             memoDao = memoDao,

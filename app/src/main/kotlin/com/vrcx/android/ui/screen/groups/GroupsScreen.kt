@@ -66,7 +66,7 @@ class GroupsViewModel @Inject constructor(
             try {
                 val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
                     ?: error("You must be logged in to load groups")
-                groupRepository.loadUserGroups(userId)
+                groupRepository.loadMyGroups(userId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

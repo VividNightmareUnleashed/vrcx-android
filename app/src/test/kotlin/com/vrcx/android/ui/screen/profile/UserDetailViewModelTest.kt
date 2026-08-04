@@ -48,6 +48,7 @@ class UserDetailViewModelTest {
         val viewModel = UserDetailViewModel(
             SavedStateHandle(mapOf("userId" to "usr_target")),
             repository,
+            mock(),
         )
         advanceUntilIdle()
 
@@ -92,6 +93,7 @@ class UserDetailViewModelTest {
         val viewModel = UserDetailViewModel(
             SavedStateHandle(mapOf("userId" to "usr_target")),
             repository,
+            mock(),
         )
         advanceUntilIdle()
 
