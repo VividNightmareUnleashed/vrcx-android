@@ -93,7 +93,7 @@ class GroupRepositoryTest {
     }
 
     @Test
-    fun `loadUserGroups ignores result when runtime state is cleared mid-request`() {
+    fun `loadMyGroups ignores result when runtime state is cleared mid-request`() {
         runBlocking {
             val staleGroups = listOf(Group(id = "grp_old", groupId = "grp_old"))
             val started = CompletableDeferred<Unit>()
@@ -107,7 +107,7 @@ class GroupRepositoryTest {
                 }
             }
 
-            val loadJob = async { repository.loadUserGroups("usr_old") }
+            val loadJob = async { repository.loadMyGroups("usr_old") }
             started.await()
 
             repository.clearRuntimeState()
