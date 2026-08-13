@@ -1,7 +1,6 @@
 package com.vrcx.android.data.api
 
 import com.vrcx.android.data.api.model.AuthToken
-import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import kotlinx.serialization.json.JsonElement
@@ -11,6 +10,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 
 interface AuthApi {
+    @NoFailureCache
     @GET("auth/user")
     suspend fun getCurrentUser(): JsonElement
 
@@ -26,6 +26,7 @@ interface AuthApi {
     @POST("auth/twofactorauth/emailotp/verify")
     suspend fun verifyEmailOtp(@Body body: TwoFactorAuthRequest): TwoFactorAuthResponse
 
+    @NoFailureCache
     @GET("auth")
     suspend fun getAuthToken(): AuthToken
 

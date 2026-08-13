@@ -11,13 +11,15 @@ import androidx.room.PrimaryKey
 data class NoteEntity(
     @PrimaryKey val compositeId: String = "", // owner:userId
     val ownerUserId: String = "",
-    val odUserId: String = "",
     val displayName: String = "",
     val note: String = "",
     val createdAt: String = "",
 )
 
-@Entity(tableName = "memos")
+@Entity(
+    tableName = "memos",
+    indices = [Index(value = ["ownerUserId"])],
+)
 data class MemoEntity(
     @PrimaryKey val odUserId: String = "", // owner:userId
     val ownerUserId: String = "",

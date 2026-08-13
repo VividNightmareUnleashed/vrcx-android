@@ -32,16 +32,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +62,7 @@ import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
-import com.vrcx.android.ui.theme.LocalWallpaperActive
+import com.vrcx.android.ui.components.VrcxTabRow
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,7 +74,9 @@ fun GroupDetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val isActionLoading by viewModel.isActionLoading.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // Saveable so a rotation keeps the tab the user is on: the ViewModel still
+    // holds the posts and instances it loaded, they would just stop being shown.
+    var selectedTab by rememberSaveable { mutableStateOf(GroupTab.MEMBERS) }
     var pendingKickUserId by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val group = (state.group as? GroupResourceState.Ready)?.value
@@ -106,7 +107,15 @@ fun GroupDetailScreen(
                     state = state,
                     selectedTab = selectedTab,
                     isActionLoading = isActionLoading,
-                    viewModel = viewModel,
+                    membershipStatus = viewModel.membershipStatus(groupState.value),
+                    canManageMembers = viewModel.canManageMembers(groupState.value),
+                    canRemoveMember = { member -> viewModel.canRemoveMember(groupState.value, member) },
+                    onJoinOrLeave = viewModel::joinOrLeaveGroup,
+                    onRetryMembers = viewModel::retryMembers,
+                    onLoadMoreMembers = viewModel::loadMoreMembers,
+                    onRetryInstances = viewModel::retryInstances,
+                    onRetryPosts = viewModel::retryPosts,
+                    onLoadMorePosts = viewModel::loadMorePosts,
                     onTabSelected = { tab ->
                         selectedTab = tab
                         viewModel.onTabSelected(tab)
@@ -140,10 +149,18 @@ private fun GroupDetailContent(
     modifier: Modifier = Modifier,
     group: Group,
     state: GroupDetailState,
-    selectedTab: Int,
+    selectedTab: GroupTab,
     isActionLoading: Boolean,
-    viewModel: GroupDetailViewModel,
-    onTabSelected: (Int) -> Unit,
+    membershipStatus: GroupMembership,
+    canManageMembers: Boolean,
+    canRemoveMember: (GroupMember) -> Boolean,
+    onJoinOrLeave: () -> Unit,
+    onRetryMembers: () -> Unit,
+    onLoadMoreMembers: () -> Unit,
+    onRetryInstances: () -> Unit,
+    onRetryPosts: () -> Unit,
+    onLoadMorePosts: () -> Unit,
+    onTabSelected: (GroupTab) -> Unit,
     onUserClick: (String) -> Unit,
     onKickRequested: (String) -> Unit,
 ) {
@@ -160,7 +177,7 @@ private fun GroupDetailContent(
             )
         }
 
-        GroupHeader(group, isActionLoading, viewModel)
+        GroupHeader(group, isActionLoading, membershipStatus, onJoinOrLeave)
         GroupTabs(
             group = group,
             state = state,
@@ -170,18 +187,20 @@ private fun GroupDetailContent(
 
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (selectedTab) {
-                0 -> MembersTab(
+                GroupTab.MEMBERS -> MembersTab(
                     state = state.members,
-                    group = group,
-                    viewModel = viewModel,
+                    canManageMembers = canManageMembers,
+                    canRemoveMember = canRemoveMember,
+                    onRetry = onRetryMembers,
+                    onLoadMore = onLoadMoreMembers,
                     onUserClick = onUserClick,
                     onKickRequested = onKickRequested,
                 )
-                1 -> InstancesTab(state.instances, viewModel::retryInstances)
-                else -> PostsTab(
+                GroupTab.INSTANCES -> InstancesTab(state.instances, onRetryInstances)
+                GroupTab.POSTS -> PostsTab(
                     state = state.posts,
-                    onRetry = viewModel::retryPosts,
-                    onLoadMore = viewModel::loadMorePosts,
+                    onRetry = onRetryPosts,
+                    onLoadMore = onLoadMorePosts,
                 )
             }
         }
@@ -192,7 +211,8 @@ private fun GroupDetailContent(
 private fun GroupHeader(
     group: Group,
     isActionLoading: Boolean,
-    viewModel: GroupDetailViewModel,
+    membershipStatus: GroupMembership,
+    onJoinOrLeave: () -> Unit,
 ) {
     Column(Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -216,10 +236,7 @@ private fun GroupHeader(
             if (isActionLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
-                GroupActionButton(
-                    membershipStatus = viewModel.membershipStatus(group),
-                    onClick = viewModel::joinOrLeaveGroup,
-                )
+                GroupActionButton(membershipStatus = membershipStatus, onClick = onJoinOrLeave)
             }
         }
         if (group.description.isNotBlank()) {
@@ -233,44 +250,38 @@ private fun GroupHeader(
 private fun GroupTabs(
     group: Group,
     state: GroupDetailState,
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
+    selectedTab: GroupTab,
+    onTabSelected: (GroupTab) -> Unit,
 ) {
     val memberTotal = (state.members as? GroupResourceState.Ready)?.value?.totalCount
         ?: group.memberCount
     val instanceTotal = (state.instances as? GroupResourceState.Ready)?.value?.size
     val postPage = (state.posts as? GroupResourceState.Ready)?.value
     val postTotal = postPage?.totalCount ?: postPage?.items?.size
-    val isWallpaperActive = LocalWallpaperActive.current
 
-    TabRow(
-        selectedTabIndex = selectedTab,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer
-            .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
-    ) {
-        Tab(
-            selected = selectedTab == 0,
-            onClick = { onTabSelected(0) },
-            text = { Text("Members ($memberTotal)") },
-        )
-        Tab(
-            selected = selectedTab == 1,
-            onClick = { onTabSelected(1) },
-            text = { Text(instanceTotal?.let { "Instances ($it)" } ?: "Instances") },
-        )
-        Tab(
-            selected = selectedTab == 2,
-            onClick = { onTabSelected(2) },
-            text = { Text(postTotal?.let { "Posts ($it)" } ?: "Posts") },
-        )
+    VrcxTabRow(selectedTabIndex = selectedTab.ordinal) {
+        GroupTab.entries.forEach { tab ->
+            val count = when (tab) {
+                GroupTab.MEMBERS -> memberTotal
+                GroupTab.INSTANCES -> instanceTotal
+                GroupTab.POSTS -> postTotal
+            }
+            Tab(
+                selected = selectedTab == tab,
+                onClick = { onTabSelected(tab) },
+                text = { Text(count?.let { "${tab.label} ($it)" } ?: tab.label) },
+            )
+        }
     }
 }
 
 @Composable
 private fun MembersTab(
     state: GroupResourceState<GroupPagedData<GroupMember>>,
-    group: Group,
-    viewModel: GroupDetailViewModel,
+    canManageMembers: Boolean,
+    canRemoveMember: (GroupMember) -> Boolean,
+    onRetry: () -> Unit,
+    onLoadMore: () -> Unit,
     onUserClick: (String) -> Unit,
     onKickRequested: (String) -> Unit,
 ) {
@@ -279,16 +290,24 @@ private fun MembersTab(
         GroupResourceState.NotLoaded,
         -> LoadingState()
 
-        is GroupResourceState.Error -> ErrorState(state.message, onRetry = viewModel::retryMembers)
+        is GroupResourceState.Error -> ErrorState(state.message, onRetry = onRetry)
         is GroupResourceState.Ready -> if (state.value.items.isEmpty()) {
             EmptyState("No group members")
         } else {
-            val canManage = viewModel.canManageMembers(group)
+            // Resolved once above the list: the predicate is pure over
+            // (group, member) and rescans the permission list per call.
+            val removableUserIds = remember(canManageMembers, state.value.items) {
+                if (!canManageMembers) {
+                    emptySet()
+                } else {
+                    state.value.items.filter(canRemoveMember).map { it.userId }.toSet()
+                }
+            }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(state.value.items, key = { member -> member.id.ifBlank { member.userId } }) { member ->
                     GroupMemberRow(
                         member = member,
-                        canRemove = canManage && viewModel.canRemoveMember(group, member),
+                        canRemove = member.userId in removableUserIds,
                         onUserClick = onUserClick,
                         onKickRequested = onKickRequested,
                     )
@@ -298,7 +317,7 @@ private fun MembersTab(
                         PaginationFooter(
                             state = state.value.appendState,
                             nextOffset = state.value.nextOffset,
-                            onLoadMore = viewModel::loadMoreMembers,
+                            onLoadMore = onLoadMore,
                         )
                     }
                 }
@@ -466,12 +485,12 @@ private fun PaginationFooter(
 }
 
 @Composable
-private fun GroupActionButton(membershipStatus: String, onClick: () -> Unit) {
+private fun GroupActionButton(membershipStatus: GroupMembership, onClick: () -> Unit) {
     when (membershipStatus) {
-        "member" -> OutlinedButton(onClick = onClick) { Text("Leave Group") }
-        "requested" -> FilledTonalButton(onClick = {}, enabled = false) { Text("Request Pending") }
-        else -> FilledTonalButton(onClick = onClick) {
-            Text(if (membershipStatus == "invited") "Join Group" else "Request / Join")
-        }
+        GroupMembership.MEMBER -> OutlinedButton(onClick = onClick) { Text("Leave Group") }
+        GroupMembership.REQUESTED ->
+            FilledTonalButton(onClick = {}, enabled = false) { Text("Request Pending") }
+        GroupMembership.INVITED -> FilledTonalButton(onClick = onClick) { Text("Join Group") }
+        GroupMembership.UNKNOWN -> FilledTonalButton(onClick = onClick) { Text("Request / Join") }
     }
 }

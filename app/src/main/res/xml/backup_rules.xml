@@ -6,4 +6,6 @@
     <exclude domain="file" path="datastore/" />
     <exclude domain="sharedpref" path="vrcx_cookies.xml" />
     <exclude domain="file" path="vrcx_secure_secrets.json" />
+    <exclude domain="file" path="vrcx_secure_secrets.json.backup" />
+    <exclude domain="file" path="profile_pic_cache/" />
 </full-backup-content>

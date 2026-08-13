@@ -1,8 +1,14 @@
 package com.vrcx.android.data.api
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
@@ -18,18 +24,18 @@ class ErrorInterceptorTest {
 
     private lateinit var server: MockWebServer
     private lateinit var bus: AuthEventBus
-    private lateinit var emittedEvents: MutableList<AuthEvent>
+    private lateinit var retryDelaysMs: MutableList<Long>
     private lateinit var client: OkHttpClient
 
     @Before
     fun setUp() {
         server = MockWebServer().apply { start() }
         bus = AuthEventBus()
-        emittedEvents = mutableListOf()
-        // The bus uses a SharedFlow with a buffer; collect events synchronously
-        // by snapshotting tryEmit calls through a wrapper.
+        retryDelaysMs = mutableListOf()
+        // Record the retry wait instead of serving it: the assertion becomes the
+        // exact delay the interceptor chose, and the suite doesn't sleep for it.
         client = OkHttpClient.Builder()
-            .addInterceptor(ErrorInterceptor(bus))
+            .addInterceptor(ErrorInterceptor(bus) { retryDelaysMs += it })
             .build()
     }
 
@@ -69,20 +75,24 @@ class ErrorInterceptorTest {
     }
 
     @Test
-    fun `401 from an AuthPhase-annotated endpoint does not expire the session`() {
-        val collected = collectEvents()
-        server.enqueue(MockResponse().setResponseCode(401).setBody("bad code"))
+    fun `401 from any two factor endpoint does not expire the session`() {
+        // A wrong code on any of the three methods is the user's mistake, not an
+        // expired session — the challenge has to survive it.
+        for (methodName in listOf("verifyTotp", "verifyOtp", "verifyEmailOtp")) {
+            val collected = collectEvents()
+            server.enqueue(MockResponse().setResponseCode(401).setBody("bad code"))
 
-        val response = client.newCall(
-            Request.Builder()
-                .url(server.url("/auth/twofactorauth/totp/verify"))
-                .tag(Invocation::class.java, invocationFor("verifyTotp"))
-                .build()
-        ).execute()
+            val response = client.newCall(
+                Request.Builder()
+                    .url(server.url("/auth/twofactorauth/verify"))
+                    .tag(Invocation::class.java, invocationFor(methodName))
+                    .build()
+            ).execute()
 
-        assertEquals(401, response.code)
-        assertEquals(0, collected().size)
-        response.close()
+            assertEquals(401, response.code)
+            assertEquals(methodName, 0, collected().size)
+            response.close()
+        }
     }
 
     @Test
@@ -121,13 +131,11 @@ class ErrorInterceptorTest {
         server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "1"))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
 
-        val start = System.nanoTime()
         val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
-        val elapsedMs = (System.nanoTime() - start) / 1_000_000
 
         assertEquals(200, response.code)
-        // Retry-After: 1 → 1000ms, capped at 2000ms; should be at least 1000 but well below 30s.
-        assertTrue("retry waited ${elapsedMs}ms, expected ~1000-2500", elapsedMs in 900..2500)
+        // Retry-After: 1 → 1000ms, under the 2000ms cap.
+        assertEquals(listOf(1_000L), retryDelaysMs)
         assertEquals(2, server.requestCount)
         response.close()
     }
@@ -137,12 +145,10 @@ class ErrorInterceptorTest {
         server.enqueue(MockResponse().setResponseCode(429))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
 
-        val start = System.nanoTime()
         val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
-        val elapsedMs = (System.nanoTime() - start) / 1_000_000
 
         assertEquals(200, response.code)
-        assertTrue("retry waited ${elapsedMs}ms, expected ~1000ms", elapsedMs in 900..1800)
+        assertEquals(listOf(ErrorInterceptor.DEFAULT_RETRY_DELAY_MS), retryDelaysMs)
         response.close()
     }
 
@@ -177,12 +183,10 @@ class ErrorInterceptorTest {
         server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "60"))
         server.enqueue(MockResponse().setResponseCode(200))
 
-        val start = System.nanoTime()
         val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
-        val elapsedMs = (System.nanoTime() - start) / 1_000_000
 
         assertEquals(200, response.code)
-        assertTrue("clamp failed: waited ${elapsedMs}ms", elapsedMs in 1900..3000)
+        assertEquals(listOf(ErrorInterceptor.MAX_RETRY_DELAY_MS), retryDelaysMs)
         response.close()
     }
 
@@ -199,20 +203,39 @@ class ErrorInterceptorTest {
         response.close()
     }
 
-    /** Collects events emitted to the bus during a single test, blocking-free. */
+    /**
+     * Collects events emitted to the bus during a single test. The bus keeps no
+     * replay, so anything emitted before the collector subscribes is gone —
+     * wait for the subscription itself rather than guessing at how long it takes.
+     */
     @OptIn(DelicateCoroutinesApi::class)
     private fun collectEvents(): () -> List<AuthEvent> {
-        val collected = mutableListOf<AuthEvent>()
+        val received = Channel<AuthEvent>(Channel.UNLIMITED)
+        val subscribed = CompletableDeferred<Unit>()
         val job = GlobalScope.launch {
-            bus.events.collect { collected += it }
+            bus.events
+                .onSubscription { subscribed.complete(Unit) }
+                .collect { received.trySend(it) }
         }
-        // Give the collector a tick to subscribe before the test triggers tryEmit.
-        Thread.sleep(50)
+        runBlocking { withTimeout(SUBSCRIBE_TIMEOUT_MS) { subscribed.await() } }
+        val collected = mutableListOf<AuthEvent>()
+        var drained = false
         return {
-            // Drain time after the request completes.
-            Thread.sleep(50)
-            job.cancel()
-            collected.toList()
+            if (!drained) {
+                drained = true
+                runBlocking {
+                    while (true) {
+                        collected += withTimeoutOrNull(DRAIN_TIMEOUT_MS) { received.receive() } ?: break
+                    }
+                }
+                job.cancel()
+            }
+            collected
         }
+    }
+
+    private companion object {
+        const val SUBSCRIBE_TIMEOUT_MS = 5_000L
+        const val DRAIN_TIMEOUT_MS = 200L
     }
 }

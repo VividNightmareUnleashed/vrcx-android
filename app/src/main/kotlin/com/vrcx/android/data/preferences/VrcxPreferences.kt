@@ -20,6 +20,52 @@ import javax.inject.Singleton
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vrcx_settings")
 
+/**
+ * The theme choices, with the token each one is stored as. The tokens are what
+ * already sits in DataStore on every install, so they are not derived from the
+ * constant names.
+ */
+enum class ThemeMode(val token: String, val label: String) {
+    SYSTEM("system", "System"),
+    LIGHT("light", "Light"),
+    DARK("dark", "Dark"),
+    ;
+
+    companion object {
+        fun fromToken(token: String?): ThemeMode? = entries.firstOrNull { it.token == token }
+    }
+}
+
+/** How the wallpaper image is scaled, with its stored token. */
+enum class WallpaperScaleMode(val token: String, val label: String) {
+    CROP("crop", "Crop"),
+    FIT("fit", "Fit"),
+    FILL_WIDTH("fill_width", "Fill W"),
+    FILL_HEIGHT("fill_height", "Fill H"),
+    ;
+
+    companion object {
+        fun fromToken(token: String?): WallpaperScaleMode? = entries.firstOrNull { it.token == token }
+    }
+}
+
+/**
+ * What every setting is before the user has chosen, in one place. ViewModels seed
+ * their StateFlows from here so the value a screen paints before DataStore answers
+ * is the value it will keep.
+ */
+object PreferenceDefaults {
+    val THEME_MODE = ThemeMode.DARK
+    const val DYNAMIC_COLORS = false
+    val WALLPAPER_SCALE_MODE = WallpaperScaleMode.CROP
+    const val NOTIFY_INVITE = true
+    const val NOTIFY_FRIEND_REQUEST = true
+    const val NOTIFY_GENERAL = true
+    const val MAX_FEED_SIZE = 1000
+    const val AUTO_LOGIN = false
+    const val BACKGROUND_SERVICE_ENABLED = true
+}
+
 @Singleton
 class VrcxPreferences @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -30,18 +76,31 @@ class VrcxPreferences @Inject constructor(
     }
 
     // Notification settings
-    val notifyInvite: Flow<Boolean> = preferences.map { it[NOTIFY_INVITE] ?: true }
-    val notifyFriendRequest: Flow<Boolean> = preferences.map { it[NOTIFY_FRIEND_REQUEST] ?: true }
+    val notifyInvite: Flow<Boolean> = preferences.map {
+        it[NOTIFY_INVITE] ?: PreferenceDefaults.NOTIFY_INVITE
+    }
+    val notifyFriendRequest: Flow<Boolean> = preferences.map {
+        it[NOTIFY_FRIEND_REQUEST] ?: PreferenceDefaults.NOTIFY_FRIEND_REQUEST
+    }
+    /** Covers notification types the app has no category for; their text is whatever the sender wrote. */
+    val notifyGeneral: Flow<Boolean> = preferences.map {
+        it[NOTIFY_GENERAL] ?: PreferenceDefaults.NOTIFY_GENERAL
+    }
 
     suspend fun setNotifyInvite(enabled: Boolean) = dataStore.edit { it[NOTIFY_INVITE] = enabled }
     suspend fun setNotifyFriendRequest(enabled: Boolean) =
         dataStore.edit { it[NOTIFY_FRIEND_REQUEST] = enabled }
+    suspend fun setNotifyGeneral(enabled: Boolean) = dataStore.edit { it[NOTIFY_GENERAL] = enabled }
 
     // Appearance
-    val themeMode: Flow<String> = preferences.map { it[THEME_MODE] ?: "dark" }
-    val dynamicColors: Flow<Boolean> = preferences.map { it[DYNAMIC_COLORS] ?: false }
+    val themeMode: Flow<ThemeMode> = preferences.map {
+        ThemeMode.fromToken(it[THEME_MODE]) ?: PreferenceDefaults.THEME_MODE
+    }
+    val dynamicColors: Flow<Boolean> = preferences.map {
+        it[DYNAMIC_COLORS] ?: PreferenceDefaults.DYNAMIC_COLORS
+    }
 
-    suspend fun setThemeMode(mode: String) = dataStore.edit { it[THEME_MODE] = mode }
+    suspend fun setThemeMode(mode: ThemeMode) = dataStore.edit { it[THEME_MODE] = mode.token }
     suspend fun setDynamicColors(enabled: Boolean) = dataStore.edit { it[DYNAMIC_COLORS] = enabled }
 
     val wallpaperUri: Flow<String?> = preferences.map { it[WALLPAPER_URI] }
@@ -49,17 +108,22 @@ class VrcxPreferences @Inject constructor(
         if (uri != null) it[WALLPAPER_URI] = uri else it.remove(WALLPAPER_URI)
     }
 
-    val wallpaperScaleMode: Flow<String> = preferences.map { it[WALLPAPER_SCALE_MODE] ?: "crop" }
-    suspend fun setWallpaperScaleMode(mode: String) = dataStore.edit { it[WALLPAPER_SCALE_MODE] = mode }
+    val wallpaperScaleMode: Flow<WallpaperScaleMode> = preferences.map {
+        WallpaperScaleMode.fromToken(it[WALLPAPER_SCALE_MODE]) ?: PreferenceDefaults.WALLPAPER_SCALE_MODE
+    }
+    suspend fun setWallpaperScaleMode(mode: WallpaperScaleMode) =
+        dataStore.edit { it[WALLPAPER_SCALE_MODE] = mode.token }
 
     // General
-    val maxFeedSize: Flow<Int> = preferences.map { it[MAX_FEED_SIZE] ?: 1000 }
-    val autoLogin: Flow<Boolean> = preferences.map { it[AUTO_LOGIN] ?: false }
+    val maxFeedSize: Flow<Int> = preferences.map { it[MAX_FEED_SIZE] ?: PreferenceDefaults.MAX_FEED_SIZE }
+    val autoLogin: Flow<Boolean> = preferences.map { it[AUTO_LOGIN] ?: PreferenceDefaults.AUTO_LOGIN }
 
     suspend fun setMaxFeedSize(size: Int) = dataStore.edit { it[MAX_FEED_SIZE] = size }
     suspend fun setAutoLogin(enabled: Boolean) = dataStore.edit { it[AUTO_LOGIN] = enabled }
 
-    val backgroundServiceEnabled: Flow<Boolean> = preferences.map { it[BACKGROUND_SERVICE_ENABLED] ?: true }
+    val backgroundServiceEnabled: Flow<Boolean> = preferences.map {
+        it[BACKGROUND_SERVICE_ENABLED] ?: PreferenceDefaults.BACKGROUND_SERVICE_ENABLED
+    }
     suspend fun setBackgroundServiceEnabled(enabled: Boolean) = dataStore.edit { it[BACKGROUND_SERVICE_ENABLED] = enabled }
 
     suspend fun clear() = dataStore.edit { prefs ->
@@ -75,6 +139,7 @@ class VrcxPreferences @Inject constructor(
     companion object {
         private val NOTIFY_INVITE = booleanPreferencesKey("notify_invite")
         private val NOTIFY_FRIEND_REQUEST = booleanPreferencesKey("notify_friend_request")
+        private val NOTIFY_GENERAL = booleanPreferencesKey("notify_general")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
         private val MAX_FEED_SIZE = intPreferencesKey("max_feed_size")

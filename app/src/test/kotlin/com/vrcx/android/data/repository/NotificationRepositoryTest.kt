@@ -15,6 +15,7 @@ import com.vrcx.android.data.websocket.PipelineEvent
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -35,11 +36,13 @@ class NotificationRepositoryTest {
     private val notificationApi = mock<NotificationApi>()
     private val authRepository = mock<AuthRepository>()
     private val notificationDao = mock<NotificationDao>()
+    private val accountScope = AccountScope()
     private val repository = NotificationRepository(
         notificationApi = notificationApi,
         authRepository = authRepository,
         notificationDao = notificationDao,
         json = Json { ignoreUnknownKeys = true },
+        accountScope = accountScope,
     )
 
     init {
@@ -101,24 +104,97 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `incremental refresh stops on first page that overlaps restored ids`(): Unit = runBlocking {
+    fun `incremental refresh stops on first page that overlaps ids already held`(): Unit = runBlocking {
         stubCurrentUser("usr_me")
-        whenever(notificationDao.getNotifications("usr_me", 5000)).thenReturn(
-            listOf(NotificationEntity(id = "known", ownerUserId = "usr_me", createdAt = timestamp(1))),
-        )
-        whenever(notificationDao.getNotificationsV2("usr_me", 5000)).thenReturn(emptyList())
-        repository.restoreNotifications()
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenReturn(listOf(v1("known", 1)))
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+        repository.loadNotifications()
+
         val page = (100 downTo 2).map { v1("new_$it", it) } + v1("known", 1)
         whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenReturn(page)
-        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
 
         repository.loadNotifications()
 
-        verify(notificationApi, times(1)).getNotifications(any(), any(), anyOrNull(), any())
+        verify(notificationApi, times(2)).getNotifications(any(), any(), anyOrNull(), any())
         val persisted = argumentCaptor<List<NotificationEntity>>()
         verify(notificationDao).upsertNotifications(eq("usr_me"), persisted.capture(), eq(5000))
         assertEquals(100, persisted.firstValue.size)
         assertEquals(100, repository.unifiedNotifications.value.size)
+    }
+
+    @Test
+    fun `first refresh after a cold-start restore drops entries the server no longer returns`(): Unit = runBlocking {
+        stubCurrentUser("usr_me")
+        whenever(notificationDao.getNotifications("usr_me", 5000)).thenReturn(
+            listOf(
+                NotificationEntity(id = "handled_elsewhere", ownerUserId = "usr_me", createdAt = timestamp(1)),
+                NotificationEntity(id = "still_open", ownerUserId = "usr_me", createdAt = timestamp(2)),
+            ),
+        )
+        whenever(notificationDao.getNotificationsV2("usr_me", 5000)).thenReturn(emptyList())
+        repository.restoreNotifications()
+        assertEquals(
+            listOf("still_open", "handled_elsewhere"),
+            repository.unifiedNotifications.value.map { it.id },
+        )
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any()))
+            .thenReturn(listOf(v1("still_open", 2)))
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+
+        repository.loadNotifications()
+
+        assertEquals(listOf("still_open"), repository.unifiedNotifications.value.map { it.id })
+        verify(notificationDao).synchronizeNotifications(eq("usr_me"), any(), eq(5000))
+        verify(notificationDao, never()).upsertNotifications(any(), any(), any())
+    }
+
+    @Test
+    fun `a notification arriving mid-resync survives the reconcile`(): Unit = runBlocking {
+        stubCurrentUser("usr_me")
+        whenever(notificationDao.getNotifications("usr_me", 5000)).thenReturn(
+            listOf(NotificationEntity(id = "handled_elsewhere", ownerUserId = "usr_me", createdAt = timestamp(1))),
+        )
+        whenever(notificationDao.getNotificationsV2("usr_me", 5000)).thenReturn(emptyList())
+        repository.restoreNotifications()
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenAnswer {
+            repository.handleEvent(notificationEvent("arrived_during_fetch", 5))
+            emptyList<VrcNotification>()
+        }
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+
+        repository.loadNotifications()
+
+        assertEquals(listOf("arrived_during_fetch"), repository.unifiedNotifications.value.map { it.id })
+    }
+
+    @Test
+    fun `clear during a refresh discards the in-flight pages`(): Unit = runBlocking {
+        stubCurrentUser("usr_me")
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenAnswer {
+            repository.handleEvent(PipelineEvent.ClearNotification)
+            listOf(v1("fetched_before_clear", 1))
+        }
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+
+        repository.loadNotifications()
+
+        assertEquals(emptyList<UnifiedNotification>(), repository.unifiedNotifications.value)
+        verify(notificationDao, never()).synchronizeNotifications(any(), any(), any())
+        verify(notificationDao, never()).upsertNotifications(any(), any(), any())
+    }
+
+    @Test
+    fun `clear during an action does not abandon the rest of that action`(): Unit = runBlocking {
+        stubCurrentUser("usr_me")
+        val notification = unified("noty_invite", NotificationSource.V1, type = "invite")
+        whenever(notificationApi.sendInviteResponse(eq("noty_invite"), any())).thenAnswer {
+            repository.handleEvent(PipelineEvent.ClearNotification)
+            buildJsonObject {}
+        }
+
+        repository.sendInviteResponse(notification, responseSlot = 3)
+
+        verify(notificationApi).hideNotification("noty_invite")
     }
 
     @Test
@@ -135,11 +211,11 @@ class NotificationRepositoryTest {
 
     @Test
     fun `account switch prevents late refresh from publishing or persisting old data`(): Unit = runBlocking {
-        var currentUser = CurrentUser(id = "usr_old")
-        whenever(authRepository.currentUser).thenAnswer { currentUser }
+        stubCurrentUser("usr_old")
+        accountScope.bind("usr_old")
         whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenAnswer {
-            currentUser = CurrentUser(id = "usr_new")
-            repository.clearRuntimeState()
+            accountScope.invalidate()
+            accountScope.bind("usr_new")
             listOf(v1("old_account", 1))
         }
         whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
@@ -153,12 +229,12 @@ class NotificationRepositoryTest {
 
     @Test
     fun `account switch prevents late action from removing new account notification`(): Unit = runBlocking {
-        var currentUser = CurrentUser(id = "usr_old")
-        whenever(authRepository.currentUser).thenAnswer { currentUser }
+        stubCurrentUser("usr_old")
+        accountScope.bind("usr_old")
         repository.handleEvent(notificationEvent("shared_id", 1))
         whenever(notificationApi.acceptFriendRequest("shared_id")).thenAnswer {
-            currentUser = CurrentUser(id = "usr_new")
-            repository.clearRuntimeState()
+            accountScope.invalidate()
+            accountScope.bind("usr_new")
             repository.handleEvent(notificationEvent("shared_id", 2))
             buildJsonObject {}
         }
@@ -169,6 +245,19 @@ class NotificationRepositoryTest {
 
         assertEquals(listOf("shared_id"), repository.unifiedNotifications.value.map { it.id })
         verify(notificationDao, timeout(1_000)).deleteNotification("usr_old", "shared_id")
+    }
+
+    @Test
+    fun `pipeline frames with an unexpected content shape are ignored instead of throwing`(): Unit = runBlocking {
+        stubCurrentUser("usr_me")
+        repository.handleEvent(notificationEvent("noty_1", 1))
+
+        repository.handleEvent(PipelineEvent.SeeNotification(buildJsonObject { put("id", "noty_1") }))
+        repository.handleEvent(PipelineEvent.HideNotification(buildJsonObject { put("id", "noty_1") }))
+        repository.handleEvent(PipelineEvent.ResponseNotification(JsonPrimitive("noty_1")))
+        repository.handleEvent(PipelineEvent.NotificationV2Update(JsonPrimitive("noty_1")))
+
+        assertEquals(listOf("noty_1"), repository.unifiedNotifications.value.map { it.id })
     }
 
     @Test
@@ -239,6 +328,7 @@ class NotificationRepositoryTest {
 
     private fun stubCurrentUser(id: String) {
         whenever(authRepository.currentUser).thenReturn(CurrentUser(id = id, displayName = "Me"))
+        accountScope.bind(id)
     }
 
     private fun instanceClosedEvent() = PipelineEvent.InstanceClosed(

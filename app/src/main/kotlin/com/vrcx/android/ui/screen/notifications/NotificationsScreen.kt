@@ -27,7 +27,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -49,6 +48,7 @@ import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxCard
+import com.vrcx.android.ui.components.VrcxTabRow
 import com.vrcx.android.ui.components.VrcxTopBar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -79,7 +79,7 @@ fun NotificationsScreen(
         VrcxTopBar(title = "Notifications")
 
         if (categoryCounts.isNotEmpty()) {
-            TabRow(selectedTabIndex = NotificationCategoryFilter.entries.indexOf(selectedCategory)) {
+            VrcxTabRow(selectedTabIndex = NotificationCategoryFilter.entries.indexOf(selectedCategory)) {
                 categoryCounts.forEach { item ->
                     Tab(
                         selected = item.filter == selectedCategory,
@@ -169,48 +169,57 @@ fun NotificationsScreen(
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
+                                    // V2 notifications are answered through the responses the
+                                    // server supplies; the accept/invite/saved-response
+                                    // endpoints below are V1-only.
+                                    val isV2 = notification.source == NotificationSource.V2
+                                    val showFriendRequestActions =
+                                        notification.kind == NotificationKind.FRIEND_REQUEST && !isV2
                                     FlowRow(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        when {
-                                            notification.source == NotificationSource.V2 -> {
-                                                notification.responses.forEach { response ->
-                                                    val label = response.text.ifBlank {
-                                                        notificationTypeLabel(response.type)
+                                        if (isV2) {
+                                            notification.responses.forEach { response ->
+                                                val label = response.text.ifBlank {
+                                                    notificationTypeLabel(response.type)
+                                                }
+                                                FilledTonalButton(
+                                                    onClick = { viewModel.respond(notification, response.type) },
+                                                ) {
+                                                    Text(label)
+                                                }
+                                            }
+                                        } else {
+                                            when (notification.kind) {
+                                                NotificationKind.FRIEND_REQUEST -> {
+                                                    FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
+                                                        Text("Accept")
                                                     }
-                                                    FilledTonalButton(
-                                                        onClick = { viewModel.respond(notification, response.type) },
-                                                    ) {
-                                                        Text(label)
+                                                    OutlinedButton(onClick = { viewModel.declineFriendRequest(notification) }) {
+                                                        Text("Decline")
                                                     }
                                                 }
-                                            }
-                                            notification.kind == NotificationKind.FRIEND_REQUEST -> {
-                                                FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
-                                                    Text("Accept")
+                                                NotificationKind.INVITE -> {
+                                                    FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
+                                                        Text("Respond")
+                                                    }
                                                 }
-                                                OutlinedButton(onClick = { viewModel.declineFriendRequest(notification) }) {
-                                                    Text("Decline")
+                                                NotificationKind.REQUEST_INVITE -> {
+                                                    FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
+                                                        Text("Invite")
+                                                    }
+                                                    OutlinedButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
+                                                        Text("Respond")
+                                                    }
                                                 }
-                                            }
-                                            notification.kind == NotificationKind.INVITE -> {
-                                                FilledTonalButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
-                                                    Text("Respond")
-                                                }
-                                            }
-                                            notification.kind == NotificationKind.REQUEST_INVITE -> {
-                                                FilledTonalButton(onClick = { viewModel.performPrimaryAction(notification) }) {
-                                                    Text("Invite")
-                                                }
-                                                OutlinedButton(onClick = { viewModel.openInviteResponseDialog(notification) }) {
-                                                    Text("Respond")
-                                                }
+                                                else -> Unit
                                             }
                                         }
-                                        // A friend request already exposes Accept + Decline above; the generic
-                                        // Dismiss would be a confusing third option for the same kind.
-                                        if (notification.kind != NotificationKind.FRIEND_REQUEST) {
+                                        // Only a card that already offers Accept + Decline can
+                                        // skip Dismiss — a V2 card with no server responses
+                                        // would otherwise be unclearable from the inbox.
+                                        if (!showFriendRequestActions) {
                                             OutlinedButton(onClick = { viewModel.hide(notification) }) {
                                                 Text("Dismiss")
                                             }

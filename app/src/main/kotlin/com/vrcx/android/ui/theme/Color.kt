@@ -19,8 +19,6 @@ val StatusOffline = Color(0xFF808080)
 
 // Desktop-inspired accent and neutrals.
 val VrcxAccentBlue = Color(0xFF1447E6)
-val VrcxAccentBlueSoft = Color(0xFFEFF6FF)
-val VrcxAccentBlueDeep = Color(0xFF0A0A0A)
 
 // --- Dark theme colors ---
 val VrcxDarkPrimary = Color(0xFFFAFAFA)
@@ -91,8 +89,3 @@ val VrcxLightOnErrorContainer = Color(0xFF5A1414)
 val VrcxLightInverseSurface = Color(0xFF1B2230)
 val VrcxLightInverseOnSurface = Color(0xFFF5F7FA)
 val VrcxLightInversePrimary = Color(0xFF8AB2FF)
-
-// Semantic colors
-val VrcxSuccess = Color(0xFF4CAF50)
-val VrcxWarning = Color(0xFFFFA726)
-val VrcxInfo = Color(0xFF42A5F5)

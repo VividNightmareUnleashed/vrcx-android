@@ -5,7 +5,6 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteAddRequest
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
-import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
 import kotlinx.serialization.json.JsonElement
 import retrofit2.http.Body

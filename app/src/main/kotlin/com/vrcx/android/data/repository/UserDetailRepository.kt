@@ -17,9 +17,11 @@ import com.vrcx.android.data.db.dao.NoteDao
 import com.vrcx.android.data.db.dao.getMemo
 import com.vrcx.android.data.db.dao.getNote
 import com.vrcx.android.data.db.dao.isEnabled
+import com.vrcx.android.data.db.dao.memosByUserId
 import com.vrcx.android.data.db.dao.save
 import com.vrcx.android.data.db.dao.saveMemo
-import kotlinx.coroutines.CancellationException
+import com.vrcx.android.data.util.captureFailure
+import com.vrcx.android.data.util.runCatchingCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
@@ -77,14 +79,13 @@ class UserDetailRepository @Inject constructor(
     suspend fun loadProfile(userId: String): UserDetailProfile {
         val accountId = currentUserId()
         val user = userRepository.getUser(userId, forceRefresh = true)
-        if (currentUserId() != accountId) throw CancellationException("Account changed")
+        if (currentUserId() != accountId) throw AccountChangedException()
         val ownerId = accountId ?: return UserDetailProfile(user = user)
 
         var note: String? = null
         var memo: String? = null
         var notifyEnabled = false
-        var localDataError: String? = null
-        try {
+        val localDataError = captureFailure {
             memo = memoDao.getMemo(ownerId, userId)?.memo
             val localNote = noteDao.getNote(ownerId, userId)?.note
             note = user.note?.takeIf { it.isNotBlank() } ?: localNote
@@ -98,12 +99,8 @@ class UserDetailRepository @Inject constructor(
                 )
             }
             notifyEnabled = friendNotifyDao.isEnabled(ownerId, userId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            localDataError = e.message
-        }
-        if (currentUserId() != ownerId) throw CancellationException("Account changed")
+        }?.message
+        if (currentUserId() != ownerId) throw AccountChangedException()
 
         return UserDetailProfile(
             user = user,
@@ -150,28 +147,22 @@ class UserDetailRepository @Inject constructor(
         val results = supervisorScope {
             groups.map { group ->
                 async {
-                    try {
-                        Result.success(
-                            FavoriteWorldSection(
-                                tag = group.name,
-                                displayName = group.displayName.ifBlank { group.name },
-                                visibility = group.visibility,
-                                worlds = gate.withPermit {
-                                    BulkPaginator.fetchAll(pageSize = PROFILE_PAGE_SIZE) { offset, count ->
-                                        favoriteApi.getFavoriteWorlds(
-                                            n = count,
-                                            offset = offset,
-                                            tag = group.name,
-                                            ownerId = userId,
-                                        )
-                                    }
-                                },
-                            )
+                    runCatchingCancellable {
+                        FavoriteWorldSection(
+                            tag = group.name,
+                            displayName = group.displayName.ifBlank { group.name },
+                            visibility = group.visibility,
+                            worlds = gate.withPermit {
+                                BulkPaginator.fetchAll(pageSize = PROFILE_PAGE_SIZE) { offset, count ->
+                                    favoriteApi.getFavoriteWorlds(
+                                        n = count,
+                                        offset = offset,
+                                        tag = group.name,
+                                        ownerId = userId,
+                                    )
+                                }
+                            },
                         )
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Result.failure(e)
                     }
                 }
             }.awaitAll()
@@ -215,6 +206,9 @@ class UserDetailRepository @Inject constructor(
         )
         return true
     }
+
+    /** Every memo [ownerId] has saved, keyed by the user each one is about. */
+    suspend fun loadMemos(ownerId: String): Map<String, String> = memoDao.memosByUserId(ownerId)
 
     suspend fun saveMemo(userId: String, text: String): Boolean {
         val ownerId = currentUserId() ?: return false

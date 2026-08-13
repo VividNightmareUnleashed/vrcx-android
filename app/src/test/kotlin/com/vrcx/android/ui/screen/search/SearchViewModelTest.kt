@@ -80,6 +80,37 @@ class SearchViewModelTest {
         advanceUntilIdle()
 
         assertEquals("state=${viewModel.uiState.value}", listOf(0, 50, 100), requestedOffsets)
-        assertEquals(10, viewModel.uiState.value.worlds.size)
+        assertEquals(10, viewModel.uiState.value.currentResult?.items?.size)
+        assertEquals(2, viewModel.uiState.value.pageNumber)
+    }
+
+    @Test
+    fun `each tab keeps its own results and only the selected one renders`() = runTest(testDispatcher) {
+        val repository = mock<SearchRepository>()
+        whenever(
+            repository.searchWorlds(
+                query = any(),
+                n = any(),
+                offset = any(),
+                mode = any(),
+                includeLabs = any(),
+                tag = any(),
+            ),
+        ).thenReturn(listOf(World(id = "wrld_1", name = "Needle")))
+        whenever(repository.searchGroups(any(), any(), any())).thenReturn(emptyList())
+        val viewModel = SearchViewModel(repository)
+
+        viewModel.selectTab(SearchTab.WORLDS)
+        viewModel.updateQuery("needle")
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.currentResult?.items?.size)
+
+        viewModel.selectTab(SearchTab.GROUPS)
+        advanceUntilIdle()
+        assertEquals(0, viewModel.uiState.value.currentResult?.items?.size)
+
+        viewModel.selectTab(SearchTab.WORLDS)
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.currentResult?.items?.size)
     }
 }

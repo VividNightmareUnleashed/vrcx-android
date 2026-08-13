@@ -72,7 +72,9 @@ data class NotificationResponse(
 @Serializable
 @OptIn(ExperimentalSerializationApi::class)
 data class RequestInviteRequest(
-    val platform: String = "standalonewindows",
+    // The recipient uses this to pick an instance the requester can join, so it
+    // has to name the platform the request actually came from.
+    val platform: String = "android",
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val requestSlot: Int? = null,
 )

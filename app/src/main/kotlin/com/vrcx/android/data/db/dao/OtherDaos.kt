@@ -16,12 +16,6 @@ interface NoteDao {
 
     @Query("SELECT * FROM notes WHERE compositeId = :compositeId")
     suspend fun get(compositeId: String): NoteEntity?
-
-    @Query("SELECT * FROM notes WHERE ownerUserId = :userId")
-    fun getAll(userId: String): Flow<List<NoteEntity>>
-
-    @Query("DELETE FROM notes WHERE compositeId = :compositeId")
-    suspend fun delete(compositeId: String)
 }
 
 @Dao

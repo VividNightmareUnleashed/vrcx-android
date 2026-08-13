@@ -32,19 +32,20 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
-import com.vrcx.android.ui.components.EmptyState
-import com.vrcx.android.ui.components.ErrorState
-import com.vrcx.android.ui.components.LoadingState
+import com.vrcx.android.ui.common.UiStateContainer
+import com.vrcx.android.ui.common.platformLabel
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -78,7 +79,11 @@ class AvatarsViewModel @Inject constructor(
             .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
             .filter { visibility == null || it.releaseStatus == visibility }
             .filter { platform == null || it.unityPackages.any { pkg -> pkg.platform == platform } }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        // stateIn collects on viewModelScope, i.e. the main thread; the filters
+        // run over the whole avatar list on every keystroke.
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init { loadAvatars() }
 
@@ -128,17 +133,25 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
         ) {
             FilterChip(selected = selectedVisibility == "public", onClick = { viewModel.toggleVisibility("public") }, label = { Text("Public") })
             FilterChip(selected = selectedVisibility == "private", onClick = { viewModel.toggleVisibility("private") }, label = { Text("Private") })
-            FilterChip(selected = selectedPlatform == "standalonewindows", onClick = { viewModel.togglePlatform("standalonewindows") }, label = { Text("PC") })
-            FilterChip(selected = selectedPlatform == "android", onClick = { viewModel.togglePlatform("android") }, label = { Text("Quest") })
+            PLATFORM_FILTERS.forEach { platform ->
+                FilterChip(
+                    selected = selectedPlatform == platform,
+                    onClick = { viewModel.togglePlatform(platform) },
+                    label = { Text(platformLabel(platform)) },
+                )
+            }
         }
 
-        if (isLoading) {
-            LoadingState()
-        } else if (error != null) {
-            ErrorState(error ?: "Failed to load avatars", onRetry = viewModel::loadAvatars)
-        } else if (avatars.isEmpty()) {
-            EmptyState(message = "No avatars", icon = Icons.Outlined.Face, subtitle = "Your owned avatars will appear here")
-        } else {
+        UiStateContainer(
+            isLoading = isLoading,
+            error = error,
+            isEmpty = avatars.isEmpty(),
+            onRetry = viewModel::loadAvatars,
+            emptyMessage = "No avatars",
+            emptyIcon = Icons.Outlined.Face,
+            emptySubtitle = "Your owned avatars will appear here",
+            modifier = Modifier.fillMaxSize(),
+        ) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 Modifier.fillMaxSize().padding(8.dp),
@@ -162,3 +175,6 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
         }
     }
 }
+
+/** Raw VRChat unity-package platform codes the filter chips offer. */
+private val PLATFORM_FILTERS = listOf("standalonewindows", "android")

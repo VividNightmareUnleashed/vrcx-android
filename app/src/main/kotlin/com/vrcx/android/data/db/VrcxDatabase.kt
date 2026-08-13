@@ -36,7 +36,7 @@ import com.vrcx.android.data.db.entity.NotificationV2Entity
         MemoEntity::class,
         FriendNotifyEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class VrcxDatabase : RoomDatabase() {

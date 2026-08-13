@@ -1,8 +1,6 @@
 package com.vrcx.android.data.api
 
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 
 /**
  * Coroutine-based paginated fetching, equivalent to desktop's processBulk().
@@ -21,58 +19,40 @@ object BulkPaginator {
      * @param stopOnShortPage Stop as soon as a page returns fewer than [pageSize] items
      *   (default true). Set false for endpoints that return partial pages while more
      *   data remains and instead signal completion via an empty page or [stopWhen].
-     * @param stopWhen Optional early-exit predicate given the running item count fetched
-     *   so far (e.g. stop once a server-reported total is reached)
+     * @param stopWhen Optional early-exit predicate given the page just fetched and the
+     *   running item count, for callers whose stop condition depends on either — a page
+     *   overlapping items already held, or a server-reported total being reached. The
+     *   matching page is still included.
      * @param fetcher Suspend function that takes (offset, count) and returns a list of items
-     * @return Flow emitting each page of results
-     */
-    fun <T> paginate(
-        pageSize: Int = 100,
-        maxPages: Int = 100,
-        delayBetweenPagesMs: Long = 150L,
-        stopOnShortPage: Boolean = true,
-        stopWhen: (fetchedSoFar: Int) -> Boolean = { false },
-        fetcher: suspend (offset: Int, count: Int) -> List<T>,
-    ): Flow<List<T>> = flow {
-        var offset = 0
-        var page = 0
-        var fetched = 0
-
-        while (page < maxPages) {
-            val results = fetcher(offset, pageSize)
-            if (results.isNotEmpty()) {
-                emit(results)
-            }
-            fetched += results.size
-            if (results.isEmpty()) {
-                break
-            }
-            if (stopOnShortPage && results.size < pageSize) {
-                break
-            }
-            if (stopWhen(fetched)) {
-                break
-            }
-            offset += results.size
-            page++
-            delay(delayBetweenPagesMs)
-        }
-    }
-
-    /**
-     * Fetch all items and collect them into a single list.
+     * @return Every item fetched, in page order
      */
     suspend fun <T> fetchAll(
         pageSize: Int = 100,
         maxPages: Int = 100,
         delayBetweenPagesMs: Long = 150L,
         stopOnShortPage: Boolean = true,
-        stopWhen: (fetchedSoFar: Int) -> Boolean = { false },
+        stopWhen: (page: List<T>, fetchedSoFar: Int) -> Boolean = { _, _ -> false },
         fetcher: suspend (offset: Int, count: Int) -> List<T>,
     ): List<T> {
         val allItems = mutableListOf<T>()
-        paginate(pageSize, maxPages, delayBetweenPagesMs, stopOnShortPage, stopWhen, fetcher).collect { page ->
-            allItems.addAll(page)
+        var offset = 0
+        var page = 0
+
+        while (page < maxPages) {
+            val results = fetcher(offset, pageSize)
+            allItems.addAll(results)
+            if (results.isEmpty()) {
+                break
+            }
+            if (stopOnShortPage && results.size < pageSize) {
+                break
+            }
+            if (stopWhen(results, allItems.size)) {
+                break
+            }
+            offset += results.size
+            page++
+            delay(delayBetweenPagesMs)
         }
         return allItems
     }

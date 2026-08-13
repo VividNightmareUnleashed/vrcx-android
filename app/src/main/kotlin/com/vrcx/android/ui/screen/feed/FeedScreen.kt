@@ -36,10 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
-import com.vrcx.android.data.repository.activityLabel
+import com.vrcx.android.ui.common.activityLabel
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -52,13 +53,12 @@ fun FeedScreen(
     viewModel: FeedViewModel = hiltViewModel(),
     onUserClick: (String) -> Unit = {},
 ) {
-    val entries by viewModel.feedEntries.collectAsStateWithLifecycle()
+    val page by viewModel.page.collectAsStateWithLifecycle()
     val filters by viewModel.activeFilters.collectAsStateWithLifecycle()
-    val avatarUrls by viewModel.userAvatarUrls.collectAsStateWithLifecycle()
+    val friends by viewModel.friends.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
-    val canLoadMore by viewModel.canLoadMore.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -109,25 +109,30 @@ fun FeedScreen(
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (entries.isEmpty()) {
-                EmptyState(
-                    message = "No feed entries yet",
-                    icon = Icons.Outlined.DynamicFeed,
-                    subtitle = "Activity from your friends will appear here",
-                    actionLabel = if (canLoadMore) "Load older entries" else null,
-                    onAction = if (canLoadMore) viewModel::loadMore else null,
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(entries, key = { "${it.type.id}_${it.id}" }) { entry ->
+            // The empty state lives inside the lazy list too: PullToRefreshBox only
+            // sees the gesture when a scrollable child dispatches it.
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (page.entries.isEmpty()) {
+                    item {
+                        EmptyState(
+                            message = "No feed entries yet",
+                            icon = Icons.Outlined.DynamicFeed,
+                            subtitle = "Activity from your friends will appear here",
+                            modifier = Modifier.fillParentMaxSize(),
+                        )
+                    }
+                } else {
+                    items(page.entries, key = { it.key }) { entry ->
                         FeedItem(
                             entry = entry,
-                            avatarUrl = entry.thumbnailUrl.ifEmpty { avatarUrls[entry.userId] },
+                            avatarUrl = entry.thumbnailUrl.ifEmpty {
+                                friends[entry.userId]?.ref?.displayAvatarUrl()?.takeIf { it.isNotEmpty() }
+                            },
                             onClick = { onUserClick(entry.userId) },
                         )
                     }
                     // Load More button
-                    if (canLoadMore) {
+                    if (page.canLoadMore) {
                         item {
                             OutlinedButton(
                                 onClick = { viewModel.loadMore() },

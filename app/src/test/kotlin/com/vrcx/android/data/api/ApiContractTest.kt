@@ -1,7 +1,7 @@
 package com.vrcx.android.data.api
 
-import com.vrcx.android.data.api.model.InventoryResponse
 import com.vrcx.android.data.api.model.NotificationV2
+import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.UnPlayerModerationRequest
 import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.VrcPrint
@@ -67,6 +67,44 @@ class ApiContractTest {
         assertEquals("/inventory?n=100&offset=0&order=newest", server.takeRequest().path)
         assertEquals("/inventory/template/invt_one", server.takeRequest().path)
         assertEquals("PUT", server.takeRequest().method)
+    }
+
+    @Test
+    fun `each two factor method posts to its own verification endpoint`() = runTest {
+        repeat(3) { server.enqueue(jsonResponse("{\"verified\":true}")) }
+        val api = retrofit().create(AuthApi::class.java)
+
+        api.verifyTotp(TwoFactorAuthRequest("123456"))
+        api.verifyOtp(TwoFactorAuthRequest("1234-5678"))
+        api.verifyEmailOtp(TwoFactorAuthRequest("123456"))
+
+        val totp = server.takeRequest()
+        assertEquals("POST", totp.method)
+        assertEquals("/auth/twofactorauth/totp/verify", totp.path)
+        assertEquals("{\"code\":\"123456\"}", totp.body.readUtf8())
+
+        // Recovery codes carry the hyphen at position 4 and use the OTP endpoint.
+        val otp = server.takeRequest()
+        assertEquals("POST", otp.method)
+        assertEquals("/auth/twofactorauth/otp/verify", otp.path)
+        assertEquals("{\"code\":\"1234-5678\"}", otp.body.readUtf8())
+
+        val emailOtp = server.takeRequest()
+        assertEquals("POST", emailOtp.method)
+        assertEquals("/auth/twofactorauth/emailotp/verify", emailOtp.path)
+        assertEquals("{\"code\":\"123456\"}", emailOtp.body.readUtf8())
+    }
+
+    @Test
+    fun `a request invite reports the platform it was sent from`() = runTest {
+        server.enqueue(jsonResponse("{}"))
+        val api = retrofit().create(NotificationApi::class.java)
+
+        api.sendRequestInvite("usr_target")
+
+        val request = server.takeRequest()
+        assertEquals("/requestInvite/usr_target", request.path)
+        assertEquals("{\"platform\":\"android\"}", request.body.readUtf8())
     }
 
     @Test

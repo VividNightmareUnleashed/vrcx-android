@@ -27,14 +27,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.data.repository.FriendLogEventType
+import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
@@ -52,42 +54,69 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
-private val ALL_TYPES = setOf("Friend", "Unfriend", "DisplayName", "TrustLevel")
+private const val HISTORY_LIMIT = 200
+
+/** One friend-log row, with the persisted type token resolved to its kind. */
+data class FriendLogEntry(
+    val id: Long,
+    val type: FriendLogEventType,
+    val displayName: String,
+    val previousDisplayName: String,
+    val trustLevel: String,
+    val previousTrustLevel: String,
+    val createdAt: String,
+)
 
 @HiltViewModel
 @OptIn(ExperimentalCoroutinesApi::class)
 class FriendLogViewModel @Inject constructor(
     authRepository: AuthRepository,
-    friendLogDao: FriendLogDao,
+    friendRepository: FriendRepository,
 ) : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _selectedTypes = MutableStateFlow(ALL_TYPES)
-    val selectedTypes: StateFlow<Set<String>> = _selectedTypes.asStateFlow()
+    private val _selectedTypes = MutableStateFlow(FriendLogEventType.entries.toSet())
+    val selectedTypes: StateFlow<Set<FriendLogEventType>> = _selectedTypes.asStateFlow()
 
-    private val rawHistory: StateFlow<List<FriendLogHistoryEntity>> = authRepository.authState
+    private val rawHistory = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user?.id ?: "" }
         .flatMapLatest { uid ->
-            if (uid.isEmpty()) flowOf(emptyList())
-            else friendLogDao.getHistory(uid, limit = 200)
+            if (uid.isEmpty()) flowOf(emptyList()) else friendRepository.friendLogHistory(uid, HISTORY_LIMIT)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val history: StateFlow<List<FriendLogHistoryEntity>> = combine(
+    val history: StateFlow<List<FriendLogEntry>> = combine(
         rawHistory,
         _searchQuery,
         _selectedTypes,
     ) { entries, query, types ->
         entries
+            .mapNotNull { it.toFriendLogEntry() }
             .filter { it.type in types }
             .filter { query.isBlank() || it.displayName.contains(query, ignoreCase = true) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun updateSearch(query: String) { _searchQuery.value = query }
-    fun toggleType(type: String) {
+
+    fun toggleType(type: FriendLogEventType) {
         val current = _selectedTypes.value
         _selectedTypes.value = if (type in current) current - type else current + type
+    }
+
+    // A row whose token this build does not know is dropped rather than rendered
+    // without an icon or a label.
+    private fun FriendLogHistoryEntity.toFriendLogEntry(): FriendLogEntry? {
+        val eventType = FriendLogEventType.fromToken(type) ?: return null
+        return FriendLogEntry(
+            id = id,
+            type = eventType,
+            displayName = displayName,
+            previousDisplayName = previousDisplayName,
+            trustLevel = trustLevel,
+            previousTrustLevel = previousTrustLevel,
+            createdAt = createdAt,
+        )
     }
 }
 
@@ -111,11 +140,11 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ALL_TYPES.forEach { type ->
+            FriendLogEventType.entries.forEach { type ->
                 FilterChip(
                     selected = type in selectedTypes,
                     onClick = { viewModel.toggleType(type) },
-                    label = { Text(type) },
+                    label = { Text(type.label) },
                 )
             }
         }
@@ -127,30 +156,28 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
                 items(history, key = { it.id }) { entry ->
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            when (entry.type) {
-                                "Friend" -> Icons.Default.PersonAdd
-                                "Unfriend" -> Icons.Default.PersonRemove
-                                "DisplayName" -> Icons.Outlined.Badge
-                                "TrustLevel" -> Icons.Outlined.Shield
-                                else -> Icons.Outlined.History
-                            },
+                            entry.type.icon(),
                             contentDescription = null,
                             tint = when (entry.type) {
-                                "Friend" -> MaterialTheme.colorScheme.primary
-                                "Unfriend" -> MaterialTheme.colorScheme.error
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                FriendLogEventType.FRIEND -> MaterialTheme.colorScheme.primary
+                                FriendLogEventType.UNFRIEND -> MaterialTheme.colorScheme.error
+                                FriendLogEventType.DISPLAY_NAME,
+                                FriendLogEventType.TRUST_LEVEL,
+                                -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         )
                         Spacer(Modifier.padding(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(entry.displayName, style = MaterialTheme.typography.bodyLarge)
                             val detail = when (entry.type) {
-                                "DisplayName" -> if (entry.previousDisplayName.isNotEmpty()) "${entry.previousDisplayName} → ${entry.displayName}" else ""
-                                "TrustLevel" -> if (entry.previousTrustLevel.isNotEmpty()) "${entry.previousTrustLevel} → ${entry.trustLevel}" else entry.trustLevel
-                                else -> ""
+                                FriendLogEventType.DISPLAY_NAME ->
+                                    if (entry.previousDisplayName.isNotEmpty()) "${entry.previousDisplayName} → ${entry.displayName}" else ""
+                                FriendLogEventType.TRUST_LEVEL ->
+                                    if (entry.previousTrustLevel.isNotEmpty()) "${entry.previousTrustLevel} → ${entry.trustLevel}" else entry.trustLevel
+                                FriendLogEventType.FRIEND, FriendLogEventType.UNFRIEND -> ""
                             }
                             Text(
-                                "${entry.type}${if (detail.isNotEmpty()) " • $detail" else ""}",
+                                "${entry.type.label}${if (detail.isNotEmpty()) " • $detail" else ""}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -165,4 +192,11 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
             }
         }
     }
+}
+
+private fun FriendLogEventType.icon(): ImageVector = when (this) {
+    FriendLogEventType.FRIEND -> Icons.Default.PersonAdd
+    FriendLogEventType.UNFRIEND -> Icons.Default.PersonRemove
+    FriendLogEventType.DISPLAY_NAME -> Icons.Outlined.Badge
+    FriendLogEventType.TRUST_LEVEL -> Icons.Outlined.Shield
 }

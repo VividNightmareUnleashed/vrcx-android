@@ -20,6 +20,17 @@ class LoginScreenTest {
     }
 
     @Test
+    fun `two factor validation accepts the letters a recovery code carries`() {
+        // VRChat recovery codes are 4+4 alphanumeric, so a validator counting
+        // digits alone leaves the documented account-recovery path unusable.
+        assertTrue(isTwoFactorCodeValid("ab12-cd34", useEmail = false))
+        assertTrue(isTwoFactorCodeValid("abcdefgh", useEmail = false))
+        assertFalse(isTwoFactorCodeValid("ab12cd3", useEmail = false))
+        // Email codes are still six digits.
+        assertFalse(isTwoFactorCodeValid("ab12cd", useEmail = true))
+    }
+
+    @Test
     fun `mixed two factor methods keep authenticator as the default`() {
         assertFalse(shouldUseEmailOtpByDefault(listOf("emailOtp", "totp")))
         assertFalse(shouldUseEmailOtpByDefault(listOf("emailOtp", "otp")))

@@ -34,10 +34,7 @@ object FriendListExport {
                 .asSequence()
                 .filterNot { it in seen }
                 .sorted()
-                .forEach { userId ->
-                    seen.add(userId)
-                    add(userId)
-                }
+                .forEach { userId -> add(userId) }
         }
 
         return orderedIds.map { userId ->

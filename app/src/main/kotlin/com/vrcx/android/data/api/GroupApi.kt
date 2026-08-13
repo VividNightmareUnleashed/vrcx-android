@@ -3,7 +3,6 @@ package com.vrcx.android.data.api
 import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.GroupInstance
 import com.vrcx.android.data.api.model.GroupMember
-import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.api.model.GroupPostsResponse
 import com.vrcx.android.data.api.model.GroupSearchResult
 import kotlinx.serialization.json.JsonElement

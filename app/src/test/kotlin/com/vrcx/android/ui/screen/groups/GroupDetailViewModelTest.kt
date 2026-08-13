@@ -68,13 +68,13 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.onTabSelected(1)
-        vm.onTabSelected(1)
-        vm.onTabSelected(2)
-        vm.onTabSelected(2)
+        vm.onTabSelected(GroupTab.INSTANCES)
+        vm.onTabSelected(GroupTab.INSTANCES)
+        vm.onTabSelected(GroupTab.POSTS)
+        vm.onTabSelected(GroupTab.POSTS)
         advanceUntilIdle()
-        vm.onTabSelected(1)
-        vm.onTabSelected(2)
+        vm.onTabSelected(GroupTab.INSTANCES)
+        vm.onTabSelected(GroupTab.POSTS)
         advanceUntilIdle()
 
         verify(repo, times(1)).getGroupInstances("grp_x")
@@ -137,7 +137,7 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.onTabSelected(2)
+        vm.onTabSelected(GroupTab.POSTS)
         advanceUntilIdle()
         assertEquals(listOf("post_1"), ready(vm.state.value.posts).items.map { it.id })
 

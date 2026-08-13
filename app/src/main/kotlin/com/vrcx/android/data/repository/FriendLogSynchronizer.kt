@@ -1,6 +1,8 @@
 package com.vrcx.android.data.repository
 
+import androidx.room.withTransaction
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.data.db.VrcxDatabase
 import com.vrcx.android.data.db.accountScopedKey
 import com.vrcx.android.data.db.dao.FriendLogDao
 import com.vrcx.android.data.db.entity.FriendLogCurrentEntity
@@ -9,10 +11,34 @@ import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.TrustRank
 import java.time.Instant
 import javax.inject.Inject
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * The kinds of friend-log event, keyed by the [token] stored in
+ * [FriendLogHistoryEntity.type]. Tokens are on disk — rename a constant freely,
+ * never a token.
+ */
+enum class FriendLogEventType(val token: String, val label: String) {
+    FRIEND("Friend", "Friend"),
+    UNFRIEND("Unfriend", "Unfriend"),
+    DISPLAY_NAME("DisplayName", "DisplayName"),
+    TRUST_LEVEL("TrustLevel", "TrustLevel");
+
+    companion object {
+        private val byToken = entries.associateBy { it.token }
+
+        /** Null for a row written by a version that knew a kind this one does not. */
+        fun fromToken(token: String?): FriendLogEventType? = byToken[token]
+    }
+}
 
 internal class FriendLogSynchronizer @Inject constructor(
+    private val database: VrcxDatabase,
     private val friendLogDao: FriendLogDao,
 ) {
+    fun history(ownerId: String, limit: Int): Flow<List<FriendLogHistoryEntity>> =
+        friendLogDao.getHistory(ownerId, limit)
+
     private data class Snapshot(
         val compositeId: String,
         val displayName: String,
@@ -20,7 +46,7 @@ internal class FriendLogSynchronizer @Inject constructor(
         val friendNumber: Int,
     )
 
-    suspend fun synchronize(ownerId: String, friends: Map<String, FriendContext>) {
+    suspend fun synchronize(ownerId: String, friends: Map<String, FriendContext>) = database.withTransaction {
         val currentEntries = friendLogDao.getCurrentFriends(ownerId)
         if (currentEntries.isEmpty()) {
             friendLogDao.insertCurrent(
@@ -34,7 +60,7 @@ internal class FriendLogSynchronizer @Inject constructor(
                     )
                 },
             )
-            return
+            return@withTransaction
         }
 
         val currentById = currentEntries.associateBy(FriendLogCurrentEntity::odUserId)
@@ -55,25 +81,34 @@ internal class FriendLogSynchronizer @Inject constructor(
                     trustLevel = trustLevel(tags),
                     friendNumber = nextFriendNumber++,
                 )
-                insertHistory(ownerId, "Friend", snapshot)
+                insertHistory(ownerId, FriendLogEventType.FRIEND, snapshot)
                 friendLogDao.insertCurrent(snapshot.toCurrent(ownerId))
             } else {
                 recordChanges(ownerId, existing, friend.id, displayName, tags)
             }
         }
 
-        currentEntries.filter { it.odUserId !in seenIds }.forEach { missing ->
+        val missing = currentEntries.filter { it.odUserId !in seenIds }
+        // A snapshot that came back short — a truncated sweep, or a friend who
+        // moved between the online and offline lists while both were being
+        // paged — looks exactly like a mass unfriend, and the rows below are
+        // permanent. Real removals also arrive on the pipeline's friend-delete
+        // path, and a later sync over a complete snapshot still catches the
+        // rest, so an implausible removal set is left alone.
+        if (missing.size > maxOf(MAX_TRUSTED_REMOVALS, currentEntries.size / 4)) return@withTransaction
+
+        missing.forEach { entry ->
             insertHistory(
                 ownerId = ownerId,
-                type = "Unfriend",
+                type = FriendLogEventType.UNFRIEND,
                 snapshot = Snapshot(
-                    compositeId = missing.odUserId,
-                    displayName = missing.odDisplayName,
-                    trustLevel = missing.trustLevel,
-                    friendNumber = missing.friendNumber,
+                    compositeId = entry.odUserId,
+                    displayName = entry.odDisplayName,
+                    trustLevel = entry.trustLevel,
+                    friendNumber = entry.friendNumber,
                 ),
             )
-            friendLogDao.deleteCurrent(missing.odUserId)
+            friendLogDao.deleteCurrent(entry.odUserId)
         }
     }
 
@@ -88,26 +123,28 @@ internal class FriendLogSynchronizer @Inject constructor(
         val previousTrustLevel = trustLevel(previous.ref?.tags.orEmpty())
         if (previousDisplayName == displayName && previousTrustLevel == trustLevel(tags)) return
 
-        val compositeId = compositeId(ownerId, userId)
-        val existing = friendLogDao.getCurrent(compositeId)
-        if (existing == null) {
-            friendLogDao.insertCurrent(
-                currentEntry(
-                    ownerId = ownerId,
-                    userId = userId,
-                    displayName = displayName,
-                    tags = tags,
-                    friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
-                ),
-            )
-        } else {
-            recordChanges(ownerId, existing, userId, displayName, tags)
+        database.withTransaction {
+            val compositeId = compositeId(ownerId, userId)
+            val existing = friendLogDao.getCurrent(compositeId)
+            if (existing == null) {
+                friendLogDao.insertCurrent(
+                    currentEntry(
+                        ownerId = ownerId,
+                        userId = userId,
+                        displayName = displayName,
+                        tags = tags,
+                        friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
+                    ),
+                )
+            } else {
+                recordChanges(ownerId, existing, userId, displayName, tags)
+            }
         }
     }
 
-    suspend fun recordAdded(ownerId: String, userId: String, user: VrcUser?) {
+    suspend fun recordAdded(ownerId: String, userId: String, user: VrcUser?) = database.withTransaction {
         val compositeId = compositeId(ownerId, userId)
-        if (friendLogDao.getCurrent(compositeId) != null) return
+        if (friendLogDao.getCurrent(compositeId) != null) return@withTransaction
 
         val snapshot = Snapshot(
             compositeId = compositeId,
@@ -115,16 +152,16 @@ internal class FriendLogSynchronizer @Inject constructor(
             trustLevel = trustLevel(user?.tags.orEmpty()),
             friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
         )
-        insertHistory(ownerId, "Friend", snapshot)
+        insertHistory(ownerId, FriendLogEventType.FRIEND, snapshot)
         friendLogDao.insertCurrent(snapshot.toCurrent(ownerId))
     }
 
-    suspend fun recordRemoved(ownerId: String, userId: String) {
+    suspend fun recordRemoved(ownerId: String, userId: String) = database.withTransaction {
         val compositeId = compositeId(ownerId, userId)
-        val existing = friendLogDao.getCurrent(compositeId) ?: return
+        val existing = friendLogDao.getCurrent(compositeId) ?: return@withTransaction
         insertHistory(
             ownerId = ownerId,
-            type = "Unfriend",
+            type = FriendLogEventType.UNFRIEND,
             snapshot = Snapshot(
                 compositeId = compositeId,
                 displayName = existing.odDisplayName,
@@ -151,7 +188,7 @@ internal class FriendLogSynchronizer @Inject constructor(
         if (existing.odDisplayName != displayName && existing.odDisplayName.isNotBlank()) {
             insertHistory(
                 ownerId = ownerId,
-                type = "DisplayName",
+                type = FriendLogEventType.DISPLAY_NAME,
                 snapshot = snapshot,
                 previousDisplayName = existing.odDisplayName,
             )
@@ -162,7 +199,7 @@ internal class FriendLogSynchronizer @Inject constructor(
         ) {
             insertHistory(
                 ownerId = ownerId,
-                type = "TrustLevel",
+                type = FriendLogEventType.TRUST_LEVEL,
                 snapshot = snapshot,
                 previousTrustLevel = existing.trustLevel,
             )
@@ -174,7 +211,7 @@ internal class FriendLogSynchronizer @Inject constructor(
 
     private suspend fun insertHistory(
         ownerId: String,
-        type: String,
+        type: FriendLogEventType,
         snapshot: Snapshot,
         previousDisplayName: String = "",
         previousTrustLevel: String = "",
@@ -182,7 +219,7 @@ internal class FriendLogSynchronizer @Inject constructor(
         friendLogDao.insertHistory(
             FriendLogHistoryEntity(
                 ownerUserId = ownerId,
-                type = type,
+                type = type.token,
                 odUserId = snapshot.compositeId,
                 displayName = snapshot.displayName,
                 previousDisplayName = previousDisplayName,
@@ -219,4 +256,9 @@ internal class FriendLogSynchronizer @Inject constructor(
     private fun compositeId(ownerId: String, userId: String) = accountScopedKey(ownerId, userId)
 
     private fun trustLevel(tags: List<String>) = TrustRank.fromTags(tags).label
+
+    private companion object {
+        /** Removals below this count are plausible no matter how small the friend list is. */
+        const val MAX_TRUSTED_REMOVALS = 5
+    }
 }

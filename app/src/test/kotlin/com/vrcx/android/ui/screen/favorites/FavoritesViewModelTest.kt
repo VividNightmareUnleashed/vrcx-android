@@ -7,17 +7,19 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.data.repository.AccountScope
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.MainDispatcherRule
+import com.vrcx.android.ui.common.isLoaded
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.kotlin.never
@@ -94,18 +96,65 @@ class FavoritesViewModelTest {
         advanceUntilIdle()
 
         val failed = viewModel.uiState.value.tabs.getValue(FavoritesTab.FRIENDS)
-        assertFalse(failed.isLoaded)
-        assertEquals("Failed to load friends favorites", failed.error)
+        assertEquals(LoadState.Failed("Failed to load friends favorites"), failed)
         assertFalse(viewModel.uiState.value.tabs.getValue(FavoritesTab.WORLDS).isLoaded)
 
         viewModel.retry()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.selectedTabState.isLoaded)
-        assertEquals(null, viewModel.uiState.value.selectedTabState.error)
+        assertEquals(LoadState.Loaded(Unit), viewModel.uiState.value.selectedTabState)
         verify(favoriteApi, times(2)).getFavorites(100, 0, "friend", null)
         verify(favoriteApi, never()).getFavorites(100, 0, "world", null)
         verify(favoriteApi, never()).getFavoriteWorlds(100, 0, null, null, null)
+    }
+
+    @Test
+    fun `a failed world fetch is fatal while a failed detail fetch only warns`() = runTest(testDispatcher) {
+        val favoriteApi = successfulFavoriteApi()
+        whenever(favoriteApi.getFavoriteWorlds(100, 0, null, null, null))
+            .thenThrow(RuntimeException("details unavailable"))
+        val viewModel = buildViewModel(favoriteApi)
+        advanceUntilIdle()
+
+        viewModel.selectTab(FavoritesTab.WORLDS)
+        advanceUntilIdle()
+
+        val warned = viewModel.uiState.value.selectedTabState
+        assertEquals(
+            LoadState.Loaded(Unit, warning = "Some worlds details could not be loaded."),
+            warned,
+        )
+
+        whenever(favoriteApi.getFavorites(100, 0, "world", null))
+            .thenThrow(RuntimeException("worlds unavailable"))
+        whenever(favoriteApi.getFavorites(100, 0, "vrcPlusWorld", null))
+            .thenThrow(RuntimeException("worlds unavailable"))
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        // The tab had loaded once, so the failure rides along with the rows
+        // already on screen rather than blanking them.
+        val failed = viewModel.uiState.value.selectedTabState
+        assertEquals(
+            LoadState.Loaded(Unit, staleError = "Failed to load worlds favorites"),
+            failed,
+        )
+    }
+
+    @Test
+    fun `a failed unfavorite is reported instead of discarded`() = runTest(testDispatcher) {
+        val favoriteApi = successfulFavoriteApi()
+        whenever(favoriteApi.deleteFavorite("fav_1")).thenThrow(RuntimeException("delete rejected"))
+        val viewModel = buildViewModel(favoriteApi)
+        advanceUntilIdle()
+
+        viewModel.unfavorite("fav_1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "delete rejected",
+            (viewModel.uiState.value.selectedTabState as LoadState.Loaded).warning,
+        )
     }
 
     @Test
@@ -127,7 +176,7 @@ class FavoritesViewModelTest {
         val friendRepository = mock<FriendRepository>()
         whenever(friendRepository.friends).thenReturn(friends)
         val viewModel = FavoritesViewModel(
-            favoriteRepository = FavoriteRepository(favoriteApi, mock(), mock()),
+            favoriteRepository = FavoriteRepository(favoriteApi, mock(), mock(), AccountScope()),
             friendRepository = friendRepository,
             userRepository = mock(),
         )
@@ -172,6 +221,7 @@ class FavoritesViewModelTest {
                 favoriteApi = favoriteApi,
                 worldApi = mock<WorldApi>(),
                 avatarApi = mock<AvatarApi>(),
+                accountScope = AccountScope(),
             ),
             friendRepository = friendRepository,
             userRepository = mock<UserRepository>(),

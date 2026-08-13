@@ -26,7 +26,7 @@ class UserActionPerformerTest {
     private val notificationRepository = mock<NotificationRepository>()
     private val userRepository = mock<UserRepository>()
 
-    private val moderationRepository = ModerationRepository(playerModerationApi)
+    private val moderationRepository = ModerationRepository(playerModerationApi, AccountScope())
 
     private val performer = UserActionPerformer(
         userRepository = userRepository,

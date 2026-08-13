@@ -1,6 +1,5 @@
 package com.vrcx.android.data.repository
 
-import android.content.Context
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEvent
 import com.vrcx.android.data.api.AuthEventBus
@@ -9,10 +8,11 @@ import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
+import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.security.SecureSecretsStore
+import com.vrcx.android.data.util.runIgnoringFailure
 import com.vrcx.android.data.websocket.PipelineEvent
-import com.vrcx.android.service.WebSocketForegroundService
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,7 +36,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 sealed class AuthState {
@@ -43,11 +43,17 @@ sealed class AuthState {
     data object LoggingIn : AuthState()
     data class RequiresTwoFactor(
         val methods: List<String>,
-        val isVerifying: Boolean = false,
-        val errorMessage: String? = null,
+        val verification: TwoFactorVerification = TwoFactorVerification.Idle,
     ) : AuthState()
     data class LoggedIn(val user: CurrentUser) : AuthState()
     data class Error(val message: String) : AuthState()
+}
+
+/** Where a two-factor challenge stands. A spinner and a stale error can't both be showing. */
+sealed interface TwoFactorVerification {
+    data object Idle : TwoFactorVerification
+    data object InProgress : TwoFactorVerification
+    data class Failed(val message: String) : TwoFactorVerification
 }
 
 @Singleton
@@ -56,10 +62,10 @@ class AuthRepository @Inject constructor(
     private val authInterceptor: AuthInterceptor,
     private val cookieJar: CookieJarImpl,
     private val preferences: VrcxPreferences,
+    private val secureSecretsStore: SecureSecretsStore,
     private val json: Json,
     private val dedup: RequestDeduplicator,
-    private val favoriteRepository: FavoriteRepository,
-    @ApplicationContext private val context: Context,
+    private val accountScope: AccountScope,
     authEventBus: AuthEventBus? = null,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
@@ -78,15 +84,6 @@ class AuthRepository @Inject constructor(
     // onLoginSuccess() and wipes account-scoped runtime state the other filled.
     private val resumeMutex = Mutex()
 
-    @Inject lateinit var avatarRepositoryProvider: Provider<AvatarRepository>
-    @Inject lateinit var friendRepositoryProvider: Provider<FriendRepository>
-    @Inject lateinit var galleryRepositoryProvider: Provider<GalleryRepository>
-    @Inject lateinit var groupRepositoryProvider: Provider<GroupRepository>
-    @Inject lateinit var moderationRepositoryProvider: Provider<ModerationRepository>
-    @Inject lateinit var notificationRepositoryProvider: Provider<NotificationRepository>
-    @Inject lateinit var userRepositoryProvider: Provider<UserRepository>
-    @Inject lateinit var worldRepositoryProvider: Provider<WorldRepository>
-
     init {
         // Collect unauthorized signals from ErrorInterceptor so a 401 on any
         // request immediately transitions the app back to NotLoggedIn without
@@ -103,8 +100,15 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun login(username: String, password: String) {
+        // A stored auth cookie can outrank the Basic header on auth/user, and the
+        // login screen is reachable with one still in the jar (a resume that only
+        // failed to reach the server keeps it) — so signing in as somebody else
+        // would resume the previous account. Drop it for the attempt, but keep a
+        // copy: an unreachable server must not cost the user a live session.
+        val storedCookies = cookieJar.snapshot()
         try {
             _authState.value = AuthState.LoggingIn
+            cookieJar.clearAll()
             authInterceptor.setBasicAuth(username, password)
 
             val response = authApi.getCurrentUser()
@@ -125,12 +129,20 @@ class AuthRepository @Inject constructor(
             onLoginSuccess(user)
         } catch (e: CancellationException) {
             authInterceptor.clearBasicAuth()
+            cookieJar.restore(storedCookies)
             throw e
         } catch (e: Exception) {
             authInterceptor.clearBasicAuth()
+            if (!isCredentialRejection(e)) {
+                cookieJar.restore(storedCookies)
+            }
             setErrorUnlessLoggedOut(e.message ?: "Login failed")
         }
     }
+
+    /** A 401/403 is the server saying no. Anything else leaves the stored session's fate unknown. */
+    private fun isCredentialRejection(failure: Exception): Boolean =
+        failure is HttpException && (failure.code() == 401 || failure.code() == 403)
 
     suspend fun resendEmailOtp(username: String, password: String) {
         clearAccountRuntimeState()
@@ -140,39 +152,36 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun verifyTotp(code: String) {
-        val phase = _authState.value as? AuthState.RequiresTwoFactor ?: return
-        try {
-            _authState.value = phase.copy(isVerifying = true, errorMessage = null)
-            val digitsOnly = code.filter(Char::isDigit)
-            // Recovery codes (OTP) are 8 digits and need a hyphen at position 4
-            val formattedCode = if (digitsOnly.length == 8) {
-                "${digitsOnly.substring(0, 4)}-${digitsOnly.substring(4)}"
+        // Recovery codes are 8 alphanumeric characters — VRChat renders them as
+        // 4+4 with a separator, and they carry letters. Keeping only digits would
+        // mangle them into a fragment the authenticator endpoint rejects, so the
+        // whole decision is made once here, on the alphanumeric form.
+        val normalized = code.filter(Char::isLetterOrDigit).ifEmpty { code }
+        val isRecoveryCode = normalized.length == RECOVERY_CODE_LENGTH
+        val submittedCode = if (isRecoveryCode) {
+            "${normalized.substring(0, 4)}-${normalized.substring(4)}"
+        } else {
+            normalized
+        }
+        verifyTwoFactor {
+            if (isRecoveryCode) {
+                authApi.verifyOtp(TwoFactorAuthRequest(submittedCode))
             } else {
-                digitsOnly.ifEmpty { code }
+                authApi.verifyTotp(TwoFactorAuthRequest(submittedCode))
             }
-            val result = if (digitsOnly.length == 8) {
-                authApi.verifyOtp(TwoFactorAuthRequest(formattedCode))
-            } else {
-                authApi.verifyTotp(TwoFactorAuthRequest(formattedCode))
-            }
-            if (result.verified) {
-                fetchCurrentUser()
-            } else {
-                setTwoFactorError("Verification failed")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            setTwoFactorError(e.message ?: "Verification failed")
         }
     }
 
-    suspend fun verifyEmailOtp(code: String) {
+    // Email codes go to the dedicated email OTP endpoint exactly as typed.
+    suspend fun verifyEmailOtp(code: String) = verifyTwoFactor {
+        authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
+    }
+
+    private suspend fun verifyTwoFactor(submit: suspend () -> TwoFactorAuthResponse) {
         val phase = _authState.value as? AuthState.RequiresTwoFactor ?: return
         try {
-            _authState.value = phase.copy(isVerifying = true, errorMessage = null)
-            val result = authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
-            if (result.verified) {
+            _authState.value = phase.copy(verification = TwoFactorVerification.InProgress)
+            if (submit().verified) {
                 fetchCurrentUser()
             } else {
                 setTwoFactorError("Verification failed")
@@ -195,14 +204,8 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun fetchAuthToken() {
-        try {
-            val token = authApi.getAuthToken()
-            _authToken = token.token
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Token fetch failed, WebSocket won't connect
-        }
+        // A failed fetch leaves the token null, so the websocket won't connect.
+        runIgnoringFailure { _authToken = authApi.getAuthToken().token }
     }
 
     suspend fun ensureSessionReady(): Boolean {
@@ -276,16 +279,26 @@ class AuthRepository @Inject constructor(
             // Local state still gets cleared below.
         }
         withContext(NonCancellable) {
-            clearAccountRuntimeState()
-            clearAuthSession()
-            // Stop the websocket service so every logout path — explicit sign-out
-            // from Profile/Settings, interceptor-driven 401, etc. — tears down the
-            // background socket + persistent notification. Callers no longer need
-            // to remember to do this themselves.
-            WebSocketForegroundService.stop(context)
-            _authState.value = AuthState.NotLoggedIn
+            endSession()
+            forgetStoredSecrets()
         }
         cancellation?.let { throw it }
+    }
+
+    /**
+     * Signing out is a promise that the account is off the device. The cookies are
+     * revoked above, but a remembered password is reusable: leaving it behind means
+     * the next person to open the app sees the username and can reveal the password
+     * with one tap, and auto-login signs straight back in. Only the explicit
+     * sign-out path does this — an involuntary session end has to leave remember-me
+     * intact so a background 401 doesn't cost the user their stored credentials.
+     */
+    private suspend fun forgetStoredSecrets() {
+        // Teardown must finish even if the encrypted write can't.
+        runCatching {
+            secureSecretsStore.clearAll()
+            preferences.clearLegacySavedCredentials()
+        }
     }
 
     fun handleEvent(event: PipelineEvent) {
@@ -305,7 +318,9 @@ class AuthRepository @Inject constructor(
             }
             is PipelineEvent.UserLocation -> {
                 val content = event.content?.jsonObject ?: return
-                val userId = content["userId"]?.jsonPrimitive?.content ?: return
+                // Some pipeline payloads spell the key "userid", so accept both
+                // rather than silently ignoring our own location updates.
+                val userId = (content["userId"] ?: content["userid"])?.jsonPrimitive?.content ?: return
                 val current = _currentUser ?: return
                 if (userId != current.id) return
                 val location = content["location"]?.jsonPrimitive?.content
@@ -323,8 +338,25 @@ class AuthRepository @Inject constructor(
     private suspend fun onLoginSuccess(user: CurrentUser) {
         authInterceptor.clearBasicAuth()
         clearAccountRuntimeState()
+        // The token belongs to the session being replaced. Left in place, a failed
+        // fetch below would let ensureSessionReady() wave the service through and
+        // connect the pipeline with the previous session's token.
+        _authToken = null
         _currentUser = user
-        _authState.value = AuthState.LoggedIn(user)
+        // The unauthorized collector runs on its own coroutine and may already have
+        // ended the session; publishing LoggedIn over it would leave the app shell
+        // running with cleared cookies and no websocket. Same compare-and-set as
+        // setErrorUnlessLoggedOut, in the other direction.
+        val published = _authState.updateAndGet { current ->
+            if (current is AuthState.NotLoggedIn) current else AuthState.LoggedIn(user)
+        }
+        if (published !is AuthState.LoggedIn) {
+            _currentUser = null
+            return
+        }
+        // Point the account scope at the new session only once it is published,
+        // so a login that lost the race above leaves nothing bound.
+        accountScope.bind(user.id)
         fetchAuthToken()
     }
 
@@ -357,10 +389,16 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    /**
+     * Ends the session and publishes it. The websocket service watches
+     * [authState] and takes its socket and ongoing notification down on
+     * [AuthState.NotLoggedIn], so every session end — explicit sign-out,
+     * interceptor-driven 401 — tears the background connection down without the
+     * data layer knowing the service exists.
+     */
     private suspend fun endSession() {
         clearAccountRuntimeState()
         clearAuthSession()
-        WebSocketForegroundService.stop(context)
         _authState.value = AuthState.NotLoggedIn
     }
 
@@ -405,8 +443,13 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    /**
+     * Drops the credential material for the session that is ending. Repository
+     * state belongs to [clearAccountRuntimeState], which runs first so a late
+     * in-flight refresh can't repopulate a repository after its cookies are gone.
+     * Nothing here may throw: the caller's state transition follows it.
+     */
     private fun clearAuthSession() {
-        clearInjectedRuntimeState()
         _currentUser = null
         _authToken = null
         authInterceptor.clearBasicAuth()
@@ -414,20 +457,14 @@ class AuthRepository @Inject constructor(
         dedup.clearCache()
     }
 
-    private suspend fun clearAccountRuntimeState() {
-        favoriteRepository.clearRuntimeState()
-        clearInjectedRuntimeState()
-    }
-
-    private fun clearInjectedRuntimeState() {
-        if (::avatarRepositoryProvider.isInitialized) avatarRepositoryProvider.get().clearRuntimeState()
-        if (::friendRepositoryProvider.isInitialized) friendRepositoryProvider.get().clearRuntimeState()
-        if (::galleryRepositoryProvider.isInitialized) galleryRepositoryProvider.get().clearRuntimeState()
-        if (::groupRepositoryProvider.isInitialized) groupRepositoryProvider.get().clearRuntimeState()
-        if (::moderationRepositoryProvider.isInitialized) moderationRepositoryProvider.get().clearRuntimeState()
-        if (::notificationRepositoryProvider.isInitialized) notificationRepositoryProvider.get().clearRuntimeState()
-        if (::userRepositoryProvider.isInitialized) userRepositoryProvider.get().clearCache()
-        if (::worldRepositoryProvider.isInitialized) worldRepositoryProvider.get().clearRuntimeState()
+    /**
+     * The single owner of per-account repository resets. Every [AccountScoped]
+     * repository is reached because registering with the scope is how a
+     * repository obtains its guard in the first place — there is no separate
+     * list here to forget to add to.
+     */
+    private fun clearAccountRuntimeState() {
+        accountScope.invalidate()
     }
 
     /**
@@ -452,7 +489,7 @@ class AuthRepository @Inject constructor(
     private fun setTwoFactorError(message: String) {
         _authState.update { current ->
             if (current is AuthState.RequiresTwoFactor) {
-                current.copy(isVerifying = false, errorMessage = message)
+                current.copy(verification = TwoFactorVerification.Failed(message))
             } else {
                 current
             }
@@ -460,6 +497,9 @@ class AuthRepository @Inject constructor(
     }
 
     private companion object {
+        /** VRChat renders recovery codes as 4+4 alphanumeric characters. */
+        const val RECOVERY_CODE_LENGTH = 8
+
         /**
          * Backoff between session-resume attempts. The first attempt is
          * immediate; the later ones cover a radio that is still associating

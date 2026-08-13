@@ -7,20 +7,21 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import okhttp3.ResponseBody.Companion.toResponseBody
-import retrofit2.HttpException
-import retrofit2.Response
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Deduplicates identical GET requests within a time window and caches
- * 404/403 failures to avoid retrying known-missing resources.
+ * Merges identical in-flight GET requests so concurrent callers share one
+ * network round trip, and holds the failure cache that [DedupInterceptor]
+ * reads and writes.
  *
  * Mirrors desktop VRCX behavior from reference/src/services/request.js:
  * - Pending GET requests are merged (same URL returns same response)
- * - 404/403 responses are cached for 15 minutes
+ * - Missing resources are remembered for 15 minutes
+ *
+ * The failure cache is keyed by request URL and is written only from the HTTP
+ * layer, so a resource has exactly one entry however it was fetched.
  */
 @Singleton
 class RequestDeduplicator @Inject constructor() {
@@ -42,7 +43,7 @@ class RequestDeduplicator @Inject constructor() {
     private var generation = 0L
 
     /**
-     * Check if a URL has a cached failure (404/403) within the cache window.
+     * Check if a URL has a cached failure within the cache window.
      * Returns the cached status code, or null if no cached failure.
      */
     fun getCachedFailure(url: String): Int? = synchronized(stateLock) {
@@ -56,9 +57,15 @@ class RequestDeduplicator @Inject constructor() {
 
     fun currentGeneration(): Long = synchronized(stateLock) { generation }
 
+    /**
+     * Records a failure for [url] unless the session moved on while the request
+     * was in flight, in which case the previous account's result must not reach
+     * the new session's cache. Which status codes qualify is [DedupInterceptor]'s
+     * policy, not this class's.
+     */
     fun cacheFailureIfCurrent(url: String, statusCode: Int, expectedGeneration: Long): Boolean =
         synchronized(stateLock) {
-            if (expectedGeneration != generation || (statusCode != 404 && statusCode != 403)) {
+            if (expectedGeneration != generation) {
                 return@synchronized false
             }
             failureCache[url] = FailureEntry(statusCode, System.currentTimeMillis())
@@ -66,9 +73,9 @@ class RequestDeduplicator @Inject constructor() {
         }
 
     /**
-     * Deduplicate a GET request: checks failure cache, serializes concurrent
-     * requests to the same key via a shared in-flight result, and caches
-     * 404/403 failures.
+     * Serializes concurrent requests for the same key via a shared in-flight
+     * result. Failure caching happens at the HTTP layer, so a request that gets
+     * this far always reaches the network.
      */
     @Suppress("UNCHECKED_CAST")
     suspend fun <T> dedupGet(key: String, block: suspend () -> T): T {
@@ -77,27 +84,14 @@ class RequestDeduplicator @Inject constructor() {
 
         synchronized(stateLock) {
             val requestGeneration = generation
-            getCachedFailure(key)?.let { code ->
-                throw HttpException(
-                    Response.error<Any>(code, "".toResponseBody(null))
-                )
-            }
-
             val candidate = PendingRequest(
                 generation = requestGeneration,
                 deferred = requestScope.async(start = CoroutineStart.LAZY) {
-                    try {
-                        val result = block()
-                        if (currentGeneration() != requestGeneration) {
-                            throw CancellationException("Request session changed")
-                        }
-                        result
-                    } catch (t: Throwable) {
-                        if (t is HttpException) {
-                            cacheFailureIfCurrent(key, t.code(), requestGeneration)
-                        }
-                        throw t
+                    val result = block()
+                    if (currentGeneration() != requestGeneration) {
+                        throw CancellationException("Request session changed")
                     }
+                    result
                 },
             )
             val existing = pendingRequests.putIfAbsent(key, candidate)

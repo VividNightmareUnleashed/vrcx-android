@@ -20,7 +20,8 @@ class ModerationRepositoryTest {
     fun `removal sends target user and moderation type`() = runBlocking {
         val api = mock<PlayerModerationApi>()
         whenever(api.unmoderatePlayer(any())).thenReturn(JsonObject(emptyMap()))
-        val repository = ModerationRepository(api)
+        val accountScope = AccountScope()
+        val repository = ModerationRepository(api, accountScope)
         val moderation = PlayerModeration(
             id = "pmod_1",
             targetUserId = "usr_target",
@@ -44,7 +45,8 @@ class ModerationRepositoryTest {
             type = "block",
         )
         whenever(api.sendPlayerModeration(any())).thenReturn(created)
-        val repository = ModerationRepository(api)
+        val accountScope = AccountScope()
+        val repository = ModerationRepository(api, accountScope)
 
         repository.moderate("usr_target", "block")
 
@@ -65,7 +67,8 @@ class ModerationRepositoryTest {
             type = "block",
         )
         whenever(api.sendPlayerModeration(any())).thenReturn(created)
-        val repository = ModerationRepository(api)
+        val accountScope = AccountScope()
+        val repository = ModerationRepository(api, accountScope)
 
         repository.moderate("usr_target", "block")
         repository.moderate("usr_target", "block")
@@ -76,9 +79,10 @@ class ModerationRepositoryTest {
     @Test
     fun `moderate ignores the result when runtime state is cleared mid-request`() = runBlocking {
         val api = mock<PlayerModerationApi>()
-        val repository = ModerationRepository(api)
+        val accountScope = AccountScope()
+        val repository = ModerationRepository(api, accountScope)
         whenever(api.sendPlayerModeration(any())).thenAnswer {
-            repository.clearRuntimeState()
+            accountScope.invalidate()
             PlayerModeration(id = "pmod_1", targetUserId = "usr_target", type = "block")
         }
 

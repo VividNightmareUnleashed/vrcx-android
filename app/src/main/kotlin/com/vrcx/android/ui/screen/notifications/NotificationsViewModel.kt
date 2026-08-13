@@ -153,7 +153,10 @@ class NotificationsViewModel @Inject constructor(
         loadInviteResponseDialog(state.copy(isLoading = true))
     }
 
-    fun dismissInviteResponseDialog() {
+    fun dismissInviteResponseDialog() = closeInviteResponseDialog()
+
+    /** The one way the dialog closes, so an in-flight template load is always stale afterwards. */
+    private fun closeInviteResponseDialog() {
         inviteDialogGeneration++
         inviteDialogJob?.cancel()
         inviteDialogJob = null
@@ -168,7 +171,7 @@ class NotificationsViewModel @Inject constructor(
                     notification = state.notification,
                     responseSlot = template.slot,
                 )
-                _inviteResponseDialog.value = null
+                closeInviteResponseDialog()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -202,7 +205,7 @@ class NotificationsViewModel @Inject constructor(
         inviteDialogJob = viewModelScope.launch {
             try {
                 val templates = inviteMessageRepository.getMessages(state.messageType)
-                if (generation != inviteDialogGeneration || _inviteResponseDialog.value?.notification?.id != state.notification.id) return@launch
+                if (generation != inviteDialogGeneration) return@launch
                 _inviteResponseDialog.value = state.copy(
                     templates = templates,
                     isLoading = false,
@@ -210,7 +213,7 @@ class NotificationsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (error: Exception) {
-                if (generation != inviteDialogGeneration || _inviteResponseDialog.value?.notification?.id != state.notification.id) return@launch
+                if (generation != inviteDialogGeneration) return@launch
                 _inviteResponseDialog.value = state.copy(
                     templates = emptyList(),
                     isLoading = false,

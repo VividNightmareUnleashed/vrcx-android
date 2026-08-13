@@ -1,7 +1,9 @@
-package com.vrcx.android.data.repository
+package com.vrcx.android.ui.common
 
 import com.vrcx.android.data.model.formatInstanceHint
 import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedEntryType
 
 /**
  * Display formatting for [FeedEntry], shared by the Feed, Dashboard, and

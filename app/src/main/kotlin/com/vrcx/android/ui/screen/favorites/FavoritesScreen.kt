@@ -19,7 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -36,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.api.model.FavoriteGroup
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
@@ -43,8 +43,8 @@ import com.vrcx.android.ui.common.prettyVisibility
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.components.VrcxTabRow
 import com.vrcx.android.ui.components.WorldListItem
-import com.vrcx.android.ui.theme.LocalWallpaperActive
 import coil3.compose.AsyncImage
 
 private data class FavoriteSection(
@@ -72,12 +72,7 @@ fun FavoritesScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Favorites", onBack = onBack)
-        val isWallpaperActive = LocalWallpaperActive.current
-        TabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
-        ) {
+        VrcxTabRow(selectedTabIndex = selectedTab.ordinal) {
             FavoritesTab.entries.forEach { tab ->
                 Tab(
                     selected = selectedTab == tab,
@@ -88,7 +83,9 @@ fun FavoritesScreen(
         }
         val types = selectedTab.favoriteTypes
         val typeKey = selectedTab.name.lowercase()
-        val filtered = resolvedFavorites.filter { it.favorite.type in types }
+        val filtered = remember(resolvedFavorites, types) {
+            resolvedFavorites.filter { it.favorite.type in types }
+        }
         val sections = remember(filtered, favoriteGroups, types) {
             buildFavoriteSections(
                 favorites = filtered,
@@ -96,8 +93,7 @@ fun FavoritesScreen(
             )
         }
 
-        val inlineError = selectedTabState.warning
-            ?: selectedTabState.error.takeIf { selectedTabState.isLoaded }
+        val inlineError = (selectedTabState as? LoadState.Loaded)?.let { it.warning ?: it.staleError }
         inlineError?.let { message ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -114,24 +110,29 @@ fun FavoritesScreen(
         }
 
         UiStateContainer(
-            isLoading = selectedTabState.isLoading,
-            error = selectedTabState.error.takeUnless { selectedTabState.isLoaded },
+            isLoading = selectedTabState is LoadState.Loading,
+            error = (selectedTabState as? LoadState.Failed)?.message,
             isEmpty = false,
             onRetry = viewModel::retry,
             modifier = Modifier.fillMaxSize(),
         ) {
             PullToRefreshBox(
-                isRefreshing = selectedTabState.isRefreshing,
+                isRefreshing = (selectedTabState as? LoadState.Loaded)?.isRefreshing == true,
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (filtered.isEmpty()) {
-                    EmptyState(
-                        message = "No ${selectedTab.label.lowercase()} favorites",
-                        icon = Icons.Outlined.FavoriteBorder,
-                    )
-                } else {
-                    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The empty state sits inside the lazy list so the pull gesture
+                // still reaches PullToRefreshBox when there is nothing to show.
+                LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (filtered.isEmpty()) {
+                        item(key = "empty-$typeKey") {
+                            EmptyState(
+                                message = "No ${selectedTab.label.lowercase()} favorites",
+                                icon = Icons.Outlined.FavoriteBorder,
+                                modifier = Modifier.fillParentMaxSize(),
+                            )
+                        }
+                    } else {
                     item(key = "summary-$typeKey") {
                         Text(
                             text = "${filtered.size} favorites${if (sections.size > 1) " across ${sections.size} groups" else ""}",
@@ -153,9 +154,7 @@ fun FavoritesScreen(
                                     status = res.friendStatus,
                                     onClick = { onUserClick(res.favorite.favoriteId) },
                                     trailing = {
-                                        IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
-                                            Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
-                                        }
+                                        UnfavoriteButton { pendingUnfavorite = res.favorite.id }
                                     },
                                 )
                                 "world", "vrcPlusWorld" -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -166,9 +165,7 @@ fun FavoritesScreen(
                                         onClick = { onWorldClick(res.favorite.favoriteId) },
                                         modifier = Modifier.weight(1f),
                                     )
-                                    IconButton(onClick = { pendingUnfavorite = res.favorite.id }) {
-                                        Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
-                                    }
+                                    UnfavoriteButton { pendingUnfavorite = res.favorite.id }
                                 }
                                 else -> AvatarFavoriteItem(
                                     favorite = res,
@@ -178,7 +175,7 @@ fun FavoritesScreen(
                             }
                         }
                     }
-                }
+                    }
                 }
             }
         }
@@ -244,9 +241,14 @@ private fun AvatarFavoriteItem(
                 }
             }
         }
-        IconButton(onClick = onUnfavorite) {
-            Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
-        }
+        UnfavoriteButton(onUnfavorite)
+    }
+}
+
+@Composable
+private fun UnfavoriteButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(Icons.Outlined.Delete, "Unfavorite", tint = MaterialTheme.colorScheme.error)
     }
 }
 
@@ -257,45 +259,37 @@ private fun buildFavoriteSections(
     if (favorites.isEmpty()) return emptyList()
 
     val groupMap = groups.associateBy { it.name }
-    val orderedTags = buildList {
-        groups.forEach { add(it.name) }
-        favorites.flatMap { it.groupTags }.distinct().forEach { tag ->
-            if (tag !in this) add(tag)
+    val itemsByTag = LinkedHashMap<String, MutableList<ResolvedFavorite>>()
+    favorites.forEach { favorite ->
+        favorite.groupTags.forEach { tag ->
+            itemsByTag.getOrPut(tag) { mutableListOf() } += favorite
         }
     }
 
-    val sections = orderedTags.mapNotNull { tag ->
-        val sectionItems = favorites.filter { tag in it.groupTags }
-        if (sectionItems.isEmpty()) {
-            null
-        } else {
-            FavoriteSection(
-                key = tag,
-                title = groupMap[tag]?.displayName?.ifBlank { tag.prettyFavoriteGroupName() } ?: tag.prettyFavoriteGroupName(),
-                visibility = groupMap[tag]?.visibility,
-                items = sectionItems,
-            )
-        }
-    }.toMutableList()
+    // Group order first, then any tag the server sent that has no group.
+    val orderedTags = LinkedHashSet<String>().apply {
+        groups.forEach { add(it.name) }
+        addAll(itemsByTag.keys)
+    }
 
-    val ungroupedItems = favorites.filter { it.groupTags.isEmpty() }
-    if (ungroupedItems.isNotEmpty()) {
-        sections.add(
-            FavoriteSection(
-                key = "__ungrouped",
-                title = "Ungrouped",
-                items = ungroupedItems,
-            )
+    val tagSections = orderedTags.mapNotNull { tag ->
+        val sectionItems = itemsByTag[tag] ?: return@mapNotNull null
+        FavoriteSection(
+            key = tag,
+            title = groupMap[tag]?.displayName?.ifBlank { tag.prettyFavoriteGroupName() } ?: tag.prettyFavoriteGroupName(),
+            visibility = groupMap[tag]?.visibility,
+            items = sectionItems,
         )
     }
 
-    return sections.ifEmpty {
-        listOf(
-            FavoriteSection(
-                key = "all",
-                title = "Favorites",
-                items = favorites,
-            )
+    val ungroupedItems = favorites.filter { it.groupTags.isEmpty() }
+    return if (ungroupedItems.isEmpty()) {
+        tagSections
+    } else {
+        tagSections + FavoriteSection(
+            key = "__ungrouped",
+            title = "Ungrouped",
+            items = ungroupedItems,
         )
     }
 }

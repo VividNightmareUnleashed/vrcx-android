@@ -9,14 +9,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -39,7 +36,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
@@ -69,12 +65,13 @@ import com.vrcx.android.data.api.model.InventoryItem
 import com.vrcx.android.data.api.model.InventoryTemplate
 import com.vrcx.android.data.api.model.VrcPrint
 import com.vrcx.android.data.api.model.imageUrl
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
-import com.vrcx.android.ui.theme.LocalWallpaperActive
+import com.vrcx.android.ui.components.VrcxScrollableTabRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,12 +112,11 @@ fun GalleryScreen(
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
-            viewModel.clearSnackbar()
             snackbarHostState.showSnackbar(it)
+            viewModel.clearSnackbar()
         }
     }
 
-    val isWallpaperActive = LocalWallpaperActive.current
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             VrcxDetailTopBar(
@@ -158,40 +154,38 @@ fun GalleryScreen(
                 },
             )
 
-            val tabCounts = listOf(
-                galleryImages.size,
-                iconImages.size,
-                emojiImages.size,
-                stickerImages.size,
-                prints.size,
-                inventoryItems.size,
+            val tabCounts = mapOf(
+                GalleryTab.GALLERY to galleryImages.size,
+                GalleryTab.ICONS to iconImages.size,
+                GalleryTab.EMOJIS to emojiImages.size,
+                GalleryTab.STICKERS to stickerImages.size,
+                GalleryTab.PRINTS to prints.size,
+                GalleryTab.INVENTORY to inventoryItems.size,
             )
 
-            ScrollableTabRow(
+            VrcxScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 edgePadding = 16.dp,
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
             ) {
-                GalleryTab.entries.forEachIndexed { index, tab ->
+                GalleryTab.entries.forEach { tab ->
                     Tab(
                         selected = selectedTab == tab,
                         onClick = { viewModel.selectTab(tab) },
                         text = {
-                            val count = tabCounts[index]
+                            val count = tabCounts[tab] ?: 0
                             Text(if (count > 0) "${tab.label} ($count)" else tab.label)
                         },
                     )
                 }
             }
 
-            if (selectedTabState.isLoaded && selectedTabState.error != null) {
+            (selectedTabState as? LoadState.Loaded)?.staleError?.let { staleError ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = selectedTabState.error,
+                        text = staleError,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.weight(1f),
@@ -201,14 +195,14 @@ fun GalleryScreen(
             }
 
             UiStateContainer(
-                isLoading = selectedTabState.isLoading,
-                error = selectedTabState.error.takeUnless { selectedTabState.isLoaded },
+                isLoading = selectedTabState is LoadState.Loading,
+                error = (selectedTabState as? LoadState.Failed)?.message,
                 isEmpty = false,
                 onRetry = viewModel::retry,
                 modifier = Modifier.fillMaxSize(),
             ) {
                     PullToRefreshBox(
-                        isRefreshing = selectedTabState.isRefreshing,
+                        isRefreshing = (selectedTabState as? LoadState.Loaded)?.isRefreshing == true,
                         onRefresh = viewModel::refresh,
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -256,7 +250,7 @@ fun GalleryScreen(
                 }
         }
         SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
-        if (selectedTab != GalleryTab.INVENTORY && !selectedTabState.isLoading) {
+        if (selectedTab != GalleryTab.INVENTORY && selectedTabState !is LoadState.Loading) {
             FloatingActionButton(
                 onClick = { if (!isUploading) imagePicker.launch("image/*") },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),

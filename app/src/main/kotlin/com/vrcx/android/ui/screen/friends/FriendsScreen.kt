@@ -22,8 +22,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,13 +36,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxSearchBar
+import com.vrcx.android.ui.components.VrcxTabRow
 import com.vrcx.android.ui.components.VrcxTopBar
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,36 +53,23 @@ fun FriendsScreen(
 ) {
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val friends by viewModel.filteredFriends.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
-    val counts by viewModel.counts.collectAsStateWithLifecycle()
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
     val vipOnly by viewModel.vipOnly.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Friends")
 
-        val isWallpaperActive = LocalWallpaperActive.current
-        TabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
-        ) {
-            Tab(
-                selected = selectedTab == FriendsTab.ONLINE,
-                onClick = { viewModel.selectTab(FriendsTab.ONLINE) },
-                text = { Text("Online (${counts.online})") },
-            )
-            Tab(
-                selected = selectedTab == FriendsTab.ACTIVE,
-                onClick = { viewModel.selectTab(FriendsTab.ACTIVE) },
-                text = { Text("Active (${counts.active})") },
-            )
-            Tab(
-                selected = selectedTab == FriendsTab.OFFLINE,
-                onClick = { viewModel.selectTab(FriendsTab.OFFLINE) },
-                text = { Text("Offline (${counts.offline})") },
-            )
+        VrcxTabRow(selectedTabIndex = FriendState.entries.indexOf(selectedTab)) {
+            FriendState.entries.forEach { tab ->
+                Tab(
+                    selected = selectedTab == tab,
+                    onClick = { viewModel.selectTab(tab) },
+                    text = { Text("${tab.label} (${state.counts[tab] ?: 0})") },
+                )
+            }
         }
 
         VrcxSearchBar(
@@ -124,20 +112,41 @@ fun FriendsScreen(
             }
         }
 
+        error?.let { message ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { viewModel.consumeError(); viewModel.refresh() }) { Text("Retry") }
+            }
+        }
+
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (friends.isEmpty()) {
-                EmptyState(
-                    message = "No ${selectedTab.name.lowercase()} friends",
-                    icon = Icons.Outlined.Group,
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(friends, key = { it.id }) { friend ->
+            // The empty state sits inside the lazy list so the pull gesture still
+            // reaches PullToRefreshBox when there is nothing to show.
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (state.friends.isEmpty()) {
+                    item {
+                        EmptyState(
+                            message = "No ${selectedTab.label.lowercase()} friends",
+                            icon = Icons.Outlined.Group,
+                            modifier = Modifier.fillParentMaxSize(),
+                        )
+                    }
+                } else {
+                    items(state.friends, key = { it.id }) { friend ->
                         var showMenu by remember { mutableStateOf(false) }
+                        val notifyEnabled = friend.id in state.notifyEnabledIds
                         Box {
                             UserListItem(
                                 avatarUrl = friend.ref?.displayAvatarUrl(),
@@ -148,7 +157,7 @@ fun FriendsScreen(
                                 state = friend.state,
                                 onClick = { onFriendClick(friend.id) },
                                 onLongClick = { showMenu = true },
-                                trailing = if (friend.notifyEnabled) {{
+                                trailing = if (notifyEnabled) {{
                                     Icon(
                                         Icons.Outlined.NotificationsActive,
                                         contentDescription = "Notifications enabled",
@@ -160,7 +169,7 @@ fun FriendsScreen(
                             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                 DropdownMenuItem(
                                     text = {
-                                        Text(if (friend.notifyEnabled) "Disable Notifications" else "Enable Notifications")
+                                        Text(if (notifyEnabled) "Disable Notifications" else "Enable Notifications")
                                     },
                                     onClick = {
                                         viewModel.toggleFriendNotify(friend.id)
@@ -168,7 +177,7 @@ fun FriendsScreen(
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            if (friend.notifyEnabled) Icons.Outlined.NotificationsOff
+                                            if (notifyEnabled) Icons.Outlined.NotificationsOff
                                             else Icons.Outlined.NotificationsActive,
                                             contentDescription = null,
                                         )

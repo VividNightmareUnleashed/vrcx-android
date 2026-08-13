@@ -18,9 +18,10 @@ import org.mockito.kotlin.whenever
 
 class UserRepositoryTest {
     @Test
-    fun `clearCache prevents a late user result from entering the new account cache`() = runBlocking {
+    fun `an account change prevents a late user result from entering the new cache`() = runBlocking {
         val userApi = mock<UserApi>()
-        val repository = UserRepository(userApi, RequestDeduplicator())
+        val accountScope = AccountScope()
+        val repository = UserRepository(userApi, RequestDeduplicator(), accountScope)
         val calls = AtomicInteger()
         val oldRequestStarted = CompletableDeferred<Unit>()
         val releaseOldRequest = CompletableDeferred<Unit>()
@@ -38,7 +39,7 @@ class UserRepositoryTest {
             repository.getUser("usr_shared")
         }
         oldRequestStarted.await()
-        repository.clearCache()
+        accountScope.invalidate()
         releaseOldRequest.complete(Unit)
         assertEquals("Old account value", oldLoad.await().displayName)
 

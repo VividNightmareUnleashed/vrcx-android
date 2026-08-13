@@ -43,12 +43,10 @@ suspend fun NoteDao.save(
     note: String,
     createdAt: String,
 ) {
-    val key = accountScopedKey(ownerId, userId)
     insert(
         NoteEntity(
-            compositeId = key,
+            compositeId = accountScopedKey(ownerId, userId),
             ownerUserId = ownerId,
-            odUserId = key,
             displayName = displayName,
             note = note,
             createdAt = createdAt,

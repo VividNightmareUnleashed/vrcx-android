@@ -9,6 +9,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -82,7 +83,7 @@ private val LightColorScheme = lightColorScheme(
     inversePrimary = VrcxLightInversePrimary,
 )
 
-private val DarkVrcxColors = VrcxColors(
+internal val DarkVrcxColors = VrcxColors(
     shellGradientStart = Color(0xFF0A0A0A),
     shellGradientEnd = Color(0xFF0A0A0A),
     panelBackground = Color(0xFF0A0A0A),
@@ -121,7 +122,12 @@ fun VrcxTheme(
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            // ColorScheme has no equals, and MaterialTheme puts it into a static
+            // composition local — a fresh instance per recomposition would
+            // invalidate everything below the theme.
+            remember(context, darkTheme) {
+                if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            }
         }
         darkTheme -> DarkColorScheme
         else -> LightColorScheme

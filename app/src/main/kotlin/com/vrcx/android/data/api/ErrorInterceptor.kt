@@ -21,6 +21,12 @@ import retrofit2.Invocation
  */
 class ErrorInterceptor(
     private val authEventBus: AuthEventBus,
+    /**
+     * How the retry waits. Overridable so the backoff can be asserted by the
+     * delay actually asked for rather than by elapsed wall-clock, which makes
+     * the assertion exact and stops the suite sleeping through it.
+     */
+    private val waitBeforeRetry: (Long) -> Unit = { millis -> Thread.sleep(millis) },
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -37,8 +43,10 @@ class ErrorInterceptor(
             } else {
                 DEFAULT_RETRY_DELAY_MS
             }
-            Thread.sleep(delayMs)
+            // Release the body and its pooled connection before waiting, so the
+            // delay doesn't also hold a connection out of the per-host pool.
             response.close()
+            waitBeforeRetry(delayMs)
             response = chain.proceed(chain.request())
         }
 

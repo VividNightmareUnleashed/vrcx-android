@@ -15,8 +15,8 @@ android {
         applicationId = "com.vrcx.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.6.0"
+        versionCode = 13
+        versionName = "1.6.1"
 
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
@@ -62,6 +62,13 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 
+    sourceSets {
+        // MigrationTestHelper reads the exported schemas as assets and Robolectric
+        // serves the variant's merged assets, so they ride along in debug only —
+        // which is why DatabaseMigrationTest lives in src/testDebug.
+        getByName("debug").assets.srcDir("$projectDir/schemas")
+    }
+
     applicationVariants.all {
         val variant = this
         outputs.all {
@@ -80,6 +87,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
 
     // AndroidX
     implementation(libs.core.ktx)
@@ -120,10 +128,13 @@ dependencies {
     implementation(libs.work.runtime.ktx)
 
     // Testing
+    testImplementation(composeBom)
+    testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.junit4)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.kotlin)
     testImplementation(libs.robolectric)
+    testImplementation(libs.room.testing)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.work.testing)
     testImplementation(libs.okhttp.mockwebserver)

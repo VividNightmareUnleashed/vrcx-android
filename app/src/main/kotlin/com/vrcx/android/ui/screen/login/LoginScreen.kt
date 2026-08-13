@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.data.repository.TwoFactorVerification
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.theme.vrcxColors
@@ -93,8 +95,8 @@ fun LoginScreen(
                     TwoFactorCard(
                         methods = phase.methods,
                         code = twoFactorCode,
-                        isLoading = phase.isVerifying,
-                        errorMessage = phase.errorMessage,
+                        isLoading = phase.verification is TwoFactorVerification.InProgress,
+                        errorMessage = (phase.verification as? TwoFactorVerification.Failed)?.message,
                         onCodeChange = viewModel::updateTwoFactorCode,
                         onSubmit = viewModel::submitTwoFactor,
                         onResendEmail = viewModel::resendEmailCode,
@@ -239,12 +241,15 @@ private fun TwoFactorCard(
 ) {
     val hasEmail = methods.contains("emailOtp")
     val hasTotp = methods.contains("totp") || methods.contains("otp")
-    var useEmail by remember(methods) { mutableStateOf(shouldUseEmailOtpByDefault(methods)) }
+    // Saveable: this choice picks which endpoint the code is submitted to, so a
+    // rotation mid-challenge must not silently send an authenticator user back
+    // to email.
+    var useEmail by rememberSaveable(methods) { mutableStateOf(shouldUseEmailOtpByDefault(methods)) }
     val label = if (useEmail) "6-digit email code" else "Authenticator or recovery code"
     val helperText = if (useEmail) {
         "Enter the code sent to your email"
     } else {
-        "Enter your 6-digit authenticator code or 8-digit recovery code"
+        "Enter your 6-digit authenticator code or 8-character recovery code"
     }
     val isValidCode = isTwoFactorCodeValid(code, useEmail)
 
@@ -267,7 +272,9 @@ private fun TwoFactorCard(
                 onValueChange = { onCodeChange(normalizeTwoFactorCode(it)) },
                 placeholder = label,
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
+                    // Recovery codes carry letters, so only the email branch can
+                    // ask for the numeric keyboard.
+                    keyboardType = if (useEmail) KeyboardType.Number else KeyboardType.Text,
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(
@@ -323,7 +330,7 @@ private fun TwoFactorCard(
 private fun normalizeTwoFactorCode(input: String): String {
     return buildString {
         input.forEach { char ->
-            if (char.isDigit() || char == '-') {
+            if (char.isLetterOrDigit() || char == '-') {
                 append(char)
             }
         }
@@ -331,11 +338,12 @@ private fun normalizeTwoFactorCode(input: String): String {
 }
 
 internal fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
-    val digitsOnly = code.filter(Char::isDigit)
+    val characters = code.filter(Char::isLetterOrDigit)
     return if (useEmail) {
-        digitsOnly.length == 6
+        // Email codes are always 6 digits; recovery codes are the ones with letters.
+        characters.length == 6 && characters.all(Char::isDigit)
     } else {
-        digitsOnly.length == 6 || digitsOnly.length == 8
+        characters.length == 6 || characters.length == 8
     }
 }
 

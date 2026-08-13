@@ -41,7 +41,6 @@ data class UserDetailUiState(
     val userAvatars: List<Avatar> = emptyList(),
     val favoriteWorldSections: List<FavoriteWorldSection> = emptyList(),
     val selectedFavoriteWorldTag: String? = null,
-    val isFavorited: Boolean = false,
     val favoriteEntryId: String? = null,
     val memo: String? = null,
     val note: String? = null,
@@ -49,7 +48,10 @@ data class UserDetailUiState(
     val loadingTabs: Set<UserDetailTab> = emptySet(),
     val loadedTabs: Set<UserDetailTab> = emptySet(),
     val isSelf: Boolean = false,
-)
+) {
+    /** A user is favorited exactly when the favorites list holds an entry for them. */
+    val isFavorited: Boolean get() = favoriteEntryId != null
+}
 
 @HiltViewModel
 class UserDetailViewModel @Inject constructor(
@@ -199,21 +201,11 @@ class UserDetailViewModel @Inject constructor(
     }
 
     fun toggleFavorite() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            try {
-                if (state.isFavorited && state.favoriteEntryId != null) {
-                    userDetailRepository.deleteFavorite(state.favoriteEntryId)
-                    showMessage("Removed from favorites")
-                } else {
-                    userDetailRepository.addFriendFavorite(userId)
-                    showMessage("Added to favorites")
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                showMessage("Failed: ${e.message}")
-            }
+        val entryId = _uiState.value.favoriteEntryId
+        if (entryId != null) {
+            runAction("Removed from favorites") { userDetailRepository.deleteFavorite(entryId) }
+        } else {
+            runAction("Added to favorites") { userDetailRepository.addFriendFavorite(userId) }
         }
     }
 
@@ -223,12 +215,7 @@ class UserDetailViewModel @Inject constructor(
                 val favorite = favorites.firstOrNull {
                     it.type == "friend" && it.favoriteId == userId
                 }
-                _uiState.update {
-                    it.copy(
-                        favoriteEntryId = favorite?.id,
-                        isFavorited = favorite != null,
-                    )
-                }
+                _uiState.update { it.copy(favoriteEntryId = favorite?.id) }
             }
         }
     }
@@ -345,13 +332,37 @@ class UserDetailViewModel @Inject constructor(
             try {
                 perform()
                 showMessage(successMessage)
-                if (refreshProfile) loadUser()
+                if (refreshProfile) {
+                    invalidateTabs()
+                    loadUser()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 showMessage("Failed: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Drops every cached tab and refetches whichever one is on screen. Friending
+     * and unfriending change what VRChat will return for mutuals, groups, worlds
+     * and favorite worlds, so keeping the previous rows would keep showing data
+     * the account is no longer entitled to.
+     */
+    private fun invalidateTabs() {
+        val selected = _uiState.value.selectedTab
+        _uiState.update {
+            it.copy(
+                mutualFriends = emptyList(),
+                userGroups = emptyList(),
+                userWorlds = emptyList(),
+                userAvatars = emptyList(),
+                favoriteWorldSections = emptyList(),
+                loadedTabs = emptySet(),
+            )
+        }
+        selectTab(selected)
     }
 
     fun clearMessage() {

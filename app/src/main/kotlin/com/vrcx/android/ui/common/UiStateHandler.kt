@@ -11,10 +11,9 @@ import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 
 /**
- * Bridges the legacy three-flag (isLoading, error, isEmpty) ViewModel pattern
- * to the unified Loading/Error/Empty/Success rendering. Use this when the
- * ViewModel hasn't been migrated to expose StateFlow<UiState<T>> directly —
- * screens still get consistent placeholder behavior without a VM restructure.
+ * Dispatches a ViewModel's (isLoading, error, isEmpty) flags to the shared
+ * Loading/Error/Empty placeholders, so screens get consistent placeholder
+ * behavior without hand-rolling the ladder.
  *
  * The dispatch order is fixed: Loading wins over Error, Error wins over Empty,
  * Empty wins over Success. That matches the historical behavior of the

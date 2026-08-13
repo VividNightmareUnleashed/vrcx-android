@@ -18,7 +18,7 @@ data class FriendLogCurrentEntity(
 
 @Entity(
     tableName = "friend_log_history",
-    indices = [Index(value = ["ownerUserId"]), Index(value = ["createdAt"])],
+    indices = [Index(value = ["ownerUserId"])],
 )
 data class FriendLogHistoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
