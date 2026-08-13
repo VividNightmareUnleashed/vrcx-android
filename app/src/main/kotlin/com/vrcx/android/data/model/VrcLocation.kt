@@ -31,6 +31,23 @@ fun resolvePresenceLocation(friend: VrcUser?): String = when (friend?.location) 
     else -> friend?.location.orEmpty()
 }
 
+/**
+ * The presence a [location] implies: the `offline` sentinel and a missing
+ * location both mean offline, `private` means present but not joinable, and
+ * anything else is a world the user is in. This is the app-wide rule — a screen
+ * rendering a presence dot and the pipeline handlers must agree, or the same
+ * payload reads differently in two lists.
+ *
+ * The `offline = false` friends sweep deliberately maps a blank location to
+ * [FriendState.ACTIVE] instead, because that endpoint has already said the user
+ * is online; that extra knowledge does not belong here.
+ */
+fun friendStateOf(location: String?): FriendState = when {
+    location.isNullOrBlank() || location == "offline" -> FriendState.OFFLINE
+    location == "private" -> FriendState.ACTIVE
+    else -> FriendState.ONLINE
+}
+
 /** True when [location] points at a real, joinable instance. */
 fun isTrackableLocation(location: String): Boolean =
     location.isNotBlank() &&

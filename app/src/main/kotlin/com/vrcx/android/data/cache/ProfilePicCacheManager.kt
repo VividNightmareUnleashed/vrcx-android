@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -27,27 +28,35 @@ class ProfilePicCacheManager @Inject constructor(
     private val okHttpClient: OkHttpClient,
 ) {
     private val cacheDir = File(context.filesDir, "profile_pic_cache")
+    private val writesSinceTrim = AtomicInteger(0)
 
     init {
         // Don't scan/trim the cache dir here: this singleton is constructed on
         // the main thread at the first Coil request. trimCache() runs on IO
-        // after each cacheImage instead, keeping the directory bounded.
+        // from the write path instead, keeping the directory bounded.
         cacheDir.mkdirs()
     }
 
-    private fun urlToFilename(url: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+    internal fun urlToFilename(url: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
+        val hex = CharArray(digest.size * 2)
+        digest.forEachIndexed { index, byte ->
+            val value = byte.toInt() and 0xff
+            hex[index * 2] = HEX_DIGITS[value ushr 4]
+            hex[index * 2 + 1] = HEX_DIGITS[value and 0x0f]
+        }
+        return String(hex)
     }
 
     fun getCachedFile(url: String): File? {
         val file = File(cacheDir, urlToFilename(url))
-        return if (file.exists() && file.length() > 0) {
-            file.setLastModified(System.currentTimeMillis())
-            file
-        } else {
-            null
-        }
+        if (!file.exists() || file.length() <= 0) return null
+        // Only refresh the LRU stamp occasionally: this is the read path, and a
+        // metadata write per image request costs far more than the eviction
+        // ordering it buys.
+        val now = System.currentTimeMillis()
+        if (now - file.lastModified() > LRU_TOUCH_INTERVAL_MS) file.setLastModified(now)
+        return file
     }
 
     suspend fun cacheImage(url: String) = withContext(Dispatchers.IO) {
@@ -59,8 +68,9 @@ class ProfilePicCacheManager @Inject constructor(
         val file = File(cacheDir, filename)
         if (file.exists() && file.length() > 0) return
 
-        val tempFile = File(cacheDir, "$filename.tmp")
-        tempFile.delete()
+        // A temp path derived from the URL would be shared by two callers racing on
+        // the same avatar, and the loser's partial file would win the rename.
+        val tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX, cacheDir)
         try {
             val request = Request.Builder().url(url).build()
             val response = okHttpClient.newCall(request).execute()
@@ -73,19 +83,12 @@ class ProfilePicCacheManager @Inject constructor(
                     }
                 }
             }
-            if (tempFile.length() > 0) {
-                if (tempFile.renameTo(file)) {
-                    file.setLastModified(System.currentTimeMillis())
-                    if (trimAfterWrite) trimCache()
-                } else {
-                    tempFile.delete()
-                }
-            } else {
-                tempFile.delete()
+            if (tempFile.length() > 0 && tempFile.renameTo(file)) {
+                file.setLastModified(System.currentTimeMillis())
+                if (trimAfterWrite) maybeTrim()
             }
-        } catch (e: Exception) {
+        } finally {
             tempFile.delete()
-            throw e
         }
     }
 
@@ -94,7 +97,10 @@ class ProfilePicCacheManager @Inject constructor(
     }
 
     fun getCacheSizeBytes(): Long {
-        return cacheDir.listFiles()?.filterNot { it.name.endsWith(".tmp") }?.sumOf { it.length() } ?: 0L
+        return cacheDir.listFiles()
+            ?.filterNot { it.name.endsWith(TEMP_FILE_SUFFIX) }
+            ?.sumOf { it.length() }
+            ?: 0L
     }
 
     suspend fun cacheAllFriends(
@@ -133,22 +139,48 @@ class ProfilePicCacheManager @Inject constructor(
         }
     }
 
+    /**
+     * Trim every [TRIM_INTERVAL] single-image writes rather than after each one.
+     * A full trim lists and stats the whole directory, and one avatar cannot
+     * meaningfully move a 64 MiB budget, so the bounds still hold within a small
+     * overage. The bulk sweep trims once in its own `finally` instead.
+     */
+    private fun maybeTrim() {
+        if (writesSinceTrim.incrementAndGet() < TRIM_INTERVAL) return
+        trimCache()
+    }
+
     private fun trimCache(nowMillis: Long = System.currentTimeMillis()) {
-        val files = cacheDir.listFiles()
-            ?.filter { it.isFile && !it.name.endsWith(".tmp") }
-            ?.sortedBy { it.lastModified() }
+        writesSinceTrim.set(0)
+        val (temps, cached) = cacheDir.listFiles()
+            ?.filter { it.isFile }
+            ?.partition { it.name.endsWith(TEMP_FILE_SUFFIX) }
             ?: return
-        var totalBytes = files.sumOf { it.length() }
-        files.forEach { file ->
-            if (nowMillis - file.lastModified() > MAX_CACHE_AGE_MS || totalBytes > MAX_CACHE_BYTES) {
-                val bytes = file.length()
-                if (file.delete()) totalBytes -= bytes
+        // Death between createTempFile and the rename orphans a temp file, and
+        // nothing on the write path can clean it up afterwards.
+        temps.forEach { if (nowMillis - it.lastModified() > MAX_TEMP_AGE_MS) it.delete() }
+
+        val entries = cached
+            .map { CachedFile(it, it.lastModified(), it.length()) }
+            .sortedBy { it.lastModified }
+        var totalBytes = entries.sumOf { it.length }
+        entries.forEach { entry ->
+            if (nowMillis - entry.lastModified > MAX_CACHE_AGE_MS || totalBytes > MAX_CACHE_BYTES) {
+                if (entry.file.delete()) totalBytes -= entry.length
             }
         }
     }
 
+    private data class CachedFile(val file: File, val lastModified: Long, val length: Long)
+
     private companion object {
         const val MAX_CACHE_BYTES = 64L * 1024L * 1024L
         const val MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L
+        const val MAX_TEMP_AGE_MS = 60L * 60L * 1000L
+        const val LRU_TOUCH_INTERVAL_MS = 60L * 60L * 1000L
+        const val TRIM_INTERVAL = 20
+        const val TEMP_FILE_PREFIX = "pic"
+        const val TEMP_FILE_SUFFIX = ".tmp"
+        val HEX_DIGITS = "0123456789abcdef".toCharArray()
     }
 }

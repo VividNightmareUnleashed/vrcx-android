@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,23 +15,23 @@ import javax.inject.Singleton
 class AvatarRepository @Inject constructor(
     private val avatarApi: AvatarApi,
     private val dedup: RequestDeduplicator,
-) {
+    accountScope: AccountScope,
+) : AccountScoped {
     private data class CachedAvatar(val value: Avatar, val cachedAtMillis: Long)
 
+    private val account = accountScope.bindTo(this)
     private val avatarCache = ConcurrentHashMap<String, CachedAvatar>()
-    private val accountGeneration = AtomicLong(0)
 
     private val _myAvatars = MutableStateFlow<List<Avatar>>(emptyList())
     val myAvatars: StateFlow<List<Avatar>> = _myAvatars.asStateFlow()
 
     suspend fun loadMyAvatars() {
-        val generation = accountGeneration.get()
+        val token = account.current()
         val avatars = getUserAvatars("me")
-        if (generation == accountGeneration.get()) _myAvatars.value = avatars
+        account.publishIfCurrent(token) { _myAvatars.value = avatars }
     }
 
-    fun clearRuntimeState() {
-        accountGeneration.incrementAndGet()
+    override fun clearRuntimeState() {
         avatarCache.clear()
         _myAvatars.value = emptyList()
     }
@@ -62,9 +61,9 @@ class AvatarRepository @Inject constructor(
             avatarCache[avatarId]?.takeIf { now - it.cachedAtMillis < AVATAR_CACHE_TTL_MS }
                 ?.let { return it.value }
         }
-        val generation = accountGeneration.get()
+        val token = account.current()
         val avatar = dedup.dedupGet("avatar:$avatarId") { avatarApi.getAvatar(avatarId) }
-        if (generation == accountGeneration.get()) {
+        account.publishIfCurrent(token) {
             avatarCache[avatarId] = CachedAvatar(avatar, System.currentTimeMillis())
         }
         return avatar

@@ -56,17 +56,18 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
+import com.vrcx.android.data.repository.UserRepository
 import com.vrcx.android.ui.components.TrustRankBadge
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxTopBar
+import com.vrcx.android.ui.navigation.VrcxRoutes
 import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -82,7 +83,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val userApi: UserApi,
+    private val userRepository: UserRepository,
 ) : ViewModel() {
     val currentUser: StateFlow<CurrentUser?> = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user
@@ -98,7 +99,7 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val uid = currentUser.value?.id ?: return@launch
-                userApi.saveCurrentUser(uid, payload)
+                userRepository.saveCurrentUser(uid, payload)
                 authRepository.fetchCurrentUser()
                 _message.value = successMessage
             } catch (e: CancellationException) {
@@ -158,9 +159,7 @@ fun ProfileScreen(
     val user by viewModel.currentUser.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    var showStatusDialog by remember { mutableStateOf(false) }
-    var showBioDialog by remember { mutableStateOf(false) }
-    var showPronounsDialog by remember { mutableStateOf(false) }
+    var editingField by remember { mutableStateOf<ProfileField?>(null) }
 
     LaunchedEffect(message) {
         message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
@@ -184,19 +183,19 @@ fun ProfileScreen(
                             ProfileEditableRow(
                                 label = "Status",
                                 value = if (u.statusDescription.isBlank()) u.status else "${u.status}: ${u.statusDescription}",
-                                onEdit = { showStatusDialog = true },
+                                onEdit = { editingField = ProfileField.STATUS },
                             )
                             Spacer(Modifier.height(12.dp))
                             ProfileEditableRow(
                                 label = "Pronouns",
                                 value = u.pronouns.ifBlank { "Not set" },
-                                onEdit = { showPronounsDialog = true },
+                                onEdit = { editingField = ProfileField.PRONOUNS },
                             )
                             Spacer(Modifier.height(12.dp))
                             ProfileEditableRow(
                                 label = "Bio",
                                 value = u.bio.ifBlank { "No bio yet" },
-                                onEdit = { showBioDialog = true },
+                                onEdit = { editingField = ProfileField.BIO },
                             )
                         }
                     }
@@ -223,19 +222,19 @@ fun ProfileScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                NavItem(Icons.Default.Home, "Dashboard") { onNavigate("dashboard") }
-                NavItem(Icons.Default.History, "Activity History") { onNavigate("game_log") }
-                NavItem(Icons.AutoMirrored.Filled.ViewList, "Friends Roster") { onNavigate("player_list") }
-                NavItem(Icons.Default.Build, "Tools") { onNavigate("tools") }
-                NavItem(Icons.Default.Favorite, "Favorites") { onNavigate("favorites") }
-                NavItem(Icons.Default.Group, "Groups") { onNavigate("groups") }
-                NavItem(Icons.Default.Person, "My Avatars") { onNavigate("my_avatars") }
-                NavItem(Icons.Default.LocationOn, "Friends Locations") { onNavigate("friends_locations") }
-                NavItem(Icons.Default.Image, "Gallery") { onNavigate("gallery") }
-                NavItem(Icons.Default.History, "Friend Log") { onNavigate("friend_log") }
-                NavItem(Icons.Default.Block, "Moderation") { onNavigate("moderation") }
-                NavItem(Icons.Default.BarChart, "Charts") { onNavigate("charts") }
-                NavItem(Icons.Default.Settings, "Settings") { onNavigate("settings") }
+                NavItem(Icons.Default.Home, "Dashboard") { onNavigate(VrcxRoutes.DASHBOARD) }
+                NavItem(Icons.Default.History, "Activity History") { onNavigate(VrcxRoutes.GAME_LOG) }
+                NavItem(Icons.AutoMirrored.Filled.ViewList, "Friends Roster") { onNavigate(VrcxRoutes.PLAYER_LIST) }
+                NavItem(Icons.Default.Build, "Tools") { onNavigate(VrcxRoutes.TOOLS) }
+                NavItem(Icons.Default.Favorite, "Favorites") { onNavigate(VrcxRoutes.FAVORITES) }
+                NavItem(Icons.Default.Group, "Groups") { onNavigate(VrcxRoutes.GROUPS) }
+                NavItem(Icons.Default.Person, "My Avatars") { onNavigate(VrcxRoutes.MY_AVATARS) }
+                NavItem(Icons.Default.LocationOn, "Friends Locations") { onNavigate(VrcxRoutes.FRIENDS_LOCATIONS) }
+                NavItem(Icons.Default.Image, "Gallery") { onNavigate(VrcxRoutes.GALLERY) }
+                NavItem(Icons.Default.History, "Friend Log") { onNavigate(VrcxRoutes.FRIEND_LOG) }
+                NavItem(Icons.Default.Block, "Moderation") { onNavigate(VrcxRoutes.MODERATION) }
+                NavItem(Icons.Default.BarChart, "Charts") { onNavigate(VrcxRoutes.CHARTS) }
+                NavItem(Icons.Default.Settings, "Settings") { onNavigate(VrcxRoutes.SETTINGS) }
 
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton(onClick = { viewModel.logout() }, modifier = Modifier.fillMaxWidth()) {
@@ -251,75 +250,85 @@ fun ProfileScreen(
         )
     }
 
-    // Status edit dialog
-    if (showStatusDialog) {
-        var status by remember { mutableStateOf(user?.status ?: "active") }
-        var description by remember { mutableStateOf(user?.statusDescription ?: "") }
-        AlertDialog(
-            onDismissRequest = { showStatusDialog = false },
-            title = { Text("Edit Status") },
-            text = {
-                Column {
+    editingField?.let { field ->
+        ProfileEditDialog(
+            field = field,
+            user = user,
+            onSave = { status, text ->
+                when (field) {
+                    ProfileField.STATUS -> viewModel.saveStatus(status, text)
+                    ProfileField.BIO -> viewModel.saveBio(text)
+                    ProfileField.PRONOUNS -> viewModel.savePronouns(text)
+                }
+                editingField = null
+            },
+            onDismiss = { editingField = null },
+        )
+    }
+}
+
+/** The editable fields of the signed-in user's own profile. */
+private enum class ProfileField(val title: String, val placeholder: String) {
+    STATUS("Edit Status", "Set a short status message"),
+    BIO("Edit Bio", "Tell people a bit about yourself"),
+    PRONOUNS("Edit Pronouns", "Add your pronouns"),
+}
+
+private val STATUS_OPTIONS = listOf("join me", "active", "ask me", "busy")
+
+/**
+ * One dialog for every editable profile field. The text seeds from the current
+ * user each time the dialog opens and re-seeds if the user object refreshes
+ * underneath it. Only the status field adds the preset chip row; [onSave]
+ * receives the chosen status alongside the typed text.
+ */
+@Composable
+private fun ProfileEditDialog(
+    field: ProfileField,
+    user: CurrentUser?,
+    onSave: (status: String, text: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var status by remember(user) { mutableStateOf(user?.status ?: "active") }
+    var text by remember(user) {
+        mutableStateOf(
+            when (field) {
+                ProfileField.STATUS -> user?.statusDescription ?: ""
+                ProfileField.BIO -> user?.bio ?: ""
+                ProfileField.PRONOUNS -> user?.pronouns ?: ""
+            }
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(field.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (field == ProfileField.STATUS) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("join me", "active", "ask me", "busy").forEach { s ->
-                            TextButton(onClick = { status = s }) {
-                                Text(s, color = if (status == s) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        STATUS_OPTIONS.forEach { option ->
+                            TextButton(onClick = { status = option }) {
+                                Text(
+                                    option,
+                                    color = if (status == option) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Description", style = MaterialTheme.typography.labelLarge)
-                        VrcxInputField(
-                            value = description,
-                            onValueChange = { description = it },
-                            placeholder = "Set a short status message",
-                        )
-                    }
+                    Text("Description", style = MaterialTheme.typography.labelLarge)
                 }
-            },
-            confirmButton = { TextButton(onClick = { viewModel.saveStatus(status, description); showStatusDialog = false }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { showStatusDialog = false }) { Text("Cancel") } },
-        )
-    }
-
-    // Bio edit dialog
-    if (showBioDialog) {
-        var bio by remember { mutableStateOf(user?.bio ?: "") }
-        AlertDialog(
-            onDismissRequest = { showBioDialog = false },
-            title = { Text("Edit Bio") },
-            text = {
                 VrcxInputField(
-                    value = bio,
-                    onValueChange = { bio = it },
-                    placeholder = "Tell people a bit about yourself",
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = field.placeholder,
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
+                    singleLine = field == ProfileField.STATUS,
                 )
-            },
-            confirmButton = { TextButton(onClick = { viewModel.saveBio(bio); showBioDialog = false }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { showBioDialog = false }) { Text("Cancel") } },
-        )
-    }
-
-    if (showPronounsDialog) {
-        var pronouns by remember { mutableStateOf(user?.pronouns ?: "") }
-        AlertDialog(
-            onDismissRequest = { showPronounsDialog = false },
-            title = { Text("Edit Pronouns") },
-            text = {
-                VrcxInputField(
-                    value = pronouns,
-                    onValueChange = { pronouns = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = "Add your pronouns",
-                    singleLine = false,
-                )
-            },
-            confirmButton = { TextButton(onClick = { viewModel.savePronouns(pronouns); showPronounsDialog = false }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { showPronounsDialog = false }) { Text("Cancel") } },
-        )
-    }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(status, text) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

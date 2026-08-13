@@ -45,17 +45,17 @@ import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.screenshot.ScreenshotMetadata
 import com.vrcx.android.data.screenshot.ScreenshotMetadataReader
-import com.vrcx.android.data.screenshot.ScreenshotMetadataResult
 import com.vrcx.android.data.screenshot.ScreenshotPlayer
 import com.vrcx.android.data.screenshot.ScreenshotPosition
+import com.vrcx.android.data.screenshot.ScreenshotReadResult
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GalleryRepository
-import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
-import com.vrcx.android.data.util.UploadBytesResult
-import com.vrcx.android.data.util.readUploadBytesBounded
+import com.vrcx.android.ui.common.formatByteCount
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.screen.gallery.UploadReadResult
+import com.vrcx.android.ui.screen.gallery.prepareGalleryUpload
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -79,9 +79,8 @@ import kotlinx.coroutines.withContext
 data class ScreenshotMetadataUiState(
     val selectedUri: Uri? = null,
     val fileName: String? = null,
-    val fileSize: String? = null,
     val fileSizeBytes: Long? = null,
-    val result: ScreenshotMetadataResult? = null,
+    val result: ScreenshotReadResult? = null,
     val isLoading: Boolean = false,
     val isUploading: Boolean = false,
     val uploadMessage: String? = null,
@@ -114,15 +113,11 @@ class ScreenshotMetadataViewModel @Inject constructor(
                 val result = withContext(Dispatchers.IO) {
                     appContext.contentResolver.openInputStream(uri)?.use { input ->
                         ScreenshotMetadataReader.read(input, details.fileName)
-                    } ?: ScreenshotMetadataResult(
-                        error = "Unable to open the selected image.",
-                        fileName = details.fileName,
-                    )
+                    } ?: ScreenshotReadResult.Failed("Unable to open the selected image.")
                 }
                 updateIfCurrent(uri, generation) { current ->
                     current.copy(
-                        fileName = details.fileName ?: result.fileName,
-                        fileSize = details.fileSize,
+                        fileName = details.fileName,
                         fileSizeBytes = details.fileSizeBytes,
                         result = result,
                         isLoading = false,
@@ -133,7 +128,7 @@ class ScreenshotMetadataViewModel @Inject constructor(
             } catch (_: Exception) {
                 updateIfCurrent(uri, generation) { current ->
                     current.copy(
-                        result = ScreenshotMetadataResult(error = "Unable to read the selected image."),
+                        result = ScreenshotReadResult.Failed("Unable to read the selected image."),
                         isLoading = false,
                     )
                 }
@@ -149,47 +144,32 @@ class ScreenshotMetadataViewModel @Inject constructor(
             _uiState.value = state.copy(uploadMessage = "VRC+ is required to upload gallery images.")
             return
         }
-        if (state.fileSizeBytes != null && state.fileSizeBytes > MAX_UPLOAD_SIZE_BYTES) {
-            _uiState.value = state.copy(uploadMessage = "Image too large (max 10 MB).")
-            return
-        }
 
         uploadJob?.cancel()
         updateIfCurrent(uri, generation) { it.copy(isUploading = true, uploadMessage = null) }
         uploadJob = viewModelScope.launch {
             val appContext = context.applicationContext
             try {
-                val mimeType = appContext.contentResolver.getType(uri) ?: "image/png"
-                val fileName = state.fileName?.takeIf { it.isNotBlank() }
-                    ?: GalleryRepository.defaultFileNameFor(mimeType)
-                val readResult = withContext(Dispatchers.IO) {
-                    try {
-                        readUploadBytesBounded(appContext.contentResolver.openInputStream(uri))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        UploadBytesResult.Unreadable
-                    }
-                }
-
-                val bytes = when (readResult) {
-                    UploadBytesResult.Unreadable -> {
+                // Same preparation the Gallery screen uses, so an oversized
+                // VRChat screenshot is downsampled here rather than rejected.
+                val upload = when (val prepared = prepareGalleryUpload(appContext, uri)) {
+                    UploadReadResult.Unreadable -> {
                         updateIfCurrent(uri, generation) {
                             it.copy(isUploading = false, uploadMessage = "Unable to open the selected image.")
                         }
                         return@launch
                     }
-                    UploadBytesResult.TooLarge -> {
+                    UploadReadResult.TooLarge -> {
                         updateIfCurrent(uri, generation) {
                             it.copy(isUploading = false, uploadMessage = "Image too large (max 10 MB).")
                         }
                         return@launch
                     }
-                    is UploadBytesResult.Success -> readResult.bytes
+                    is UploadReadResult.Success -> prepared.upload
                 }
                 if (!isCurrent(uri, generation)) return@launch
                 withContext(Dispatchers.IO) {
-                    galleryRepository.uploadFile("gallery", bytes, mimeType, fileName)
+                    galleryRepository.uploadFile("gallery", upload.bytes, upload.mimeType, upload.fileName)
                     galleryRepository.loadGallery()
                 }
                 updateIfCurrent(uri, generation) {
@@ -266,22 +246,23 @@ fun ScreenshotMetadataScreen(
                 }
             }
 
+            val result = uiState.result
             when {
                 uiState.isLoading -> LoadingMetadataCard()
-                uiState.result?.metadata != null -> MetadataDetails(
-                    uri = uiState.selectedUri,
-                    result = uiState.result ?: ScreenshotMetadataResult(),
-                    fileName = uiState.fileName,
-                    fileSize = uiState.fileSize,
+                result is ScreenshotReadResult.Parsed -> MetadataDetails(
+                    state = uiState,
+                    parsed = result,
                     isVrcPlusSupporter = isVrcPlusSupporter,
-                    isUploading = uiState.isUploading,
-                    uploadMessage = uiState.uploadMessage,
                     onUpload = { viewModel.uploadSelectedScreenshotToGallery(context) },
                     onUserClick = onUserClick,
                     onWorldClick = onWorldClick,
                 )
-                uiState.result?.error != null -> ErrorMetadataCard(
-                    message = uiState.result?.error.orEmpty(),
+                result is ScreenshotReadResult.NoMetadata -> ErrorMetadataCard(
+                    message = "Image has no valid VRChat or VRCX metadata.",
+                    onBrowse = { imagePicker.launch("image/png") },
+                )
+                result is ScreenshotReadResult.Failed -> ErrorMetadataCard(
+                    message = result.message,
                     onBrowse = { imagePicker.launch("image/png") },
                 )
                 else -> EmptyMetadataCard()
@@ -340,24 +321,22 @@ private fun ErrorMetadataCard(
 
 @Composable
 private fun MetadataDetails(
-    uri: Uri?,
-    result: ScreenshotMetadataResult,
-    fileName: String?,
-    fileSize: String?,
+    state: ScreenshotMetadataUiState,
+    parsed: ScreenshotReadResult.Parsed,
     isVrcPlusSupporter: Boolean,
-    isUploading: Boolean,
-    uploadMessage: String?,
     onUpload: () -> Unit,
     onUserClick: (String) -> Unit,
     onWorldClick: (String) -> Unit,
 ) {
-    val metadata = result.metadata ?: return
+    val metadata = parsed.metadata
+    val uri = state.selectedUri
+    val fileName = state.fileName ?: "Selected screenshot"
     VrcxCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             uri?.let {
                 AsyncImage(
                     model = it,
-                    contentDescription = fileName ?: "Selected screenshot",
+                    contentDescription = fileName,
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
@@ -366,18 +345,18 @@ private fun MetadataDetails(
                 )
             }
             Text(
-                text = fileName ?: result.fileName ?: "Selected screenshot",
+                text = fileName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                result.resolution?.let { MetadataChip(it) }
-                fileSize?.let { MetadataChip(it) }
+                parsed.resolution?.let { MetadataChip(it) }
+                state.fileSizeBytes?.let { MetadataChip(formatByteCount(it)) }
                 metadata.application?.let { MetadataChip(it) }
                 metadata.version?.let { MetadataChip("Schema v$it") }
             }
-            val capturedAt = result.capturedAtEpochMillis?.let(::formatCapturedAt)
+            val capturedAt = parsed.capturedAtEpochMillis?.let(::formatCapturedAt)
                 ?: metadata.timestamp
             capturedAt?.let { timestamp ->
                 MetadataTextRow(label = "Captured", value = timestamp)
@@ -388,12 +367,12 @@ private fun MetadataDetails(
             if (isVrcPlusSupporter && uri != null) {
                 FilledTonalButton(
                     onClick = onUpload,
-                    enabled = !isUploading,
+                    enabled = !state.isUploading,
                 ) {
-                    Text(if (isUploading) "Uploading..." else "Upload to Gallery")
+                    Text(if (state.isUploading) "Uploading..." else "Upload to Gallery")
                 }
             }
-            uploadMessage?.let { message ->
+            state.uploadMessage?.let { message ->
                 Text(
                     message,
                     style = MaterialTheme.typography.bodySmall,
@@ -552,13 +531,11 @@ private fun ClickableValue(
 
 private data class OpenableFileDetails(
     val fileName: String?,
-    val fileSize: String?,
     val fileSizeBytes: Long?,
 )
 
 private fun Context.queryOpenableFile(uri: Uri): OpenableFileDetails {
     var name: String? = null
-    var size: String? = null
     var sizeBytes: Long? = null
     contentResolver.query(uri, null, null, null, null)?.use { cursor ->
         val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -567,23 +544,10 @@ private fun Context.queryOpenableFile(uri: Uri): OpenableFileDetails {
             if (nameIndex >= 0) name = cursor.getString(nameIndex)
             if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
                 sizeBytes = cursor.getLong(sizeIndex).takeIf { it >= 0 }
-                size = sizeBytes?.let(::formatByteCount)
             }
         }
     }
-    return OpenableFileDetails(fileName = name, fileSize = size, fileSizeBytes = sizeBytes)
-}
-
-private fun formatByteCount(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val units = listOf("KB", "MB", "GB")
-    var value = bytes.toDouble()
-    var unitIndex = -1
-    while (value >= 1024 && unitIndex < units.lastIndex) {
-        value /= 1024
-        unitIndex++
-    }
-    return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+    return OpenableFileDetails(fileName = name, fileSizeBytes = sizeBytes)
 }
 
 private fun ScreenshotPosition.format(): String {

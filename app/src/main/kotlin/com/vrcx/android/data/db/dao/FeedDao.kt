@@ -11,6 +11,32 @@ import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
 import com.vrcx.android.data.db.entity.FeedStatusEntity
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * One row of [FeedDao.getUnifiedFeed], carrying the union of the five feed
+ * tables' payload columns. [source] names the table it came from, which the
+ * repository needs to map `feed_online_offline` onto its two entry types and to
+ * work out whether any single source filled its page.
+ */
+data class UnifiedFeedRow(
+    val source: String,
+    val id: Long,
+    val userId: String,
+    val displayName: String,
+    val createdAt: String,
+    val type: String,
+    val worldName: String,
+    val location: String,
+    val previousLocation: String,
+    val status: String,
+    val statusDescription: String,
+    val previousStatus: String,
+    val previousStatusDescription: String,
+    val bio: String,
+    val previousBio: String,
+    val avatarName: String,
+    val thumbnailUrl: String,
+)
+
 @Dao
 interface FeedDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -34,17 +60,60 @@ interface FeedDao {
     @Query("SELECT * FROM feed_gps WHERE ownerUserId = :ownerUserId ORDER BY id DESC")
     fun getAllGpsFeed(ownerUserId: String): Flow<List<FeedGpsEntity>>
 
-    @Query("SELECT * FROM feed_status WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
-    fun getStatusFeed(userId: String, limit: Int = 100): Flow<List<FeedStatusEntity>>
-
-    @Query("SELECT * FROM feed_bio WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
-    fun getBioFeed(userId: String, limit: Int = 100): Flow<List<FeedBioEntity>>
-
-    @Query("SELECT * FROM feed_avatar WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
-    fun getAvatarFeed(userId: String, limit: Int = 100): Flow<List<FeedAvatarEntity>>
-
-    @Query("SELECT * FROM feed_online_offline WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit")
-    fun getOnlineOfflineFeed(userId: String, limit: Int = 100): Flow<List<FeedOnlineOfflineEntity>>
+    /**
+     * The five feed tables as one newest-first page per source, merged by SQLite.
+     *
+     * Merging here rather than combining five `Flow`s means one insert wakes one
+     * query instead of five, and re-reads only the changed table's page rather
+     * than re-materialising all five. The rows are deliberately *not* ordered
+     * across sources in SQL: `createdAt` is `Instant.toString()` text whose
+     * fractional seconds are variable-width, so a lexicographic sort reorders
+     * events inside the same second. The caller sorts on the parsed epoch.
+     */
+    @Query(
+        """
+        SELECT 'gps' AS source, id, userId, displayName, createdAt, '' AS type,
+               worldName, location, previousLocation,
+               '' AS status, '' AS statusDescription,
+               '' AS previousStatus, '' AS previousStatusDescription,
+               '' AS bio, '' AS previousBio,
+               '' AS avatarName, '' AS thumbnailUrl
+        FROM (SELECT * FROM feed_gps WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit)
+        UNION ALL
+        SELECT 'status' AS source, id, userId, displayName, createdAt, '' AS type,
+               '' AS worldName, '' AS location, '' AS previousLocation,
+               status, statusDescription,
+               previousStatus, previousStatusDescription,
+               '' AS bio, '' AS previousBio,
+               '' AS avatarName, '' AS thumbnailUrl
+        FROM (SELECT * FROM feed_status WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit)
+        UNION ALL
+        SELECT 'bio' AS source, id, userId, displayName, createdAt, '' AS type,
+               '' AS worldName, '' AS location, '' AS previousLocation,
+               '' AS status, '' AS statusDescription,
+               '' AS previousStatus, '' AS previousStatusDescription,
+               bio, previousBio,
+               '' AS avatarName, '' AS thumbnailUrl
+        FROM (SELECT * FROM feed_bio WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit)
+        UNION ALL
+        SELECT 'avatar' AS source, id, userId, displayName, createdAt, '' AS type,
+               '' AS worldName, '' AS location, '' AS previousLocation,
+               '' AS status, '' AS statusDescription,
+               '' AS previousStatus, '' AS previousStatusDescription,
+               '' AS bio, '' AS previousBio,
+               avatarName, currentAvatarThumbnailImageUrl AS thumbnailUrl
+        FROM (SELECT * FROM feed_avatar WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit)
+        UNION ALL
+        SELECT 'onlineOffline' AS source, id, userId, displayName, createdAt, type,
+               worldName, location, '' AS previousLocation,
+               '' AS status, '' AS statusDescription,
+               '' AS previousStatus, '' AS previousStatusDescription,
+               '' AS bio, '' AS previousBio,
+               '' AS avatarName, '' AS thumbnailUrl
+        FROM (SELECT * FROM feed_online_offline WHERE ownerUserId = :userId ORDER BY id DESC LIMIT :limit)
+        """
+    )
+    fun getUnifiedFeed(userId: String, limit: Int): Flow<List<UnifiedFeedRow>>
 
     // Order feed reads by `id DESC`, not `createdAt DESC`: createdAt is
     // Instant.toString() text whose fractional seconds are variable-width

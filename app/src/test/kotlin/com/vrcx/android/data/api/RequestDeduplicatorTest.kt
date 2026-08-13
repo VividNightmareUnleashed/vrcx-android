@@ -86,20 +86,16 @@ class RequestDeduplicatorTest {
     }
 
     @Test
-    fun `cleared in-flight request cannot repopulate failure cache`() {
+    fun `clearCache cancels the request owner mid-flight`() {
         runBlocking {
             val deduplicator = RequestDeduplicator()
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             val owner = async {
-                try {
-                    deduplicator.dedupGet("file:file_404") {
-                        started.complete(Unit)
-                        release.await()
-                        throw HttpException(Response.error<Any>(404, "".toResponseBody(null)))
-                    }
-                } catch (_: HttpException) {
-                    // Expected from the owner request.
+                deduplicator.dedupGet("file:file_404") {
+                    started.complete(Unit)
+                    release.await()
+                    "old-session"
                 }
             }
 
@@ -110,11 +106,33 @@ class RequestDeduplicatorTest {
                 owner.await()
                 fail("Expected the stale request owner to be canceled")
             } catch (_: CancellationException) {
-                // Expected: clearing request state now cancels the owned work,
-                // not only callers waiting on its shared result.
+                // Expected: clearing request state cancels the owned work, not
+                // only callers waiting on its shared result.
+            }
+        }
+    }
+
+    @Test
+    fun `dedupGet leaves failure caching to the HTTP layer`() {
+        runBlocking {
+            val deduplicator = RequestDeduplicator()
+            var calls = 0
+
+            repeat(2) {
+                try {
+                    deduplicator.dedupGet("user:usr_missing") {
+                        calls++
+                        throw HttpException(Response.error<Any>(404, "".toResponseBody(null)))
+                    }
+                } catch (_: HttpException) {
+                    // Expected: the failure reaches the caller unchanged.
+                }
             }
 
-            assertNull(deduplicator.getCachedFailure("file:file_404"))
+            // A second failure cache keyed by resource id would short-circuit the
+            // retry here, and nothing outside a sign-out could ever clear it.
+            assertEquals(2, calls)
+            assertNull(deduplicator.getCachedFailure("user:usr_missing"))
         }
     }
 

@@ -7,6 +7,8 @@
         <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.backup" />
+        <exclude domain="file" path="profile_pic_cache/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="vrcx.db" />
@@ -15,5 +17,7 @@
         <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.backup" />
+        <exclude domain="file" path="profile_pic_cache/" />
     </device-transfer>
 </data-extraction-rules>

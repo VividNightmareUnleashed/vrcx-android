@@ -30,26 +30,18 @@ data class UnifiedNotification(
 
 /**
  * The actionable kinds of notification, parsed once from the raw VRChat `type`
- * string at the repository boundary. Capabilities (accept / decline / invite
- * response) live on the enum so the screen, ViewModel, repository, and
+ * string at the repository boundary so the screen, ViewModel, repository, and
  * foreground service branch on the kind instead of re-matching type strings in
  * four places.
  *
  * [OTHER] covers everything non-actionable (group changes, announcements,
  * moderation, boops, …); those render read-only and are dismissible.
  */
-enum class NotificationKind(
-    val canAccept: Boolean,
-    val canDecline: Boolean,
-    val inviteMessageType: InviteMessageType?,
-) {
-    FRIEND_REQUEST(canAccept = true, canDecline = true, inviteMessageType = null),
-    INVITE(canAccept = false, canDecline = false, inviteMessageType = InviteMessageType.RESPONSE),
-    REQUEST_INVITE(canAccept = true, canDecline = false, inviteMessageType = InviteMessageType.REQUEST_RESPONSE),
-    OTHER(canAccept = false, canDecline = false, inviteMessageType = null);
-
-    /** True when this kind offers saved invite-response messages ([INVITE], [REQUEST_INVITE]). */
-    val canRespondToInvite: Boolean get() = inviteMessageType != null
+enum class NotificationKind(val inviteMessageType: InviteMessageType?) {
+    FRIEND_REQUEST(inviteMessageType = null),
+    INVITE(inviteMessageType = InviteMessageType.RESPONSE),
+    REQUEST_INVITE(inviteMessageType = InviteMessageType.REQUEST_RESPONSE),
+    OTHER(inviteMessageType = null);
 
     companion object {
         fun fromType(type: String): NotificationKind = when (type) {

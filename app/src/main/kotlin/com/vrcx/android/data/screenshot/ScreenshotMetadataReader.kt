@@ -55,18 +55,31 @@ data class ScreenshotPosition(
     @SerialName("z") val z: Float = 0f,
 )
 
-data class ScreenshotMetadataResult(
-    val metadata: ScreenshotMetadata? = null,
-    val error: String? = null,
-    val fileName: String? = null,
-    val resolution: String? = null,
-    val capturedAtEpochMillis: Long? = null,
-)
+/** What reading one image can tell the caller. Exactly one of these three. */
+sealed interface ScreenshotReadResult {
+    /** The image carried metadata this reader understands. */
+    data class Parsed(
+        val metadata: ScreenshotMetadata,
+        val resolution: String?,
+        val capturedAtEpochMillis: Long?,
+    ) : ScreenshotReadResult
+
+    /** A readable PNG that embeds no VRChat or VRCX metadata. */
+    data class NoMetadata(val resolution: String?) : ScreenshotReadResult
+
+    /** The image could not be read far enough to answer either way. */
+    data class Failed(val message: String) : ScreenshotReadResult
+}
 
 object ScreenshotMetadataReader {
+    internal const val INVALID_PNG_MESSAGE =
+        "Invalid file selected. Please select a valid PNG screenshot."
+    internal const val UNPARSEABLE_MESSAGE = "Failed to parse screenshot metadata."
+
     private const val MAX_CHUNKS_TO_READ = 4096
     private const val MAX_CHUNK_BYTES = 64 * 1024 * 1024
     private const val MAX_TEXT_CHUNK_BYTES = 1024 * 1024
+    private const val MAX_IHDR_BYTES = 64
     private const val MAX_BYTES_AFTER_IDAT = 128L * 1024 * 1024
     private val pngSignature = byteArrayOf(
         0x89.toByte(),
@@ -80,39 +93,23 @@ object ScreenshotMetadataReader {
     )
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun read(inputStream: InputStream, fileName: String? = null): ScreenshotMetadataResult {
+    fun read(inputStream: InputStream, fileName: String? = null): ScreenshotReadResult {
         return try {
             val pngMetadata = inputStream.use(::readPngMetadata)
-                ?: return ScreenshotMetadataResult(
-                    error = "Invalid file selected. Please select a valid PNG screenshot.",
-                    fileName = fileName,
-                )
+                ?: return ScreenshotReadResult.Failed(INVALID_PNG_MESSAGE)
 
             val metadata = parseTextMetadata(pngMetadata.textChunks)
-            if (metadata == null) {
-                ScreenshotMetadataResult(
-                    error = "Image has no valid VRChat or VRCX metadata.",
-                    fileName = fileName,
-                    resolution = pngMetadata.resolution,
-                )
-            } else {
-                ScreenshotMetadataResult(
-                    metadata = metadata,
-                    fileName = fileName,
-                    resolution = pngMetadata.resolution,
-                    capturedAtEpochMillis = resolveCapturedAt(metadata, fileName),
-                )
-            }
+                ?: return ScreenshotReadResult.NoMetadata(pngMetadata.resolution)
+
+            ScreenshotReadResult.Parsed(
+                metadata = metadata,
+                resolution = pngMetadata.resolution,
+                capturedAtEpochMillis = resolveCapturedAt(metadata, fileName),
+            )
         } catch (_: EOFException) {
-            ScreenshotMetadataResult(
-                error = "Invalid file selected. Please select a valid PNG screenshot.",
-                fileName = fileName,
-            )
+            ScreenshotReadResult.Failed(INVALID_PNG_MESSAGE)
         } catch (_: Exception) {
-            ScreenshotMetadataResult(
-                error = "Failed to parse screenshot metadata.",
-                fileName = fileName,
-            )
+            ScreenshotReadResult.Failed(UNPARSEABLE_MESSAGE)
         }
     }
 
@@ -139,9 +136,14 @@ object ScreenshotMetadataReader {
                 if (bytesAfterIdat > MAX_BYTES_AFTER_IDAT) return PngMetadata(resolution, chunks)
             }
 
-            val shouldRead = type == "IHDR" || (type == "iTXt" && length <= MAX_TEXT_CHUNK_BYTES)
-            val data = if (shouldRead) ByteArray(length).also(input::readFully) else null
-            if (data == null) input.skipPngData(length)
+            val shouldRead = (type == "IHDR" && length <= MAX_IHDR_BYTES) ||
+                (type == "iTXt" && length <= MAX_TEXT_CHUNK_BYTES)
+            val data = if (shouldRead) {
+                ByteArray(length).also(input::readFully)
+            } else {
+                input.skipPngData(length)
+                null
+            }
             input.skipPngCrc()
 
             when (type) {
@@ -238,19 +240,16 @@ object ScreenshotMetadataReader {
             factory.newDocumentBuilder().parse(xmlString.substring(start).byteInputStream())
         }.getOrNull() ?: return null
 
-        var authorName = doc.textByLocalName("Author")
-        val authorId = doc.textByLocalName("AuthorID") ?: authorName.orEmpty()
-        if (doc.textByLocalName("AuthorID").isNullOrBlank()) {
-            authorName = null
-        }
+        val authorName = doc.textByLocalName("Author")
+        val authorId = doc.textByLocalName("AuthorID")
 
         val worldId = doc.textByLocalName("WorldID") ?: doc.textByLocalName("World").orEmpty()
         return ScreenshotMetadata(
             application = doc.textByLocalName("CreatorTool"),
             version = 1,
             author = ScreenshotAuthor(
-                id = authorId,
-                displayName = authorName,
+                id = authorId ?: authorName.orEmpty(),
+                displayName = if (authorId != null) authorName else null,
             ),
             world = ScreenshotWorld(
                 id = worldId,
@@ -332,8 +331,6 @@ object ScreenshotMetadataReader {
             val version = parts.getOrNull(1)?.toIntOrNull() ?: 1
             val isCvr = application == "cvr"
 
-            val author = ScreenshotAuthor()
-            val world = ScreenshotWorld()
             val players = mutableListOf<ScreenshotPlayer>()
 
             if (application == "screenshotmanager") {
@@ -355,8 +352,8 @@ object ScreenshotMetadataReader {
                 )
             }
 
-            var parsedAuthor = author
-            var parsedWorld = world
+            var parsedAuthor = ScreenshotAuthor()
+            var parsedWorld = ScreenshotWorld()
             var cameraPosition: ScreenshotPosition? = null
             for (part in parts.drop(2)) {
                 val key = part.substringBefore(":", missingDelimiterValue = "")

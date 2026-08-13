@@ -19,7 +19,6 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
-import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -29,10 +28,12 @@ class FavoriteRepositoryTest {
     private val favoriteApi = mock<FavoriteApi>()
     private val worldApi = mock<WorldApi>()
     private val avatarApi = mock<AvatarApi>()
+    private val accountScope = AccountScope()
     private val repository = FavoriteRepository(
         favoriteApi = favoriteApi,
         worldApi = worldApi,
         avatarApi = avatarApi,
+        accountScope = accountScope,
     )
 
     @Test
@@ -49,7 +50,7 @@ class FavoriteRepositoryTest {
             repository.addFavorite("world", "wrld_old", tags = listOf("worlds1"))
         }
         requestStarted.await()
-        repository.clearRuntimeState()
+        accountScope.invalidate()
         releaseRequest.complete(Unit)
         val failure = runCatching { add.await() }.exceptionOrNull()
 
@@ -84,6 +85,25 @@ class FavoriteRepositoryTest {
 
             repository.loadFavoriteWorldsBulk(forceRefresh = true)
             verify(favoriteApi, times(2)).getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
+        }
+    }
+
+    @Test
+    fun `forceRefresh of one favorites type leaves the bulk world cache loaded`() {
+        runBlocking {
+            whenever(favoriteApi.getFavorites(any(), any(), eq("world"), anyOrNull()))
+                .thenReturn(emptyList())
+            whenever(favoriteApi.getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull()))
+                .thenReturn(emptyList())
+
+            repository.loadFavorites(type = "world")
+            repository.loadFavoriteWorldsBulk()
+            repository.loadFavorites(type = "world", forceRefresh = true)
+            repository.loadFavoriteWorldsBulk()
+
+            verify(favoriteApi, times(2)).getFavorites(any(), any(), eq("world"), anyOrNull())
+            verify(favoriteApi, times(1))
+                .getFavoriteWorlds(any(), any(), anyOrNull(), anyOrNull(), anyOrNull())
         }
     }
 

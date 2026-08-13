@@ -19,7 +19,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,12 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.ui.components.EmptyState
+import com.vrcx.android.ui.components.ErrorState
+import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.components.VrcxSearchBar
+import com.vrcx.android.ui.components.VrcxTabRow
 import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.components.WorldListItem
-import com.vrcx.android.ui.theme.LocalWallpaperActive
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -47,45 +48,24 @@ fun SearchScreen(
     onGroupClick: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val query = state.query
     val selectedTab = state.selectedTab
-    val users = state.users
-    val worlds = state.worlds
-    val avatars = state.avatars
-    val groups = state.groups
-    val hasSearched = state.hasSearched
-    val isSearching = state.isSearching
-    val error = state.error
-    val currentOffset = state.currentOffset
-    val hasMore = state.hasMore
-    val searchUsersByBio = state.searchUsersByBio
-    val sortUsersByLastLogin = state.sortUsersByLastLogin
-    val worldMode = state.worldMode
-    val includeWorldLabs = state.includeWorldLabs
-    val worldTag = state.worldTag
     val avatarSearchSource = state.avatarSearchSource
-    val avatarProviderUrl = state.avatarProviderUrl
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxTopBar(title = "Search")
 
         VrcxSearchBar(
-            query = query,
+            query = state.query,
             onQueryChange = viewModel::updateQuery,
             placeholder = when (selectedTab) {
                 SearchTab.USERS -> "Search users"
-                SearchTab.WORLDS -> if (worldMode == WorldSearchMode.SEARCH) "Search worlds" else "Optional name filter"
+                SearchTab.WORLDS -> if (state.worldMode == WorldSearchMode.SEARCH) "Search worlds" else "Optional name filter"
                 SearchTab.AVATARS -> "Search avatars"
                 SearchTab.GROUPS -> "Search groups"
             },
         )
 
-        val isWallpaperActive = LocalWallpaperActive.current
-        TabRow(
-            selectedTabIndex = selectedTab.ordinal,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
-        ) {
+        VrcxTabRow(selectedTabIndex = selectedTab.ordinal) {
             SearchTab.entries.forEach { tab ->
                 Tab(
                     selected = selectedTab == tab,
@@ -104,13 +84,13 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChip(
-                        selected = searchUsersByBio,
-                        onClick = { viewModel.setSearchUsersByBio(!searchUsersByBio) },
+                        selected = state.searchUsersByBio,
+                        onClick = { viewModel.setSearchUsersByBio(!state.searchUsersByBio) },
                         label = { Text("Bio") },
                     )
                     FilterChip(
-                        selected = sortUsersByLastLogin,
-                        onClick = { viewModel.setSortUsersByLastLogin(!sortUsersByLastLogin) },
+                        selected = state.sortUsersByLastLogin,
+                        onClick = { viewModel.setSortUsersByLastLogin(!state.sortUsersByLastLogin) },
                         label = { Text("Last Login") },
                     )
                 }
@@ -124,14 +104,14 @@ fun SearchScreen(
                 ) {
                     WorldSearchMode.entries.forEach { mode ->
                         FilterChip(
-                            selected = worldMode == mode,
+                            selected = state.worldMode == mode,
                             onClick = { viewModel.setWorldMode(mode) },
                             label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
                         )
                     }
                     FilterChip(
-                        selected = includeWorldLabs,
-                        onClick = { viewModel.setIncludeWorldLabs(!includeWorldLabs) },
+                        selected = state.includeWorldLabs,
+                        onClick = { viewModel.setIncludeWorldLabs(!state.includeWorldLabs) },
                         label = { Text("Labs") },
                     )
                 }
@@ -146,7 +126,7 @@ fun SearchScreen(
                         style = MaterialTheme.typography.labelLarge,
                     )
                     VrcxInputField(
-                        value = worldTag,
+                        value = state.worldTag,
                         onValueChange = viewModel::setWorldTag,
                         placeholder = "Example: trendings or horror",
                     )
@@ -185,7 +165,7 @@ fun SearchScreen(
                             style = MaterialTheme.typography.labelLarge,
                         )
                         VrcxInputField(
-                            value = avatarProviderUrl,
+                            value = state.avatarProviderUrl,
                             onValueChange = viewModel::setAvatarProviderUrl,
                             placeholder = "https://example.com/avatars",
                         )
@@ -195,22 +175,15 @@ fun SearchScreen(
             SearchTab.GROUPS -> Unit
         }
 
-        val isEmpty = when (selectedTab) {
-            SearchTab.USERS -> users.isEmpty()
-            SearchTab.WORLDS -> worlds.isEmpty()
-            SearchTab.AVATARS -> avatars.isEmpty()
-            SearchTab.GROUPS -> groups.isEmpty()
-        }
+        val result = state.currentResult
+        val error = state.error
 
-        if (isSearching) {
-            com.vrcx.android.ui.components.LoadingState()
+        if (state.isSearching) {
+            LoadingState()
         } else if (error != null) {
-            com.vrcx.android.ui.components.ErrorState(
-                message = error ?: "Search failed",
-                onRetry = viewModel::retry,
-            )
-        } else if (isEmpty) {
-            if (!hasSearched) {
+            ErrorState(message = error, onRetry = viewModel::retry)
+        } else if (result == null || result.items.isEmpty()) {
+            if (!state.hasSearched) {
                 EmptyState(
                     message = "Search VRChat",
                     icon = Icons.Outlined.Search,
@@ -225,14 +198,14 @@ fun SearchScreen(
                 EmptyState(
                     message = "No results found",
                     icon = Icons.Outlined.SearchOff,
-                    actionLabel = if (currentOffset > 0) "Previous page" else null,
-                    onAction = if (currentOffset > 0) viewModel::previousPage else null,
+                    actionLabel = if (state.currentOffset > 0) "Previous page" else null,
+                    onAction = if (state.currentOffset > 0) viewModel::previousPage else null,
                 )
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                when (selectedTab) {
-                    SearchTab.USERS -> items(users, key = { it.id }) { user ->
+                when (result) {
+                    is SearchResult.Users -> items(result.items, key = { it.id }) { user ->
                         UserListItem(
                             avatarUrl = user.displayAvatarUrl(),
                             displayName = user.displayName,
@@ -241,7 +214,7 @@ fun SearchScreen(
                             onClick = { onUserClick(user.id) },
                         )
                     }
-                    SearchTab.WORLDS -> items(worlds, key = { it.id }) { world ->
+                    is SearchResult.Worlds -> items(result.items, key = { it.id }) { world ->
                         WorldListItem(
                             thumbnailUrl = world.thumbnailImageUrl,
                             name = world.name,
@@ -250,7 +223,7 @@ fun SearchScreen(
                             onClick = { onWorldClick(world.id) },
                         )
                     }
-                    SearchTab.AVATARS -> items(avatars, key = { it.id }) { avatar ->
+                    is SearchResult.Avatars -> items(result.items, key = { it.id }) { avatar ->
                         WorldListItem(
                             thumbnailUrl = avatar.thumbnailImageUrl,
                             name = avatar.name,
@@ -258,7 +231,7 @@ fun SearchScreen(
                             onClick = { onAvatarClick(avatar.id) },
                         )
                     }
-                    SearchTab.GROUPS -> items(groups, key = { it.id }) { group ->
+                    is SearchResult.Groups -> items(result.items, key = { it.id }) { group ->
                         UserListItem(
                             avatarUrl = group.iconUrl,
                             displayName = group.name,
@@ -267,7 +240,7 @@ fun SearchScreen(
                         )
                     }
                 }
-                if (hasSearched) {
+                if (state.hasSearched) {
                     item {
                         Row(
                             modifier = Modifier
@@ -278,17 +251,17 @@ fun SearchScreen(
                         ) {
                             OutlinedButton(
                                 onClick = viewModel::previousPage,
-                                enabled = currentOffset > 0,
+                                enabled = state.currentOffset > 0,
                             ) {
                                 Text("Previous")
                             }
                             Text(
-                                "Page ${currentOffset / 10 + 1}",
+                                "Page ${state.pageNumber}",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             FilledTonalButton(
                                 onClick = viewModel::nextPage,
-                                enabled = hasMore,
+                                enabled = state.hasMore,
                             ) {
                                 Text("Next")
                             }

@@ -64,17 +64,7 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             autoLoginAttempted = true
             authRepository.login(_username.value, _password.value)
-            if (_rememberMe.value && authRepository.authState.value is AuthState.LoggedIn) {
-                withContext(Dispatchers.IO) {
-                    secureSecretsStore.saveSavedCredentials(_username.value, _password.value)
-                    preferences.clearLegacySavedCredentials()
-                }
-            } else if (!_rememberMe.value) {
-                withContext(Dispatchers.IO) {
-                    secureSecretsStore.clearSavedCredentials()
-                    preferences.clearLegacySavedCredentials()
-                }
-            }
+            persistRememberedCredentials()
         }
     }
 
@@ -86,17 +76,30 @@ class LoginViewModel @Inject constructor(
             } else {
                 authRepository.verifyTotp(_twoFactorCode.value)
             }
-            _twoFactorCode.value = ""
-            if (_rememberMe.value && authRepository.authState.value is AuthState.LoggedIn) {
-                withContext(Dispatchers.IO) {
-                    secureSecretsStore.saveSavedCredentials(_username.value, _password.value)
-                    preferences.clearLegacySavedCredentials()
-                }
-            } else if (!_rememberMe.value) {
-                withContext(Dispatchers.IO) {
-                    secureSecretsStore.clearSavedCredentials()
-                    preferences.clearLegacySavedCredentials()
-                }
+            // Only a successful attempt clears the field. A network drop or a
+            // rate limit would otherwise make the user re-read a rolled TOTP or
+            // retype a recovery code off paper.
+            if (authRepository.authState.value is AuthState.LoggedIn) {
+                _twoFactorCode.value = ""
+            }
+            persistRememberedCredentials()
+        }
+    }
+
+    /** The one statement of the remember-credentials policy, for both sign-in entry points. */
+    private suspend fun persistRememberedCredentials() {
+        val loggedIn = authRepository.authState.value is AuthState.LoggedIn
+        when {
+            _rememberMe.value && loggedIn -> withContext(Dispatchers.IO) {
+                secureSecretsStore.saveSavedCredentials(_username.value, _password.value)
+                preferences.clearLegacySavedCredentials()
+            }
+            // Remember-me with the attempt still unresolved (a 2FA challenge) is
+            // not a decision either way — leave whatever is stored alone.
+            _rememberMe.value -> Unit
+            else -> withContext(Dispatchers.IO) {
+                secureSecretsStore.clearSavedCredentials()
+                preferences.clearLegacySavedCredentials()
             }
         }
     }

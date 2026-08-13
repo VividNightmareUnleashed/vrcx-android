@@ -91,3 +91,34 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         }
     }
 }
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // `notes.odUserId` duplicated `compositeId` and was never read. SQLite only
+        // learned ALTER TABLE ... DROP COLUMN in 3.35 (API 34), so rebuild the table.
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `notes_new` (
+                `compositeId` TEXT NOT NULL,
+                `ownerUserId` TEXT NOT NULL,
+                `displayName` TEXT NOT NULL,
+                `note` TEXT NOT NULL,
+                `createdAt` TEXT NOT NULL,
+                PRIMARY KEY(`compositeId`)
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            INSERT INTO `notes_new` (`compositeId`, `ownerUserId`, `displayName`, `note`, `createdAt`)
+            SELECT `compositeId`, `ownerUserId`, `displayName`, `note`, `createdAt` FROM `notes`
+            """.trimIndent()
+        )
+        database.execSQL("DROP TABLE `notes`")
+        database.execSQL("ALTER TABLE `notes_new` RENAME TO `notes`")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_ownerUserId` ON `notes` (`ownerUserId`)")
+
+        database.execSQL("DROP INDEX IF EXISTS `index_friend_log_history_createdAt`")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_memos_ownerUserId` ON `memos` (`ownerUserId`)")
+    }
+}

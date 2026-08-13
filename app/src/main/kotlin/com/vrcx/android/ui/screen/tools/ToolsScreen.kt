@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,12 +29,11 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.db.dao.MemoDao
-import com.vrcx.android.data.db.dao.memosByUserId
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.repository.UserDetailRepository
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxInputField
@@ -61,7 +59,7 @@ class ToolsViewModel @Inject constructor(
     preferences: VrcxPreferences,
     private val authRepository: AuthRepository,
     private val friendRepository: FriendRepository,
-    private val memoDao: MemoDao,
+    private val userDetailRepository: UserDetailRepository,
 ) : ViewModel() {
     private val _targetId = MutableStateFlow("")
     val targetId: StateFlow<String> = _targetId.asStateFlow()
@@ -88,7 +86,7 @@ class ToolsViewModel @Inject constructor(
                 val initialUser = (authRepository.authState.value as? AuthState.LoggedIn)?.user
                     ?: error("No logged-in user")
                 val ownerUserId = initialUser.id
-                val memoMap = withContext(Dispatchers.IO) { memoDao.memosByUserId(ownerUserId) }
+                val memoMap = userDetailRepository.loadMemos(ownerUserId)
                 val currentUser = (authRepository.authState.value as? AuthState.LoggedIn)?.user
                     ?.takeIf { it.id == ownerUserId }
                     ?: error("Account changed while preparing export")
@@ -246,14 +244,17 @@ fun ToolsScreen(
 
 internal fun resolveOpenByIdRoute(rawId: String): String? {
     val id = rawId.trim()
-    if (!VRCHAT_ID_REGEX.matches(id)) return null
-    return when {
-        id.startsWith("usr_") -> VrcxRoutes.userDetail(id)
-        id.startsWith("wrld_") -> VrcxRoutes.worldDetail(id)
-        id.startsWith("avtr_") -> VrcxRoutes.avatarDetail(id)
-        id.startsWith("grp_") -> VrcxRoutes.groupDetail(id)
-        else -> null
-    }
+    val (prefix, route) = ID_ROUTES.entries.firstOrNull { id.startsWith(it.key) } ?: return null
+    if (!VRCHAT_ID_TAIL_REGEX.matches(id.removePrefix(prefix))) return null
+    return route(id)
 }
 
-private val VRCHAT_ID_REGEX = Regex("^(usr_|wrld_|avtr_|grp_)[A-Za-z0-9_-]+$")
+/** The VRChat id prefixes this screen can open, and where each one goes. */
+private val ID_ROUTES = mapOf<String, (String) -> String>(
+    "usr_" to VrcxRoutes::userDetail,
+    "wrld_" to VrcxRoutes::worldDetail,
+    "avtr_" to VrcxRoutes::avatarDetail,
+    "grp_" to VrcxRoutes::groupDetail,
+)
+
+private val VRCHAT_ID_TAIL_REGEX = Regex("^[A-Za-z0-9_-]+$")

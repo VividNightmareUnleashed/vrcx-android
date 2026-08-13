@@ -1,6 +1,5 @@
 package com.vrcx.android.ui.screen.moderation
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,12 +18,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,28 +37,36 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.repository.ModerationRepository
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.isBusy
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.components.VrcxScrollableTabRow
 import com.vrcx.android.ui.components.VrcxSearchBar
-import com.vrcx.android.ui.theme.LocalWallpaperActive
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
-internal data class ModerationTab(val type: String, val label: String)
+data class ModerationTab(val type: String, val label: String)
 
-internal val MODERATION_TABS = listOf(
+val MODERATION_TABS = listOf(
     ModerationTab("block", "Blocked"),
     ModerationTab("mute", "Muted"),
     ModerationTab("hideAvatar", "Hide Avatar"),
@@ -70,18 +75,26 @@ internal val MODERATION_TABS = listOf(
     ModerationTab("interactOn", "Interact On"),
 )
 
-internal fun moderationTabIndex(selectedType: String): Int =
-    MODERATION_TABS.indexOfFirst { it.type == selectedType }.takeIf { it >= 0 } ?: 0
-
 @HiltViewModel
 class ModerationViewModel @Inject constructor(
     private val moderationRepository: ModerationRepository,
 ) : ViewModel() {
+    /**
+     * [isMutating] is deliberately outside [load]: removing a moderation is an
+     * action over data already on screen, not a load of it.
+     */
     data class ScreenState(
-        val isLoading: Boolean = true,
-        val hasLoaded: Boolean = false,
+        val load: LoadState<Unit> = LoadState.NotLoaded,
         val isMutating: Boolean = false,
-        val errorMessage: String? = null,
+    ) {
+        /** The one home for a message the screen shows in its snackbar. */
+        val staleError: String? get() = (load as? LoadState.Loaded)?.staleError
+    }
+
+    /** The visible rows and the per-tab counts, derived together so they cannot disagree. */
+    data class ModerationList(
+        val visible: List<PlayerModeration> = emptyList(),
+        val countsByType: Map<String, Int> = emptyMap(),
     )
 
     private val _screenState = MutableStateFlow(ScreenState())
@@ -89,86 +102,95 @@ class ModerationViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _selectedType = MutableStateFlow("block")
-    val selectedType: StateFlow<String> = _selectedType.asStateFlow()
+    private val _selectedTab = MutableStateFlow(MODERATION_TABS.first())
+    val selectedTab: StateFlow<ModerationTab> = _selectedTab.asStateFlow()
 
-    val filteredModerations: StateFlow<List<PlayerModeration>> = combine(
+    val moderations: StateFlow<ModerationList> = combine(
         moderationRepository.moderations,
-        _selectedType,
+        _selectedTab,
         _searchQuery,
-    ) { mods, type, query ->
-        mods
-            .filter { it.type == type }
-            .filter { query.isBlank() || it.targetDisplayName.contains(query, ignoreCase = true) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val countsByType: StateFlow<Map<String, Int>> = moderationRepository.moderations
-        .map { mods -> mods.groupingBy { it.type }.eachCount() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    ) { mods, tab, query ->
+        ModerationList(
+            visible = mods.filter {
+                it.type == tab.type &&
+                    (query.isBlank() || it.targetDisplayName.contains(query, ignoreCase = true))
+            },
+            countsByType = mods.groupingBy { it.type }.eachCount(),
+        )
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModerationList())
 
     init { refresh() }
 
-    fun selectType(type: String) { _selectedType.value = type }
+    fun selectTab(tab: ModerationTab) { _selectedTab.value = tab }
     fun updateSearch(query: String) { _searchQuery.value = query }
+
     fun remove(moderation: PlayerModeration) {
         viewModelScope.launch {
-            _screenState.value = _screenState.value.copy(isMutating = true, errorMessage = null)
+            _screenState.update { it.copy(isMutating = true, load = it.load.clearStaleError()) }
             try {
                 moderationRepository.deleteModeration(moderation)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _screenState.value = _screenState.value.copy(
-                    errorMessage = e.message ?: "Failed to remove moderation",
-                )
+                reportFailure(e.message ?: "Failed to remove moderation")
             } finally {
-                _screenState.value = _screenState.value.copy(isMutating = false)
+                _screenState.update { it.copy(isMutating = false) }
             }
         }
     }
 
     fun refresh() {
         viewModelScope.launch {
-            _screenState.value = _screenState.value.copy(isLoading = true, errorMessage = null)
+            _screenState.update { it.copy(load = it.load.startLoad()) }
             try {
                 moderationRepository.loadModerations()
-                _screenState.value = _screenState.value.copy(hasLoaded = true)
+                _screenState.update { it.copy(load = it.load.completeLoad(Unit)) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _screenState.value = _screenState.value.copy(
-                    errorMessage = e.message ?: "Failed to load moderations",
-                )
+                _screenState.update {
+                    it.copy(load = it.load.failLoad(e.message ?: "Failed to load moderations"))
+                }
             } finally {
-                _screenState.value = _screenState.value.copy(isLoading = false)
+                _screenState.update { it.copy(load = it.load.settleLoad()) }
             }
         }
     }
 
     fun consumeError() {
-        _screenState.value = _screenState.value.copy(errorMessage = null)
+        _screenState.update { it.copy(load = it.load.clearStaleError()) }
     }
+
+    /**
+     * A mutation failure rides along with the rows it left on screen, so it
+     * reaches the snackbar through the same field a failed refresh does.
+     */
+    private fun reportFailure(message: String) {
+        _screenState.update { state ->
+            state.copy(load = (state.load as? LoadState.Loaded)?.copy(staleError = message) ?: state.load)
+        }
+    }
+
+    private fun LoadState<Unit>.clearStaleError(): LoadState<Unit> =
+        (this as? LoadState.Loaded)?.copy(staleError = null) ?: this
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
-    val moderations by viewModel.filteredModerations.collectAsStateWithLifecycle()
+    val moderations by viewModel.moderations.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val selectedType by viewModel.selectedType.collectAsStateWithLifecycle()
-    val countsByType by viewModel.countsByType.collectAsStateWithLifecycle()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
-    val selectedTabIndex = moderationTabIndex(selectedType)
-    val selectedTab = MODERATION_TABS[selectedTabIndex]
     var pendingRemove by remember { mutableStateOf<PlayerModeration?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(screenState.errorMessage, screenState.hasLoaded) {
-        if (screenState.hasLoaded) {
-            screenState.errorMessage?.let { message ->
-                snackbarHostState.showSnackbar(message)
-                viewModel.consumeError()
-            }
+    LaunchedEffect(screenState.staleError) {
+        screenState.staleError?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.consumeError()
         }
     }
 
@@ -178,23 +200,18 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
             title = "Moderation",
             onBack = onBack,
             actions = {
-                IconButton(onClick = { viewModel.refresh() }, enabled = !screenState.isLoading) {
+                IconButton(onClick = { viewModel.refresh() }, enabled = !screenState.load.isBusy) {
                     Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
                 }
             },
         )
 
-        val isWallpaperActive = LocalWallpaperActive.current
-        ScrollableTabRow(
-            selectedTabIndex = selectedTabIndex,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-                .let { if (isWallpaperActive) it.copy(alpha = 0.88f) else it },
-        ) {
+        VrcxScrollableTabRow(selectedTabIndex = MODERATION_TABS.indexOf(selectedTab)) {
             MODERATION_TABS.forEach { tab ->
-                val count = countsByType[tab.type] ?: 0
+                val count = moderations.countsByType[tab.type] ?: 0
                 Tab(
-                    selected = selectedType == tab.type,
-                    onClick = { viewModel.selectType(tab.type) },
+                    selected = selectedTab == tab,
+                    onClick = { viewModel.selectTab(tab) },
                     text = {
                         Text(if (count > 0) "${tab.label} ($count)" else tab.label)
                     },
@@ -208,29 +225,26 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         )
 
-        if (screenState.isLoading && !screenState.hasLoaded) {
-            LoadingState()
-        } else if (screenState.errorMessage != null && !screenState.hasLoaded) {
-            ErrorState(
-                message = screenState.errorMessage ?: "Failed to load moderations",
-                onRetry = viewModel::refresh,
-            )
-        } else if (moderations.isEmpty()) {
-            EmptyState(message = "No ${selectedTab.label.lowercase()} users", icon = Icons.Outlined.Block)
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(moderations, key = { it.id }) { mod ->
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(mod.targetDisplayName, style = MaterialTheme.typography.bodyLarge)
-                            Text(mod.created.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedButton(
-                            onClick = { pendingRemove = mod },
-                            enabled = !screenState.isMutating,
-                        ) {
-                            Text("Remove")
+        when (val load = screenState.load) {
+            LoadState.NotLoaded, LoadState.Loading -> LoadingState()
+            is LoadState.Failed -> ErrorState(message = load.message, onRetry = viewModel::refresh)
+            else -> if (moderations.visible.isEmpty()) {
+                EmptyState(message = "No ${selectedTab.label.lowercase()} users", icon = Icons.Outlined.Block)
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(moderations.visible, key = { it.id }) { mod ->
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(mod.targetDisplayName, style = MaterialTheme.typography.bodyLarge)
+                                Text(mod.created.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { pendingRemove = mod },
+                                enabled = !screenState.isMutating,
+                            ) {
+                                Text("Remove")
+                            }
                         }
                     }
                 }

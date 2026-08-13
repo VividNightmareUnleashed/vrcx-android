@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -74,6 +75,33 @@ class VRChatWebSocketTest {
         val event = parsePipelineMessage(json, frame)
         assertNotNull(event)
         assertNull(event!!.content)
+    }
+
+    @Test
+    fun `an explicit JSON null content is carried as null, not as JsonNull`() {
+        // An absent key and a null value are different frames. JsonNull is a
+        // JsonPrimitive, so a null value can slip through as a non-null element
+        // and then every downstream `content?.jsonObject` throws.
+        for (type in listOf("friend-online", "friend-location", "notification-v2", "instance-closed")) {
+            val event = parsePipelineMessage(json, """{"type":"$type","content":null}""")
+            assertNotNull("type=$type should parse", event)
+            assertNull("type=$type must carry a null content", event!!.content)
+        }
+    }
+
+    @Test
+    fun `a reconnecting socket still counts as not connected when the network returns`() {
+        // Break-before-make loss: onLost cleared the previous network, so the
+        // only thing left to check is the socket's own state.
+        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.RECONNECTING))
+        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTING))
+        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.DISCONNECTED))
+    }
+
+    @Test
+    fun `a healthy socket is left alone unless the network was actually replaced`() {
+        assertFalse(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTED))
+        assertTrue(shouldForceReconnect(networkWasReplaced = true, state = WebSocketState.CONNECTED))
     }
 
     @Test

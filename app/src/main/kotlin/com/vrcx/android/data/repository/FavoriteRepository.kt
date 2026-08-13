@@ -9,13 +9,10 @@ import com.vrcx.android.data.api.model.Favorite
 import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
 import com.vrcx.android.data.api.model.World
-import kotlinx.coroutines.CancellationException
+import com.vrcx.android.data.util.runCatchingCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,12 +21,11 @@ class FavoriteRepository @Inject constructor(
     private val favoriteApi: FavoriteApi,
     private val worldApi: WorldApi,
     private val avatarApi: AvatarApi,
-) {
-    private val favoriteMutex = Mutex()
-    private val accountGeneration = AtomicLong(0)
-    private val loadedFavoriteTypes = mutableSetOf<String>()
-    private var favoriteGroupsLoaded = false
-    private var favoriteLimitsLoaded = false
+    accountScope: AccountScope,
+) : AccountScoped {
+    private val account = accountScope.bindTo(this)
+    private val loadLock = Any()
+    private val loadedKeys = mutableSetOf<String>()
 
     private val _favorites = MutableStateFlow<List<Favorite>>(emptyList())
     val favorites: StateFlow<List<Favorite>> = _favorites.asStateFlow()
@@ -37,7 +33,8 @@ class FavoriteRepository @Inject constructor(
     private val _favoriteGroups = MutableStateFlow<List<FavoriteGroup>>(emptyList())
     val favoriteGroups: StateFlow<List<FavoriteGroup>> = _favoriteGroups.asStateFlow()
 
-    private val _favoriteLimits = MutableStateFlow<FavoriteLimits?>(null)
+    @Volatile
+    private var favoriteLimits: FavoriteLimits? = null
 
     private val _favoriteWorlds = MutableStateFlow<List<World>>(emptyList())
     val favoriteWorlds: StateFlow<List<World>> = _favoriteWorlds.asStateFlow()
@@ -45,150 +42,118 @@ class FavoriteRepository @Inject constructor(
     private val _favoriteAvatars = MutableStateFlow<List<Avatar>>(emptyList())
     val favoriteAvatars: StateFlow<List<Avatar>> = _favoriteAvatars.asStateFlow()
 
-    private var favoriteWorldsLoaded = false
-    private var favoriteAvatarsLoaded = false
+    /**
+     * Runs [fetch] at most once per account for [key] and publishes the result
+     * only if the account hasn't changed underneath it — the load-once cache
+     * and the per-account isolation guard are the same policy, so they live in
+     * one place rather than once per endpoint.
+     */
+    private suspend fun <T> loadOnce(
+        key: String,
+        forceRefresh: Boolean,
+        fetch: suspend () -> T,
+        publish: (T) -> Unit,
+    ) {
+        val token = account.current()
+        val shouldLoad = synchronized(loadLock) {
+            if (forceRefresh) loadedKeys.remove(key)
+            key !in loadedKeys
+        }
+        if (!shouldLoad) return
+
+        val result = fetch()
+        account.publishIfCurrent(token) {
+            publish(result)
+            synchronized(loadLock) { loadedKeys.add(key) }
+        }
+    }
 
     /**
      * Hydrates the world favorites list in one shot via /worlds/favorites instead
      * of resolving each Favorite by hitting /worlds/{id} N times. The bulk endpoint
      * is paginated server-side; iterate until a short page comes back.
      */
-    suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) {
-        val generation = accountGeneration.get()
-        val shouldLoad = favoriteMutex.withLock {
-            if (forceRefresh) favoriteWorldsLoaded = false
-            !favoriteWorldsLoaded
-        }
-        if (!shouldLoad) return
-
-        val worlds = BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
-            favoriteApi.getFavoriteWorlds(n = count, offset = offset)
-        }
-        favoriteMutex.withLock {
-            if (generation != accountGeneration.get()) return
-            _favoriteWorlds.value = worlds
-            favoriteWorldsLoaded = true
-        }
-    }
-
-    suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) {
-        val generation = accountGeneration.get()
-        val shouldLoad = favoriteMutex.withLock {
-            if (forceRefresh) favoriteAvatarsLoaded = false
-            !favoriteAvatarsLoaded
-        }
-        if (!shouldLoad) return
-
-        val avatars = BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
-            favoriteApi.getFavoriteAvatars(n = count, offset = offset)
-        }
-        favoriteMutex.withLock {
-            if (generation != accountGeneration.get()) return
-            _favoriteAvatars.value = avatars
-            favoriteAvatarsLoaded = true
-        }
-    }
-
-    suspend fun clearRuntimeState() {
-        accountGeneration.incrementAndGet()
-        favoriteMutex.withLock {
-            resetRuntimeStateLocked()
-        }
-    }
-
-    suspend fun loadFavorites(type: String? = null, forceRefresh: Boolean = false) {
-        val generation = accountGeneration.get()
-        val requestedTypes = if (type == null) DEFAULT_FAVORITE_TYPES else listOf(type)
-        val typesToLoad = favoriteMutex.withLock {
-            if (forceRefresh) {
-                loadedFavoriteTypes.removeAll(requestedTypes.toSet())
+    suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) = loadOnce(
+        key = KEY_BULK_WORLDS,
+        forceRefresh = forceRefresh,
+        fetch = {
+            BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
+                favoriteApi.getFavoriteWorlds(n = count, offset = offset)
             }
-            requestedTypes.filterNot { it in loadedFavoriteTypes }
-        }
-        if (typesToLoad.isEmpty()) return
+        },
+        publish = { _favoriteWorlds.value = it },
+    )
 
-        val loadedFavorites = typesToLoad.associateWith { favoriteType ->
+    suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) = loadOnce(
+        key = KEY_BULK_AVATARS,
+        forceRefresh = forceRefresh,
+        fetch = {
+            BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
+                favoriteApi.getFavoriteAvatars(n = count, offset = offset)
+            }
+        },
+        publish = { _favoriteAvatars.value = it },
+    )
+
+    override fun clearRuntimeState() {
+        synchronized(loadLock) { loadedKeys.clear() }
+        _favorites.value = emptyList()
+        _favoriteGroups.value = emptyList()
+        favoriteLimits = null
+        _favoriteWorlds.value = emptyList()
+        _favoriteAvatars.value = emptyList()
+    }
+
+    /** Favorites are loaded per type and merged into one list rather than replacing it. */
+    suspend fun loadFavorites(type: String, forceRefresh: Boolean = false) = loadOnce(
+        key = favoritesKey(type),
+        forceRefresh = forceRefresh,
+        fetch = {
             BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
                 favoriteApi.getFavorites(
                     n = count,
                     offset = offset,
-                    type = favoriteType,
+                    type = type,
                 )
             }
-        }
+        },
+        publish = { items -> _favorites.value = _favorites.value.filterNot { it.type == type } + items },
+    )
 
-        favoriteMutex.withLock {
-            if (generation != accountGeneration.get()) return
-            var merged = _favorites.value
-            for ((favoriteType, items) in loadedFavorites) {
-                merged = merged.filterNot { it.type == favoriteType } + items
-                loadedFavoriteTypes.add(favoriteType)
+    suspend fun loadFavoriteGroups(forceRefresh: Boolean = false) = loadOnce(
+        key = KEY_GROUPS,
+        forceRefresh = forceRefresh,
+        fetch = {
+            BulkPaginator.fetchAll(pageSize = FAVORITE_GROUPS_PAGE_SIZE) { offset, count ->
+                favoriteApi.getFavoriteGroups(
+                    n = count,
+                    offset = offset,
+                )
             }
-            _favorites.value = merged
-        }
-    }
+        },
+        publish = { _favoriteGroups.value = it },
+    )
 
-    suspend fun loadFavoriteGroups(forceRefresh: Boolean = false) {
-        val generation = accountGeneration.get()
-        val shouldLoad = favoriteMutex.withLock {
-            if (forceRefresh) {
-                favoriteGroupsLoaded = false
-            }
-            !favoriteGroupsLoaded
-        }
-        if (!shouldLoad) return
-
-        val groups = BulkPaginator.fetchAll(pageSize = FAVORITE_GROUPS_PAGE_SIZE) { offset, count ->
-            favoriteApi.getFavoriteGroups(
-                n = count,
-                offset = offset,
-            )
-        }
-
-        favoriteMutex.withLock {
-            if (generation != accountGeneration.get()) return
-            _favoriteGroups.value = groups
-            favoriteGroupsLoaded = true
-        }
-    }
-
-    suspend fun loadFavoriteLimits(forceRefresh: Boolean = false) {
-        val generation = accountGeneration.get()
-        val shouldLoad = favoriteMutex.withLock {
-            if (forceRefresh) {
-                favoriteLimitsLoaded = false
-            }
-            !favoriteLimitsLoaded
-        }
-        if (!shouldLoad) return
-
-        val limits = favoriteApi.getFavoriteLimits()
-        favoriteMutex.withLock {
-            if (generation != accountGeneration.get()) return
-            _favoriteLimits.value = limits
-            favoriteLimitsLoaded = true
-        }
-    }
+    suspend fun loadFavoriteLimits(forceRefresh: Boolean = false) = loadOnce(
+        key = KEY_LIMITS,
+        forceRefresh = forceRefresh,
+        fetch = { favoriteApi.getFavoriteLimits() },
+        publish = { favoriteLimits = it },
+    )
 
     suspend fun addFavorite(type: String, favoriteId: String, tags: List<String> = emptyList()): Favorite {
-        val generation = accountGeneration.get()
+        val token = account.current()
         val resolvedTags = if (tags.isNotEmpty()) {
             tags
         } else {
-            try {
-                getPreferredFavoriteTags(type).ifEmpty { defaultFavoriteTags(type) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                defaultFavoriteTags(type)
-            }
+            runCatchingCancellable { getPreferredFavoriteTags(type).ifEmpty { defaultFavoriteTags(type) } }
+                .getOrElse { defaultFavoriteTags(type) }
         }
-        ensureCurrentGeneration(generation)
+        account.ensureCurrent(token)
         val favorite = favoriteApi.addFavorite(
             com.vrcx.android.data.api.model.FavoriteAddRequest(type, favoriteId, resolvedTags)
         )
-        favoriteMutex.withLock {
-            ensureCurrentGeneration(generation)
+        account.publishOrAbort(token) {
             _favorites.value = _favorites.value
                 .filterNot { it.type == type && it.favoriteId == favoriteId }
                 .plus(favorite)
@@ -201,33 +166,30 @@ class FavoriteRepository @Inject constructor(
         // bulk cache in place so the UI updates immediately; if that fetch
         // fails, fall back to invalidating the flag so the next screen entry
         // gets a chance to catch up via the bulk endpoint.
-        try {
+        runCatchingCancellable {
             when (type) {
                 "world" -> {
                     val world = worldApi.getWorld(favoriteId)
-                    favoriteMutex.withLock {
-                        ensureCurrentGeneration(generation)
+                    account.publishOrAbort(token) {
                         _favoriteWorlds.value = _favoriteWorlds.value
                             .filterNot { it.id == world.id } + world
                     }
                 }
                 "avatar" -> {
                     val avatar = avatarApi.getAvatar(favoriteId)
-                    favoriteMutex.withLock {
-                        ensureCurrentGeneration(generation)
+                    account.publishOrAbort(token) {
                         _favoriteAvatars.value = _favoriteAvatars.value
                             .filterNot { it.id == avatar.id } + avatar
                     }
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            favoriteMutex.withLock {
-                ensureCurrentGeneration(generation)
-                when (type) {
-                    "world" -> favoriteWorldsLoaded = false
-                    "avatar" -> favoriteAvatarsLoaded = false
+        }.onFailure {
+            account.publishOrAbort(token) {
+                synchronized(loadLock) {
+                    when (type) {
+                        "world" -> loadedKeys.remove(KEY_BULK_WORLDS)
+                        "avatar" -> loadedKeys.remove(KEY_BULK_AVATARS)
+                    }
                 }
             }
         }
@@ -235,14 +197,11 @@ class FavoriteRepository @Inject constructor(
     }
 
     suspend fun deleteFavorite(favoriteId: String) {
-        val generation = accountGeneration.get()
-        val existing = favoriteMutex.withLock {
-            ensureCurrentGeneration(generation)
-            _favorites.value.firstOrNull { it.id == favoriteId }
-        }
+        val token = account.current()
+        account.ensureCurrent(token)
+        val existing = _favorites.value.firstOrNull { it.id == favoriteId }
         favoriteApi.deleteFavorite(favoriteId)
-        favoriteMutex.withLock {
-            ensureCurrentGeneration(generation)
+        account.publishOrAbort(token) {
             _favorites.value = _favorites.value.filter { it.id != favoriteId }
             // Drop the underlying world/avatar from the bulk cache immediately
             // so observers never retain an item that was successfully deleted.
@@ -262,7 +221,7 @@ class FavoriteRepository @Inject constructor(
         loadFavoriteGroups()
         loadFavoriteLimits()
 
-        val limits = _favoriteLimits.value
+        val limits = favoriteLimits
         val groupLimit = limits?.maxFavoritesPerGroup?.get(type)
         val groupCounts = _favorites.value
             .filter { it.type == type }
@@ -303,14 +262,13 @@ class FavoriteRepository @Inject constructor(
         return listOfNotNull(DEFAULT_FAVORITE_TAGS[type])
     }
 
-    private fun ensureCurrentGeneration(generation: Long) {
-        if (generation != accountGeneration.get()) {
-            throw CancellationException("Favorite operation invalidated by account change")
-        }
-    }
-
     companion object {
-        private val DEFAULT_FAVORITE_TYPES = listOf("friend", "world", "avatar", "vrcPlusWorld")
+        private const val KEY_BULK_WORLDS = "bulk:worlds"
+        private const val KEY_BULK_AVATARS = "bulk:avatars"
+        private const val KEY_GROUPS = "groups"
+        private const val KEY_LIMITS = "limits"
+        private fun favoritesKey(type: String) = "favorites:$type"
+
         private val DEFAULT_FAVORITE_TAGS = mapOf(
             "friend" to "group_0",
             "world" to "worlds1",
@@ -318,18 +276,5 @@ class FavoriteRepository @Inject constructor(
         )
         private const val FAVORITES_PAGE_SIZE = 100
         private const val FAVORITE_GROUPS_PAGE_SIZE = 50
-    }
-
-    private fun resetRuntimeStateLocked() {
-        loadedFavoriteTypes.clear()
-        favoriteGroupsLoaded = false
-        favoriteLimitsLoaded = false
-        favoriteWorldsLoaded = false
-        favoriteAvatarsLoaded = false
-        _favorites.value = emptyList()
-        _favoriteGroups.value = emptyList()
-        _favoriteLimits.value = null
-        _favoriteWorlds.value = emptyList()
-        _favoriteAvatars.value = emptyList()
     }
 }

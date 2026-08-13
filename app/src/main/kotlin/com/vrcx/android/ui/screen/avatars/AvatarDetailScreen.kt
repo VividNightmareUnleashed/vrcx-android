@@ -13,20 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -39,12 +36,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.displayableTags
 import com.vrcx.android.ui.common.platformLabel
+import com.vrcx.android.ui.common.valueOrNull
+import com.vrcx.android.ui.components.ChipCard
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
@@ -58,21 +57,20 @@ fun AvatarDetailScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val avatar by viewModel.avatar.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
+    val avatarState by viewModel.avatar.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
-    val isFavorited by viewModel.isFavorited.collectAsStateWithLifecycle()
+    val favoriteEntryId by viewModel.favoriteEntryId.collectAsStateWithLifecycle()
+    val isFavorited = favoriteEntryId != null
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
-        message?.let { viewModel.clearMessage(); snackbarHostState.showSnackbar(it) }
+        message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
     }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             VrcxDetailTopBar(
-                title = avatar?.name ?: "Avatar",
+                title = avatarState.valueOrNull?.name ?: "Avatar",
                 onBack = onBack,
                 actions = {
                     IconButton(onClick = { viewModel.toggleFavorite() }) {
@@ -85,11 +83,11 @@ fun AvatarDetailScreen(
                 },
             )
 
-            when {
-                isLoading && avatar == null -> LoadingState()
-                error != null && avatar == null -> ErrorState(error ?: "Error", onRetry = { viewModel.loadAvatar() })
-                avatar != null -> {
-                    val a = avatar!!
+            when (val loadState = avatarState) {
+                LoadState.NotLoaded, LoadState.Loading -> LoadingState()
+                is LoadState.Failed -> ErrorState(loadState.message, onRetry = { viewModel.loadAvatar() })
+                is LoadState.Loaded -> {
+                    val a = loadState.value
                     Column(
                         Modifier
                             .fillMaxSize()
@@ -145,33 +143,24 @@ fun AvatarDetailScreen(
                         // Platform support
                         val platforms = a.unityPackages.map { it.platform to it.performanceRating }.filter { it.first.isNotEmpty() }
                         if (platforms.isNotEmpty()) {
-                            VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                                Column(Modifier.padding(16.dp)) {
-                                    SectionHeader("Platforms")
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        platforms.distinctBy { it.first }.forEach { (platform, perf) ->
-                                            val perfLabel = if (perf.isNotEmpty()) " ($perf)" else ""
-                                            AssistChip(onClick = {}, label = { Text("${platformLabel(platform)}$perfLabel") })
-                                        }
-                                    }
-                                }
-                            }
+                            ChipCard(
+                                title = "Platforms",
+                                labels = platforms.distinctBy { it.first }.map { (platform, perf) ->
+                                    platformLabel(platform) + if (perf.isNotEmpty()) " ($perf)" else ""
+                                },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
                             Spacer(Modifier.height(8.dp))
                         }
 
                         // Tags
                         val displayTags = displayableTags(a.tags)
                         if (displayTags.isNotEmpty()) {
-                            VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                                Column(Modifier.padding(16.dp)) {
-                                    SectionHeader("Tags")
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        displayTags.forEach { tag ->
-                                            AssistChip(onClick = {}, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
-                                        }
-                                    }
-                                }
-                            }
+                            ChipCard(
+                                title = "Tags",
+                                labels = displayTags,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
                             Spacer(Modifier.height(8.dp))
                         }
 

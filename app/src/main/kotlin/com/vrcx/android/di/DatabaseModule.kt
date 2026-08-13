@@ -6,6 +6,7 @@ import com.vrcx.android.data.db.MIGRATION_1_2
 import com.vrcx.android.data.db.MIGRATION_2_3
 import com.vrcx.android.data.db.MIGRATION_3_4
 import com.vrcx.android.data.db.MIGRATION_4_5
+import com.vrcx.android.data.db.MIGRATION_5_6
 import com.vrcx.android.data.db.VrcxDatabase
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.FeedDao
@@ -28,7 +29,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VrcxDatabase {
         return Room.databaseBuilder(context, VrcxDatabase::class.java, "vrcx.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
     }
 

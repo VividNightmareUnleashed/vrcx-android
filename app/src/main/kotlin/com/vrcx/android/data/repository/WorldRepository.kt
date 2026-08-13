@@ -5,13 +5,12 @@ import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.WorldApi
 import com.vrcx.android.data.api.model.Instance
 import com.vrcx.android.data.api.model.World
-import kotlinx.coroutines.CancellationException
+import com.vrcx.android.data.util.runCatchingCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,11 +19,12 @@ class WorldRepository @Inject constructor(
     private val worldApi: WorldApi,
     private val instanceApi: InstanceApi,
     private val dedup: RequestDeduplicator,
-) {
+    accountScope: AccountScope,
+) : AccountScoped {
     private data class CachedWorld(val value: World, val cachedAtMillis: Long)
 
+    private val account = accountScope.bindTo(this)
     private val worldCache = ConcurrentHashMap<String, CachedWorld>()
-    private val accountGeneration = AtomicLong(0)
 
     suspend fun getWorld(worldId: String, forceRefresh: Boolean = false): World {
         val now = System.currentTimeMillis()
@@ -32,16 +32,15 @@ class WorldRepository @Inject constructor(
             worldCache[worldId]?.takeIf { now - it.cachedAtMillis < WORLD_CACHE_TTL_MS }
                 ?.let { return it.value }
         }
-        val generation = accountGeneration.get()
+        val token = account.current()
         val world = dedup.dedupGet("world:$worldId") { worldApi.getWorld(worldId) }
-        if (generation == accountGeneration.get()) {
+        account.publishIfCurrent(token) {
             worldCache[worldId] = CachedWorld(world, System.currentTimeMillis())
         }
         return world
     }
 
-    fun clearRuntimeState() {
-        accountGeneration.incrementAndGet()
+    override fun clearRuntimeState() {
         worldCache.clear()
     }
 
@@ -68,13 +67,7 @@ class WorldRepository @Inject constructor(
         return coroutineScope {
             capped.map { instanceId ->
                 async {
-                    try {
-                        instanceApi.getInstance(worldId, instanceId)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        null
-                    }
+                    runCatchingCancellable { instanceApi.getInstance(worldId, instanceId) }.getOrNull()
                 }
             }.awaitAll().filterNotNull()
         }

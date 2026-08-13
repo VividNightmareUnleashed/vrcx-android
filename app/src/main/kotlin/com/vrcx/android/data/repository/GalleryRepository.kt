@@ -9,7 +9,8 @@ import com.vrcx.android.data.api.model.InventoryItem
 import com.vrcx.android.data.api.model.InventoryTemplate
 import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.VrcPrint
-import kotlinx.coroutines.CancellationException
+import com.vrcx.android.data.util.runCatchingCancellable
+import com.vrcx.android.data.util.runIgnoringFailure
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -29,9 +30,9 @@ class GalleryRepository @Inject constructor(
     private val galleryApi: GalleryApi,
     private val inventoryApi: InventoryApi,
     private val userApi: UserApi,
-) {
-    private val stateLock = Any()
-    private var accountGeneration = 0L
+    accountScope: AccountScope,
+) : AccountScoped {
+    private val account = accountScope.bindTo(this)
 
     private val _galleryImages = MutableStateFlow<List<GalleryImage>>(emptyList())
     val galleryImages: StateFlow<List<GalleryImage>> = _galleryImages.asStateFlow()
@@ -54,41 +55,56 @@ class GalleryRepository @Inject constructor(
     private val _inventoryTemplates = MutableStateFlow<List<InventoryTemplate>>(emptyList())
     val inventoryTemplates: StateFlow<List<InventoryTemplate>> = _inventoryTemplates.asStateFlow()
 
-    suspend fun loadGallery() = loadImages("gallery", currentGeneration(), _galleryImages)
+    /** The `GET files` tag each image list is published under. */
+    private val imageFlowsByTag = mapOf(
+        "gallery" to _galleryImages,
+        "icon" to _iconImages,
+        "emoji" to _emojiImages,
+        "sticker" to _stickerImages,
+    )
 
-    suspend fun loadIcons() = loadImages("icon", currentGeneration(), _iconImages)
+    suspend fun loadGallery() = loadImages("gallery", account.current())
 
-    suspend fun loadEmojis() = loadImages("emoji", currentGeneration(), _emojiImages)
+    suspend fun loadIcons() = loadImages("icon", account.current())
 
-    suspend fun loadStickers() = loadImages("sticker", currentGeneration(), _stickerImages)
+    suspend fun loadEmojis() = loadImages("emoji", account.current())
 
-    suspend fun loadPrints(userId: String) = loadPrints(userId, currentGeneration())
+    suspend fun loadStickers() = loadImages("sticker", account.current())
 
-    suspend fun loadInventory() = loadInventory(currentGeneration())
+    suspend fun loadPrints(userId: String) = loadPrints(userId, account.current())
 
-    private suspend fun loadImages(
-        tag: String,
-        generation: Long,
-        destination: MutableStateFlow<List<GalleryImage>>,
-    ) {
-        val images = galleryApi.getFileList(tag = tag).reversed()
-        publishIfCurrent(generation) { destination.value = images }
+    suspend fun loadInventory() = loadInventory(account.current())
+
+    private suspend fun loadImages(tag: String, token: AccountScope.Token) {
+        val destination = imageFlowsByTag.getValue(tag)
+        val images = BulkPaginator.fetchAll(
+            pageSize = FILE_PAGE_SIZE,
+            maxPages = MAX_FILE_PAGES,
+        ) { offset, n ->
+            galleryApi.getFileList(n = n, offset = offset, tag = tag)
+        }.reversed()
+        account.publishIfCurrent(token) { destination.value = images }
     }
 
-    private suspend fun loadPrints(userId: String, generation: Long) {
-        val prints = galleryApi.getPrints(userId)
-        publishIfCurrent(generation) { _prints.value = prints }
+    private suspend fun loadPrints(userId: String, token: AccountScope.Token) {
+        val prints = BulkPaginator.fetchAll(
+            pageSize = FILE_PAGE_SIZE,
+            maxPages = MAX_FILE_PAGES,
+        ) { offset, n ->
+            galleryApi.getPrints(userId, n = n, offset = offset)
+        }
+        account.publishIfCurrent(token) { _prints.value = prints }
     }
 
-    private suspend fun loadInventory(generation: Long) {
+    private suspend fun loadInventory(token: AccountScope.Token) {
         var totalCount = 0
         val items = BulkPaginator.fetchAll(
             pageSize = INVENTORY_PAGE_SIZE,
             maxPages = MAX_INVENTORY_PAGES,
             stopOnShortPage = false,
-            stopWhen = { fetched -> totalCount in 1..fetched },
+            stopWhen = { _, fetched -> totalCount in 1..fetched },
         ) { offset, n ->
-            ensureCurrentGeneration(generation)
+            account.ensureCurrent(token)
             val response = inventoryApi.getInventoryItems(n = n, offset = offset)
             if (response.totalCount > 0) totalCount = response.totalCount
             response.data
@@ -102,68 +118,37 @@ class GalleryRepository @Inject constructor(
                 .map { templateId ->
                     async {
                         semaphore.withPermit {
-                            try {
-                                ensureCurrentGeneration(generation)
+                            runCatchingCancellable {
+                                account.ensureCurrent(token)
                                 inventoryApi.getInventoryTemplate(templateId)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (_: Exception) {
-                                null
-                            }
+                            }.getOrNull()
                         }
                     }
                 }
                 .awaitAll()
                 .filterNotNull()
         }
-        publishIfCurrent(generation) {
+        account.publishIfCurrent(token) {
             _inventoryItems.value = items
             _inventoryTemplates.value = templates
         }
     }
 
-    fun clearRuntimeState() {
-        synchronized(stateLock) {
-            accountGeneration++
-            _galleryImages.value = emptyList()
-            _iconImages.value = emptyList()
-            _emojiImages.value = emptyList()
-            _stickerImages.value = emptyList()
-            _prints.value = emptyList()
-            _inventoryItems.value = emptyList()
-            _inventoryTemplates.value = emptyList()
-        }
+    override fun clearRuntimeState() {
+        imageFlowsByTag.values.forEach { it.value = emptyList() }
+        _prints.value = emptyList()
+        _inventoryItems.value = emptyList()
+        _inventoryTemplates.value = emptyList()
     }
 
     suspend fun handleContentRefresh(contentType: String, userId: String) {
-        val generation = currentGeneration()
-        try {
-            when (contentType) {
-                "gallery" -> loadImages("gallery", generation, _galleryImages)
-                "icon" -> loadImages("icon", generation, _iconImages)
-                "emoji" -> loadImages("emoji", generation, _emojiImages)
-                "sticker" -> loadImages("sticker", generation, _stickerImages)
-                "print", "prints" -> loadPrints(userId, generation)
-                "inventory" -> loadInventory(generation)
+        val token = account.current()
+        runIgnoringFailure {
+            when {
+                contentType in imageFlowsByTag -> loadImages(contentType, token)
+                contentType == "print" || contentType == "prints" -> loadPrints(userId, token)
+                contentType == "inventory" -> loadInventory(token)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {}
-    }
-
-    private fun currentGeneration(): Long = synchronized(stateLock) { accountGeneration }
-
-    private fun ensureCurrentGeneration(generation: Long) {
-        synchronized(stateLock) {
-            if (generation != accountGeneration) {
-                throw CancellationException("Gallery load invalidated by account change")
-            }
-        }
-    }
-
-    private inline fun publishIfCurrent(generation: Long, publish: () -> Unit) {
-        synchronized(stateLock) {
-            if (generation == accountGeneration) publish()
         }
     }
 
@@ -202,6 +187,8 @@ class GalleryRepository @Inject constructor(
     }
 
     internal companion object {
+        private const val FILE_PAGE_SIZE = 100
+        private const val MAX_FILE_PAGES = 10
         private const val INVENTORY_PAGE_SIZE = 100
         private const val MAX_INVENTORY_PAGES = 100
 

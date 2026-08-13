@@ -6,11 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -22,22 +28,16 @@ class AvatarDetailViewModel @Inject constructor(
 ) : ViewModel() {
     val avatarId: String = savedStateHandle.get<String>("avatarId") ?: ""
 
-    private val _avatar = MutableStateFlow<Avatar?>(null)
-    val avatar: StateFlow<Avatar?> = _avatar.asStateFlow()
+    private val _avatar = MutableStateFlow<LoadState<Avatar>>(LoadState.NotLoaded)
+    val avatar: StateFlow<LoadState<Avatar>> = _avatar.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
-
+    /** An action's outcome rather than a load's, so it stays beside the state. */
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private val _isFavorited = MutableStateFlow(false)
-    val isFavorited: StateFlow<Boolean> = _isFavorited.asStateFlow()
-
-    private var favoriteEntryId: String? = null
+    /** Non-null exactly when this avatar is in the favorites list. */
+    private val _favoriteEntryId = MutableStateFlow<String?>(null)
+    val favoriteEntryId: StateFlow<String?> = _favoriteEntryId.asStateFlow()
 
     init {
         observeFavoriteStatus()
@@ -47,17 +47,16 @@ class AvatarDetailViewModel @Inject constructor(
 
     fun loadAvatar() {
         viewModelScope.launch {
-            _isLoading.value = true
-            _error.value = null
+            _avatar.update { it.startLoad() }
             try {
-                val a = avatarRepository.getAvatar(avatarId, forceRefresh = true)
-                _avatar.value = a
+                val avatar = avatarRepository.getAvatar(avatarId, forceRefresh = true)
+                _avatar.update { it.completeLoad(avatar) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load avatar"
+                _avatar.update { it.failLoad(e.message ?: "Failed to load avatar") }
             } finally {
-                _isLoading.value = false
+                _avatar.update { it.settleLoad() }
             }
         }
     }
@@ -79,8 +78,13 @@ class AvatarDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 favoriteRepository.loadFavorites(type = "avatar")
-                if (_isFavorited.value && favoriteEntryId != null) {
-                    favoriteRepository.deleteFavorite(favoriteEntryId!!)
+                // Read the freshly loaded list rather than the collector's
+                // mirror, which has not resumed yet at this point.
+                val entryId = favoriteRepository.favorites.value.firstOrNull {
+                    it.type == "avatar" && it.favoriteId == avatarId
+                }?.id
+                if (entryId != null) {
+                    favoriteRepository.deleteFavorite(entryId)
                     _message.value = "Removed from favorites"
                 } else {
                     favoriteRepository.addFavorite("avatar", avatarId)
@@ -111,11 +115,9 @@ class AvatarDetailViewModel @Inject constructor(
     private fun observeFavoriteStatus() {
         viewModelScope.launch {
             favoriteRepository.favorites.collect { favorites ->
-                val favorite = favorites.firstOrNull {
+                _favoriteEntryId.value = favorites.firstOrNull {
                     it.type == "avatar" && it.favoriteId == avatarId
-                }
-                favoriteEntryId = favorite?.id
-                _isFavorited.value = favorite != null
+                }?.id
             }
         }
     }

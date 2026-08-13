@@ -23,7 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
@@ -33,7 +33,8 @@ import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
-import com.vrcx.android.data.repository.activityLabel
+import com.vrcx.android.ui.common.activityLabel
+import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.relativeTime
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
@@ -44,16 +45,31 @@ import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 
 data class DashboardActivityBreakdown(
     val moves: Int = 0,
     val statusChanges: Int = 0,
     val avatarChanges: Int = 0,
+)
+
+/**
+ * Everything the dashboard renders, derived from one snapshot of the friend map
+ * and one slice of the feed, so the counters, the favourites row and the
+ * activity breakdown can never describe different moments.
+ */
+data class DashboardUiState(
+    val currentUser: CurrentUser? = null,
+    val friendCounts: Map<FriendState, Int> = emptyMap(),
+    val favoriteOnlineFriends: List<FriendContext> = emptyList(),
+    val recentEntries: List<FeedEntry> = emptyList(),
+    val activityBreakdown: DashboardActivityBreakdown = DashboardActivityBreakdown(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -63,55 +79,49 @@ class DashboardViewModel @Inject constructor(
     friendRepository: FriendRepository,
     feedRepository: FeedRepository,
 ) : ViewModel() {
-    private val recentActivitySourceLimit = 6
+    private val recentActivityLimit = 6
+    private val favoriteFriendLimit = 5
 
-    val currentUser = authRepository.authState
+    private val currentUser = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user }
         .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val friendCounts: StateFlow<Triple<Int, Int, Int>> = friendRepository.friends
-        .map { friends ->
-            Triple(
-                friends.values.count { it.state == FriendState.ONLINE },
-                friends.values.count { it.state == FriendState.ACTIVE },
-                friends.values.count { it.state == FriendState.OFFLINE },
-            )
-        }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(0, 0, 0))
-
-    val recentEntries: StateFlow<List<FeedEntry>> = authRepository.authState
-        .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
+    // Seeded so the counters and the favourites row render as soon as the friend
+    // map is there, rather than waiting on the first feed emission.
+    private val recentEntries = currentUser
+        .map { it?.id.orEmpty() }
         .distinctUntilChanged()
         .flatMapLatest { userId ->
             if (userId.isBlank()) {
                 flowOf(emptyList())
             } else {
-                feedRepository.getUnifiedFeed(userId, recentActivitySourceLimit)
-                    .map { it.entries.take(recentActivitySourceLimit) }
+                feedRepository.getUnifiedFeed(userId).map { it.take(recentActivityLimit) }
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .onStart { emit(emptyList()) }
 
-    val favoriteOnlineFriends: StateFlow<List<FriendContext>> = friendRepository.friends
-        .map { friends ->
-            friends.values
-                .filter { it.isVIP && it.state == FriendState.ONLINE }
-                .sortedBy { it.name.lowercase() }
-                .take(5)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val activityBreakdown: StateFlow<DashboardActivityBreakdown> = recentEntries
-        .map { entries ->
-            DashboardActivityBreakdown(
+    val state: StateFlow<DashboardUiState> = combine(
+        currentUser,
+        friendRepository.friends,
+        friendRepository.favoriteFriendIds,
+        recentEntries,
+    ) { user, friends, favoriteIds, entries ->
+        DashboardUiState(
+            currentUser = user,
+            friendCounts = friends.values.groupingBy { it.state }.eachCount(),
+            favoriteOnlineFriends = friends.values
+                .filter { it.id in favoriteIds && it.state == FriendState.ONLINE }
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+                .take(favoriteFriendLimit),
+            recentEntries = entries,
+            activityBreakdown = DashboardActivityBreakdown(
                 moves = entries.count { it.type == FeedEntryType.GPS },
                 statusChanges = entries.count { it.type == FeedEntryType.STATUS },
                 avatarChanges = entries.count { it.type == FeedEntryType.AVATAR },
-            )
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardActivityBreakdown())
+            ),
+        )
+    }
+        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -121,11 +131,12 @@ fun DashboardScreen(
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
-    val friendCounts by viewModel.friendCounts.collectAsStateWithLifecycle()
-    val recentEntries by viewModel.recentEntries.collectAsStateWithLifecycle()
-    val favoriteOnlineFriends by viewModel.favoriteOnlineFriends.collectAsStateWithLifecycle()
-    val activityBreakdown by viewModel.activityBreakdown.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val currentUser = state.currentUser
+    val friendCounts = state.friendCounts
+    val recentEntries = state.recentEntries
+    val favoriteOnlineFriends = state.favoriteOnlineFriends
+    val activityBreakdown = state.activityBreakdown
 
     Column(modifier = Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Dashboard", onBack = onBack)
@@ -165,9 +176,9 @@ fun DashboardScreen(
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DashboardMetric("Online", friendCounts.first, Modifier.weight(1f))
-                DashboardMetric("Active", friendCounts.second, Modifier.weight(1f))
-                DashboardMetric("Offline", friendCounts.third, Modifier.weight(1f))
+                FriendState.entries.forEach { state ->
+                    DashboardMetric(state.label, friendCounts[state] ?: 0, Modifier.weight(1f))
+                }
             }
         }
         item {
@@ -223,13 +234,7 @@ fun DashboardScreen(
                         Column(Modifier.weight(1f)) {
                             Text(friend.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                             Text(
-                                friend.ref?.statusDescription?.ifBlank {
-                                    when (friend.state) {
-                                        FriendState.ONLINE -> "Online"
-                                        FriendState.ACTIVE -> "Active"
-                                        FriendState.OFFLINE -> "Offline"
-                                    }
-                                } ?: "",
+                                friend.ref?.statusDescription?.ifBlank { friend.state.label } ?: "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -237,11 +242,7 @@ fun DashboardScreen(
                             )
                         }
                         Text(
-                            when (friend.state) {
-                                FriendState.ONLINE -> "Online"
-                                FriendState.ACTIVE -> "Active"
-                                FriendState.OFFLINE -> "Offline"
-                            },
+                            friend.state.label,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -265,7 +266,7 @@ fun DashboardScreen(
                 )
             }
         } else {
-            items(recentEntries, key = { "${it.type.id}_${it.id}" }) { entry ->
+            items(recentEntries, key = { it.key }) { entry ->
                 VrcxCard(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)

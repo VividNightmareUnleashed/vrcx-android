@@ -15,6 +15,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.Dispatchers
 import okhttp3.OkHttpClient
 import javax.inject.Named
 
@@ -25,6 +26,9 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
             context, ImageLoaderEntryPoint::class.java
         )
         return ImageLoader.Builder(context)
+            // Coil runs the interceptor chain in the caller's context, which for
+            // AsyncImage is the main thread; the profile-pic probe hits the disk.
+            .interceptorCoroutineContext(Dispatchers.IO)
             .components {
                 add(ProfilePicCacheInterceptor(entryPoint.profilePicCacheManager()))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

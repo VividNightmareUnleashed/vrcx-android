@@ -1,10 +1,68 @@
 package com.vrcx.android.data.api
 
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 
 class AuthInterceptorTest {
     private val interceptor = AuthInterceptor()
+    private lateinit var server: MockWebServer
+    private lateinit var client: OkHttpClient
+
+    @Before
+    fun setUp() {
+        server = MockWebServer().apply { start() }
+        client = OkHttpClient.Builder().addInterceptor(interceptor).build()
+    }
+
+    @After
+    fun tearDown() {
+        server.shutdown()
+    }
+
+    @Test
+    fun `basic auth rides on the request only while it is set`() {
+        server.enqueue(MockResponse())
+        server.enqueue(MockResponse())
+
+        interceptor.setBasicAuth("vrcx", "test")
+        call()
+        assertEquals("Basic ${interceptor.encodeBasicAuth("vrcx", "test")}", server.takeRequest().getHeader("Authorization"))
+
+        interceptor.clearBasicAuth()
+        call()
+        // The credentials outliving the login attempt would put the user's
+        // password on every request for the rest of the session.
+        assertNull(server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun `basic auth overwrites an authorization header the request already carries`() {
+        server.enqueue(MockResponse())
+        interceptor.setBasicAuth("vrcx", "test")
+
+        client.newCall(
+            Request.Builder()
+                .url(server.url("/auth/user"))
+                .header("Authorization", "Bearer stale")
+                .build()
+        ).execute().close()
+
+        assertEquals(
+            "Basic ${interceptor.encodeBasicAuth("vrcx", "test")}",
+            server.takeRequest().getHeader("Authorization"),
+        )
+    }
+
+    private fun call() {
+        client.newCall(Request.Builder().url(server.url("/auth/user")).build()).execute().close()
+    }
 
     @Test
     fun `encodeURIComponent matches desktop-compatible escaping`() {

@@ -27,7 +27,7 @@ class CookieJarImpl @Inject constructor(
 
     init {
         synchronized(lock) {
-            loadFromSecureStoreLocked()
+            replaceStoreLocked(secureSecretsStore.getCookiesByHost())
             lastPersisted = serializeStore()
             migrateLegacyPrefsIfNeededLocked()
         }
@@ -49,32 +49,42 @@ class CookieJarImpl @Inject constructor(
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         return synchronized(lock) {
-            val host = url.host
-            val cookies = cookieStore[host] ?: return@synchronized emptyList()
-            // Only expiry evicts. A cookie that doesn't match *this* URL — a
-            // narrower path, a secure cookie on a plaintext request — is still
-            // owed to other requests, so it must not be dropped from the store.
-            val liveCookies = cookies.filter { !isExpired(it) }
-            if (liveCookies.size != cookies.size) {
-                cookieStore[host] = liveCookies.toMutableList()
-                persistToPrefsLocked()
-            }
-            liveCookies.filter { it.matches(url) }
+            val cookies = cookieStore[url.host] ?: return@synchronized emptyList()
+            // Filter, never evict. A cookie that doesn't match *this* URL is still
+            // owed to other requests, and making an expiry-driven eviction durable
+            // from a read path means a device whose clock jumped forward destroys
+            // the stored session on the next request — correcting the clock would
+            // not bring it back. The store shrinks on the write path instead, when
+            // the server itself replaces or expires a cookie.
+            cookies.filter { !isExpired(it) && it.matches(url) }
         }
     }
 
     fun clearAll() {
         synchronized(lock) {
             cookieStore.clear()
-            secureSecretsStore.replaceCookiesByHost(emptyMap())
-            lastPersisted = emptyMap()
+            persistToPrefsLocked()
             prefs.edit().clear().apply()
+        }
+    }
+
+    /** Serialized copy of the jar, for a caller that has to clear it but may need it back. */
+    fun snapshot(): Map<String, String> = synchronized(lock) { serializeStore() }
+
+    fun restore(snapshot: Map<String, String>) {
+        synchronized(lock) {
+            replaceStoreLocked(snapshot)
+            persistToPrefsLocked()
         }
     }
 
     fun getAuthCookie(): String? {
         return synchronized(lock) {
-            cookieStore.values.flatten().firstOrNull { it.name == "auth" }?.value
+            cookieStore.entries
+                .filter { (host, _) -> isVrchatCookieHost(host) }
+                .flatMap { (_, cookies) -> cookies }
+                .firstOrNull { it.name == "auth" && !isExpired(it) }
+                ?.value
         }
     }
 
@@ -90,12 +100,22 @@ class CookieJarImpl @Inject constructor(
     private fun persistToPrefsLocked() {
         val serializedCookies = serializeStore()
         if (serializedCookies == lastPersisted) return
-        lastPersisted = serializedCookies
-        secureSecretsStore.replaceCookiesByHost(serializedCookies)
+        val persisted = try {
+            secureSecretsStore.replaceCookiesByHost(serializedCookies)
+        } catch (_: Exception) {
+            // OkHttp calls the jar on the request and response paths, so a failed
+            // encrypted write must not surface as a failed HTTP call.
+            false
+        }
+        // Only a write that landed may be remembered — otherwise the short-circuit
+        // above would swallow every later retry and the session would never reach
+        // disk, while the running process still looks perfectly healthy.
+        if (persisted) lastPersisted = serializedCookies
     }
 
-    private fun loadFromSecureStoreLocked() {
-        secureSecretsStore.getCookiesByHost().forEach { (host, value) ->
+    private fun replaceStoreLocked(cookiesByHost: Map<String, String>) {
+        cookieStore.clear()
+        cookiesByHost.forEach { (host, value) ->
             if (value.isNotEmpty()) {
                 val cookies = value.split("|").mapNotNull { StoredCookieCodec.deserialize(it) }
                 if (cookies.isNotEmpty()) {

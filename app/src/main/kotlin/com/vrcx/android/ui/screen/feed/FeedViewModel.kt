@@ -2,16 +2,16 @@ package com.vrcx.android.ui.screen.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.api.model.displayAvatarUrl
-import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
-import com.vrcx.android.data.repository.UnifiedFeed
-import com.vrcx.android.data.repository.detailText
+import com.vrcx.android.ui.common.FeedFilter
+import com.vrcx.android.ui.common.applyFeedFilter
+import com.vrcx.android.ui.common.derivationScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,11 +27,14 @@ import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 
-private data class FeedCriteria(
-    val filters: Set<FeedEntryType>,
-    val query: String,
-    val vipOnly: Boolean,
-    val vipFriendIds: Set<String>,
+/**
+ * The rows the feed shows and whether older ones are still held back, published
+ * as one value so the list and the "Load More" affordance always describe the
+ * same page.
+ */
+data class FeedPage(
+    val entries: List<FeedEntry> = emptyList(),
+    val canLoadMore: Boolean = false,
 )
 
 @HiltViewModel
@@ -40,7 +43,6 @@ class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
     private val friendRepository: FriendRepository,
-    preferences: VrcxPreferences,
 ) : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -54,18 +56,10 @@ class FeedViewModel @Inject constructor(
     private val _vipOnly = MutableStateFlow(false)
     val vipOnly: StateFlow<Boolean> = _vipOnly.asStateFlow()
 
-    private val _feedLimit = MutableStateFlow(100)
-
-    private val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
-
-    init {
-        viewModelScope.launch {
-            maxFeedSize.collect { maxSize ->
-                _feedLimit.value = _feedLimit.value.coerceAtMost(maxSize)
-            }
-        }
-    }
+    // How many of the merged page are on screen. The repository already caps the
+    // page at the configured history size, so growing this only reveals rows
+    // that have already been fetched.
+    private val _visibleCount = MutableStateFlow(PAGE_SIZE)
 
     fun refresh() {
         viewModelScope.launch {
@@ -85,15 +79,10 @@ class FeedViewModel @Inject constructor(
 
     fun updateSearch(query: String) { _searchQuery.value = query }
     fun toggleVipOnly() { _vipOnly.value = !_vipOnly.value }
-    fun loadMore() {
-        _feedLimit.value = (_feedLimit.value + 100).coerceAtMost(maxFeedSize.value)
-    }
+    fun loadMore() { _visibleCount.value += PAGE_SIZE }
 
-    val userAvatarUrls: StateFlow<Map<String, String>> = friendRepository.friends.map { friends ->
-        friends.values.mapNotNull { f ->
-            f.ref?.displayAvatarUrl()?.takeIf { it.isNotEmpty() }?.let { url -> f.id to url }
-        }.toMap()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    /** The friend map itself, so rows can look up an avatar without a parallel map. */
+    val friends: StateFlow<Map<String, FriendContext>> = friendRepository.friends
 
     private val userId = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user?.id ?: ""
@@ -102,49 +91,30 @@ class FeedViewModel @Inject constructor(
     private val _activeFilters = MutableStateFlow(FeedEntryType.entries.toSet())
     val activeFilters: StateFlow<Set<FeedEntryType>> = _activeFilters.asStateFlow()
 
-    private val vipFriendIds: StateFlow<Set<String>> = friendRepository.friends.map { friends ->
-        friends.values.filter { it.isVIP }.map { it.id }.toSet()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    private val allEntries = userId.flatMapLatest { uid ->
+        if (uid.isEmpty()) flowOf(emptyList()) else feedRepository.getUnifiedFeed(uid)
+    }
 
-    private val queryLimit: StateFlow<Int> = combine(_feedLimit, maxFeedSize) { currentLimit, maxLimit ->
-        currentLimit.coerceAtMost(maxLimit)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
-
-    private val feedPage: StateFlow<UnifiedFeed> = combine(userId, queryLimit) { uid, limit ->
-        uid to limit
-    }.flatMapLatest { (uid, limit) ->
-        if (uid.isEmpty()) flowOf(UnifiedFeed(emptyList(), false))
-        else feedRepository.getUnifiedFeed(uid, limit)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UnifiedFeed(emptyList(), false))
-
-    private val criteria = combine(
+    private val filter = combine(
         _activeFilters,
         _searchQuery,
         _vipOnly,
-        vipFriendIds,
-    ) { filters, query, vipOnly, vipFriendIds ->
-        FeedCriteria(filters, query, vipOnly, vipFriendIds)
+        friendRepository.favoriteFriendIds,
+        ::FeedFilter,
+    )
+
+    val page: StateFlow<FeedPage> = combine(
+        allEntries,
+        filter,
+        _visibleCount,
+    ) { entries, filter, visibleCount ->
+        val matching = entries.applyFeedFilter(filter)
+        FeedPage(
+            entries = matching.take(visibleCount),
+            canLoadMore = matching.size > visibleCount,
+        )
     }
-
-    val feedEntries: StateFlow<List<FeedEntry>> = combine(
-        feedPage,
-        criteria,
-        _feedLimit,
-    ) { page, criteria, limit ->
-        page.entries
-            .filter { it.type in criteria.filters }
-            .filter { entry ->
-                if (criteria.query.isBlank()) true
-                else entry.displayName.contains(criteria.query, ignoreCase = true) ||
-                    entry.detailText().contains(criteria.query, ignoreCase = true)
-            }
-            .filter { if (criteria.vipOnly) it.userId in criteria.vipFriendIds else true }
-            .take(limit)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val canLoadMore: StateFlow<Boolean> = combine(feedPage, _feedLimit, maxFeedSize) { page, currentLimit, maxLimit ->
-        page.sourceSaturated && currentLimit < maxLimit
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), FeedPage())
 
     fun toggleFilter(filter: FeedEntryType) {
         val current = _activeFilters.value.toMutableSet()
@@ -153,4 +123,8 @@ class FeedViewModel @Inject constructor(
     }
 
     fun consumeError() { _error.value = null }
+
+    private companion object {
+        const val PAGE_SIZE = 100
+    }
 }

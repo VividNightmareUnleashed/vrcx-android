@@ -23,24 +23,21 @@ data class VrcxColors(
     val statusBusy: Color = StatusBusy,
     val statusOffline: Color = StatusOffline,
 
-    // Semantic colors
-    val success: Color = VrcxSuccess,
-    val warning: Color = VrcxWarning,
-    val info: Color = VrcxInfo,
-
-    // Desktop-inspired shell colors
-    val shellGradientStart: Color = Color(0xFF0A0A0A),
-    val shellGradientEnd: Color = Color(0xFF0A0A0A),
-    val panelBackground: Color = Color(0xFF0A0A0A),
-    val panelElevated: Color = Color(0xFF0A0A0A),
-    val panelHover: Color = Color(0xFF262626),
-    val panelBorder: Color = Color(0xFF262626),
-    val panelMuted: Color = Color(0xFFA1A1A1),
-    val fieldBackground: Color = Color(0xFF262626),
-    val focusRing: Color = Color(0xFF525252),
-    val navActive: Color = Color(0xFF262626),
-    val navActiveContent: Color = Color(0xFFFAFAFA),
-    val navInactiveContent: Color = Color(0xFFA1A1A1),
+    // Desktop-inspired shell colors. No defaults: Theme.kt's DarkVrcxColors and
+    // LightVrcxColors are the only palettes, so a new shell colour has to be
+    // given a value there rather than silently inheriting a stale literal.
+    val shellGradientStart: Color,
+    val shellGradientEnd: Color,
+    val panelBackground: Color,
+    val panelElevated: Color,
+    val panelHover: Color,
+    val panelBorder: Color,
+    val panelMuted: Color,
+    val fieldBackground: Color,
+    val focusRing: Color,
+    val navActive: Color,
+    val navActiveContent: Color,
+    val navInactiveContent: Color,
 ) {
     fun trustColor(trustLevel: String): Color = when (trustLevel) {
         "Visitor" -> trustVisitor
@@ -59,12 +56,16 @@ data class VrcxColors(
             "active" -> statusOnline
             "ask me" -> statusAskMe
             "busy" -> statusBusy
+            // VRChat also reports "offline" as a profile status — a friend the
+            // friends page still lists as active. Honour it rather than painting
+            // the at-a-glance dot green.
+            "offline" -> statusOffline
             else -> statusOnline
         }
     }
 }
 
-val LocalVrcxColors = staticCompositionLocalOf { VrcxColors() }
+val LocalVrcxColors = staticCompositionLocalOf { DarkVrcxColors }
 val LocalWallpaperActive = staticCompositionLocalOf { false }
 
 val MaterialTheme.vrcxColors: VrcxColors

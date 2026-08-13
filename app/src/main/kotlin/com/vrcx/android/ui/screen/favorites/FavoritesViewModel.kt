@@ -12,6 +12,14 @@ import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserRepository
+import com.vrcx.android.data.util.captureFailure
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.isBusy
+import com.vrcx.android.ui.common.isLoaded
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -34,20 +42,13 @@ enum class FavoritesTab(
     AVATARS("Avatars", setOf("avatar")),
 }
 
-data class FavoritesTabState(
-    val isLoaded: Boolean = false,
-    val isLoading: Boolean = false,
-    val isRefreshing: Boolean = false,
-    val error: String? = null,
-    val warning: String? = null,
-)
-
 data class FavoritesUiState(
     val selectedTab: FavoritesTab = FavoritesTab.FRIENDS,
-    val tabs: Map<FavoritesTab, FavoritesTabState> =
-        FavoritesTab.entries.associateWith { FavoritesTabState() },
+    /** Each tab's rows live in [FavoriteRepository], so the state carries no value. */
+    val tabs: Map<FavoritesTab, LoadState<Unit>> =
+        FavoritesTab.entries.associateWith { LoadState.NotLoaded },
 ) {
-    val selectedTabState: FavoritesTabState get() = tabs.getValue(selectedTab)
+    val selectedTabState: LoadState<Unit> get() = tabs.getValue(selectedTab)
 }
 
 data class ResolvedFavorite(
@@ -90,42 +91,31 @@ class FavoritesViewModel @Inject constructor(
 
     private fun loadTab(tab: FavoritesTab, forceRefresh: Boolean = false) {
         val current = _uiState.value.tabs.getValue(tab)
-        if (current.isLoading || current.isRefreshing || (!forceRefresh && current.isLoaded)) return
+        if (current.isBusy || (!forceRefresh && current.isLoaded)) return
 
-        updateTab(tab) { state ->
-            state.copy(
-                isLoading = !state.isLoaded,
-                isRefreshing = state.isLoaded,
-                error = null,
-                warning = null,
-            )
-        }
+        updateTab(tab) { it.startLoad() }
         viewModelScope.launch {
-            val outcome = when (tab) {
-                FavoritesTab.FRIENDS -> loadFriends(forceRefresh)
-                FavoritesTab.WORLDS -> loadWorlds(forceRefresh)
-                FavoritesTab.AVATARS -> loadAvatars(forceRefresh)
-            }
-            updateTab(tab) { state ->
-                if (outcome.hasFavoriteData) {
-                    state.copy(
-                        isLoaded = true,
-                        isLoading = false,
-                        isRefreshing = false,
-                        error = null,
-                        warning = if (outcome.hasPartialFailure) {
-                            "Some ${tab.label.lowercase()} details could not be loaded."
-                        } else {
-                            null
-                        },
-                    )
-                } else {
-                    state.copy(
-                        isLoading = false,
-                        isRefreshing = false,
-                        error = "Failed to load ${tab.label.lowercase()} favorites",
-                    )
+            try {
+                val outcome = when (tab) {
+                    FavoritesTab.FRIENDS -> loadFriends(forceRefresh)
+                    FavoritesTab.WORLDS -> loadWorlds(forceRefresh)
+                    FavoritesTab.AVATARS -> loadAvatars(forceRefresh)
                 }
+                updateTab(tab) { state ->
+                    if (outcome.hasFavoriteData) {
+                        state.completeLoad(
+                            value = Unit,
+                            warning = "Some ${tab.label.lowercase()} details could not be loaded."
+                                .takeIf { outcome.hasPartialFailure },
+                        )
+                    } else {
+                        state.failLoad("Failed to load ${tab.label.lowercase()} favorites")
+                    }
+                }
+            } finally {
+                // Runs on cancellation too — otherwise the tab stays busy and
+                // this method's own guard blocks every later retry.
+                updateTab(tab) { it.settleLoad() }
             }
         }
     }
@@ -164,10 +154,11 @@ class FavoritesViewModel @Inject constructor(
         val details = async {
             captureFailure { favoriteRepository.loadFavoriteWorldsBulk(forceRefresh = forceRefresh) }
         }
-        val failures = listOf(worlds.await(), vrcPlusWorlds.await(), groups.await(), details.await())
+        val favoriteFailures = listOf(worlds.await(), vrcPlusWorlds.await())
+        val optionalFailures = listOf(groups.await(), details.await())
         LoadOutcome(
-            hasFavoriteData = failures.take(2).any { it == null },
-            hasPartialFailure = failures.any { it != null },
+            hasFavoriteData = favoriteFailures.any { it == null },
+            hasPartialFailure = (favoriteFailures + optionalFailures).any { it != null },
         )
     }
 
@@ -191,16 +182,7 @@ class FavoritesViewModel @Inject constructor(
         )
     }
 
-    private suspend fun captureFailure(block: suspend () -> Unit): Throwable? = try {
-        block()
-        null
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        e
-    }
-
-    private fun updateTab(tab: FavoritesTab, transform: (FavoritesTabState) -> FavoritesTabState) {
+    private fun updateTab(tab: FavoritesTab, transform: (LoadState<Unit>) -> LoadState<Unit>) {
         _uiState.update { state ->
             state.copy(tabs = state.tabs + (tab to transform(state.tabs.getValue(tab))))
         }
@@ -292,12 +274,21 @@ class FavoritesViewModel @Inject constructor(
     )
 
     fun unfavorite(favoriteId: String) {
+        val tab = _uiState.value.selectedTab
         viewModelScope.launch {
             try {
                 favoriteRepository.deleteFavorite(favoriteId)
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                // A rejected delete is a warning over data that is still on
+                // screen, not a reason to blank the tab.
+                updateTab(tab) { state ->
+                    (state as? LoadState.Loaded)
+                        ?.copy(warning = e.message ?: "Failed to remove favorite")
+                        ?: state
+                }
+            }
         }
     }
 

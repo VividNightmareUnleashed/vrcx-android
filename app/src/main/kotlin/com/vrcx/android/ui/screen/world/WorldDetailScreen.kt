@@ -8,8 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -30,7 +28,6 @@ import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,31 +47,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Instance
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.displayableTags
 import com.vrcx.android.ui.common.platformLabel
+import com.vrcx.android.ui.common.valueOrNull
+import com.vrcx.android.ui.components.ChipCard
 import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorldDetailScreen(
     viewModel: WorldDetailViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
     onUserClick: (String) -> Unit = {},
 ) {
-    val world by viewModel.world.collectAsStateWithLifecycle()
-    val instances by viewModel.instances.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -90,19 +86,39 @@ fun WorldDetailScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            VrcxDetailTopBar(title = world?.name ?: "World", onBack = onBack)
+            VrcxDetailTopBar(title = state.valueOrNull?.world?.name ?: "World", onBack = onBack)
             Box(Modifier.fillMaxWidth().weight(1f)) {
-        when {
-            isLoading && world == null -> LoadingState()
-            error != null && world == null -> ErrorState(error ?: "Error", onRetry = { viewModel.loadWorld() })
-            world != null -> {
-                val w = world!!
+        when (val loadState = state) {
+            LoadState.NotLoaded, LoadState.Loading -> LoadingState()
+            is LoadState.Failed -> ErrorState(loadState.message, onRetry = { viewModel.loadWorld() })
+            is LoadState.Loaded -> {
+                val w = loadState.value.world
+                val instances = loadState.value.instances
                 Column(
                     Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                         .padding(bottom = 16.dp)
                 ) {
+                    // A refresh that failed over data already on screen: the
+                    // world stays, and the failure is a line above it.
+                    loadState.staleError?.let { staleError ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = staleError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.loadWorld() }) { Text("Retry") }
+                        }
+                    }
+
                     // Banner image
                     AsyncImage(
                         model = w.imageUrl,
@@ -153,32 +169,22 @@ fun WorldDetailScreen(
                     // Platform support
                     val platforms = w.unityPackages.map { it.platform }.distinct().filter { it.isNotEmpty() }
                     if (platforms.isNotEmpty()) {
-                        VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                            Column(Modifier.padding(16.dp)) {
-                                SectionHeader("Platforms")
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    platforms.forEach { platform ->
-                                        AssistChip(onClick = {}, label = { Text(platformLabel(platform)) })
-            }
-        }
-                        }
-                        }
+                        ChipCard(
+                            title = "Platforms",
+                            labels = platforms.map { platformLabel(it) },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                         Spacer(Modifier.height(8.dp))
                     }
 
                     // Tags
                     val displayTags = displayableTags(w.tags)
                     if (displayTags.isNotEmpty()) {
-                        VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                            Column(Modifier.padding(16.dp)) {
-                                SectionHeader("Tags")
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    displayTags.forEach { tag ->
-                                        AssistChip(onClick = {}, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
-                                    }
-                                }
-                            }
-                        }
+                        ChipCard(
+                            title = "Tags",
+                            labels = displayTags,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                         Spacer(Modifier.height(8.dp))
                     }
 
@@ -195,7 +201,7 @@ fun WorldDetailScreen(
                                 Column(Modifier.padding(16.dp)) {
                                     Row {
                                         Text(
-                                            instance.type.replaceFirstChar { it.uppercase() },
+                                            instanceTypeLabel(instance),
                                             style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
@@ -228,26 +234,30 @@ fun WorldDetailScreen(
     }
 
     pendingInstance?.let { instance ->
+        val launchUrl = viewModel.browserLaunchUrl(instance.instanceId)
         InstanceActionDialog(
             instanceId = instance.instanceId,
-            instanceLabel = "${instance.type.replaceFirstChar { it.uppercase() }} \u00B7 ${instance.region.uppercase()}",
-            launchUrl = viewModel.browserLaunchUrl(instance.instanceId),
+            instanceLabel = "${instanceTypeLabel(instance)} · ${instance.region.uppercase()}",
+            launchUrl = launchUrl,
             onSelfInvite = {
                 viewModel.selfInvite(instance.instanceId)
                 pendingInstance = null
             },
             onCopyLaunchUrl = {
-                copyToClipboard(context, "VRChat instance", viewModel.browserLaunchUrl(instance.instanceId))
+                copyToClipboard(context, "VRChat instance", launchUrl)
                 pendingInstance = null
             },
             onShare = {
-                shareText(context, viewModel.browserLaunchUrl(instance.instanceId))
+                shareText(context, launchUrl)
                 pendingInstance = null
             },
             onDismiss = { pendingInstance = null },
         )
     }
 }
+
+private fun instanceTypeLabel(instance: Instance): String =
+    instance.type.replaceFirstChar { it.uppercase() }
 
 @Composable
 private fun InstanceActionDialog(

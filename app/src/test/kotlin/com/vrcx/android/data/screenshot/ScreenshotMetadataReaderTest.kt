@@ -7,8 +7,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScreenshotMetadataReaderTest {
@@ -44,14 +44,13 @@ class ScreenshotMetadataReaderTest {
                 "IDAT" to byteArrayOf(),
             ).inputStream(),
             fileName = "VRChat_1920x1080_2026-05-12_10-20-30.000.png",
-        )
+        ).parsed()
 
-        assertNull(result.error)
         assertEquals("1920x1080", result.resolution)
-        assertEquals("VRCX", result.metadata?.application)
-        assertEquals("Alice", result.metadata?.author?.displayName)
-        assertEquals("wrld_world:12345", result.metadata?.world?.instanceId)
-        assertEquals("Bob", result.metadata?.players?.single()?.displayName)
+        assertEquals("VRCX", result.metadata.application)
+        assertEquals("Alice", result.metadata.author.displayName)
+        assertEquals("wrld_world:12345", result.metadata.world.instanceId)
+        assertEquals("Bob", result.metadata.players.single().displayName)
         assertEquals(Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(), result.capturedAtEpochMillis)
     }
 
@@ -87,15 +86,14 @@ class ScreenshotMetadataReaderTest {
                 "iTXt" to iTxt(keyword = "XML:com.adobe.xmp", text = xmp),
                 "IDAT" to byteArrayOf(),
             ).inputStream(),
-        )
+        ).parsed()
 
-        assertNull(result.error)
         assertEquals("1200x900", result.resolution)
-        assertEquals("VRChat", result.metadata?.application)
-        assertEquals("usr_author", result.metadata?.author?.id)
-        assertEquals("Alice", result.metadata?.author?.displayName)
-        assertEquals("Test World", result.metadata?.world?.name)
-        assertEquals("hello from a screenshot", result.metadata?.note)
+        assertEquals("VRChat", result.metadata.application)
+        assertEquals("usr_author", result.metadata.author.id)
+        assertEquals("Alice", result.metadata.author.displayName)
+        assertEquals("Test World", result.metadata.world.name)
+        assertEquals("hello from a screenshot", result.metadata.note)
         assertEquals(Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(), result.capturedAtEpochMillis)
     }
 
@@ -125,7 +123,7 @@ class ScreenshotMetadataReaderTest {
                 "IDAT" to byteArrayOf(),
             ).inputStream(),
             fileName = "VRChat_1920x1080_2026-05-12_10-20-30.000.png",
-        )
+        ).parsed()
 
         val expected = LocalDateTime.of(2026, 5, 12, 10, 20, 30)
             .atZone(ZoneId.systemDefault())
@@ -135,11 +133,50 @@ class ScreenshotMetadataReaderTest {
     }
 
     @Test
+    fun `read keeps the XMP author fallback when AuthorID is absent`() {
+        val xmp = """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+                  <xmp:CreatorTool>VRChat</xmp:CreatorTool>
+                  <xmp:Author>Alice</xmp:Author>
+                </rdf:Description>
+              </rdf:RDF>
+            </x:xmpmeta>
+        """.trimIndent()
+
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 1200, height = 900),
+                "iTXt" to iTxt(keyword = "XML:com.adobe.xmp", text = xmp),
+                "IDAT" to byteArrayOf(),
+            ).inputStream(),
+        ).parsed()
+
+        assertEquals("Alice", result.metadata.author.id)
+        assertNull(result.metadata.author.displayName)
+    }
+
+    @Test
     fun `read reports invalid PNG`() {
         val result = ScreenshotMetadataReader.read("not a png".toByteArray().inputStream())
 
-        assertNotNull(result.error)
-        assertNull(result.metadata)
+        assertEquals(
+            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            result,
+        )
+    }
+
+    @Test
+    fun `read reports a readable PNG that carries no metadata`() {
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 640, height = 480),
+                "IDAT" to byteArrayOf(1, 2, 3),
+            ).inputStream(),
+        )
+
+        assertEquals(ScreenshotReadResult.NoMetadata("640x480"), result)
     }
 
     @Test
@@ -151,12 +188,75 @@ class ScreenshotMetadataReaderTest {
                 "IDAT" to byteArrayOf(1, 2, 3),
                 "iTXt" to iTxt(keyword = "Description", text = legacy),
             ).inputStream(),
+        ).parsed()
+
+        assertEquals("lfs", result.metadata.application)
+        assertEquals("usr_author", result.metadata.author.id)
+        assertEquals("wrld_world:12345", result.metadata.world.instanceId)
+    }
+
+    @Test
+    fun `read rejects an IHDR chunk declaring a huge length`() {
+        val result = ScreenshotMetadataReader.read(
+            pngWithDeclaredLength(
+                type = "IHDR",
+                declaredLength = 0x03FFFFFF,
+                data = ihdr(width = 1920, height = 1080),
+            ).inputStream(),
         )
 
-        assertNull(result.error)
-        assertEquals("lfs", result.metadata?.application)
-        assertEquals("usr_author", result.metadata?.author?.id)
-        assertEquals("wrld_world:12345", result.metadata?.world?.instanceId)
+        assertEquals(
+            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            result,
+        )
+    }
+
+    @Test
+    fun `read skips an oversized IHDR chunk instead of parsing it`() {
+        val json = """{"application":"VRCX","version":1}"""
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 1920, height = 1080).copyOf(1024),
+                "iTXt" to iTxt(keyword = "Description", text = json),
+                "IDAT" to byteArrayOf(),
+            ).inputStream(),
+        ).parsed()
+
+        assertNull(result.resolution)
+        assertEquals("VRCX", result.metadata.application)
+    }
+
+    @Test
+    fun `read reports a stream truncated after the signature`() {
+        val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+
+        val result = ScreenshotMetadataReader.read(signature.inputStream())
+
+        assertEquals(
+            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            result,
+        )
+    }
+
+    @Test
+    fun `read stops once the chunk limit is reached`() {
+        val json = """{"application":"VRCX","version":1}"""
+        val chunks = buildList {
+            add("IHDR" to ihdr(width = 8, height = 8))
+            repeat(4200) { add("tEXt" to byteArrayOf()) }
+            add("iTXt" to iTxt(keyword = "Description", text = json))
+        }
+
+        val result = ScreenshotMetadataReader.read(png(*chunks.toTypedArray()).inputStream())
+
+        // The Description chunk sits past the limit, so it is never reached.
+        assertEquals(ScreenshotReadResult.NoMetadata("8x8"), result)
+    }
+
+    /** Asserts the read produced metadata, and hands back the parsed result. */
+    private fun ScreenshotReadResult.parsed(): ScreenshotReadResult.Parsed {
+        assertTrue("expected parsed metadata, got $this", this is ScreenshotReadResult.Parsed)
+        return this as ScreenshotReadResult.Parsed
     }
 
     private fun png(vararg chunks: Pair<String, ByteArray>): ByteArray {
@@ -167,6 +267,19 @@ class ScreenshotMetadataReaderTest {
         }
         if (chunks.none { it.first == "IEND" }) {
             DataOutputStream(output).useChunk("IEND", byteArrayOf())
+        }
+        return output.toByteArray()
+    }
+
+    private fun pngWithDeclaredLength(type: String, declaredLength: Int, data: ByteArray): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+        DataOutputStream(output).apply {
+            writeInt(declaredLength)
+            write(type.toByteArray(StandardCharsets.US_ASCII))
+            write(data)
+            writeInt(0)
+            flush()
         }
         return output.toByteArray()
     }

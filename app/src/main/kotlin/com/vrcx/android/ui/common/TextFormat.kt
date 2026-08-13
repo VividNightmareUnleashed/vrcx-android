@@ -1,5 +1,7 @@
 package com.vrcx.android.ui.common
 
+import java.util.Locale
+
 /**
  * Turns a VRChat visibility/permission token (e.g. "friends-only") into a
  * human-readable label ("Friends only"). Shared by favorites and profile
@@ -20,3 +22,20 @@ fun platformLabel(platform: String): String = when (platform) {
 /** Drops VRChat's internal tag prefixes, leaving the user-facing tags. */
 fun displayableTags(tags: List<String>): List<String> =
     tags.filter { !it.startsWith("system_") && !it.startsWith("admin_") && !it.startsWith("author_tag") }
+
+/**
+ * Renders a byte count as a binary-prefixed size ("512 B", "2.0 KB", "1.4 MB").
+ * Pinned to [Locale.US] so the decimal separator matches everywhere the app
+ * shows a size, whatever the device locale is.
+ */
+fun formatByteCount(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = -1
+    while (value >= 1024 && unitIndex < units.lastIndex) {
+        value /= 1024
+        unitIndex++
+    }
+    return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+}

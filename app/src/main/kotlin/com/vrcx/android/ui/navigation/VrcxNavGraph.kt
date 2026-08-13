@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NamedNavArgument
@@ -51,6 +50,9 @@ object VrcxRoutes {
     const val FEED = "feed"
     const val FRIENDS = "friends"
     const val DASHBOARD = "dashboard"
+    // These two are shown as "Activity History" and "Friends Roster". The route
+    // strings are what saved navigation state resolves against, so they keep the
+    // original names rather than following the labels.
     const val GAME_LOG = "game_log"
     const val PLAYER_LIST = "player_list"
     const val TOOLS = "tools"
@@ -132,6 +134,10 @@ fun VrcxNavGraph(
     modifier: Modifier = Modifier,
 ) {
     val onBack: () -> Unit = { navController.popBackStack() }
+    val onUser: (String) -> Unit = { userId -> navController.navigate(VrcxRoutes.userDetail(userId)) }
+    val onWorld: (String) -> Unit = { worldId -> navController.navigate(VrcxRoutes.worldDetail(worldId)) }
+    val onAvatar: (String) -> Unit = { avatarId -> navController.navigate(VrcxRoutes.avatarDetail(avatarId)) }
+    val onGroup: (String) -> Unit = { groupId -> navController.navigate(VrcxRoutes.groupDetail(groupId)) }
 
     NavHost(
         navController = navController,
@@ -140,17 +146,17 @@ fun VrcxNavGraph(
     ) {
         // Tab routes — crossfade
         tabComposable(VrcxRoutes.FEED) {
-            FeedScreen(onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
+            FeedScreen(onUserClick = onUser)
         }
         tabComposable(VrcxRoutes.FRIENDS) {
-            FriendsScreen(onFriendClick = { navController.navigate(VrcxRoutes.userDetail(it)) })
+            FriendsScreen(onFriendClick = onUser)
         }
         tabComposable(VrcxRoutes.SEARCH) {
             SearchScreen(
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
-                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
-                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
-                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+                onUserClick = onUser,
+                onWorldClick = onWorld,
+                onAvatarClick = onAvatar,
+                onGroupClick = onGroup,
             )
         }
         tabComposable(VrcxRoutes.NOTIFICATIONS) {
@@ -164,19 +170,19 @@ fun VrcxNavGraph(
         subScreenComposable(VrcxRoutes.DASHBOARD) {
             DashboardScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
             )
         }
         subScreenComposable(VrcxRoutes.GAME_LOG) {
             GameLogScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
             )
         }
         subScreenComposable(VrcxRoutes.PLAYER_LIST) {
             PlayerListScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
             )
         }
         subScreenComposable(VrcxRoutes.TOOLS) {
@@ -188,21 +194,21 @@ fun VrcxNavGraph(
         subScreenComposable(VrcxRoutes.FAVORITES) {
             FavoritesScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
-                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
-                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+                onUserClick = onUser,
+                onWorldClick = onWorld,
+                onAvatarClick = onAvatar,
             )
         }
         subScreenComposable(VrcxRoutes.GROUPS) {
             GroupsScreen(
-                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
+                onGroupClick = onGroup,
                 onBack = onBack,
             )
         }
         subScreenComposable(VrcxRoutes.MY_AVATARS) {
             MyAvatarsScreen(
                 onBack = onBack,
-                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+                onAvatarClick = onAvatar,
             )
         }
         subScreenComposable(VrcxRoutes.GALLERY) {
@@ -211,8 +217,8 @@ fun VrcxNavGraph(
         subScreenComposable(VrcxRoutes.SCREENSHOT_METADATA) {
             ScreenshotMetadataScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
-                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+                onUserClick = onUser,
+                onWorldClick = onWorld,
             )
         }
         subScreenComposable(VrcxRoutes.CHARTS) {
@@ -232,8 +238,8 @@ fun VrcxNavGraph(
         }
         subScreenComposable(VrcxRoutes.FRIENDS_LOCATIONS) {
             FriendsLocationsScreen(
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
-                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
+                onUserClick = onUser,
+                onWorldClick = onWorld,
                 onBack = onBack,
             )
         }
@@ -243,52 +249,78 @@ fun VrcxNavGraph(
         subScreenComposable(
             VrcxRoutes.USER_DETAIL,
             arguments = listOf(navArgument("userId") { type = NavType.StringType }),
-            deepLinks = vrchatDetailDeepLinks(section = "user", argName = "userId"),
+            deepLinks = vrchatDetailDeepLinks(DeepLinkSection.USER),
         ) {
             UserDetailScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
-                onWorldClick = { navController.navigate(VrcxRoutes.worldDetail(it)) },
-                onGroupClick = { navController.navigate(VrcxRoutes.groupDetail(it)) },
-                onAvatarClick = { navController.navigate(VrcxRoutes.avatarDetail(it)) },
+                onUserClick = onUser,
+                onWorldClick = onWorld,
+                onGroupClick = onGroup,
+                onAvatarClick = onAvatar,
             )
         }
         subScreenComposable(
             VrcxRoutes.GROUP_DETAIL,
             arguments = listOf(navArgument("groupId") { type = NavType.StringType }),
-            deepLinks = vrchatDetailDeepLinks(section = "group", argName = "groupId"),
+            deepLinks = vrchatDetailDeepLinks(DeepLinkSection.GROUP),
         ) {
             GroupDetailScreen(
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
                 onBack = onBack,
             )
         }
         subScreenComposable(
             VrcxRoutes.AVATAR_DETAIL,
             arguments = listOf(navArgument("avatarId") { type = NavType.StringType }),
-            deepLinks = vrchatDetailDeepLinks(section = "avatar", argName = "avatarId"),
+            deepLinks = vrchatDetailDeepLinks(DeepLinkSection.AVATAR),
         ) {
             AvatarDetailScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
             )
         }
         subScreenComposable(
             VrcxRoutes.WORLD_DETAIL,
             arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
-            deepLinks = vrchatDetailDeepLinks(section = "world", argName = "worldId"),
+            deepLinks = vrchatDetailDeepLinks(DeepLinkSection.WORLD),
         ) {
             WorldDetailScreen(
                 onBack = onBack,
-                onUserClick = { navController.navigate(VrcxRoutes.userDetail(it)) },
+                onUserClick = onUser,
             )
         }
     }
 }
 
 /**
+ * The detail screens reachable from outside the app.
+ *
+ * Three places have to agree on this list: the deep-link patterns below,
+ * `MainActivity`'s URL normalizer, and the `pathPrefix` entries in
+ * AndroidManifest. The first two read this enum; the manifest can't, so
+ * `MainActivityTest` asserts the OS actually routes each section here.
+ */
+enum class DeepLinkSection(val segment: String, val argName: String) {
+    USER("user", "userId"),
+    WORLD("world", "worldId"),
+    AVATAR("avatar", "avatarId"),
+    GROUP("group", "groupId");
+
+    /** `vrcx://user/usr_...` — the form the app's own notifications point at. */
+    fun appUri(id: String): String = "$APP_SCHEME://$segment/${encodeRouteSegment(id)}"
+
+    companion object {
+        const val APP_SCHEME = "vrcx"
+        const val WEB_HOST = "vrchat.com"
+
+        fun fromSegment(segment: String): DeepLinkSection? =
+            values().firstOrNull { it.segment == segment }
+    }
+}
+
+/**
  * Build the deep-link list for a detail destination whose VRChat web URL
- * lives under `/home/{section}/` and whose primary argument is `{$argName}`.
+ * lives under `/home/{section}/`.
  *
  * `MainActivity.normalizeDeepLinkIntent` collapses deeper paths (e.g.
  * `/home/group/{id}/posts/{postId}/comments/{commentId}`) down to the
@@ -296,9 +328,11 @@ fun VrcxNavGraph(
  * need to match the canonical shape here. The NavGraph stays simple
  * regardless of how deep VRChat's web URLs get.
  */
-private fun vrchatDetailDeepLinks(section: String, argName: String): List<NavDeepLink> = listOf(
-    navDeepLink { uriPattern = "vrcx://$section/{$argName}" },
-    navDeepLink { uriPattern = "https://vrchat.com/home/$section/{$argName}" },
+private fun vrchatDetailDeepLinks(section: DeepLinkSection): List<NavDeepLink> = listOf(
+    navDeepLink { uriPattern = "${DeepLinkSection.APP_SCHEME}://${section.segment}/{${section.argName}}" },
+    navDeepLink {
+        uriPattern = "https://${DeepLinkSection.WEB_HOST}/home/${section.segment}/{${section.argName}}"
+    },
 )
 
 internal fun encodeRouteSegment(value: String): String = buildString {

@@ -45,13 +45,24 @@ enum class AvatarSearchSource(val label: String, val hint: String) {
     ),
 }
 
+/** One tab's page of results. The variant is what the tab renders. */
+sealed interface SearchResult {
+    val items: List<Any>
+    val hasMore: Boolean
+
+    data class Users(override val items: List<UserSearchResult>, override val hasMore: Boolean) : SearchResult
+    data class Worlds(override val items: List<World>, override val hasMore: Boolean) : SearchResult
+    data class Avatars(override val items: List<Avatar>, override val hasMore: Boolean) : SearchResult
+    data class Groups(override val items: List<GroupSearchResult>, override val hasMore: Boolean) : SearchResult
+}
+
+private const val SEARCH_PAGE_SIZE = 10
+
 data class SearchUiState(
     val query: String = "",
     val selectedTab: SearchTab = SearchTab.USERS,
-    val users: List<UserSearchResult> = emptyList(),
-    val worlds: List<World> = emptyList(),
-    val avatars: List<Avatar> = emptyList(),
-    val groups: List<GroupSearchResult> = emptyList(),
+    /** Kept per tab so switching back shows what that tab last loaded. */
+    val results: Map<SearchTab, SearchResult> = emptyMap(),
     val isSearching: Boolean = false,
     val hasSearched: Boolean = false,
     val error: String? = null,
@@ -64,7 +75,11 @@ data class SearchUiState(
     val worldTag: String = "",
     val avatarSearchSource: AvatarSearchSource = AvatarSearchSource.MY_AVATARS,
     val avatarProviderUrl: String = "",
-)
+) {
+    val currentResult: SearchResult? get() = results[selectedTab]
+
+    val pageNumber: Int get() = currentOffset / SEARCH_PAGE_SIZE + 1
+}
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
@@ -90,16 +105,7 @@ class SearchViewModel @Inject constructor(
         val items: List<Avatar>,
     )
 
-    private sealed interface SearchResult {
-        val hasMore: Boolean
-
-        data class Users(val items: List<UserSearchResult>, override val hasMore: Boolean) : SearchResult
-        data class Worlds(val items: List<World>, override val hasMore: Boolean) : SearchResult
-        data class Avatars(val items: List<Avatar>, override val hasMore: Boolean) : SearchResult
-        data class Groups(val items: List<GroupSearchResult>, override val hasMore: Boolean) : SearchResult
-    }
-
-    private val pageSize = 10
+    private val pageSize = SEARCH_PAGE_SIZE
     private val worldSourcePageSize = 50
     private var remoteAvatarCache: RemoteAvatarCache? = null
     private var filteredWorldSession: FilteredWorldSession? = null
@@ -340,27 +346,16 @@ class SearchViewModel @Inject constructor(
         )
     }
 
-    private fun publishResult(state: SearchUiState, result: SearchResult): SearchUiState {
-        val common = state.copy(
-            hasMore = result.hasMore,
-            isSearching = false,
-            hasSearched = true,
-            error = null,
-        )
-        return when (result) {
-            is SearchResult.Users -> common.copy(users = result.items)
-            is SearchResult.Worlds -> common.copy(worlds = result.items)
-            is SearchResult.Avatars -> common.copy(avatars = result.items)
-            is SearchResult.Groups -> common.copy(groups = result.items)
-        }
-    }
+    private fun publishResult(state: SearchUiState, result: SearchResult): SearchUiState = state.copy(
+        results = state.results + (state.selectedTab to result),
+        hasMore = result.hasMore,
+        isSearching = false,
+        hasSearched = true,
+        error = null,
+    )
 
-    private fun clearCurrentResults(state: SearchUiState): SearchUiState = when (state.selectedTab) {
-        SearchTab.USERS -> state.copy(users = emptyList())
-        SearchTab.WORLDS -> state.copy(worlds = emptyList())
-        SearchTab.AVATARS -> state.copy(avatars = emptyList())
-        SearchTab.GROUPS -> state.copy(groups = emptyList())
-    }
+    private fun clearCurrentResults(state: SearchUiState): SearchUiState =
+        state.copy(results = state.results - state.selectedTab)
 
     private fun isCurrentSearch(generation: Long): Boolean = generation == searchGeneration
 }

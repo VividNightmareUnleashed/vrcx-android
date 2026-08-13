@@ -3,7 +3,6 @@ package com.vrcx.android.ui.screen.groups
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,9 +33,8 @@ import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GroupRepository
-import com.vrcx.android.ui.components.EmptyState
-import com.vrcx.android.ui.components.ErrorState
-import com.vrcx.android.ui.components.LoadingState
+import com.vrcx.android.data.repository.canonicalGroupId
+import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -64,9 +62,10 @@ class GroupsViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
-                val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
-                    ?: error("You must be logged in to load groups")
-                groupRepository.loadMyGroups(userId)
+                if (authRepository.authState.value !is AuthState.LoggedIn) {
+                    error("You must be logged in to load groups")
+                }
+                groupRepository.loadMyGroups()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -86,16 +85,19 @@ fun GroupsScreen(viewModel: GroupsViewModel = hiltViewModel(), onGroupClick: (St
     val error by viewModel.error.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Groups", onBack = onBack)
-        if (isLoading) {
-            LoadingState()
-        } else if (error != null) {
-            ErrorState(error ?: "Failed to load groups", onRetry = viewModel::loadGroups)
-        } else if (groups.isEmpty()) {
-            EmptyState(message = "No groups", icon = Icons.Outlined.Group, subtitle = "Join groups in VRChat to see them here")
-        } else {
+        UiStateContainer(
+            isLoading = isLoading,
+            error = error,
+            isEmpty = groups.isEmpty(),
+            onRetry = viewModel::loadGroups,
+            emptyMessage = "No groups",
+            emptySubtitle = "Join groups in VRChat to see them here",
+            emptyIcon = Icons.Outlined.Group,
+            modifier = Modifier.fillMaxSize(),
+        ) {
             LazyColumn(Modifier.fillMaxSize()) {
             items(groups, key = { it.id }) { group ->
-                Row(Modifier.fillMaxWidth().clickable { onGroupClick(group.groupId.ifEmpty { group.id }) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable { onGroupClick(group.canonicalGroupId()) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(model = group.iconUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
                     Spacer(Modifier.width(12.dp))
                     Column {

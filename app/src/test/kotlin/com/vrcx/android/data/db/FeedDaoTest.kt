@@ -3,6 +3,8 @@ package com.vrcx.android.data.db
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.vrcx.android.data.db.dao.FeedDao
+import com.vrcx.android.data.db.dao.UnifiedFeedRow
 import com.vrcx.android.data.db.entity.FeedAvatarEntity
 import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
@@ -80,10 +82,7 @@ class FeedDaoTest {
                 createdAt = fractionalTimestamp,
             )
         )
-        assertEquals(
-            listOf("new", "old"),
-            dao.getStatusFeed(ownerUserId, limit = 2).first().map { it.status },
-        )
+        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "status") { it.status })
         assertEquals("new", dao.getLatestStatus(ownerUserId, userId)?.status)
 
         dao.insertBio(
@@ -102,10 +101,7 @@ class FeedDaoTest {
                 createdAt = fractionalTimestamp,
             )
         )
-        assertEquals(
-            listOf("new", "old"),
-            dao.getBioFeed(ownerUserId, limit = 2).first().map { it.bio },
-        )
+        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "bio") { it.bio })
         assertEquals("new", dao.getLatestBio(ownerUserId, userId)?.bio)
 
         dao.insertAvatar(
@@ -124,10 +120,7 @@ class FeedDaoTest {
                 createdAt = fractionalTimestamp,
             )
         )
-        assertEquals(
-            listOf("new", "old"),
-            dao.getAvatarFeed(ownerUserId, limit = 2).first().map { it.avatarName },
-        )
+        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "avatar") { it.avatarName })
         assertEquals("new", dao.getLatestAvatar(ownerUserId, userId)?.avatarName)
 
         dao.insertOnlineOffline(
@@ -146,10 +139,135 @@ class FeedDaoTest {
                 createdAt = fractionalTimestamp,
             )
         )
-        assertEquals(
-            listOf("online", "offline"),
-            dao.getOnlineOfflineFeed(ownerUserId, limit = 2).first().map { it.type },
-        )
+        assertEquals(listOf("online", "offline"), dao.merged(ownerUserId, "onlineOffline") { it.type })
         assertEquals("online", dao.getLatestOnlineOffline(ownerUserId, userId)?.type)
+    }
+
+    @Test
+    fun `feed reads only return rows belonging to the requested owner`() = runBlocking {
+        val dao = db.feedDao()
+        val userId = "usr_friend"
+
+        dao.insertRow(OWNER_A, userId, "a1")
+        dao.insertRow(OWNER_A, userId, "a2")
+        // Owner B writes last and shares the friend id, so an unscoped read would
+        // put B's row at the head of A's feed and return it as A's latest.
+        dao.insertRow(OWNER_B, userId, "b1")
+
+        assertEquals(FEED_TABLES.associateWith { listOf("a2", "a1") }, dao.feedPayloads(OWNER_A))
+        assertEquals(FEED_TABLES.associateWith { listOf("b1") }, dao.feedPayloads(OWNER_B))
+        assertEquals(FEED_TABLES.associateWith { "a2" }, dao.latestPayloads(OWNER_A, userId))
+        assertEquals(FEED_TABLES.associateWith { "b1" }, dao.latestPayloads(OWNER_B, userId))
+        assertEquals(listOf("a2", "a1"), dao.getAllGpsFeed(OWNER_A).first().map { it.location })
+        assertEquals(listOf("b1"), dao.getAllGpsFeed(OWNER_B).first().map { it.location })
+    }
+
+    @Test
+    fun `pruning one owner keeps the other owner's rows`() = runBlocking {
+        val dao = db.feedDao()
+        val userId = "usr_friend"
+
+        dao.insertRow(OWNER_A, userId, "a1")
+        dao.insertRow(OWNER_A, userId, "a2")
+        dao.insertRow(OWNER_A, userId, "a3")
+        dao.insertRow(OWNER_B, userId, "b1")
+        dao.insertRow(OWNER_B, userId, "b2")
+
+        dao.pruneGps(OWNER_A, limit = 2)
+        dao.pruneStatus(OWNER_A, limit = 2)
+        dao.pruneBio(OWNER_A, limit = 2)
+        dao.pruneAvatar(OWNER_A, limit = 2)
+        dao.pruneOnlineOffline(OWNER_A, limit = 2)
+
+        assertEquals(FEED_TABLES.associateWith { listOf("a3", "a2") }, dao.feedPayloads(OWNER_A))
+        assertEquals(FEED_TABLES.associateWith { listOf("b2", "b1") }, dao.feedPayloads(OWNER_B))
+    }
+
+    @Test
+    fun `the merged feed reads every source and stays scoped to one owner`() = runBlocking {
+        val dao = db.feedDao()
+        val userId = "usr_friend"
+
+        dao.insertRow(OWNER_A, userId, "a1")
+        dao.insertRow(OWNER_A, userId, "a2")
+        dao.insertRow(OWNER_B, userId, "b1")
+
+        val rows = dao.getUnifiedFeed(OWNER_A, limit = 10).first()
+
+        // Every source contributes, none of B's rows leak in, and the payload
+        // column each source writes to survives the union.
+        assertEquals(FEED_TABLES.sorted(), rows.map { it.source }.distinct().sorted())
+        assertEquals(listOf("a2", "a1"), rows.filter { it.source == "gps" }.map { it.location })
+        assertEquals(listOf("a2", "a1"), rows.filter { it.source == "status" }.map { it.status })
+        assertEquals(listOf("a2", "a1"), rows.filter { it.source == "bio" }.map { it.bio })
+        assertEquals(listOf("a2", "a1"), rows.filter { it.source == "avatar" }.map { it.avatarName })
+        assertEquals(listOf("a2", "a1"), rows.filter { it.source == "onlineOffline" }.map { it.type })
+        assertEquals(
+            listOf("b1"),
+            dao.getUnifiedFeed(OWNER_B, limit = 10).first().filter { it.source == "gps" }.map { it.location },
+        )
+    }
+
+    @Test
+    fun `the merged feed limits each source separately`() = runBlocking {
+        val dao = db.feedDao()
+        val userId = "usr_friend"
+        repeat(3) { index -> dao.insertRow(OWNER_A, userId, "a$index") }
+
+        val rows = dao.getUnifiedFeed(OWNER_A, limit = 2).first()
+
+        // A shared limit across the union would starve four of the five sources.
+        assertEquals(FEED_TABLES.associateWith { 2 }, rows.groupingBy { it.source }.eachCount())
+    }
+
+    /** One row per feed table carrying [payload] as its changed value. */
+    private suspend fun FeedDao.insertRow(ownerUserId: String, userId: String, payload: String) {
+        val createdAt = "2026-03-19T10:00:30Z"
+        insertGps(
+            FeedGpsEntity(ownerUserId = ownerUserId, userId = userId, location = payload, createdAt = createdAt)
+        )
+        insertStatus(
+            FeedStatusEntity(ownerUserId = ownerUserId, userId = userId, status = payload, createdAt = createdAt)
+        )
+        insertBio(
+            FeedBioEntity(ownerUserId = ownerUserId, userId = userId, bio = payload, createdAt = createdAt)
+        )
+        insertAvatar(
+            FeedAvatarEntity(ownerUserId = ownerUserId, userId = userId, avatarName = payload, createdAt = createdAt)
+        )
+        insertOnlineOffline(
+            FeedOnlineOfflineEntity(ownerUserId = ownerUserId, userId = userId, type = payload, createdAt = createdAt)
+        )
+    }
+
+    private suspend fun FeedDao.feedPayloads(ownerUserId: String): Map<String, List<String>> = mapOf(
+        "gps" to merged(ownerUserId, "gps") { it.location },
+        "status" to merged(ownerUserId, "status") { it.status },
+        "bio" to merged(ownerUserId, "bio") { it.bio },
+        "avatar" to merged(ownerUserId, "avatar") { it.avatarName },
+        "onlineOffline" to merged(ownerUserId, "onlineOffline") { it.type },
+    )
+
+    /** The payload column [source] writes to, newest first, as the merged read returns it. */
+    private suspend fun FeedDao.merged(
+        ownerUserId: String,
+        source: String,
+        payloadOf: (UnifiedFeedRow) -> String,
+    ): List<String> = getUnifiedFeed(ownerUserId, limit = 10).first()
+        .filter { it.source == source }
+        .map(payloadOf)
+
+    private suspend fun FeedDao.latestPayloads(ownerUserId: String, userId: String): Map<String, String?> = mapOf(
+        "gps" to getLatestGps(ownerUserId, userId)?.location,
+        "status" to getLatestStatus(ownerUserId, userId)?.status,
+        "bio" to getLatestBio(ownerUserId, userId)?.bio,
+        "avatar" to getLatestAvatar(ownerUserId, userId)?.avatarName,
+        "onlineOffline" to getLatestOnlineOffline(ownerUserId, userId)?.type,
+    )
+
+    private companion object {
+        const val OWNER_A = "usr_owner_a"
+        const val OWNER_B = "usr_owner_b"
+        val FEED_TABLES = listOf("gps", "status", "bio", "avatar", "onlineOffline")
     }
 }

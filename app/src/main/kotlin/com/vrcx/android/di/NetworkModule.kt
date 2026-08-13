@@ -21,11 +21,13 @@ import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.UserAgentInterceptor
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.data.websocket.PipelineOkHttpClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -40,6 +42,16 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val BASE_URL = "https://api.vrchat.cloud/api/1/"
+
+    /**
+     * Shared across every client below: VRChat serves user images from the API
+     * host, so image loads can reuse the API client's warm TLS connections
+     * instead of handshaking again, and one pool replaces three. The clients are
+     * still built separately rather than derived with `newBuilder()`, which
+     * would copy interceptors and cookie jars across the boundaries that keep
+     * the session isolated.
+     */
+    private val sharedConnectionPool = ConnectionPool()
 
     @Provides
     @Singleton
@@ -60,11 +72,12 @@ object NetworkModule {
     ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .connectionPool(sharedConnectionPool)
             .addInterceptor(UserAgentInterceptor())
             .addInterceptor(authInterceptor)
             .addInterceptor(ErrorInterceptor(authEventBus))
-            // Cache 404/403 GETs globally so every repository benefits from the
-            // failure cache without having to opt in via dedupGet.
+            // Remember missing resources globally so every repository benefits
+            // from the failure cache without having to opt in.
             .addInterceptor(DedupInterceptor(deduplicator))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -85,6 +98,7 @@ object NetworkModule {
     fun provideImageOkHttpClient(cookieJar: CookieJarImpl): OkHttpClient {
         return OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .connectionPool(sharedConnectionPool)
             .addInterceptor(UserAgentInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -94,14 +108,16 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    @Named("webSocketOkHttpClient")
-    fun provideWebSocketOkHttpClient(): OkHttpClient {
-        return OkHttpClient.Builder()
-            .addInterceptor(UserAgentInterceptor())
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
+    fun provideWebSocketOkHttpClient(): PipelineOkHttpClient {
+        return PipelineOkHttpClient(
+            OkHttpClient.Builder()
+                .connectionPool(sharedConnectionPool)
+                .addInterceptor(UserAgentInterceptor())
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build()
+        )
     }
 
     @Provides

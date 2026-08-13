@@ -2,8 +2,8 @@ package com.vrcx.android.ui.screen.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,13 +48,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.cache.ProfilePicCacheManager
+import com.vrcx.android.data.preferences.PreferenceDefaults
+import com.vrcx.android.data.preferences.ThemeMode
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.data.preferences.WallpaperScaleMode
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.ui.common.formatByteCount
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -64,6 +69,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** How far a "Cache All Friends" sweep has got; null while none is running. */
+data class CacheProgress(val completed: Int, val total: Int)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferences: VrcxPreferences,
@@ -71,52 +79,77 @@ class SettingsViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
-    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val themeMode: StateFlow<String> = preferences.themeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "dark")
-    val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1000)
-    val autoLogin: StateFlow<Boolean> = preferences.autoLogin.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.DYNAMIC_COLORS)
+    val themeMode: StateFlow<ThemeMode> = preferences.themeMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.THEME_MODE)
+    val notifyInvite: StateFlow<Boolean> = preferences.notifyInvite
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.NOTIFY_INVITE)
+    val notifyFriendRequest: StateFlow<Boolean> = preferences.notifyFriendRequest
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.NOTIFY_FRIEND_REQUEST)
+    val notifyGeneral: StateFlow<Boolean> = preferences.notifyGeneral
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.NOTIFY_GENERAL)
+    val maxFeedSize: StateFlow<Int> = preferences.maxFeedSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.MAX_FEED_SIZE)
+    val autoLogin: StateFlow<Boolean> = preferences.autoLogin
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.AUTO_LOGIN)
 
-    fun setThemeMode(mode: String) { viewModelScope.launch { preferences.setThemeMode(mode) } }
-    fun setDynamicColors(enabled: Boolean) { viewModelScope.launch { preferences.setDynamicColors(enabled) } }
-    fun setNotifyInvite(v: Boolean) { viewModelScope.launch { preferences.setNotifyInvite(v) } }
-    fun setNotifyFriendRequest(v: Boolean) { viewModelScope.launch { preferences.setNotifyFriendRequest(v) } }
-    fun setMaxFeedSize(size: Int) { viewModelScope.launch { preferences.setMaxFeedSize(size) } }
-    fun setAutoLogin(enabled: Boolean) { viewModelScope.launch { preferences.setAutoLogin(enabled) } }
+    fun setThemeMode(mode: ThemeMode) = writePreference { preferences.setThemeMode(mode) }
+    fun setDynamicColors(enabled: Boolean) = writePreference { preferences.setDynamicColors(enabled) }
+    fun setNotifyInvite(v: Boolean) = writePreference { preferences.setNotifyInvite(v) }
+    fun setNotifyFriendRequest(v: Boolean) = writePreference { preferences.setNotifyFriendRequest(v) }
+    fun setNotifyGeneral(v: Boolean) = writePreference { preferences.setNotifyGeneral(v) }
+    fun setMaxFeedSize(size: Int) = writePreference { preferences.setMaxFeedSize(size) }
+    fun setAutoLogin(enabled: Boolean) = writePreference { preferences.setAutoLogin(enabled) }
 
     val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    fun setWallpaperUri(uri: String?) { viewModelScope.launch { preferences.setWallpaperUri(uri) } }
+    fun setWallpaperUri(uri: String?) = writePreference { preferences.setWallpaperUri(uri) }
 
-    val wallpaperScaleMode: StateFlow<String> = preferences.wallpaperScaleMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "crop")
-    fun setWallpaperScaleMode(mode: String) { viewModelScope.launch { preferences.setWallpaperScaleMode(mode) } }
+    val wallpaperScaleMode: StateFlow<WallpaperScaleMode> = preferences.wallpaperScaleMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PreferenceDefaults.WALLPAPER_SCALE_MODE)
+    fun setWallpaperScaleMode(mode: WallpaperScaleMode) =
+        writePreference { preferences.setWallpaperScaleMode(mode) }
 
     val backgroundServiceEnabled: StateFlow<Boolean> = preferences.backgroundServiceEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    fun setBackgroundServiceEnabled(enabled: Boolean) {
-        viewModelScope.launch { preferences.setBackgroundServiceEnabled(enabled) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            PreferenceDefaults.BACKGROUND_SERVICE_ENABLED,
+        )
+    fun setBackgroundServiceEnabled(enabled: Boolean) =
+        writePreference { preferences.setBackgroundServiceEnabled(enabled) }
+
+    /**
+     * DataStore writes throw when storage is full or the file cannot be read
+     * back, and an escape from a bare launch takes the process down. A failed
+     * write is not fatal — the flow keeps emitting the stored value, so the
+     * toggle simply springs back.
+     */
+    private fun writePreference(write: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                write()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Preference write failed", e)
+            }
+        }
     }
 
     // Profile picture cache
     private val _cacheSizeText = MutableStateFlow("")
     val cacheSizeText: StateFlow<String> = _cacheSizeText.asStateFlow()
 
-    private val _cacheAllProgress = MutableStateFlow<Pair<Int, Int>?>(null)
-    val cacheAllProgress: StateFlow<Pair<Int, Int>?> = _cacheAllProgress.asStateFlow()
+    private val _cacheAllProgress = MutableStateFlow<CacheProgress?>(null)
+    val cacheAllProgress: StateFlow<CacheProgress?> = _cacheAllProgress.asStateFlow()
 
     fun refreshCacheSize() {
         viewModelScope.launch(Dispatchers.IO) {
             val bytes = profilePicCacheManager.getCacheSizeBytes()
-            _cacheSizeText.value = formatBytes(bytes)
+            _cacheSizeText.value = formatByteCount(bytes)
         }
-    }
-
-    private fun formatBytes(bytes: Long): String = when {
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
     }
 
     fun clearProfilePicCache() {
@@ -128,19 +161,32 @@ class SettingsViewModel @Inject constructor(
 
     fun cacheAllFriends() {
         viewModelScope.launch(Dispatchers.IO) {
-            val friends = friendRepository.friends.value
-            profilePicCacheManager.cacheAllFriends(friends) { completed, total ->
-                _cacheAllProgress.value = completed to total
+            try {
+                val friends = friendRepository.friends.value
+                profilePicCacheManager.cacheAllFriends(friends) { completed, total ->
+                    _cacheAllProgress.value = CacheProgress(completed, total)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Caching all friend pictures failed", e)
+            } finally {
+                // Both Storage buttons stay disabled while this is non-null, so
+                // it has to clear even when the sweep dies partway.
+                _cacheAllProgress.value = null
             }
-            _cacheAllProgress.value = null
             refreshCacheSize()
         }
     }
 
+    private companion object {
+        const val TAG = "SettingsViewModel"
+    }
+
     fun signOut() {
         // authRepository.logout() is the single source of truth for teardown —
-        // it clears session state, drops the bulk favorites cache, and stops
-        // WebSocketForegroundService.
+        // it clears session state and drops the bulk favorites cache, and the
+        // websocket service takes itself down off the published session end.
         viewModelScope.launch { authRepository.logout() }
     }
 }
@@ -156,6 +202,7 @@ fun SettingsScreen(
     val dynamicColors by viewModel.dynamicColors.collectAsStateWithLifecycle()
     val notifyInvite by viewModel.notifyInvite.collectAsStateWithLifecycle()
     val notifyFriendRequest by viewModel.notifyFriendRequest.collectAsStateWithLifecycle()
+    val notifyGeneral by viewModel.notifyGeneral.collectAsStateWithLifecycle()
     val wallpaperUri by viewModel.wallpaperUri.collectAsStateWithLifecycle()
     val wallpaperScaleMode by viewModel.wallpaperScaleMode.collectAsStateWithLifecycle()
     val backgroundServiceEnabled by viewModel.backgroundServiceEnabled.collectAsStateWithLifecycle()
@@ -169,16 +216,20 @@ fun SettingsScreen(
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 
     val context = LocalContext.current
+    // OpenDocument rather than the photo picker: the wallpaper URI is stored and
+    // re-read on every later launch, and only a SAF grant can be persisted. A
+    // grant we cannot hold is not stored at all, so the scrim and panel
+    // translucency never outlive the image they are drawn for.
     val wallpaperPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
-        try {
+        val persisted = runCatching {
             context.contentResolver.takePersistableUriPermission(
                 uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
-        } catch (_: SecurityException) { }
-        viewModel.setWallpaperUri(uri.toString())
+        }.isSuccess
+        if (persisted) viewModel.setWallpaperUri(uri.toString())
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -195,14 +246,16 @@ fun SettingsScreen(
                 Text("Choose light, dark, or system default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(4.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("system" to "System", "light" to "Light", "dark" to "Dark")
-                        .forEachIndexed { index, (value, label) ->
-                            SegmentedButton(
-                                selected = themeMode == value,
-                                onClick = { viewModel.setThemeMode(value) },
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
-                            ) { Text(label) }
-                        }
+                    ThemeMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = themeMode == mode,
+                            onClick = { viewModel.setThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = ThemeMode.entries.size,
+                            ),
+                        ) { Text(mode.label) }
+                    }
                 }
                 SettingToggle("Dynamic Colors", "Use Material You colors", dynamicColors, viewModel::setDynamicColors)
 
@@ -213,9 +266,7 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = {
-                        wallpaperPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }) {
+                    FilledTonalButton(onClick = { wallpaperPicker.launch(arrayOf("image/*")) }) {
                         Text(if (wallpaperUri != null) "Change Wallpaper" else "Set Wallpaper")
                     }
                     if (wallpaperUri != null) {
@@ -226,14 +277,16 @@ fun SettingsScreen(
                     Text("Scale Mode", style = MaterialTheme.typography.bodyLarge)
                     Text("How the wallpaper image is scaled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        listOf("crop" to "Crop", "fit" to "Fit", "fill_width" to "Fill W", "fill_height" to "Fill H")
-                            .forEachIndexed { index, (value, label) ->
-                                SegmentedButton(
-                                    selected = wallpaperScaleMode == value,
-                                    onClick = { viewModel.setWallpaperScaleMode(value) },
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 4),
-                                ) { Text(label) }
-                            }
+                        WallpaperScaleMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = wallpaperScaleMode == mode,
+                                onClick = { viewModel.setWallpaperScaleMode(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = WallpaperScaleMode.entries.size,
+                                ),
+                            ) { Text(mode.label) }
+                        }
                     }
                 }
             }
@@ -271,6 +324,12 @@ fun SettingsScreen(
             SettingsSection("Notifications") {
                 SettingToggle("Invites", "Notify on invite received", notifyInvite, viewModel::setNotifyInvite)
                 SettingToggle("Friend Requests", "Notify on friend request", notifyFriendRequest, viewModel::setNotifyFriendRequest)
+                SettingToggle(
+                    "Other Notifications",
+                    "Notify on notification types this app doesn't recognise, using the text VRChat sends",
+                    notifyGeneral,
+                    viewModel::setNotifyGeneral,
+                )
                 Text(
                     "Per-friend notifications can be enabled from each friend's profile",
                     style = MaterialTheme.typography.bodySmall,
@@ -281,11 +340,15 @@ fun SettingsScreen(
             SettingsSection("Storage") {
                 Text("Profile Picture Cache", style = MaterialTheme.typography.bodyLarge)
                 Text("Cached: $cacheSizeText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (cacheAllProgress != null) {
-                    val (completed, total) = cacheAllProgress!!
-                    Text("Caching: $completed / $total", style = MaterialTheme.typography.bodySmall)
+                cacheAllProgress?.let { progress ->
+                    Text(
+                        "Caching: ${progress.completed} / ${progress.total}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     LinearProgressIndicator(
-                        progress = { if (total > 0) completed.toFloat() / total else 0f },
+                        progress = {
+                            if (progress.total > 0) progress.completed.toFloat() / progress.total else 0f
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

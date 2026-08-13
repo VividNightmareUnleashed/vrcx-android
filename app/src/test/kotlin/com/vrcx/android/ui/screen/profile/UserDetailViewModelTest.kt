@@ -3,6 +3,7 @@ package com.vrcx.android.ui.screen.profile
 import androidx.lifecycle.SavedStateHandle
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.repository.FavoriteWorldLoadResult
+import com.vrcx.android.data.repository.UserActionPerformer
 import com.vrcx.android.data.repository.UserDetailProfile
 import com.vrcx.android.data.repository.UserDetailRepository
 import com.vrcx.android.ui.common.MainDispatcherRule
@@ -105,5 +106,102 @@ class UserDetailViewModelTest {
         advanceUntilIdle()
         assertTrue(UserDetailTab.FAVORITE_WORLDS in viewModel.uiState.value.loadedTabs)
         verify(repository, times(2)).loadFavoriteWorlds("usr_target")
+    }
+
+    @Test
+    fun `unfriending drops the tab rows the account may no longer see`() = runTest(dispatcher) {
+        val repository = mock<UserDetailRepository>()
+        whenever(repository.favorites).thenReturn(
+            MutableStateFlow(emptyList<com.vrcx.android.data.api.model.Favorite>()),
+        )
+        whenever(repository.observeIsSelf("usr_target")).thenReturn(flowOf(false))
+        whenever(repository.loadProfile("usr_target")).thenReturn(
+            UserDetailProfile(VrcUser(id = "usr_target", displayName = "Target")),
+        )
+        whenever(repository.loadMutualFriends("usr_target"))
+            .thenReturn(listOf(VrcUser(id = "usr_mutual", displayName = "Mutual")))
+            .thenReturn(emptyList())
+        val actionPerformer = mock<UserActionPerformer>()
+        val viewModel = UserDetailViewModel(
+            SavedStateHandle(mapOf("userId" to "usr_target")),
+            repository,
+            actionPerformer,
+        )
+        advanceUntilIdle()
+
+        viewModel.selectTab(UserDetailTab.MUTUALS)
+        advanceUntilIdle()
+        assertEquals(listOf("usr_mutual"), viewModel.uiState.value.mutualFriends.map { it.id })
+
+        viewModel.unfriend()
+        advanceUntilIdle()
+
+        verify(actionPerformer).unfriend("usr_target")
+        verify(repository, times(2)).loadMutualFriends("usr_target")
+        assertTrue(viewModel.uiState.value.mutualFriends.isEmpty())
+    }
+
+    @Test
+    fun `a double-tapped favorite issues one request`() = runTest(dispatcher) {
+        val repository = mock<UserDetailRepository>()
+        whenever(repository.favorites).thenReturn(
+            MutableStateFlow(emptyList<com.vrcx.android.data.api.model.Favorite>()),
+        )
+        whenever(repository.observeIsSelf("usr_target")).thenReturn(flowOf(false))
+        whenever(repository.loadProfile("usr_target")).thenReturn(
+            UserDetailProfile(VrcUser(id = "usr_target", displayName = "Target")),
+        )
+        val release = CompletableDeferred<Unit>()
+        whenever(repository.addFriendFavorite("usr_target")).doSuspendableAnswer {
+            release.await()
+        }
+        val viewModel = UserDetailViewModel(
+            SavedStateHandle(mapOf("userId" to "usr_target")),
+            repository,
+            mock(),
+        )
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite()
+        runCurrent()
+        viewModel.toggleFavorite()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        verify(repository, times(1)).addFriendFavorite("usr_target")
+        assertEquals("Added to favorites", viewModel.uiState.value.message)
+    }
+
+    @Test
+    fun `the favorite entry id is the single source of the favorited flag`() = runTest(dispatcher) {
+        val favorites = MutableStateFlow(emptyList<com.vrcx.android.data.api.model.Favorite>())
+        val repository = mock<UserDetailRepository>()
+        whenever(repository.favorites).thenReturn(favorites)
+        whenever(repository.observeIsSelf("usr_target")).thenReturn(flowOf(false))
+        whenever(repository.loadProfile("usr_target")).thenReturn(
+            UserDetailProfile(VrcUser(id = "usr_target", displayName = "Target")),
+        )
+        val viewModel = UserDetailViewModel(
+            SavedStateHandle(mapOf("userId" to "usr_target")),
+            repository,
+            mock(),
+        )
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isFavorited)
+
+        favorites.value = listOf(
+            com.vrcx.android.data.api.model.Favorite(
+                favoriteId = "usr_target",
+                id = "fvrt_1",
+                type = "friend",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isFavorited)
+
+        viewModel.toggleFavorite()
+        advanceUntilIdle()
+        verify(repository).deleteFavorite("fvrt_1")
     }
 }

@@ -2,11 +2,16 @@ package com.vrcx.android.ui.screen.charts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vrcx.android.data.db.dao.FeedDao
-import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
-import com.vrcx.android.data.util.parseInstantMillisOrNull
+import com.vrcx.android.data.repository.FeedEntry
+import com.vrcx.android.data.repository.FeedRepository
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.derivationScope
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -16,9 +21,13 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -28,7 +37,26 @@ data class ChartsSummary(
     val activeDays: Int = 0,
 )
 
-/** A GPS row pre-parsed once: epoch millis + local hour/day-of-week + string keys. */
+/**
+ * Every series the Charts screen renders, derived from one snapshot and one
+ * range. Published as a single value so the screen can never show a summary
+ * for one range beside a chart for another.
+ */
+data class ChartsData(
+    val summary: ChartsSummary = ChartsSummary(),
+    val dailyActivity: List<Pair<String, Int>> = emptyList(),
+    val topWorlds: List<Pair<String, Int>> = emptyList(),
+    val hourlyActivity: List<Pair<String, Int>> = emptyList(),
+    val weekdayActivity: List<Pair<String, Int>> = emptyList(),
+) {
+    val hasData: Boolean
+        get() = dailyActivity.isNotEmpty() ||
+            topWorlds.isNotEmpty() ||
+            hourlyActivity.any { it.second > 0 } ||
+            weekdayActivity.any { it.second > 0 }
+}
+
+/** A location row pre-parsed once: epoch millis + local hour/day-of-week + string keys. */
 private data class GpsPoint(
     val epochMs: Long,
     val hour: Int,
@@ -39,119 +67,116 @@ private data class GpsPoint(
 
 @HiltViewModel
 class ChartsViewModel @Inject constructor(
-    private val feedDao: FeedDao,
+    private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
-
-    @Volatile private var points: List<GpsPoint> = emptyList()
-
-    private val _dailyActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
-    val dailyActivity: StateFlow<List<Pair<String, Int>>> = _dailyActivity.asStateFlow()
-
-    private val _topWorlds = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
-    val topWorlds: StateFlow<List<Pair<String, Int>>> = _topWorlds.asStateFlow()
-
-    private val _hourlyActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
-    val hourlyActivity: StateFlow<List<Pair<String, Int>>> = _hourlyActivity.asStateFlow()
-
-    private val _weekdayActivity = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
-    val weekdayActivity: StateFlow<List<Pair<String, Int>>> = _weekdayActivity.asStateFlow()
+    private val _history = MutableStateFlow<LoadState<List<GpsPoint>>>(LoadState.NotLoaded)
 
     private val _selectedRangeDays = MutableStateFlow<Int?>(30)
     val selectedRangeDays: StateFlow<Int?> = _selectedRangeDays.asStateFlow()
 
-    private val _summary = MutableStateFlow(ChartsSummary())
-    val summary: StateFlow<ChartsSummary> = _summary.asStateFlow()
+    /**
+     * The whole screen in one value. A refresh that fails over history already on
+     * screen keeps the charts and carries the message as a stale-error note, so
+     * the range picker stays reachable.
+     */
+    val state: StateFlow<LoadState<ChartsData>> = combine(
+        _history,
+        _selectedRangeDays,
+    ) { history, rangeDays ->
+        when (history) {
+            LoadState.NotLoaded -> LoadState.NotLoaded
+            LoadState.Loading -> LoadState.Loading
+            is LoadState.Failed -> history
+            is LoadState.Loaded -> LoadState.Loaded(
+                value = buildCharts(history.value, rangeDays),
+                isRefreshing = history.isRefreshing,
+                staleError = history.staleError,
+            )
+        }
+    }
+        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), LoadState.NotLoaded)
 
-    init { loadData(initial = true) }
+    init { loadData() }
 
-    fun refresh() = loadData(initial = false)
+    fun refresh() = loadData()
 
     fun setRangeDays(days: Int?) {
         _selectedRangeDays.value = days
-        recomputeCharts()
     }
 
-    private fun loadData(initial: Boolean) {
+    private fun loadData() {
         viewModelScope.launch {
-            if (initial) _isLoading.value = true else _isRefreshing.value = true
-            _error.value = null
+            _history.update { it.startLoad() }
             try {
                 val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
                 if (userId == null) {
-                    _error.value = "Not signed in"
+                    _history.update { it.failLoad("Not signed in") }
                     return@launch
                 }
                 val zone = ZoneId.systemDefault()
-                val history = feedDao.getAllGpsFeed(userId).first()
-                points = withContext(Dispatchers.Default) { history.map { it.toGpsPoint(zone) } }
-                recomputeCharts()
+                val points = withContext(Dispatchers.Default) {
+                    feedRepository.getAllGpsFeed(userId).first().map { it.toGpsPoint(zone) }
+                }
+                _history.update { it.completeLoad(points) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load chart data"
+                _history.update { it.failLoad(e.message ?: "Failed to load chart data") }
             } finally {
-                _isLoading.value = false
-                _isRefreshing.value = false
+                _history.update { it.settleLoad() }
             }
         }
     }
 
-    private fun recomputeCharts() {
-        val rangeDays = _selectedRangeDays.value
-        val snapshot = points
-        viewModelScope.launch(Dispatchers.Default) {
-            val cutoffMs = rangeDays?.let {
-                Instant.now().toEpochMilli() - it.toLong() * 24L * 60L * 60L * 1000L
-            }
-            val filtered = if (cutoffMs == null) snapshot else snapshot.filter { it.epochMs > cutoffMs }
+    private fun buildCharts(points: List<GpsPoint>, rangeDays: Int?): ChartsData {
+        val cutoffMs = rangeDays?.let {
+            Instant.now().toEpochMilli() - it.toLong() * 24L * 60L * 60L * 1000L
+        }
+        val filtered = if (cutoffMs == null) points else points.filter { it.epochMs > cutoffMs }
 
-            val hourBuckets = IntArray(24)
-            val dayBuckets = IntArray(7)
-            val worldCounts = LinkedHashMap<String, Int>()
-            val dateCounts = LinkedHashMap<String, Int>()
-            filtered.forEach { p ->
-                if (p.hour in 0..23) hourBuckets[p.hour]++
-                if (p.dayOfWeek in 1..7) dayBuckets[p.dayOfWeek - 1]++
-                worldCounts[p.worldKey] = (worldCounts[p.worldKey] ?: 0) + 1
-                dateCounts[p.dateKey] = (dateCounts[p.dateKey] ?: 0) + 1
-            }
+        val hourBuckets = IntArray(24)
+        val dayBuckets = IntArray(7)
+        val worldCounts = LinkedHashMap<String, Int>()
+        val dateCounts = LinkedHashMap<String, Int>()
+        filtered.forEach { p ->
+            if (p.hour in 0..23) hourBuckets[p.hour]++
+            if (p.dayOfWeek in 1..7) dayBuckets[p.dayOfWeek - 1]++
+            worldCounts[p.worldKey] = (worldCounts[p.worldKey] ?: 0) + 1
+            dateCounts[p.dateKey] = (dateCounts[p.dateKey] ?: 0) + 1
+        }
 
-            _summary.value = ChartsSummary(
+        return ChartsData(
+            summary = ChartsSummary(
                 totalVisits = filtered.size,
                 distinctWorlds = worldCounts.size,
                 activeDays = dateCounts.size,
-            )
-            _dailyActivity.value = dateCounts.entries
+            ),
+            dailyActivity = dateCounts.entries
                 .map { it.key to it.value }
                 .sortedBy { it.first }
-                .takeLast(30)
-            _topWorlds.value = worldCounts.entries
+                .takeLast(30),
+            topWorlds = worldCounts.entries
                 .map { it.key to it.value }
                 .sortedByDescending { it.second }
-                .take(10)
-            _hourlyActivity.value = (0..23).map { "%02d:00".format(it) to hourBuckets[it] }
-            _weekdayActivity.value = (1..7).map { weekdayLabel(it) to dayBuckets[it - 1] }
-        }
+                .take(10),
+            hourlyActivity = (0..23).map { "%02d:00".format(it) to hourBuckets[it] },
+            weekdayActivity = (1..7).map { weekdayLabel(it) to dayBuckets[it - 1] },
+        )
     }
 
-    private fun FeedGpsEntity.toGpsPoint(zone: ZoneId): GpsPoint {
-        val epochMs = parseInstantMillisOrNull(createdAt)
+    private fun FeedEntry.toGpsPoint(zone: ZoneId): GpsPoint {
+        val epochMs = createdAtEpochMs.takeIf { it != Long.MIN_VALUE }
         val zoned = epochMs?.let { Instant.ofEpochMilli(it).atZone(zone) }
         return GpsPoint(
             epochMs = epochMs ?: Long.MIN_VALUE,
             hour = zoned?.hour ?: -1,
             dayOfWeek = zoned?.dayOfWeek?.value ?: -1,
-            dateKey = createdAt.take(10),
+            // Same zoned instant as the hour/weekday buckets — `createdAt` is a
+            // UTC ISO-8601 string, so slicing it files evening sessions under
+            // the wrong local day for anyone off UTC.
+            dateKey = zoned?.toLocalDate()?.toString() ?: createdAt.take(10),
             worldKey = worldName.ifBlank { location.substringBefore(":") },
         )
     }

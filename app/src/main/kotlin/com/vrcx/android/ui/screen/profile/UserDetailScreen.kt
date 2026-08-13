@@ -1,6 +1,5 @@
 package com.vrcx.android.ui.screen.profile
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -46,7 +45,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,9 +67,10 @@ import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.friendStateOf
 import com.vrcx.android.data.model.resolvedWorldId
-import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FavoriteWorldSection
+import com.vrcx.android.data.repository.canonicalGroupId
 import com.vrcx.android.ui.common.prettyVisibility
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
@@ -78,9 +78,11 @@ import com.vrcx.android.ui.components.ErrorState
 import com.vrcx.android.ui.components.LoadingState
 import com.vrcx.android.ui.components.SectionHeader
 import com.vrcx.android.ui.components.TrustRankBadge
+import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.UserListItem
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
+import com.vrcx.android.ui.components.VrcxTabRow
 import com.vrcx.android.ui.components.WorldListItem
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 
@@ -188,7 +190,7 @@ fun UserDetailScreen(
                 Spacer(Modifier.height(8.dp))
 
                 // Tabs
-                TabRow(selectedTabIndex = selectedTab.ordinal) {
+                VrcxTabRow(selectedTabIndex = selectedTab.ordinal) {
                     UserDetailTab.entries.forEach { tab ->
                         Tab(
                             selected = selectedTab == tab,
@@ -198,6 +200,9 @@ fun UserDetailScreen(
                     }
                 }
 
+                // Spin only while the tab is fetching for the first time; a
+                // re-selected tab with cached rows keeps showing them.
+                val isTabLoading = selectedTab in state.loadingTabs && selectedTab !in state.loadedTabs
                 when (selectedTab) {
                     UserDetailTab.INFO -> InfoTab(
                         u = u,
@@ -209,31 +214,21 @@ fun UserDetailScreen(
                         isSelf = isSelf,
                         onConfirmDestructive = { pendingDestructiveAction = it },
                     )
-                    UserDetailTab.MUTUALS -> {
-                        if (UserDetailTab.MUTUALS in state.loadingTabs && state.mutualFriends.isEmpty()) LoadingState()
-                        else MutualFriendsTab(state.mutualFriends, onUserClick)
-                    }
-                    UserDetailTab.GROUPS -> {
-                        if (UserDetailTab.GROUPS in state.loadingTabs && state.userGroups.isEmpty()) LoadingState()
-                        else GroupsTab(state.userGroups, onGroupClick)
-                    }
-                    UserDetailTab.WORLDS -> {
-                        if (UserDetailTab.WORLDS in state.loadingTabs && state.userWorlds.isEmpty()) LoadingState()
-                        else WorldsTab(state.userWorlds, onWorldClick)
-                    }
-                    UserDetailTab.AVATARS -> {
-                        if (UserDetailTab.AVATARS in state.loadingTabs && state.userAvatars.isEmpty()) LoadingState()
-                        else AvatarsTab(state.userAvatars, onAvatarClick)
-                    }
-                    UserDetailTab.FAVORITE_WORLDS -> {
-                        if (UserDetailTab.FAVORITE_WORLDS in state.loadingTabs && state.favoriteWorldSections.isEmpty()) LoadingState()
-                        else FavoriteWorldsTab(
+                    UserDetailTab.MUTUALS ->
+                        if (isTabLoading) LoadingState() else MutualFriendsTab(state.mutualFriends, onUserClick)
+                    UserDetailTab.GROUPS ->
+                        if (isTabLoading) LoadingState() else GroupsTab(state.userGroups, onGroupClick)
+                    UserDetailTab.WORLDS ->
+                        if (isTabLoading) LoadingState() else WorldsTab(state.userWorlds, onWorldClick)
+                    UserDetailTab.AVATARS ->
+                        if (isTabLoading) LoadingState() else AvatarsTab(state.userAvatars, onAvatarClick)
+                    UserDetailTab.FAVORITE_WORLDS ->
+                        if (isTabLoading) LoadingState() else FavoriteWorldsTab(
                             sections = state.favoriteWorldSections,
                             selectedTag = state.selectedFavoriteWorldTag,
                             onSelectGroup = viewModel::selectFavoriteWorldGroup,
                             onWorldClick = onWorldClick,
                         )
-                    }
                 }
             }
         }
@@ -252,8 +247,8 @@ private fun InfoTab(
     onWorldClick: (String) -> Unit,
     onConfirmDestructive: (UserDestructiveAction) -> Unit,
 ) {
-    var showNoteDialog by remember { mutableStateOf(false) }
-    var showMemoDialog by remember { mutableStateOf(false) }
+    var showNoteDialog by rememberSaveable { mutableStateOf(false) }
+    var showMemoDialog by rememberSaveable { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -386,7 +381,9 @@ private fun InfoTab(
     }
 
     if (showNoteDialog) {
-        var noteText by remember { mutableStateOf(note ?: "") }
+        // Keyed on the loaded note so the dialog re-seeds when the profile
+        // refreshes, while a rotation mid-edit keeps what was typed.
+        var noteText by rememberSaveable(note) { mutableStateOf(note ?: "") }
         AlertDialog(
             onDismissRequest = { showNoteDialog = false },
             title = { Text("Edit VRChat Note") },
@@ -410,7 +407,7 @@ private fun InfoTab(
 
     // Memo edit dialog
     if (showMemoDialog) {
-        var memoText by remember { mutableStateOf(memo ?: "") }
+        var memoText by rememberSaveable(memo) { mutableStateOf(memo ?: "") }
         AlertDialog(
             onDismissRequest = { showMemoDialog = false },
             title = { Text("Edit Memo") },
@@ -446,7 +443,7 @@ private fun MutualFriendsTab(mutualFriends: List<VrcUser>, onUserClick: (String)
                     subtitle = mutual.statusDescription.ifBlank { mutual.status },
                     tags = mutual.tags,
                     status = mutual.status,
-                    state = mutualFriendState(mutual),
+                    state = friendStateOf(mutual.location),
                     onClick = { onUserClick(mutual.id) },
                 )
             }
@@ -461,7 +458,7 @@ private fun GroupsTab(groups: List<com.vrcx.android.data.api.model.Group>, onGro
     } else {
         LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(groups, key = { it.id }) { group ->
-                val groupId = group.groupId.ifEmpty { group.id }
+                val groupId = group.canonicalGroupId()
                 VrcxCard(onClick = { onGroupClick(groupId) }) {
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (group.iconUrl.isNotEmpty()) {
@@ -598,14 +595,8 @@ private fun AvatarsTab(avatars: List<Avatar>, onAvatarClick: (String) -> Unit) {
 
 @Composable
 private fun ProfileHeader(user: VrcUser) {
-    val imageUrl = user.displayAvatarUrl()
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        AsyncImage(
-            model = imageUrl,
-            contentDescription = null,
-            modifier = Modifier.size(96.dp).clip(CircleShape),
-            contentScale = ContentScale.Crop,
-        )
+        UserAvatar(imageUrl = user.displayAvatarUrl(), size = 96.dp, showStatusDot = false)
         Spacer(Modifier.height(12.dp))
         Text(user.displayName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (user.pronouns.isNotBlank()) {
@@ -613,7 +604,9 @@ private fun ProfileHeader(user: VrcUser) {
         }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TrustRankBadge(tags = user.tags)
+            // A payload that omitted tags would otherwise fall through to a
+            // "Visitor" badge on a user whose real trust rank is unknown.
+            if (user.tags.isNotEmpty()) TrustRankBadge(tags = user.tags)
             AssistChip(onClick = {}, label = { Text(user.state.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall) })
         }
         if (user.statusDescription.isNotBlank()) {
@@ -630,10 +623,3 @@ private fun InfoRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodySmall)
     }
 }
-
-private fun mutualFriendState(user: VrcUser): FriendState =
-    when {
-        user.location.isNullOrBlank() || user.location == "offline" -> FriendState.OFFLINE
-        user.location == "private" || user.state.equals("active", ignoreCase = true) -> FriendState.ACTIVE
-        else -> FriendState.ONLINE
-    }

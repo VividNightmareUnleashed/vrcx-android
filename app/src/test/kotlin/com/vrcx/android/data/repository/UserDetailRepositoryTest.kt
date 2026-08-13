@@ -34,11 +34,13 @@ class UserDetailRepositoryTest {
         val avatarApi = mock<AvatarApi>()
         val groupApi = mock<GroupApi>()
         val worldApi = mock<WorldApi>()
+        // The endpoint returns membership objects: `id` is the membership,
+        // `groupId` is the group itself.
         whenever(groupApi.getUserGroups("usr_target", 100, 0)).thenReturn(
-            List(100) { Group(id = "grp_$it") },
+            List(100) { Group(id = "gmem_$it", groupId = "grp_$it") },
         )
         whenever(groupApi.getUserGroups("usr_target", 100, 100)).thenReturn(
-            listOf(Group(id = "grp_100")),
+            listOf(Group(id = "gmem_100", groupId = "grp_100")),
         )
         whenever(worldApi.getWorlds(n = 100, offset = 0, user = "usr_target")).thenReturn(
             List(100) { World(id = "wrld_$it") },
@@ -58,7 +60,9 @@ class UserDetailRepositoryTest {
             worldApi = worldApi,
         )
 
-        assertEquals(101, repository.loadGroups("usr_target").size)
+        val groups = repository.loadGroups("usr_target")
+        assertEquals(101, groups.size)
+        assertEquals("grp_100", groups.last().canonicalGroupId())
         assertEquals(101, repository.loadWorlds("usr_target").size)
         assertEquals(101, repository.loadAvatars("usr_target").size)
     }
@@ -141,6 +145,22 @@ class UserDetailRepositoryTest {
         assertTrue(failure is IllegalStateException)
     }
 
+    @Test
+    fun `memos are keyed by the user they are about, not by the composite key`() = runTest {
+        val memoDao = mock<MemoDao>()
+        whenever(memoDao.getMemos("usr_owner")).thenReturn(
+            listOf(
+                MemoEntity(odUserId = "usr_owner:usr_a", ownerUserId = "usr_owner", memo = "note a"),
+                MemoEntity(odUserId = "usr_owner:usr_b", ownerUserId = "usr_owner", memo = "note b"),
+            ),
+        )
+
+        assertEquals(
+            mapOf("usr_a" to "note a", "usr_b" to "note b"),
+            repository(memoDao = memoDao).loadMemos("usr_owner"),
+        )
+    }
+
     private fun repository(
         userRepository: UserRepository = mock(),
         avatarApi: AvatarApi = mock(),
@@ -161,9 +181,9 @@ class UserDetailRepositoryTest {
         )
         return UserDetailRepository(
             userRepository = userRepository,
-            avatarRepository = AvatarRepository(avatarApi, RequestDeduplicator()),
+            avatarRepository = AvatarRepository(avatarApi, RequestDeduplicator(), AccountScope()),
             favoriteApi = favoriteApi,
-            groupRepository = GroupRepository(groupApi, RequestDeduplicator()),
+            groupRepository = GroupRepository(groupApi, RequestDeduplicator(), AccountScope()),
             worldApi = worldApi,
             favoriteRepository = favoriteRepository,
             authRepository = authRepository,

@@ -1,20 +1,27 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.db.dao.FeedDao
+import com.vrcx.android.data.db.dao.UnifiedFeedRow
 import com.vrcx.android.data.db.entity.FeedAvatarEntity
 import com.vrcx.android.data.db.entity.FeedBioEntity
 import com.vrcx.android.data.db.entity.FeedGpsEntity
 import com.vrcx.android.data.db.entity.FeedOnlineOfflineEntity
 import com.vrcx.android.data.db.entity.FeedStatusEntity
 import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.preferences.PreferenceDefaults
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.util.parseInstantMillisOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.stateIn
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -58,77 +65,92 @@ data class FeedEntry(
     val avatarName: String = "",
     val thumbnailUrl: String = "",
 ) {
-    /** [createdAt] parsed once so range filters compare longs, not re-parse per keystroke. */
-    val createdAtEpochMs: Long = parseInstantMillisOrNull(createdAt) ?: Long.MAX_VALUE
+    /**
+     * [createdAt] parsed once so range filters compare longs, not re-parse per
+     * keystroke. Unparseable timestamps deliberately sort behind every valid
+     * timestamp, matching [UnifiedNotification].
+     */
+    val createdAtEpochMs: Long = parseInstantMillisOrNull(createdAt) ?: Long.MIN_VALUE
 
     /** World id parsed from [location] (blank for non-location rows), for scope filtering. */
     val worldId: String = parseWorldId(location)
+
+    /**
+     * Identity across the merged feed. [id] is only unique within its source
+     * table, so a GPS row and a status row can share one — which would collide as
+     * a lazy-list key.
+     */
+    val key: String get() = "${type.id}_$id"
 }
 
-/**
- * A merged feed page. [sourceSaturated] is true when any of the five source
- * tables returned a full page, i.e. more history may exist beyond the fetch
- * limit — the Feed screen uses it to decide whether "Load more" can grow.
- */
-data class UnifiedFeed(
-    val entries: List<FeedEntry>,
-    val sourceSaturated: Boolean,
-)
-
-private const val DEFAULT_FEED_LIMIT = 1000
 private const val PRUNE_INTERVAL = 50
 
+/** How long the merged feed stays warm after the last screen showing it goes away. */
+private const val FEED_SHARING_TIMEOUT_MS = 5_000L
+
 @Singleton
+@OptIn(ExperimentalCoroutinesApi::class)
 class FeedRepository @Inject constructor(
     private val feedDao: FeedDao,
-    private val preferences: VrcxPreferences,
-) {
+    preferences: VrcxPreferences,
+    accountScope: AccountScope,
+) : AccountScoped {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Cached so the highest-frequency write path (GPS/status/online-offline
-    // pipeline events) doesn't read DataStore on every insert; one collector
-    // keeps it fresh.
-    @Volatile private var cachedFeedLimit: Int = DEFAULT_FEED_LIMIT
+    // Held here so the highest-frequency write path (GPS/status/online-offline
+    // pipeline events) doesn't read DataStore on every insert, and so the page
+    // the feed screens read and the size the pruner keeps are one number.
+    private val feedLimit: StateFlow<Int> = preferences.maxFeedSize
+        .map { it.coerceAtLeast(1) }
+        .stateIn(scope, SharingStarted.Eagerly, PreferenceDefaults.MAX_FEED_SIZE)
+
     private val insertsSincePrune = AtomicInteger(0)
 
+    // One live merge per account rather than one per screen. Room re-runs the
+    // union on every feed insert, so three screens subscribing independently
+    // would re-read and re-merge the same page three times per event.
+    private val sharedFeeds = HashMap<String, Flow<List<FeedEntry>>>()
+
     init {
-        scope.launch {
-            preferences.maxFeedSize.collect { cachedFeedLimit = it.coerceAtLeast(1) }
-        }
+        accountScope.bindTo(this)
+    }
+
+    override fun clearRuntimeState() {
+        synchronized(sharedFeeds) { sharedFeeds.clear() }
     }
 
     /**
      * The unified, newest-first friend-activity feed, merging all five source
-     * tables (each capped at [limit]) into one list of [FeedEntry]. This is the
-     * single merge + entity→model mapping shared by the Feed, Dashboard, and
-     * Activity History screens; consumers only filter and slice.
+     * tables (each capped at the configured history size) into one list of
+     * [FeedEntry]. This is the single merge + entity→model mapping shared by the
+     * Feed, Dashboard, and Activity History screens; consumers only filter and
+     * slice.
      */
-    fun getUnifiedFeed(userId: String, limit: Int): Flow<UnifiedFeed> = combine(
-        feedDao.getGpsFeed(userId, limit),
-        feedDao.getStatusFeed(userId, limit),
-        feedDao.getBioFeed(userId, limit),
-        feedDao.getAvatarFeed(userId, limit),
-        feedDao.getOnlineOfflineFeed(userId, limit),
-    ) { gps, status, bio, avatar, onlineOffline ->
-        val entries = ArrayList<FeedEntry>(
-            gps.size + status.size + bio.size + avatar.size + onlineOffline.size,
-        )
-        gps.forEach { entries += it.toFeedEntry() }
-        status.forEach { entries += it.toFeedEntry() }
-        bio.forEach { entries += it.toFeedEntry() }
-        avatar.forEach { entries += it.toFeedEntry() }
-        onlineOffline.forEach { entries += it.toFeedEntry() }
-        entries.sortByDescending { it.createdAt }
-        UnifiedFeed(
-            entries = entries,
-            sourceSaturated = listOf(gps, status, bio, avatar, onlineOffline).any { it.size >= limit },
-        )
-    }
+    fun getUnifiedFeed(userId: String): Flow<List<FeedEntry>> =
+        synchronized(sharedFeeds) { sharedFeeds.getOrPut(userId) { mergedFeed(userId) } }
+
+    private fun mergedFeed(userId: String): Flow<List<FeedEntry>> = feedLimit
+        .flatMapLatest { limit -> feedDao.getUnifiedFeed(userId, limit) }
+        .map { rows ->
+            val entries = rows.mapTo(ArrayList(rows.size)) { it.toFeedEntry() }
+            // Sort on the parsed epoch, never the raw string: createdAt is
+            // Instant.toString() text whose fractional seconds are variable-width,
+            // so a lexicographic sort reorders events within the same second.
+            // That is also why the query itself leaves the rows unordered.
+            entries.sortByDescending { it.createdAtEpochMs }
+            entries
+        }
+        .shareIn(scope, SharingStarted.WhileSubscribed(FEED_SHARING_TIMEOUT_MS), replay = 1)
 
     // Single-source reader still used by the Friends Locations screen for
     // offline-context lookups; the other four sources are consumed only through
     // getUnifiedFeed above.
-    fun getGpsFeed(userId: String, limit: Int): Flow<List<FeedGpsEntity>> = feedDao.getGpsFeed(userId, limit)
+    fun getGpsFeed(userId: String, limit: Int): Flow<List<FeedEntry>> =
+        feedDao.getGpsFeed(userId, limit).map { rows -> rows.map { it.toFeedEntry() } }
+
+    /** The account's whole location history, which the Charts screen aggregates. */
+    fun getAllGpsFeed(userId: String): Flow<List<FeedEntry>> =
+        feedDao.getAllGpsFeed(userId).map { rows -> rows.map { it.toFeedEntry() } }
 
     suspend fun insertGps(entry: FeedGpsEntity) { feedDao.insertGps(entry); maybePrune(entry.ownerUserId) }
     suspend fun insertStatus(entry: FeedStatusEntity) { feedDao.insertStatus(entry); maybePrune(entry.ownerUserId) }
@@ -150,7 +172,7 @@ class FeedRepository @Inject constructor(
     private suspend fun maybePrune(ownerUserId: String) {
         if (insertsSincePrune.incrementAndGet() < PRUNE_INTERVAL) return
         insertsSincePrune.set(0)
-        val limit = cachedFeedLimit
+        val limit = feedLimit.value
         feedDao.pruneGps(ownerUserId, limit)
         feedDao.pruneStatus(ownerUserId, limit)
         feedDao.pruneBio(ownerUserId, limit)
@@ -169,45 +191,30 @@ class FeedRepository @Inject constructor(
         previousLocation = previousLocation,
     )
 
-    private fun FeedStatusEntity.toFeedEntry() = FeedEntry(
+    private fun UnifiedFeedRow.toFeedEntry() = FeedEntry(
         id = id,
-        type = FeedEntryType.STATUS,
-        userId = userId,
-        displayName = displayName,
-        createdAt = createdAt,
-        status = status,
-        statusDescription = statusDescription,
-        previousStatus = previousStatus,
-        previousStatusDescription = previousStatusDescription,
-    )
-
-    private fun FeedBioEntity.toFeedEntry() = FeedEntry(
-        id = id,
-        type = FeedEntryType.BIO,
-        userId = userId,
-        displayName = displayName,
-        createdAt = createdAt,
-        bio = bio,
-        previousBio = previousBio,
-    )
-
-    private fun FeedAvatarEntity.toFeedEntry() = FeedEntry(
-        id = id,
-        type = FeedEntryType.AVATAR,
-        userId = userId,
-        displayName = displayName,
-        createdAt = createdAt,
-        avatarName = avatarName,
-        thumbnailUrl = currentAvatarThumbnailImageUrl,
-    )
-
-    private fun FeedOnlineOfflineEntity.toFeedEntry() = FeedEntry(
-        id = id,
-        type = FeedEntryType.fromId(type),
+        // One table backs two entry types: feed_online_offline carries its own
+        // "online"/"offline" discriminator, the others are known by their source.
+        type = when (source) {
+            "gps" -> FeedEntryType.GPS
+            "status" -> FeedEntryType.STATUS
+            "bio" -> FeedEntryType.BIO
+            "avatar" -> FeedEntryType.AVATAR
+            else -> FeedEntryType.fromId(type)
+        },
         userId = userId,
         displayName = displayName,
         createdAt = createdAt,
         worldName = worldName,
         location = location,
+        previousLocation = previousLocation,
+        status = status,
+        statusDescription = statusDescription,
+        previousStatus = previousStatus,
+        previousStatusDescription = previousStatusDescription,
+        bio = bio,
+        previousBio = previousBio,
+        avatarName = avatarName,
+        thumbnailUrl = thumbnailUrl,
     )
 }

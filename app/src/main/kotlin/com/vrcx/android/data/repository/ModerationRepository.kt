@@ -13,24 +13,21 @@ import javax.inject.Singleton
 @Singleton
 class ModerationRepository @Inject constructor(
     private val playerModerationApi: PlayerModerationApi,
-) {
-    private val stateLock = Any()
-    private var accountGeneration = 0L
+    accountScope: AccountScope,
+) : AccountScoped {
+    private val account = accountScope.bindTo(this)
 
     private val _moderations = MutableStateFlow<List<PlayerModeration>>(emptyList())
     val moderations: StateFlow<List<PlayerModeration>> = _moderations.asStateFlow()
 
     suspend fun loadModerations() {
-        val generation = currentGeneration()
+        val token = account.current()
         val moderations = playerModerationApi.getPlayerModerations()
-        publishIfCurrent(generation) { _moderations.value = moderations }
+        account.publishIfCurrent(token) { _moderations.value = moderations }
     }
 
-    fun clearRuntimeState() {
-        synchronized(stateLock) {
-            accountGeneration++
-            _moderations.value = emptyList()
-        }
+    override fun clearRuntimeState() {
+        _moderations.value = emptyList()
     }
 
     /**
@@ -43,33 +40,25 @@ class ModerationRepository @Inject constructor(
      * than re-fetching the whole list, mirroring [deleteModeration].
      */
     suspend fun moderate(userId: String, apiValue: String) {
-        val generation = currentGeneration()
+        val token = account.current()
         val created = playerModerationApi.sendPlayerModeration(
             PlayerModerationRequest(userId, apiValue)
         )
-        publishIfCurrent(generation) {
+        account.publishIfCurrent(token) {
             _moderations.value = _moderations.value.filterNot { it.id == created.id } + created
         }
     }
 
     suspend fun deleteModeration(moderation: PlayerModeration) {
-        val generation = currentGeneration()
+        val token = account.current()
         playerModerationApi.unmoderatePlayer(
             UnPlayerModerationRequest(
                 moderated = moderation.targetUserId,
                 type = moderation.type,
             )
         )
-        publishIfCurrent(generation) {
+        account.publishIfCurrent(token) {
             _moderations.value = _moderations.value.filter { it.id != moderation.id }
-        }
-    }
-
-    private fun currentGeneration(): Long = synchronized(stateLock) { accountGeneration }
-
-    private inline fun publishIfCurrent(generation: Long, publish: () -> Unit) {
-        synchronized(stateLock) {
-            if (generation == accountGeneration) publish()
         }
     }
 }

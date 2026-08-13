@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,15 +26,12 @@ import androidx.compose.ui.draw.clip
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import com.vrcx.android.ui.theme.vrcxColors
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VrcxTopBar(
     title: String,
     modifier: Modifier = Modifier,
-    scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val isWallpaperActive = LocalWallpaperActive.current
@@ -71,13 +67,11 @@ fun VrcxTopBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VrcxDetailTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val isWallpaperActive = LocalWallpaperActive.current

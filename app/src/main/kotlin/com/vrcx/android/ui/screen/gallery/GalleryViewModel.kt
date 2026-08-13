@@ -1,10 +1,7 @@
 package com.vrcx.android.ui.screen.gallery
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.GalleryImage
@@ -14,20 +11,21 @@ import com.vrcx.android.data.api.model.VrcPrint
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GalleryRepository
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.isBusy
+import com.vrcx.android.ui.common.isLoaded
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
-import com.vrcx.android.data.util.UploadBytesResult
-import com.vrcx.android.data.util.readUploadBytesBounded
-import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 
 enum class GalleryTab(val label: String) {
@@ -39,21 +37,14 @@ enum class GalleryTab(val label: String) {
     INVENTORY("Inventory"),
 }
 
-data class GalleryTabState(
-    val isLoaded: Boolean = false,
-    val isLoading: Boolean = false,
-    val isRefreshing: Boolean = false,
-    val error: String? = null,
-)
-
 data class GalleryUiState(
     val selectedTab: GalleryTab = GalleryTab.GALLERY,
-    val tabs: Map<GalleryTab, GalleryTabState> = GalleryTab.entries.associateWith { GalleryTabState() },
+    /** Each tab's rows live in [GalleryRepository], so the state carries no value. */
+    val tabs: Map<GalleryTab, LoadState<Unit>> =
+        GalleryTab.entries.associateWith { LoadState.NotLoaded },
 ) {
-    val selectedTabState: GalleryTabState get() = tabs.getValue(selectedTab)
+    val selectedTabState: LoadState<Unit> get() = tabs.getValue(selectedTab)
 }
-
-internal const val MAX_UPLOAD_DIMENSION = 2_000
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
@@ -100,41 +91,29 @@ class GalleryViewModel @Inject constructor(
 
     private fun loadTab(tab: GalleryTab, forceRefresh: Boolean = false) {
         val current = _uiState.value.tabs.getValue(tab)
-        if (current.isLoading || current.isRefreshing || (!forceRefresh && current.isLoaded)) return
+        if (current.isBusy || (!forceRefresh && current.isLoaded)) return
 
-        updateTab(tab) { state ->
-            state.copy(
-                isLoading = !state.isLoaded,
-                isRefreshing = state.isLoaded,
-                error = null,
-            )
-        }
+        updateTab(tab) { it.startLoad() }
         viewModelScope.launch {
             try {
                 reloadTab(tab)
-                updateTab(tab) {
-                    it.copy(
-                        isLoaded = true,
-                        isLoading = false,
-                        isRefreshing = false,
-                        error = null,
-                    )
-                }
+                updateTab(tab) { it.completeLoad(Unit) }
             } catch (e: CancellationException) {
+                // Covers AccountChangedException, which GalleryRepository raises
+                // when the signed-in account changes mid-load: a deliberate
+                // staleness signal, not something to show the user.
                 throw e
             } catch (e: Exception) {
-                updateTab(tab) {
-                    it.copy(
-                        isLoading = false,
-                        isRefreshing = false,
-                        error = e.message ?: "Failed to load ${tab.label.lowercase()}",
-                    )
-                }
+                updateTab(tab) { it.failLoad(e.message ?: "Failed to load ${tab.label.lowercase()}") }
+            } finally {
+                // Runs on cancellation too — otherwise the tab stays busy and
+                // this method's own guard blocks every later retry.
+                updateTab(tab) { it.settleLoad() }
             }
         }
     }
 
-    private fun updateTab(tab: GalleryTab, transform: (GalleryTabState) -> GalleryTabState) {
+    private fun updateTab(tab: GalleryTab, transform: (LoadState<Unit>) -> LoadState<Unit>) {
         _uiState.update { state ->
             state.copy(tabs = state.tabs + (tab to transform(state.tabs.getValue(tab))))
         }
@@ -152,133 +131,109 @@ class GalleryViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
-    fun deleteFile(fileId: String, tab: GalleryTab) {
-        viewModelScope.launch {
-            try {
-                galleryRepository.deleteFile(fileId)
-                reloadTab(tab)
-                _snackbarMessage.value = "Image deleted"
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Delete failed: ${e.message}"
-            }
-        }
-    }
+    fun deleteFile(fileId: String, tab: GalleryTab) = mutate(
+        successMessage = "Image deleted",
+        failurePrefix = "Delete failed",
+        action = { galleryRepository.deleteFile(fileId); true },
+        refresh = { reloadTab(tab) },
+    )
 
-    fun deletePrint(printId: String) {
-        viewModelScope.launch {
-            try {
-                galleryRepository.deletePrint(printId)
-                val uid = currentUserId() ?: return@launch
-                galleryRepository.loadPrints(uid)
-                _snackbarMessage.value = "Print deleted"
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Delete failed: ${e.message}"
-            }
-        }
-    }
+    fun deletePrint(printId: String) = mutate(
+        successMessage = "Print deleted",
+        failurePrefix = "Delete failed",
+        action = { galleryRepository.deletePrint(printId); true },
+        refresh = { currentUserId()?.let { galleryRepository.loadPrints(it) } },
+    )
 
     fun uploadFile(uri: Uri, tab: GalleryTab) {
-        viewModelScope.launch {
-            _isUploading.value = true
-            try {
-                val tag = when (tab) {
-                    GalleryTab.GALLERY -> "gallery"
-                    GalleryTab.ICONS -> "icon"
-                    GalleryTab.EMOJIS -> "emoji"
-                    GalleryTab.STICKERS -> "sticker"
-                    else -> return@launch
-                }
-                val sourceMimeType = context.contentResolver.getType(uri) ?: "image/png"
-                val sourceFileName = resolveFileName(uri, sourceMimeType)
-                val upload = prepareUpload(uri, sourceMimeType, sourceFileName) ?: return@launch
-                galleryRepository.uploadFile(tag, upload.bytes, upload.mimeType, upload.fileName)
-                _snackbarMessage.value = "Image uploaded"
-                try {
-                    reloadTab(tab)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (error: Exception) {
-                    _snackbarMessage.value = "Image uploaded, but refresh failed: ${error.message}"
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Upload failed: ${e.message}"
-            } finally {
-                _isUploading.value = false
-            }
+        val tag = when (tab) {
+            GalleryTab.GALLERY -> "gallery"
+            GalleryTab.ICONS -> "icon"
+            GalleryTab.EMOJIS -> "emoji"
+            GalleryTab.STICKERS -> "sticker"
+            else -> return
         }
+        mutate(
+            successMessage = "Image uploaded",
+            failurePrefix = "Upload failed",
+            uploading = true,
+            action = {
+                val upload = prepareUpload(uri)
+                if (upload != null) {
+                    galleryRepository.uploadFile(tag, upload.bytes, upload.mimeType, upload.fileName)
+                }
+                upload != null
+            },
+            refresh = { reloadTab(tab) },
+        )
     }
 
-    fun uploadPrint(uri: Uri, note: String?) {
-        viewModelScope.launch {
-            _isUploading.value = true
-            try {
-                val sourceMimeType = context.contentResolver.getType(uri) ?: "image/png"
-                val sourceFileName = resolveFileName(uri, sourceMimeType)
-                val upload = prepareUpload(uri, sourceMimeType, sourceFileName) ?: return@launch
+    fun uploadPrint(uri: Uri, note: String?) = mutate(
+        successMessage = "Print uploaded",
+        failurePrefix = "Upload failed",
+        uploading = true,
+        action = {
+            val upload = prepareUpload(uri)
+            if (upload != null) {
                 galleryRepository.uploadPrint(
                     upload.bytes,
                     note?.ifBlank { null },
                     upload.mimeType,
                     upload.fileName,
                 )
-                _snackbarMessage.value = "Print uploaded"
-                val uid = currentUserId()
-                if (uid == null) {
-                    _snackbarMessage.value = "Print uploaded, but refresh requires signing in again"
-                } else {
-                    try {
-                        galleryRepository.loadPrints(uid)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (error: Exception) {
-                        _snackbarMessage.value = "Print uploaded, but refresh failed: ${error.message}"
-                    }
+            }
+            upload != null
+        },
+        refresh = {
+            val uid = currentUserId()
+            if (uid == null) {
+                _snackbarMessage.value = "Print uploaded, but refresh requires signing in again"
+            } else {
+                galleryRepository.loadPrints(uid)
+            }
+        },
+    )
+
+    /**
+     * Runs one gallery mutation and then reloads what it changed.
+     *
+     * The two failures are kept apart on purpose: a refresh that fails after the
+     * server already accepted the action is never announced as the action
+     * failing, or the user re-taps a delete that actually succeeded. [action]
+     * returns false to abandon the mutation quietly, which is how the upload
+     * paths bow out after reporting an unusable image.
+     */
+    private fun mutate(
+        successMessage: String,
+        failurePrefix: String,
+        uploading: Boolean = false,
+        action: suspend () -> Boolean,
+        refresh: suspend () -> Unit,
+    ) {
+        viewModelScope.launch {
+            if (uploading) _isUploading.value = true
+            try {
+                if (!action()) return@launch
+                _snackbarMessage.value = successMessage
+                try {
+                    refresh()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (error: Exception) {
+                    _snackbarMessage.value = "$successMessage, but refresh failed: ${error.message}"
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _snackbarMessage.value = "Upload failed: ${e.message}"
+                _snackbarMessage.value = "$failurePrefix: ${e.message}"
             } finally {
-                _isUploading.value = false
+                if (uploading) _isUploading.value = false
             }
         }
     }
 
-    /**
-     * Pulls the original file name from the URI's OpenableColumns when the
-     * source provides it (gallery picker does), so the multipart upload reports
-     * the user's actual file name. Falls back to a MIME-appropriate default
-     * name so the extension matches the bytes regardless.
-     */
-    private fun resolveFileName(uri: Uri, mimeType: String): String {
-        val pickerName = runCatching {
-            context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null, null, null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) cursor.getString(idx) else null
-                } else null
-            }
-        }.getOrNull()
-        return pickerName?.takeIf { it.isNotBlank() }
-            ?: GalleryRepository.defaultFileNameFor(mimeType)
-    }
-
-    private suspend fun prepareUpload(uri: Uri, mimeType: String, fileName: String): PreparedUpload? {
-        return when (
-            val result = withContext(Dispatchers.IO) {
-                prepareUploadResult(uri, mimeType, fileName)
-            }
-        ) {
+    private suspend fun prepareUpload(uri: Uri): PreparedUpload? =
+        when (val result = prepareGalleryUpload(context, uri)) {
             is UploadReadResult.Success -> result.upload
             UploadReadResult.TooLarge -> {
                 _snackbarMessage.value = "Image too large (max 10 MB)"
@@ -289,115 +244,6 @@ class GalleryViewModel @Inject constructor(
                 null
             }
         }
-    }
-
-    private fun prepareUploadResult(uri: Uri, mimeType: String, fileName: String): UploadReadResult {
-        val metadataSize = resolveFileSize(uri)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsDecoded = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input, null, bounds)
-            } != null || (bounds.outWidth > 0 && bounds.outHeight > 0)
-        }.getOrDefault(false)
-        val hasDimensions = boundsDecoded || (bounds.outWidth > 0 && bounds.outHeight > 0)
-        val needsResize = hasDimensions && (
-            bounds.outWidth > MAX_UPLOAD_DIMENSION ||
-                bounds.outHeight > MAX_UPLOAD_DIMENSION ||
-                (metadataSize != null && metadataSize > MAX_UPLOAD_SIZE_BYTES)
-            )
-
-        if (needsResize) {
-            return resizeUpload(uri, mimeType, fileName, bounds.outWidth, bounds.outHeight)
-        }
-        if (metadataSize != null && metadataSize > MAX_UPLOAD_SIZE_BYTES) {
-            return UploadReadResult.TooLarge
-        }
-
-        return when (val read = readUploadBytesBounded(context.contentResolver.openInputStream(uri))) {
-            UploadBytesResult.Unreadable -> UploadReadResult.Unreadable
-            UploadBytesResult.TooLarge -> UploadReadResult.TooLarge
-            is UploadBytesResult.Success -> UploadReadResult.Success(PreparedUpload(read.bytes, mimeType, fileName))
-        }
-    }
-
-    private fun resizeUpload(
-        uri: Uri,
-        sourceMimeType: String,
-        sourceFileName: String,
-        width: Int,
-        height: Int,
-    ): UploadReadResult {
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateUploadSampleSize(width, height)
-        }
-        val decoded = context.contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, options)
-        } ?: return UploadReadResult.Unreadable
-        val target = scaleBitmapToFit(decoded)
-        val outputMimeType = when (sourceMimeType.lowercase()) {
-            "image/jpeg", "image/jpg" -> "image/jpeg"
-            "image/webp" -> "image/webp"
-            else -> "image/png"
-        }
-        val extension = when (outputMimeType) {
-            "image/jpeg" -> "jpg"
-            "image/webp" -> "webp"
-            else -> "png"
-        }
-        val outputName = sourceFileName.substringBeforeLast('.', sourceFileName) + ".$extension"
-        val bytes = compressBitmapBounded(target, outputMimeType)
-        if (target !== decoded) target.recycle()
-        decoded.recycle()
-        return bytes?.let {
-            UploadReadResult.Success(PreparedUpload(it, outputMimeType, outputName))
-        } ?: UploadReadResult.TooLarge
-    }
-
-    private fun scaleBitmapToFit(bitmap: Bitmap): Bitmap {
-        val (targetWidth, targetHeight) = fitUploadDimensions(bitmap.width, bitmap.height)
-        return if (targetWidth == bitmap.width && targetHeight == bitmap.height) bitmap else {
-            Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
-        }
-    }
-
-    private fun compressBitmapBounded(bitmap: Bitmap, mimeType: String): ByteArray? {
-        val format = when (mimeType) {
-            "image/jpeg" -> Bitmap.CompressFormat.JPEG
-            "image/webp" -> Bitmap.CompressFormat.WEBP
-            else -> Bitmap.CompressFormat.PNG
-        }
-        val qualities = if (format == Bitmap.CompressFormat.PNG) listOf(100) else listOf(92, 84, 76, 68, 60)
-        for (quality in qualities) {
-            val output = ByteArrayOutputStream()
-            if (bitmap.compress(format, quality, output) && output.size() <= MAX_UPLOAD_SIZE_BYTES) {
-                return output.toByteArray()
-            }
-        }
-        return null
-    }
-
-    private fun resolveFileSize(uri: Uri): Long? {
-        val querySize = runCatching {
-            context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.SIZE),
-                null, null, null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (idx >= 0) cursor.getLong(idx).takeIf { it >= 0 } else null
-                } else null
-            }
-        }.getOrNull()
-
-        if (querySize != null) return querySize
-
-        return runCatching {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
-                descriptor.length.takeIf { it >= 0 }
-            }
-        }.getOrNull()
-    }
 
     private fun setImage(successMessage: String, call: suspend (uid: String) -> Unit) {
         viewModelScope.launch {
@@ -425,19 +271,12 @@ class GalleryViewModel @Inject constructor(
     fun clearUserIcon() =
         setImage("User icon cleared") { galleryRepository.setUserIcon(it, "") }
 
-    fun consumeBundle(itemId: String) {
-        viewModelScope.launch {
-            try {
-                galleryRepository.consumeBundle(itemId)
-                galleryRepository.loadInventory()
-                _snackbarMessage.value = "Bundle consumed"
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed: ${e.message}"
-            }
-        }
-    }
+    fun consumeBundle(itemId: String) = mutate(
+        successMessage = "Bundle consumed",
+        failurePrefix = "Failed",
+        action = { galleryRepository.consumeBundle(itemId); true },
+        refresh = { galleryRepository.loadInventory() },
+    )
 
     private suspend fun reloadTab(tab: GalleryTab) {
         when (tab) {
@@ -452,34 +291,4 @@ class GalleryViewModel @Inject constructor(
             GalleryTab.INVENTORY -> galleryRepository.loadInventory()
         }
     }
-}
-
-private data class PreparedUpload(val bytes: ByteArray, val mimeType: String, val fileName: String)
-
-private sealed interface UploadReadResult {
-    data class Success(val upload: PreparedUpload) : UploadReadResult
-    data object TooLarge : UploadReadResult
-    data object Unreadable : UploadReadResult
-}
-
-internal fun calculateUploadSampleSize(
-    width: Int,
-    height: Int,
-    maxDimension: Int = MAX_UPLOAD_DIMENSION,
-): Int {
-    var sampleSize = 1
-    while (width / (sampleSize * 2) > maxDimension || height / (sampleSize * 2) > maxDimension) {
-        sampleSize *= 2
-    }
-    return sampleSize
-}
-
-internal fun fitUploadDimensions(
-    width: Int,
-    height: Int,
-    maxDimension: Int = MAX_UPLOAD_DIMENSION,
-): Pair<Int, Int> {
-    if (width <= maxDimension && height <= maxDimension) return width to height
-    val scale = minOf(maxDimension.toFloat() / width, maxDimension.toFloat() / height)
-    return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }
