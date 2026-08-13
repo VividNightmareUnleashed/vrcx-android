@@ -1,9 +1,121 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.1] - 2026-08-13
+
+### New
+
+- **Control over uncategorised notifications** — Settings gains an "Other
+  Notifications" switch alongside Invites and Friend Requests. VRChat
+  occasionally sends notification types the app doesn't recognise, and those
+  previously reached your notification shade regardless of your preferences,
+  carrying whatever text the server supplied. They now respect this switch and
+  their text is length-capped like every other notification.
+
+### Improved
+
+- **Smoother lists and less stutter** — Filtering, sorting and merging for the
+  friends list, feed, activity history, charts and search all ran on the UI
+  thread, so large accounts saw dropped frames while scrolling or typing. That
+  work now happens off the UI thread.
+- **Faster image loading** — Every avatar and image request performed a hash,
+  string formatting and several file checks on the UI thread before the image
+  could even start loading. That probe moved off the UI thread and got
+  considerably cheaper, so busy screens settle sooner.
+- **Friends Locations scrolls properly** — Each world group was built in full
+  the moment it came into view, including every avatar in it, and the offline
+  group is unbounded — so opening the screen with a large friends list stalled
+  and fired every image request at once. Rows are now built as you reach them.
+- **Activity history and feed refresh cost less** — Inserting a single row
+  re-sorted and re-parsed the entire merged feed, several times over, for every
+  screen listening to it. The merge now happens once, in the database.
 
 ### Fixed
 
+- **A saved login could be destroyed rather than reused** — If the encrypted
+  credential store couldn't be read on a given launch — a corrupt file, or a
+  key invalidated by a lock-screen change — the app treated it as "nothing
+  saved" and the next write erased what was actually there. Separately, a
+  failed write was recorded as though it had succeeded, so it was never retried
+  and the error surfaced as a failed request instead. Both presented the same
+  way: an unexplained sign-out with no way back except signing in again. The
+  app now tells "empty" apart from "unreadable" and refuses to overwrite what
+  it couldn't read.
+- **Signing out left your password on the device** — Sign out cleared the
+  session but never removed saved credentials, despite the Settings screen
+  saying otherwise. It now removes them. An involuntary session end — VRChat
+  rejecting the session while you're away — still keeps them, so "remember me"
+  continues to work as intended.
+- **Signing in could return you to the previous account** — Reaching the login
+  screen after a failed session and signing in as someone else could leave the
+  old account's session cookie in play, so the app signed you back into the
+  previous account while storing the new credentials. The stored cookie is now
+  cleared before signing in — and restored if the attempt fails because VRChat
+  couldn't be reached, so a failed sign-in still can't cost you a good session.
+- **Recovery codes containing letters were rejected** — Two-factor recovery
+  codes are alphanumeric, but the app stripped every letter before checking the
+  code, then sent what remained to the wrong endpoint. The keyboard shown for
+  the field was numeric, so the letters couldn't be typed in the first place.
+  Recovery codes now work as printed.
+- **Background presence could stop for good** — If the app couldn't confirm
+  your session when the background service started — typically a moment without
+  connectivity — the service shut itself down permanently and stayed down until
+  you next opened the app, so friend notifications silently stopped arriving.
+  It now retries instead of giving up.
+- **An unexpected message from VRChat could close the app** — A real-time
+  message whose contents didn't match the expected shape crashed the app
+  outright. Malformed messages are now contained and the connection survives
+  them.
+- **Slow reconnect after regaining signal** — Coming back from a tunnel or an
+  airplane-mode toggle, the app often waited out a long back-off before
+  reconnecting instead of reconnecting immediately, so events were missed for
+  minutes after the network returned.
+- **Your friends list could quietly fail to update** — A refresh that overlapped
+  with any incoming real-time event discarded everything it had just fetched
+  and reported success, and also skipped the friend-log and favourites updates
+  that follow it. Since ordinary friend activity triggers those events, this
+  happened routinely. Fetched data and live updates are now merged per friend.
+- **Phantom "unfriended" entries in Friend Log** — If VRChat returned a short
+  friends list, every friend missing from it was recorded as an unfriend, and
+  those entries are permanent. Implausibly large removals are now ignored until
+  a complete list confirms them; genuine unfriends still record immediately.
+- **Two screens could disagree about where a friend was** — A profile update
+  from VRChat overwrote the friend's location with the update's own contents,
+  so one screen showed them online in a world and another showed them offline
+  until the next location event. Profile updates now keep the presence the
+  location events resolved.
+- **Notifications you'd handled elsewhere never cleared** — After the first
+  successful sync the inbox only ever fetched new items, so anything accepted or
+  declined on another device stayed in your list indefinitely. The app now
+  reconciles the full list periodically.
+- **Notification taps always opened the Feed tab** — Every notification opened
+  the app at the same place regardless of what it was about. Taps now open the
+  user, world, group or avatar the notification names.
+- **Tapping a notification could open a second copy of the app** — With the
+  background service turned off, the second copy's arrival stopped the
+  connection the first one was maintaining. Notifications now reuse the running
+  app.
+- **A gallery delete that worked reported "failed"** — Deleting or uploading
+  refreshed the gallery afterwards, and a failure of that refresh was reported
+  as the delete or upload having failed, when the file had already gone.
+- **Gallery and avatar messages vanished before you could read them** — The
+  confirmation and error messages on those screens dismissed themselves the
+  instant they appeared.
+- **The screenshot tool rejected screenshots the Gallery accepted** — Uploading
+  from the screenshot metadata tool applied a stricter size limit and skipped
+  the resizing the Gallery screen performs, so large VRChat screenshots failed
+  there and succeeded elsewhere. Both now share one upload path.
+- **A chosen wallpaper disappeared after restarting the app** — The image
+  couldn't be read on the next launch, but the darkening it applies stayed, so
+  the app was left dimmed with no wallpaper behind it. Wallpapers now persist.
+- **Charts could mix two different time ranges** — Switching range while the
+  previous calculation was still running let parts of the screen settle on
+  different ranges at once.
+- **Corrupt cached profile pictures persisted for weeks** — Two downloads of
+  the same image wrote to the same temporary file and could interleave, and the
+  damaged result was then served from the cache for up to thirty days.
+- **A malformed PNG could crash the screenshot tool** — A file declaring an
+  implausible internal size caused the tool to run out of memory rather than
+  reporting an unreadable file.
 - **Blocking or muting from a profile didn't reach the Moderation screen** —
   The profile screen sent the moderation straight to VRChat without telling
   the rest of the app, so the Moderation screen kept showing the list as it
@@ -41,6 +153,24 @@
 - **Cookies discarded by unrelated requests** — A stored cookie that didn't
   apply to the request being made was evicted from the jar rather than just
   skipped for that one request. Only expired cookies are dropped now.
+
+### Under the hood
+
+- **Per-account isolation is now enforced in one place.** Keeping one account's
+  data from surfacing under another was previously re-implemented in each
+  repository, which meant a new one could silently omit the guard. There is now
+  a single mechanism every repository registers with, and the registration is
+  required for the guard to be reachable at all.
+- **Sensitive files are excluded from backup and device transfer.** A backup
+  copy of the encrypted credential store and the cached profile pictures were
+  outside the exclusion rules that already covered the primary store.
+- **Database upgraded to version 6.** An unused index was dropped, a duplicated
+  column removed, and a missing index added. Existing data migrates in place.
+- **The test suite grew from 165 to 398 tests**, covering areas that previously
+  had none: the encrypted credential store, the cookie jar, the foreground
+  service, the real-time connection, per-account data scoping, and every
+  database migration against its recorded schema. Every screen now has a test
+  that renders it. Continuous integration runs the suite and lint on each push.
 
 ## [1.6.0] - 2026-07-12
 
