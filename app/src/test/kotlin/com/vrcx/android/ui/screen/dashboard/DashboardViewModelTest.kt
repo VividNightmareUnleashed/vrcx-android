@@ -9,8 +9,8 @@ import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.ui.common.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -36,7 +36,7 @@ class DashboardViewModelTest {
                 "d" to FriendContext("d", "Dave", FriendState.OFFLINE),
                 "e" to FriendContext("e", "Eve", FriendState.OFFLINE),
                 "f" to FriendContext("f", "Frank", FriendState.OFFLINE),
-            )
+            ),
         )
         val viewModel = buildViewModel(friends = friends)
 
@@ -70,7 +70,7 @@ class DashboardViewModelTest {
                 "a" to FriendContext("a", "Alice", FriendState.ONLINE),
                 "b" to FriendContext("b", "Bob", FriendState.ONLINE),
                 "c" to FriendContext("c", "Carol", FriendState.OFFLINE),
-            )
+            ),
         )
         val viewModel = buildViewModel(friends = friends, favorites = setOf("b", "c"))
 
@@ -93,6 +93,6 @@ class DashboardViewModelTest {
         val feedRepository = mock<FeedRepository>().also {
             whenever(it.getUnifiedFeed(any())).thenReturn(flowOf(emptyList()))
         }
-        return DashboardViewModel(authRepository, friendRepository, feedRepository)
+        return DashboardViewModel(authRepository, friendRepository, feedRepository, testDispatcher)
     }
 }

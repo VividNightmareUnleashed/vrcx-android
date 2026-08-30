@@ -31,7 +31,7 @@ class ReleaseSignAndScanTest(unittest.TestCase):
         temp_parent.mkdir(parents=True, exist_ok=True)
         self.root_dir = temp_parent / f"release-sign-{uuid.uuid4().hex}"
         self.root_dir.mkdir(parents=True)
-        self.release_dir = self.root_dir / "app" / "build" / "outputs" / "apk" / "release"
+        self.release_dir = self.root_dir / "app" / "build" / "outputs" / "versioned-apk" / "release"
         self.release_dir.mkdir(parents=True)
 
         self.root_patch = mock.patch.object(release_scan, "ROOT_DIR", self.root_dir)
@@ -56,6 +56,20 @@ class ReleaseSignAndScanTest(unittest.TestCase):
     def test_rejects_debug_output_path(self) -> None:
         debug_apk = self.write_apk(
             self.root_dir / "app" / "build" / "outputs" / "apk" / "debug" / "vrcx-android.apk"
+        )
+
+        with self.assertRaisesRegex(release_scan.ReleaseScanError, "debug APK"):
+            release_scan.resolve_apk_path(debug_apk, skip_build=True)
+
+    def test_rejects_versioned_debug_output_path(self) -> None:
+        debug_apk = self.write_apk(
+            self.root_dir
+            / "app"
+            / "build"
+            / "outputs"
+            / "versioned-apk"
+            / "debug"
+            / "vrcx-android-1.6.1.apk"
         )
 
         with self.assertRaisesRegex(release_scan.ReleaseScanError, "debug APK"):

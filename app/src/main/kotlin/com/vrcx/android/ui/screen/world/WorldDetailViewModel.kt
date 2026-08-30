@@ -14,26 +14,23 @@ import com.vrcx.android.ui.common.failLoad
 import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /** A world and, when they could be fetched, the instances currently running it. */
-data class WorldDetailData(
-    val world: World,
-    val instances: List<Instance> = emptyList(),
-)
+data class WorldDetailData(val world: World, val instances: List<Instance> = emptyList())
 
 @HiltViewModel
 class WorldDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val worldRepository: WorldRepository,
 ) : ViewModel() {
-    val worldId: String = savedStateHandle.get<String>("worldId") ?: ""
+    val worldId: String = savedStateHandle.get<String>("worldId").orEmpty()
 
     private val _state = MutableStateFlow<LoadState<WorldDetailData>>(LoadState.NotLoaded)
     val state: StateFlow<LoadState<WorldDetailData>> = _state.asStateFlow()
@@ -42,9 +39,13 @@ class WorldDetailViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    init { loadWorld() }
+    init {
+        loadWorld()
+    }
 
-    fun clearMessage() { _message.value = null }
+    fun clearMessage() {
+        _message.value = null
+    }
 
     fun selfInvite(instanceId: String) {
         viewModelScope.launch {
@@ -68,9 +69,8 @@ class WorldDetailViewModel @Inject constructor(
      * allow-list keeps the URL readable; anything outside it (`&`, `#`, `+`, a
      * space) would truncate the link instead of being carried through.
      */
-    fun browserLaunchUrl(instanceId: String): String =
-        "https://vrchat.com/home/launch" +
-            "?worldId=${encodeQueryValue(worldId)}&instanceId=${encodeQueryValue(instanceId)}"
+    fun browserLaunchUrl(instanceId: String): String = "https://vrchat.com/home/launch" +
+        "?worldId=${encodeQueryValue(worldId)}&instanceId=${encodeQueryValue(instanceId)}"
 
     private fun encodeQueryValue(value: String): String = Uri.encode(value, ":,")
 

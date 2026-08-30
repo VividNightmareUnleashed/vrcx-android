@@ -6,7 +6,10 @@
         <exclude domain="database" path="vrcx.db-wal" />
         <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_file_pref__.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.bak" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.new" />
         <exclude domain="file" path="vrcx_secure_secrets.json.backup" />
         <exclude domain="file" path="profile_pic_cache/" />
     </cloud-backup>
@@ -16,7 +19,10 @@
         <exclude domain="database" path="vrcx.db-wal" />
         <exclude domain="file" path="datastore/" />
         <exclude domain="sharedpref" path="vrcx_cookies.xml" />
+        <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_file_pref__.xml" />
         <exclude domain="file" path="vrcx_secure_secrets.json" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.bak" />
+        <exclude domain="file" path="vrcx_secure_secrets.json.new" />
         <exclude domain="file" path="vrcx_secure_secrets.json.backup" />
         <exclude domain="file" path="profile_pic_cache/" />
     </device-transfer>

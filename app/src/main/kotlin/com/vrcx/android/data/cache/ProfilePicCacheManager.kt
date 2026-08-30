@@ -3,32 +3,48 @@ package com.vrcx.android.data.cache
 import android.content.Context
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
+import com.vrcx.android.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.BufferedSink
+import okio.BufferedSource
+import okio.buffer
+import okio.sink
 
 @Singleton
-class ProfilePicCacheManager @Inject constructor(
-    @ApplicationContext context: Context,
-    @Named("imageOkHttpClient")
+class ProfilePicCacheManager internal constructor(
+    context: Context,
     private val okHttpClient: OkHttpClient,
+    private val ioDispatcher: CoroutineDispatcher,
+    maxEntryBytes: Long,
 ) {
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        @Named("imageOkHttpClient") okHttpClient: OkHttpClient,
+        @IoDispatcher ioDispatcher: CoroutineDispatcher,
+    ) : this(context, okHttpClient, ioDispatcher, MAX_CACHE_ENTRY_BYTES)
+
     private val cacheDir = File(context.filesDir, "profile_pic_cache")
     private val writesSinceTrim = AtomicInteger(0)
+    private val bodyWriter = BoundedBodyWriter(maxEntryBytes)
 
     init {
         // Don't scan/trim the cache dir here: this singleton is constructed on
@@ -59,7 +75,7 @@ class ProfilePicCacheManager @Inject constructor(
         return file
     }
 
-    suspend fun cacheImage(url: String) = withContext(Dispatchers.IO) {
+    suspend fun cacheImage(url: String) = withContext(ioDispatcher) {
         cacheImage(url, trimAfterWrite = true)
     }
 
@@ -77,11 +93,7 @@ class ProfilePicCacheManager @Inject constructor(
             response.use { resp ->
                 if (!resp.isSuccessful) return
                 val body = resp.body ?: return
-                body.byteStream().use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
+                if (!bodyWriter.write(body, tempFile)) return
             }
             if (tempFile.length() > 0 && tempFile.renameTo(file)) {
                 file.setLastModified(System.currentTimeMillis())
@@ -96,48 +108,46 @@ class ProfilePicCacheManager @Inject constructor(
         cacheDir.listFiles()?.forEach { it.delete() }
     }
 
-    fun getCacheSizeBytes(): Long {
-        return cacheDir.listFiles()
-            ?.filterNot { it.name.endsWith(TEMP_FILE_SUFFIX) }
-            ?.sumOf { it.length() }
-            ?: 0L
-    }
+    fun getCacheSizeBytes(): Long = cacheDir.listFiles()
+        ?.filterNot { it.name.endsWith(TEMP_FILE_SUFFIX) }
+        ?.sumOf { it.length() }
+        ?: 0L
 
-    suspend fun cacheAllFriends(
-        friends: Map<String, FriendContext>,
-        onProgress: (Int, Int) -> Unit,
-    ) = withContext(Dispatchers.IO) {
-        val urls = friends.values.mapNotNull { friend ->
-            val ref = friend.ref ?: return@mapNotNull null
-            ref.displayAvatarUrl().takeIf { it.isNotEmpty() }
-        }.distinct()
-        val total = urls.size
-        var completed = 0
-        val progressLock = Any()
-        val semaphore = Semaphore(4)
+    suspend fun cacheAllFriends(friends: Map<String, FriendContext>, onProgress: (Int, Int) -> Unit) =
+        withContext(ioDispatcher) {
+            val urls = friends.values.mapNotNull { friend ->
+                val ref = friend.ref ?: return@mapNotNull null
+                ref.displayAvatarUrl().takeIf { it.isNotEmpty() }
+            }.distinct()
+            val total = urls.size
+            var completed = 0
+            val progressLock = Any()
+            // Bound bulk warmups so they cannot monopolize the image client's
+            // dispatcher and connection pool.
+            val semaphore = Semaphore(CACHE_WARMUP_CONCURRENCY)
 
-        try {
-            coroutineScope {
-                urls.map { url ->
-                    async {
-                        semaphore.withPermit {
-                            try {
-                                cacheImage(url, trimAfterWrite = false)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (_: Exception) {
-                            }
-                            synchronized(progressLock) {
-                                onProgress(++completed, total)
+            try {
+                coroutineScope {
+                    urls.map { url ->
+                        async {
+                            semaphore.withPermit {
+                                try {
+                                    cacheImage(url, trimAfterWrite = false)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                }
+                                synchronized(progressLock) {
+                                    onProgress(++completed, total)
+                                }
                             }
                         }
-                    }
-                }.awaitAll()
+                    }.awaitAll()
+                }
+            } finally {
+                trimCache()
             }
-        } finally {
-            trimCache()
         }
-    }
 
     /**
      * Trim every [TRIM_INTERVAL] single-image writes rather than after each one.
@@ -175,12 +185,64 @@ class ProfilePicCacheManager @Inject constructor(
 
     private companion object {
         const val MAX_CACHE_BYTES = 64L * 1024L * 1024L
+
+        // An entry larger than the entire cache could not survive the next trim.
+        const val MAX_CACHE_ENTRY_BYTES = MAX_CACHE_BYTES
         const val MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L
         const val MAX_TEMP_AGE_MS = 60L * 60L * 1000L
         const val LRU_TOUCH_INTERVAL_MS = 60L * 60L * 1000L
         const val TRIM_INTERVAL = 20
         const val TEMP_FILE_PREFIX = "pic"
         const val TEMP_FILE_SUFFIX = ".tmp"
+        const val CACHE_WARMUP_CONCURRENCY = 4
         val HEX_DIGITS = "0123456789abcdef".toCharArray()
+    }
+}
+
+private class BoundedBodyWriter(private val maxBytes: Long) {
+    init {
+        require(maxBytes > 0)
+    }
+
+    fun write(body: ResponseBody, destination: File): Boolean {
+        if (body.contentLength() > maxBytes) return false
+
+        return body.source().use { source ->
+            destination.sink().buffer().use { sink ->
+                copy(source, sink)
+            }
+        }
+    }
+
+    private fun copy(source: BufferedSource, sink: BufferedSink): Boolean {
+        val buffer = Buffer()
+        var bytesWritten = 0L
+        var reachedEnd = false
+        var oversized = false
+        while (!reachedEnd && !oversized) {
+            val remaining = maxBytes - bytesWritten
+            val readLimit = if (remaining >= STREAM_BUFFER_BYTES) {
+                STREAM_BUFFER_BYTES
+            } else {
+                // Probe one byte past the boundary without ever writing that byte.
+                remaining + 1L
+            }
+            val read = source.read(buffer, readLimit)
+            when {
+                read == -1L -> reachedEnd = true
+
+                read > remaining -> oversized = true
+
+                else -> {
+                    sink.write(buffer, read)
+                    bytesWritten += read
+                }
+            }
+        }
+        return reachedEnd
+    }
+
+    private companion object {
+        const val STREAM_BUFFER_BYTES = 8L * 1024L
     }
 }

@@ -22,7 +22,8 @@ enum class FriendLogEventType(val token: String, val label: String) {
     FRIEND("Friend", "Friend"),
     UNFRIEND("Unfriend", "Unfriend"),
     DISPLAY_NAME("DisplayName", "DisplayName"),
-    TRUST_LEVEL("TrustLevel", "TrustLevel");
+    TRUST_LEVEL("TrustLevel", "TrustLevel"),
+    ;
 
     companion object {
         private val byToken = entries.associateBy { it.token }
@@ -95,7 +96,9 @@ internal class FriendLogSynchronizer @Inject constructor(
         // permanent. Real removals also arrive on the pipeline's friend-delete
         // path, and a later sync over a complete snapshot still catches the
         // rest, so an implausible removal set is left alone.
-        if (missing.size > maxOf(MAX_TRUSTED_REMOVALS, currentEntries.size / 4)) return@withTransaction
+        if (missing.size > maxOf(MAX_TRUSTED_REMOVALS, currentEntries.size / FRIENDS_PER_TRUSTED_REMOVAL)) {
+            return@withTransaction
+        }
 
         missing.forEach { entry ->
             insertHistory(
@@ -258,6 +261,8 @@ internal class FriendLogSynchronizer @Inject constructor(
     private fun trustLevel(tags: List<String>) = TrustRank.fromTags(tags).label
 
     private companion object {
+        const val FRIENDS_PER_TRUSTED_REMOVAL = 4
+
         /** Removals below this count are plausible no matter how small the friend list is. */
         const val MAX_TRUSTED_REMOVALS = 5
     }

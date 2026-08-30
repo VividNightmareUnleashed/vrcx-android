@@ -82,9 +82,7 @@ data class SearchUiState(
 }
 
 @HiltViewModel
-class SearchViewModel @Inject constructor(
-    private val searchRepository: SearchRepository,
-) : ViewModel() {
+class SearchViewModel @Inject constructor(private val searchRepository: SearchRepository) : ViewModel() {
 
     private data class WorldSearchKey(
         val query: String,
@@ -99,11 +97,7 @@ class SearchViewModel @Inject constructor(
         var exhausted = false
     }
 
-    private data class RemoteAvatarCache(
-        val query: String,
-        val providerUrl: String,
-        val items: List<Avatar>,
-    )
+    private data class RemoteAvatarCache(val query: String, val providerUrl: String, val items: List<Avatar>)
 
     private val pageSize = SEARCH_PAGE_SIZE
     private val worldSourcePageSize = 50
@@ -192,7 +186,7 @@ class SearchViewModel @Inject constructor(
         }
 
         searchJob = viewModelScope.launch {
-            if (!immediate) delay(300)
+            if (!immediate) delay(REMOTE_SEARCH_DEBOUNCE_MS)
             search(generation, useRemoteAvatarCache)
         }
     }
@@ -201,28 +195,33 @@ class SearchViewModel @Inject constructor(
         val trimmedQuery = state.query.trim()
         return when (state.selectedTab) {
             SearchTab.USERS -> trimmedQuery.length >= 2
+
             SearchTab.WORLDS ->
                 state.worldMode != WorldSearchMode.SEARCH || trimmedQuery.length >= 2 || state.worldTag.isNotBlank()
+
             SearchTab.AVATARS -> if (state.avatarSearchSource == AvatarSearchSource.REMOTE) {
-                trimmedQuery.length >= 3 && state.avatarProviderUrl.isNotBlank()
+                trimmedQuery.length >= MIN_REMOTE_AVATAR_QUERY_LENGTH && state.avatarProviderUrl.isNotBlank()
             } else {
                 trimmedQuery.length >= 2
             }
+
             SearchTab.GROUPS -> trimmedQuery.length >= 2
         }
     }
 
-    private fun validateSearchState(state: SearchUiState): String? =
-        if (
-            state.selectedTab == SearchTab.AVATARS &&
-            state.avatarSearchSource == AvatarSearchSource.REMOTE &&
-            state.query.trim().length >= 3 &&
+    private fun validateSearchState(state: SearchUiState): String? {
+        val isRemoteAvatarSearch =
+            state.selectedTab == SearchTab.AVATARS && state.avatarSearchSource == AvatarSearchSource.REMOTE
+        return if (
+            isRemoteAvatarSearch &&
+            state.query.trim().length >= MIN_REMOTE_AVATAR_QUERY_LENGTH &&
             state.avatarProviderUrl.isBlank()
         ) {
             "Enter a remote avatar provider URL to search that source."
         } else {
             null
         }
+    }
 
     private suspend fun search(generation: Long, useRemoteAvatarCache: Boolean) {
         if (!isCurrentSearch(generation)) return
@@ -242,8 +241,11 @@ class SearchViewModel @Inject constructor(
                     )
                     SearchResult.Users(items.take(pageSize), items.size > pageSize)
                 }
+
                 SearchTab.WORLDS -> loadWorldPage(request, generation)
+
                 SearchTab.AVATARS -> loadAvatarPage(request, query, offset, useRemoteAvatarCache, generation)
+
                 SearchTab.GROUPS -> {
                     val items = searchRepository.searchGroups(query, n = pageSize + 1, offset = offset)
                     SearchResult.Groups(items.take(pageSize), items.size > pageSize)
@@ -359,3 +361,6 @@ class SearchViewModel @Inject constructor(
 
     private fun isCurrentSearch(generation: Long): Boolean = generation == searchGeneration
 }
+
+private const val REMOTE_SEARCH_DEBOUNCE_MS = 300L
+private const val MIN_REMOTE_AVATAR_QUERY_LENGTH = 3

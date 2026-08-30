@@ -11,6 +11,7 @@ import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.ui.screen.feed.FeedViewModel
 import com.vrcx.android.ui.screen.gamelog.GameLogViewModel
+import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -22,7 +23,6 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
-import java.time.Instant
 
 /**
  * The Feed and Activity History screens list the same rows behind the same
@@ -85,12 +85,14 @@ class FeedFilterTest {
         feedRepository = feedRepository(entries),
         authRepository = authRepository(),
         friendRepository = friendRepository(),
+        defaultDispatcher = testDispatcher,
     )
 
     private fun buildGameLogViewModel(entries: List<FeedEntry>) = GameLogViewModel(
         authRepository = authRepository(),
         feedRepository = feedRepository(entries),
         friendRepository = friendRepository(),
+        defaultDispatcher = testDispatcher,
     )
 
     private fun feedRepository(entries: List<FeedEntry>) = mock<FeedRepository>().also {

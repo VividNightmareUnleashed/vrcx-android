@@ -2,7 +2,9 @@ package com.vrcx.android.data.preferences
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import java.io.IOException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -11,6 +13,23 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class VrcxPreferencesTest {
+
+    @Test
+    fun `an unreadable notification policy fails closed`() = runTest {
+        val unreadable = flow<NotificationPolicy> { throw IOException("unreadable") }
+
+        assertEquals(
+            NotificationPolicy.DISABLED,
+            unreadable.recoverIOExceptionWith(NotificationPolicy.DISABLED).first(),
+        )
+    }
+
+    @Test
+    fun `an unreadable background-service preference fails closed`() = runTest {
+        val unreadable = flow<Boolean> { throw IOException("unreadable") }
+
+        assertEquals(false, unreadable.recoverIOExceptionWith(false).first())
+    }
 
     /**
      * One method rather than several: the DataStore behind `Context.dataStore` is

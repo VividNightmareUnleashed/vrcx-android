@@ -21,7 +21,7 @@ from urllib import error, request
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = ROOT_DIR / ".env"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "build" / "release-evidence"
-DEFAULT_RELEASE_DIR = ROOT_DIR / "app" / "build" / "outputs" / "apk" / "release"
+DEFAULT_RELEASE_DIR = ROOT_DIR / "app" / "build" / "outputs" / "versioned-apk" / "release"
 VT_API_BASE_URL = "https://www.virustotal.com/api/v3"
 VT_GUI_BASE_URL = "https://www.virustotal.com/gui/file"
 LARGE_FILE_THRESHOLD_BYTES = 32 * 1024 * 1024
@@ -212,7 +212,8 @@ def looks_like_debug_artifact_path(path: Path) -> bool:
         return True
 
     for index in range(len(lower_parts) - 2):
-        if lower_parts[index : index + 3] == ["outputs", "apk", "debug"]:
+        artifact_path = lower_parts[index : index + 3]
+        if artifact_path in (["outputs", "apk", "debug"], ["outputs", "versioned-apk", "debug"]):
             return True
     return False
 
@@ -221,7 +222,7 @@ def reject_debug_artifact_path(apk_path: Path) -> None:
     if looks_like_debug_artifact_path(apk_path):
         raise ReleaseScanError(
             f"Refusing debug APK artifact: {repo_relative_path(apk_path)}. "
-            "Use the APK from app/build/outputs/apk/release or pass a signed release artifact."
+            "Use the APK from app/build/outputs/versioned-apk/release or pass a signed release artifact."
         )
 
 
@@ -250,7 +251,7 @@ def validate_explicit_apk_build_flow(explicit_apk: Path | None, *, skip_build: b
 
     raise ReleaseScanError(
         "Refusing --apk without --skip-build because the explicit APK is outside "
-        "app/build/outputs/apk/release. Let the script use the release build output, "
+        "app/build/outputs/versioned-apk/release. Let the script use the release build output, "
         "or pass --skip-build when intentionally scanning an existing signed APK."
     )
 

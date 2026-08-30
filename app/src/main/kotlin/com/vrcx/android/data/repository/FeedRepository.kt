@@ -11,8 +11,12 @@ import com.vrcx.android.data.model.parseWorldId
 import com.vrcx.android.data.preferences.PreferenceDefaults
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.util.parseInstantMillisOrNull
+import com.vrcx.android.di.IoDispatcher
+import java.util.concurrent.atomic.AtomicInteger
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -22,9 +26,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
-import java.util.concurrent.atomic.AtomicInteger
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /** The five kinds of friend-activity feed row, keyed by the persisted [id]. */
 enum class FeedEntryType(val id: String, val label: String) {
@@ -33,7 +34,8 @@ enum class FeedEntryType(val id: String, val label: String) {
     BIO("bio", "Bio"),
     AVATAR("avatar", "Avatar"),
     ONLINE("online", "Online"),
-    OFFLINE("offline", "Offline");
+    OFFLINE("offline", "Offline"),
+    ;
 
     companion object {
         private val byId = entries.associateBy { it.id }
@@ -94,8 +96,9 @@ class FeedRepository @Inject constructor(
     private val feedDao: FeedDao,
     preferences: VrcxPreferences,
     accountScope: AccountScope,
+    @IoDispatcher ioDispatcher: CoroutineDispatcher,
 ) : AccountScoped {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     // Held here so the highest-frequency write path (GPS/status/online-offline
     // pipeline events) doesn't read DataStore on every insert, and so the page
@@ -152,17 +155,33 @@ class FeedRepository @Inject constructor(
     fun getAllGpsFeed(userId: String): Flow<List<FeedEntry>> =
         feedDao.getAllGpsFeed(userId).map { rows -> rows.map { it.toFeedEntry() } }
 
-    suspend fun insertGps(entry: FeedGpsEntity) { feedDao.insertGps(entry); maybePrune(entry.ownerUserId) }
-    suspend fun insertStatus(entry: FeedStatusEntity) { feedDao.insertStatus(entry); maybePrune(entry.ownerUserId) }
-    suspend fun insertBio(entry: FeedBioEntity) { feedDao.insertBio(entry); maybePrune(entry.ownerUserId) }
-    suspend fun insertAvatar(entry: FeedAvatarEntity) { feedDao.insertAvatar(entry); maybePrune(entry.ownerUserId) }
-    suspend fun insertOnlineOffline(entry: FeedOnlineOfflineEntity) { feedDao.insertOnlineOffline(entry); maybePrune(entry.ownerUserId) }
+    suspend fun insertGps(entry: FeedGpsEntity) {
+        feedDao.insertGps(entry)
+        maybePrune(entry.ownerUserId)
+    }
+    suspend fun insertStatus(entry: FeedStatusEntity) {
+        feedDao.insertStatus(entry)
+        maybePrune(entry.ownerUserId)
+    }
+    suspend fun insertBio(entry: FeedBioEntity) {
+        feedDao.insertBio(entry)
+        maybePrune(entry.ownerUserId)
+    }
+    suspend fun insertAvatar(entry: FeedAvatarEntity) {
+        feedDao.insertAvatar(entry)
+        maybePrune(entry.ownerUserId)
+    }
+    suspend fun insertOnlineOffline(entry: FeedOnlineOfflineEntity) {
+        feedDao.insertOnlineOffline(entry)
+        maybePrune(entry.ownerUserId)
+    }
 
     suspend fun getLatestGps(ownerUserId: String, userId: String) = feedDao.getLatestGps(ownerUserId, userId)
     suspend fun getLatestStatus(ownerUserId: String, userId: String) = feedDao.getLatestStatus(ownerUserId, userId)
     suspend fun getLatestBio(ownerUserId: String, userId: String) = feedDao.getLatestBio(ownerUserId, userId)
     suspend fun getLatestAvatar(ownerUserId: String, userId: String) = feedDao.getLatestAvatar(ownerUserId, userId)
-    suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String) = feedDao.getLatestOnlineOffline(ownerUserId, userId)
+    suspend fun getLatestOnlineOffline(ownerUserId: String, userId: String) =
+        feedDao.getLatestOnlineOffline(ownerUserId, userId)
 
     /**
      * Prune every [PRUNE_INTERVAL] inserts rather than on every write. The feed

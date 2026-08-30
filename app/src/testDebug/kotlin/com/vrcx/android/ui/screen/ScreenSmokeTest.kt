@@ -1,16 +1,17 @@
 package com.vrcx.android.ui.screen
 
-import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.lifecycle.SavedStateHandle
-import androidx.test.core.app.ApplicationProvider
 import com.vrcx.android.data.cache.ProfilePicCacheManager
+import com.vrcx.android.data.content.ContentImageService
+import com.vrcx.android.data.gallery.GalleryUploadCoordinator
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AvatarRepository
+import com.vrcx.android.data.repository.ExplicitLogoutSignal
 import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
@@ -19,6 +20,7 @@ import com.vrcx.android.data.repository.GroupRepository
 import com.vrcx.android.data.repository.InviteMessageRepository
 import com.vrcx.android.data.repository.ModerationRepository
 import com.vrcx.android.data.repository.NotificationRepository
+import com.vrcx.android.data.repository.ProfilePreferenceActions
 import com.vrcx.android.data.repository.SearchRepository
 import com.vrcx.android.data.repository.UserActionPerformer
 import com.vrcx.android.data.repository.UserDetailRepository
@@ -99,8 +101,6 @@ class ScreenSmokeTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val context: Context get() = ApplicationProvider.getApplicationContext()
-
     // Work the ViewModels queue on construction stays queued, so every screen renders
     // its initial state rather than whatever a half-finished refresh produces.
     private val dispatcher = StandardTestDispatcher()
@@ -123,18 +123,24 @@ class ScreenSmokeTest {
     @Test
     fun `avatar detail screen composes`() = render {
         AvatarDetailScreen(
-            AvatarDetailViewModel(SavedStateHandle(mapOf("avatarId" to "avtr_1")), fakeState(), fakeState())
+            AvatarDetailViewModel(
+                SavedStateHandle(mapOf("avatarId" to "avtr_1")),
+                fakeState(),
+                fakeState(),
+            ),
         )
     }
 
     @Test
     fun `my avatars screen composes`() = render {
-        MyAvatarsScreen(AvatarsViewModel(fakeState<AvatarRepository>()))
+        MyAvatarsScreen(AvatarsViewModel(fakeState<AvatarRepository>(), dispatcher))
     }
 
     @Test
     fun `charts screen composes`() = render {
-        ChartsScreen(ChartsViewModel(fakeState<FeedRepository>(), fakeState<AuthRepository>()))
+        ChartsScreen(
+            ChartsViewModel(fakeState<FeedRepository>(), fakeState<AuthRepository>(), dispatcher),
+        )
     }
 
     @Test
@@ -149,14 +155,23 @@ class ScreenSmokeTest {
     @Test
     fun `dashboard screen composes`() = render {
         DashboardScreen(
-            DashboardViewModel(fakeState<AuthRepository>(), fakeState<FriendRepository>(), fakeState<FeedRepository>())
+            DashboardViewModel(
+                fakeState<AuthRepository>(),
+                fakeState<FriendRepository>(),
+                fakeState<FeedRepository>(),
+                dispatcher,
+            ),
         )
     }
 
     @Test
     fun `favorites screen composes`() = render {
         FavoritesScreen(
-            FavoritesViewModel(fakeState<FavoriteRepository>(), fakeState<FriendRepository>(), fakeState<UserRepository>())
+            FavoritesViewModel(
+                fakeState<FavoriteRepository>(),
+                fakeState<FriendRepository>(),
+                fakeState<UserRepository>(),
+            ),
         )
     }
 
@@ -167,18 +182,21 @@ class ScreenSmokeTest {
                 fakeState<FeedRepository>(),
                 fakeState<AuthRepository>(),
                 fakeState<FriendRepository>(),
-            )
+                dispatcher,
+            ),
         )
     }
 
     @Test
     fun `friend log screen composes`() = render {
-        FriendLogScreen(FriendLogViewModel(fakeState<AuthRepository>(), fakeState<FriendRepository>()))
+        FriendLogScreen(
+            FriendLogViewModel(fakeState<AuthRepository>(), fakeState<FriendRepository>(), dispatcher),
+        )
     }
 
     @Test
     fun `friends screen composes`() = render {
-        FriendsScreen(FriendsViewModel(fakeState<FriendRepository>()))
+        FriendsScreen(FriendsViewModel(fakeState<FriendRepository>(), dispatcher))
     }
 
     @Test
@@ -189,13 +207,20 @@ class ScreenSmokeTest {
                 fakeState<FriendRepository>(),
                 fakeState<WorldRepository>(),
                 fakeState<FeedRepository>(),
-            )
+                dispatcher,
+            ),
         )
     }
 
     @Test
     fun `gallery screen composes`() = render {
-        GalleryScreen(GalleryViewModel(fakeState<GalleryRepository>(), fakeState<AuthRepository>(), context))
+        GalleryScreen(
+            GalleryViewModel(
+                fakeState<GalleryRepository>(),
+                fakeState<AuthRepository>(),
+                fakeState<GalleryUploadCoordinator>(),
+            ),
+        )
     }
 
     @Test
@@ -205,14 +230,15 @@ class ScreenSmokeTest {
                 fakeState<AuthRepository>(),
                 fakeState<FeedRepository>(),
                 fakeState<FriendRepository>(),
-            )
+                dispatcher,
+            ),
         )
     }
 
     @Test
     fun `group detail screen composes`() = render {
         GroupDetailScreen(
-            GroupDetailViewModel(SavedStateHandle(mapOf("groupId" to "grp_1")), fakeState())
+            GroupDetailViewModel(SavedStateHandle(mapOf("groupId" to "grp_1")), fakeState()),
         )
     }
 
@@ -224,25 +250,36 @@ class ScreenSmokeTest {
     @Test
     fun `login screen composes`() = render {
         LoginScreen(
-            LoginViewModel(fakeState<AuthRepository>(), fakeState<VrcxPreferences>(), fakeState<SecureSecretsStore>())
+            LoginViewModel(
+                fakeState<AuthRepository>(),
+                fakeState<VrcxPreferences>(),
+                fakeState<SecureSecretsStore>(),
+                fakeState<ExplicitLogoutSignal>(),
+                dispatcher,
+            ),
         )
     }
 
     @Test
     fun `moderation screen composes`() = render {
-        ModerationScreen(ModerationViewModel(fakeState<ModerationRepository>()))
+        ModerationScreen(ModerationViewModel(fakeState<ModerationRepository>(), dispatcher))
     }
 
     @Test
     fun `notifications screen composes`() = render {
         NotificationsScreen(
-            NotificationsViewModel(fakeState<NotificationRepository>(), fakeState<InviteMessageRepository>())
+            NotificationsViewModel(
+                fakeState<NotificationRepository>(),
+                fakeState<InviteMessageRepository>(),
+            ),
         )
     }
 
     @Test
     fun `player list screen composes`() = render {
-        PlayerListScreen(PlayerListViewModel(fakeState<AuthRepository>(), fakeState<FriendRepository>()))
+        PlayerListScreen(
+            PlayerListViewModel(fakeState<AuthRepository>(), fakeState<FriendRepository>(), dispatcher),
+        )
     }
 
     @Test
@@ -253,7 +290,11 @@ class ScreenSmokeTest {
     @Test
     fun `screenshot metadata screen composes`() = render {
         ScreenshotMetadataScreen(
-            ScreenshotMetadataViewModel(fakeState<GalleryRepository>(), fakeState<AuthRepository>())
+            ScreenshotMetadataViewModel(
+                fakeState<ContentImageService>(),
+                fakeState<GalleryUploadCoordinator>(),
+                fakeState<AuthRepository>(),
+            ),
         )
     }
 
@@ -270,7 +311,8 @@ class ScreenSmokeTest {
                 fakeState<ProfilePicCacheManager>(),
                 fakeState<FriendRepository>(),
                 fakeState<AuthRepository>(),
-            )
+                dispatcher,
+            ),
         )
     }
 
@@ -282,7 +324,8 @@ class ScreenSmokeTest {
                 fakeState<AuthRepository>(),
                 fakeState<FriendRepository>(),
                 fakeState<UserDetailRepository>(),
-            )
+                dispatcher,
+            ),
         )
     }
 
@@ -293,14 +336,16 @@ class ScreenSmokeTest {
                 SavedStateHandle(mapOf("userId" to "usr_1")),
                 fakeState<UserDetailRepository>(),
                 fakeState<UserActionPerformer>(),
-            )
+                fakeState<ProfilePreferenceActions>(),
+                fakeState<FavoriteRepository>(),
+            ),
         )
     }
 
     @Test
     fun `world detail screen composes`() = render {
         WorldDetailScreen(
-            WorldDetailViewModel(SavedStateHandle(mapOf("worldId" to "wrld_1")), fakeState())
+            WorldDetailViewModel(SavedStateHandle(mapOf("worldId" to "wrld_1")), fakeState()),
         )
     }
 }

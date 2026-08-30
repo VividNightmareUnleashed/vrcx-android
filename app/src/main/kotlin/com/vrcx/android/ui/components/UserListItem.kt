@@ -26,6 +26,7 @@ import com.vrcx.android.ui.theme.vrcxColors
 fun UserListItem(
     avatarUrl: String?,
     displayName: String,
+    modifier: Modifier = Modifier,
     subtitle: String = "",
     tags: List<String> = emptyList(),
     status: String? = null,
@@ -33,7 +34,6 @@ fun UserListItem(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val vrcxColors = MaterialTheme.vrcxColors
 
@@ -49,7 +49,9 @@ fun UserListItem(
                         onClick = { onClick?.invoke() },
                         onLongClick = { onLongClick?.invoke() },
                     )
-                } else Modifier
+                } else {
+                    Modifier
+                },
             )
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

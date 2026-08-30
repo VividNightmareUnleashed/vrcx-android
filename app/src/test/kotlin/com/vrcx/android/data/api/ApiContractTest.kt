@@ -5,6 +5,8 @@ import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.UnPlayerModerationRequest
 import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
 import com.vrcx.android.data.api.model.VrcPrint
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -14,6 +16,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
@@ -52,7 +55,9 @@ class ApiContractTest {
 
     @Test
     fun `inventory uses wrapped response single template endpoint and PUT consumption`() = runTest {
-        server.enqueue(jsonResponse("""{"data":[{"id":"inv_one","templateId":"invt_one"}],"totalCount":1}"""))
+        server.enqueue(
+            jsonResponse("""{"data":[{"id":"inv_one","templateId":"invt_one"}],"totalCount":1}"""),
+        )
         server.enqueue(jsonResponse("""{"id":"invt_one","name":"Template"}"""))
         server.enqueue(jsonResponse("{}"))
         val api = retrofit().create(InventoryApi::class.java)
@@ -96,6 +101,42 @@ class ApiContractTest {
     }
 
     @Test
+    fun `basic credentials belong only to the login request`() = runTest {
+        repeat(2) { server.enqueue(jsonResponse("{\"id\":\"usr_test\"}")) }
+        val api = retrofit().create(AuthApi::class.java)
+
+        api.loginWithBasicAuth(basicAuthorization("user@example.com", "pass!"))
+        api.getCurrentUser()
+
+        assertEquals(
+            "Basic dXNlciU0MGV4YW1wbGUuY29tOnBhc3Mh",
+            server.takeRequest().getHeader("Authorization"),
+        )
+        assertNull(server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun `concurrent login requests keep their own basic credentials`() = runTest {
+        repeat(2) { server.enqueue(jsonResponse("{\"id\":\"usr_test\"}")) }
+        val api = retrofit().create(AuthApi::class.java)
+        val expectedHeaders = setOf(
+            basicAuthorization("first user", "first password"),
+            basicAuthorization("second user", "second password"),
+        )
+
+        listOf(
+            async { api.loginWithBasicAuth(expectedHeaders.first()) },
+            async { api.loginWithBasicAuth(expectedHeaders.last()) },
+        ).awaitAll()
+
+        val actualHeaders = setOf(
+            server.takeRequest().getHeader("Authorization"),
+            server.takeRequest().getHeader("Authorization"),
+        )
+        assertEquals(expectedHeaders, actualHeaders)
+    }
+
+    @Test
     fun `a request invite reports the platform it was sent from`() = runTest {
         server.enqueue(jsonResponse("{}"))
         val api = retrofit().create(NotificationApi::class.java)
@@ -123,16 +164,19 @@ class ApiContractTest {
     @Test
     fun `camel case notification and print timestamps decode`() {
         val notification = json.decodeFromString<NotificationV2>(
-            """{"id":"notif","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}"""
+            """{"id":"notif","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}""",
         )
         val print = json.decodeFromString<VrcPrint>(
-            """{"id":"prnt","createdAt":"2026-01-03T00:00:00Z"}"""
+            """{"id":"prnt","createdAt":"2026-01-03T00:00:00Z"}""",
         )
 
         assertEquals("2026-01-01T00:00:00Z", notification.createdAt)
         assertEquals("2026-01-02T00:00:00Z", notification.updatedAt)
         assertEquals("2026-01-03T00:00:00Z", print.createdAt)
-        assertEquals("{\"bio\":\"Hello\"}", json.encodeToString(UpdateCurrentUserRequest(bio = "Hello")))
+        assertEquals(
+            "{\"bio\":\"Hello\"}",
+            json.encodeToString(UpdateCurrentUserRequest(bio = "Hello")),
+        )
     }
 
     private fun retrofit(): Retrofit = Retrofit.Builder()

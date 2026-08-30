@@ -23,11 +23,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun EmptyState(
     message: String,
+    modifier: Modifier = Modifier,
     icon: ImageVector = Icons.Outlined.Inbox,
     subtitle: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier.fillMaxSize().padding(32.dp),

@@ -3,19 +3,23 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEvent
 import com.vrcx.android.data.api.AuthEventBus
-import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
-import com.vrcx.android.data.api.RequestDeduplicator
+import com.vrcx.android.data.api.CookieStorageStatus
+import com.vrcx.android.data.api.basicAuthorization
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.security.SecureSecretsStore
-import com.vrcx.android.data.util.runIgnoringFailure
+import com.vrcx.android.data.util.runCatchingCancellable
 import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.di.DefaultDispatcher
+import com.vrcx.android.di.IoDispatcher
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -23,20 +27,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
-import javax.inject.Inject
-import javax.inject.Singleton
 
 sealed class AuthState {
     data object NotLoggedIn : AuthState()
@@ -56,35 +59,59 @@ sealed interface TwoFactorVerification {
     data class Failed(val message: String) : TwoFactorVerification
 }
 
+internal data class PipelineSession(val authToken: String, val account: AccountScope.Token)
+
 @Singleton
-class AuthRepository @Inject constructor(
+class AuthRepository @Inject internal constructor(
     private val authApi: AuthApi,
-    private val authInterceptor: AuthInterceptor,
     private val cookieJar: CookieJarImpl,
     private val preferences: VrcxPreferences,
     private val secureSecretsStore: SecureSecretsStore,
     private val json: Json,
-    private val dedup: RequestDeduplicator,
-    private val accountScope: AccountScope,
+    private val sessionRuntime: AuthSessionRuntime,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     authEventBus: AuthEventBus? = null,
 ) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotLoggedIn)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private val _storageError = MutableStateFlow(
+        cookieStorageError(cookieJar.storageStatus.value),
+    )
+    val storageError: StateFlow<String?> = _storageError.asStateFlow()
+
+    private val sessionLock = Any()
     private var _currentUser: CurrentUser? = null
-    val currentUser: CurrentUser? get() = _currentUser
+    val currentUser: CurrentUser? get() = synchronized(sessionLock) { _currentUser }
 
     private var _authToken: String? = null
-    val authToken: String? get() = _authToken
+    val authToken: String? get() = synchronized(sessionLock) { _authToken }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    internal fun pipelineSession(): PipelineSession? = synchronized(sessionLock) {
+        if (_authState.value !is AuthState.LoggedIn) return@synchronized null
+        val userId = _currentUser?.id ?: return@synchronized null
+        val token = _authToken ?: return@synchronized null
+        val account = sessionRuntime.currentAccount()
+        if (account.ownerUserId == userId) PipelineSession(token, account) else null
+    }
 
-    // App start and the websocket service both resume on launch. Serialize them
-    // so a single cold start can't run two resumes — each of which calls
-    // onLoginSuccess() and wipes account-scoped runtime state the other filled.
-    private val resumeMutex = Mutex()
+    private val scope = CoroutineScope(SupervisorJob() + defaultDispatcher)
+
+    private var sessionGeneration = 0L
+
+    private val unauthorizedCheckMutex = Mutex()
 
     init {
+        scope.launch {
+            cookieJar.storageStatus.collect { status ->
+                cookieStorageError(status)?.let { message ->
+                    if (cookieJar.storageStatus.value == status) {
+                        _storageError.update { current -> current ?: message }
+                    }
+                }
+            }
+        }
         // Collect unauthorized signals from ErrorInterceptor so a 401 on any
         // request immediately transitions the app back to NotLoggedIn without
         // waiting for the user to trigger an auth-aware code path.
@@ -100,43 +127,51 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun login(username: String, password: String) {
+        runSessionTransition { session -> login(session, username, password) }
+    }
+
+    private suspend fun login(session: SessionToken, username: String, password: String) {
         // A stored auth cookie can outrank the Basic header on auth/user, and the
         // login screen is reachable with one still in the jar (a resume that only
         // failed to reach the server keeps it) — so signing in as somebody else
         // would resume the previous account. Drop it for the attempt, but keep a
         // copy: an unreachable server must not cost the user a live session.
-        val storedCookies = cookieJar.snapshot()
+        val storedCookies = withContext(ioDispatcher) { cookieJar.snapshot() }
+        var sessionCommitted = false
         try {
-            _authState.value = AuthState.LoggingIn
-            cookieJar.clearAll()
-            authInterceptor.setBasicAuth(username, password)
+            if (!publishIfCurrent(session) { _authState.value = AuthState.LoggingIn }) return
+            withContext(ioDispatcher) { cookieJar.clearAll() }
+            if (!isSessionCurrent(session)) return
 
-            val response = authApi.getCurrentUser()
+            val response = authApi.loginWithBasicAuth(basicAuthorization(username, password))
             val jsonObj = response.jsonObject
 
             // Check if 2FA is required
             if (jsonObj.containsKey("requiresTwoFactorAuth")) {
                 val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
                     ?.map { it.jsonPrimitive.content }
-                    ?: emptyList()
-                authInterceptor.clearBasicAuth()
-                _authState.value = AuthState.RequiresTwoFactor(methods)
+                    .orEmpty()
+                withCurrentSession(session) {
+                    _authState.value = AuthState.RequiresTwoFactor(methods)
+                }
                 return
             }
 
             // Full login successful
             val user = json.decodeFromJsonElement(CurrentUser.serializer(), response)
-            onLoginSuccess(user)
+            if (!commitAuthenticatedSession(session)) return
+            sessionCommitted = publishLoginSuccess(session, user)
+            if (sessionCommitted) fetchAuthToken(session)
         } catch (e: CancellationException) {
-            authInterceptor.clearBasicAuth()
-            cookieJar.restore(storedCookies)
+            if (!sessionCommitted) {
+                restoreCookiesIfCurrent(session, storedCookies)
+            }
             throw e
         } catch (e: Exception) {
-            authInterceptor.clearBasicAuth()
-            if (!isCredentialRejection(e)) {
-                cookieJar.restore(storedCookies)
+            if (!sessionCommitted && !isCredentialRejection(e)) {
+                restoreCookiesIfCurrent(session, storedCookies)
             }
-            setErrorUnlessLoggedOut(e.message ?: "Login failed")
+            setErrorUnlessLoggedOut(session, e.message ?: "Login failed")
         }
     }
 
@@ -145,10 +180,10 @@ class AuthRepository @Inject constructor(
         failure is HttpException && (failure.code() == 401 || failure.code() == 403)
 
     suspend fun resendEmailOtp(username: String, password: String) {
-        clearAccountRuntimeState()
-        clearAuthSession()
-        _authState.value = AuthState.NotLoggedIn
-        login(username, password)
+        runSessionTransition { session ->
+            if (!resetSessionIfCurrent(session)) return@runSessionTransition
+            login(session, username, password)
+        }
     }
 
     suspend fun verifyTotp(code: String) {
@@ -163,69 +198,142 @@ class AuthRepository @Inject constructor(
         } else {
             normalized
         }
-        verifyTwoFactor {
-            if (isRecoveryCode) {
-                authApi.verifyOtp(TwoFactorAuthRequest(submittedCode))
-            } else {
-                authApi.verifyTotp(TwoFactorAuthRequest(submittedCode))
+        runSessionTransition { session ->
+            verifyTwoFactor(session) {
+                if (isRecoveryCode) {
+                    authApi.verifyOtp(TwoFactorAuthRequest(submittedCode))
+                } else {
+                    authApi.verifyTotp(TwoFactorAuthRequest(submittedCode))
+                }
             }
         }
     }
 
     // Email codes go to the dedicated email OTP endpoint exactly as typed.
-    suspend fun verifyEmailOtp(code: String) = verifyTwoFactor {
-        authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
+    suspend fun verifyEmailOtp(code: String) {
+        runSessionTransition { session ->
+            verifyTwoFactor(session) {
+                authApi.verifyEmailOtp(TwoFactorAuthRequest(code))
+            }
+        }
     }
 
-    private suspend fun verifyTwoFactor(submit: suspend () -> TwoFactorAuthResponse) {
-        val phase = _authState.value as? AuthState.RequiresTwoFactor ?: return
+    private suspend fun verifyTwoFactor(session: SessionToken, submit: suspend () -> TwoFactorAuthResponse) {
+        val phase = withCurrentSession(session) {
+            _authState.value as? AuthState.RequiresTwoFactor
+        } ?: return
         try {
-            _authState.value = phase.copy(verification = TwoFactorVerification.InProgress)
+            if (!publishIfCurrent(session) {
+                    _authState.value = phase.copy(verification = TwoFactorVerification.InProgress)
+                }
+            ) {
+                return
+            }
             if (submit().verified) {
-                fetchCurrentUser()
+                fetchCurrentUser(session, shouldCommitAuthenticatedSession = true)
             } else {
-                setTwoFactorError("Verification failed")
+                setTwoFactorError(session, "Verification failed")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            setTwoFactorError(e.message ?: "Verification failed")
+            setTwoFactorError(session, e.message ?: "Verification failed")
         }
     }
 
     suspend fun fetchCurrentUser() {
+        runSessionTransition { session -> fetchCurrentUser(session) }
+    }
+
+    private suspend fun fetchCurrentUser(session: SessionToken, shouldCommitAuthenticatedSession: Boolean = false) {
         when (val check = checkSession()) {
-            is SessionCheck.Active -> onLoginSuccess(check.user)
+            is SessionCheck.Active -> {
+                if (shouldCommitAuthenticatedSession && !commitAuthenticatedSession(session)) return
+                onLoginSuccess(session, check.user)
+            }
+
             is SessionCheck.TwoFactorRequired ->
-                _authState.value = AuthState.RequiresTwoFactor(check.methods)
-            is SessionCheck.Rejected -> setErrorUnlessLoggedOut(check.message)
-            is SessionCheck.Inconclusive -> setErrorUnlessLoggedOut(check.message)
+                withCurrentSession(session) {
+                    _authState.value = AuthState.RequiresTwoFactor(check.methods)
+                }
+
+            is SessionCheck.Rejected -> setErrorUnlessLoggedOut(session, check.message)
+
+            is SessionCheck.Inconclusive -> setErrorUnlessLoggedOut(session, check.message)
         }
     }
 
     suspend fun fetchAuthToken() {
-        // A failed fetch leaves the token null, so the websocket won't connect.
-        runIgnoringFailure { _authToken = authApi.getAuthToken().token }
+        runSessionTransition(::fetchAuthToken)
+    }
+
+    internal suspend fun refreshPipelineSession(expectedAccount: AccountScope.Token): PipelineSession? =
+        sessionRuntime.transition {
+            val session = beginPipelineTransition(expectedAccount) ?: return@transition null
+            fetchAuthToken(session)
+            pipelineSession()?.takeIf { it.account == expectedAccount }
+        }
+
+    internal suspend fun resynchronizePipelineState(expectedAccount: AccountScope.Token) {
+        sessionRuntime.transition {
+            val session = beginPipelineTransition(expectedAccount) ?: return@transition
+            when (val check = checkSession()) {
+                is SessionCheck.Active -> {
+                    if (check.user.id != expectedAccount.ownerUserId) {
+                        endSessionIfCurrent(session)
+                    } else {
+                        withCurrentSession(session) {
+                            _currentUser = check.user
+                            _authState.value = AuthState.LoggedIn(check.user)
+                        }
+                    }
+                }
+
+                is SessionCheck.TwoFactorRequired -> {
+                    withCurrentSession(session) {
+                        _authState.value = AuthState.RequiresTwoFactor(check.methods)
+                    }
+                }
+
+                is SessionCheck.Rejected -> endSessionIfCurrent(session)
+
+                is SessionCheck.Inconclusive -> error(check.message)
+            }
+        }
     }
 
     suspend fun ensureSessionReady(): Boolean {
-        if (_currentUser != null && !_authToken.isNullOrBlank() && _authState.value is AuthState.LoggedIn) {
-            return true
-        }
+        if (isSessionReady()) return true
 
-        if (_currentUser == null) {
-            tryResumeSession()
-        }
+        var ready = false
+        runSessionTransition { session ->
+            if (isSessionReady()) {
+                ready = true
+                return@runSessionTransition
+            }
 
-        if (_currentUser != null && _authToken.isNullOrBlank()) {
-            fetchAuthToken()
-        }
+            if (_currentUser == null) {
+                tryResumeSession(session)
+            }
 
-        return _currentUser != null && !_authToken.isNullOrBlank() && _authState.value is AuthState.LoggedIn
+            if (isSessionCurrent(session) && _currentUser != null && _authToken.isNullOrBlank()) {
+                fetchAuthToken(session)
+            }
+
+            ready = withCurrentSession(session) { isSessionReady() } ?: false
+        }
+        return ready
+    }
+
+    private fun isSessionReady(): Boolean = synchronized(sessionLock) {
+        _currentUser != null && !_authToken.isNullOrBlank() &&
+            _authState.value is AuthState.LoggedIn
     }
 
     /** True while a stored cookie session exists that a resume could still revive. */
-    fun hasResumableSession(): Boolean = cookieJar.getAuthCookie() != null
+    suspend fun hasResumableSession(): Boolean = withContext(ioDispatcher) {
+        cookieJar.getAuthCookie() != null
+    }
 
     /**
      * Revive the stored cookie session on app/service start.
@@ -237,52 +345,88 @@ class AuthRepository @Inject constructor(
      * cookies alone so the next launch (or a retry from the login screen) can
      * pick the session back up. Only a server-side rejection ends the session.
      */
-    suspend fun tryResumeSession() = resumeMutex.withLock {
-        if (_authState.value is AuthState.LoggedIn) return@withLock
-        if (!hasResumableSession()) return@withLock
-        _authState.value = AuthState.LoggingIn
+    suspend fun tryResumeSession() {
+        runSessionTransition(::tryResumeSession)
+    }
+
+    private suspend fun tryResumeSession(session: SessionToken) {
+        if (_authState.value is AuthState.LoggedIn) return
+        if (!hasResumableSession()) return
+        if (!publishIfCurrent(session) { _authState.value = AuthState.LoggingIn }) return
 
         var lastFailure: SessionCheck.Inconclusive? = null
         for (delayMs in RESUME_RETRY_DELAYS_MS) {
+            if (!isSessionCurrent(session)) return
             if (delayMs > 0) delay(delayMs)
+            if (!isSessionCurrent(session)) return
             when (val check = checkSession()) {
                 is SessionCheck.Active -> {
-                    onLoginSuccess(check.user)
-                    return@withLock
+                    onLoginSuccess(session, check.user)
+                    return
                 }
+
                 is SessionCheck.TwoFactorRequired -> {
                     // The cookie is still good; VRChat just wants the second
                     // factor again. Keep the session so verify2fa can use it.
-                    _authState.value = AuthState.RequiresTwoFactor(check.methods)
-                    return@withLock
+                    withCurrentSession(session) {
+                        _authState.value = AuthState.RequiresTwoFactor(check.methods)
+                    }
+                    return
                 }
+
                 is SessionCheck.Rejected -> {
-                    endSession()
-                    return@withLock
+                    endSessionIfCurrent(session)
+                    return
                 }
+
                 is SessionCheck.Inconclusive -> lastFailure = check
             }
         }
-        setErrorUnlessLoggedOut(lastFailure?.message ?: UNREACHABLE_MESSAGE)
+        setErrorUnlessLoggedOut(session, lastFailure?.message ?: UNREACHABLE_MESSAGE)
     }
 
     suspend fun logout() {
         // Best-effort server invalidation before local cleanup so a stolen cookie
         // can't outlive the user's intent. Network failure must not block sign-out
         // (the user might be logging out specifically because they have no network).
+        val session = beginSessionTransition()
         var cancellation: CancellationException? = null
         try {
-            authApi.logout()
+            sessionRuntime.transition {
+                if (!isSessionCurrent(session)) return@transition
+                try {
+                    authApi.logout()
+                } catch (e: CancellationException) {
+                    cancellation = e
+                } catch (_: Exception) {
+                    // Local state still gets cleared below.
+                }
+                withContext(NonCancellable) {
+                    completeExplicitLogout(session)
+                }
+            }
         } catch (e: CancellationException) {
+            // Cancellation while queued behind another cookie-bearing auth request
+            // must not turn sign-out into a no-op. A newer login still wins because
+            // its generation makes this conditional cleanup stale.
             cancellation = e
-        } catch (_: Exception) {
-            // Local state still gets cleared below.
-        }
-        withContext(NonCancellable) {
-            endSession()
-            forgetStoredSecrets()
+            withContext(NonCancellable) {
+                sessionRuntime.transition {
+                    completeExplicitLogout(session)
+                }
+            }
         }
         cancellation?.let { throw it }
+    }
+
+    private suspend fun completeExplicitLogout(session: SessionToken) {
+        if (!isSessionCurrent(session)) return
+        sessionRuntime.publishExplicitLogout()
+        try {
+            forgetStoredSecrets()
+        } finally {
+            endSessionIfCurrent(session)
+        }
     }
 
     /**
@@ -293,71 +437,157 @@ class AuthRepository @Inject constructor(
      * sign-out path does this — an involuntary session end has to leave remember-me
      * intact so a background 401 doesn't cost the user their stored credentials.
      */
-    private suspend fun forgetStoredSecrets() {
-        // Teardown must finish even if the encrypted write can't.
-        runCatching {
+    private suspend fun forgetStoredSecrets() = withContext(ioDispatcher) {
+        var cleanupFailed = false
+        val encryptedSecretsCleared = try {
             secureSecretsStore.clearAll()
+        } catch (_: Exception) {
+            false
+        }
+        if (!encryptedSecretsCleared) cleanupFailed = true
+
+        if (encryptedSecretsCleared) {
+            try {
+                if (!cookieJar.completeLogoutAfterSecretsDeleted()) cleanupFailed = true
+            } catch (_: Exception) {
+                cleanupFailed = true
+            }
+        }
+        try {
             preferences.clearLegacySavedCredentials()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            cleanupFailed = true
+        }
+        if (cleanupFailed) {
+            reportStorageError(LOGOUT_STORAGE_ERROR)
         }
     }
 
-    fun handleEvent(event: PipelineEvent) {
-        when (event) {
-            is PipelineEvent.UserUpdate -> {
-                val userPatch = event.content?.jsonObject?.get("user")?.jsonObject ?: return
-                val current = _currentUser ?: return
-                try {
-                    val currentJson = json.encodeToJsonElement(CurrentUser.serializer(), current).jsonObject
-                    val user = json.decodeFromJsonElement(
-                        CurrentUser.serializer(),
-                        JsonObject(currentJson + userPatch),
-                    )
-                    _currentUser = user
-                    _authState.value = AuthState.LoggedIn(user)
-                } catch (_: Exception) {}
+    fun handleEvent(event: PipelineEvent, token: AccountScope.Token) {
+        synchronized(sessionLock) {
+            if (token.ownerUserId.isEmpty() || !sessionRuntime.isAccountCurrent(token)) return
+            when (event) {
+                is PipelineEvent.UserUpdate -> applyUserUpdateLocked(event)
+                is PipelineEvent.UserLocation -> applyUserLocationLocked(event)
+                else -> {}
             }
-            is PipelineEvent.UserLocation -> {
-                val content = event.content?.jsonObject ?: return
-                // Some pipeline payloads spell the key "userid", so accept both
-                // rather than silently ignoring our own location updates.
-                val userId = (content["userId"] ?: content["userid"])?.jsonPrimitive?.content ?: return
-                val current = _currentUser ?: return
-                if (userId != current.id) return
-                val location = content["location"]?.jsonPrimitive?.content
-                val travelingToLocation = content["travelingToLocation"]?.jsonPrimitive?.content
-                _currentUser = current.copy(
-                    location = location,
-                    travelingToLocation = travelingToLocation,
+        }
+    }
+
+    private fun applyUserUpdateLocked(event: PipelineEvent.UserUpdate) {
+        val content = event.content as? JsonObject
+        val userPatch = content?.get("user") as? JsonObject
+        val current = _currentUser
+        if (userPatch != null && current != null) {
+            try {
+                val currentJson = json.encodeToJsonElement(
+                    CurrentUser.serializer(),
+                    current,
+                ).jsonObject
+                val user = json.decodeFromJsonElement(
+                    CurrentUser.serializer(),
+                    JsonObject(currentJson + userPatch),
                 )
-                _authState.value = AuthState.LoggedIn(_currentUser!!)
-            }
-            else -> {}
+                _currentUser = user
+                _authState.value = AuthState.LoggedIn(user)
+            } catch (_: Exception) {}
         }
     }
 
-    private suspend fun onLoginSuccess(user: CurrentUser) {
-        authInterceptor.clearBasicAuth()
-        clearAccountRuntimeState()
-        // The token belongs to the session being replaced. Left in place, a failed
-        // fetch below would let ensureSessionReady() wave the service through and
-        // connect the pipeline with the previous session's token.
-        _authToken = null
-        _currentUser = user
-        // The unauthorized collector runs on its own coroutine and may already have
-        // ended the session; publishing LoggedIn over it would leave the app shell
-        // running with cleared cookies and no websocket. Same compare-and-set as
-        // setErrorUnlessLoggedOut, in the other direction.
-        val published = _authState.updateAndGet { current ->
-            if (current is AuthState.NotLoggedIn) current else AuthState.LoggedIn(user)
+    private fun applyUserLocationLocked(event: PipelineEvent.UserLocation) {
+        val content = event.content as? JsonObject
+        val current = _currentUser
+        // Some pipeline payloads spell the key "userid", so accept both rather
+        // than silently ignoring our own location updates.
+        val userId = content?.stringOrNull("userId") ?: content?.stringOrNull("userid")
+        val location = content?.stringOrNull("location")
+        val travelingToLocation = content?.stringOrNull("travelingToLocation")
+        if (current != null && userId == current.id && location != null) {
+            val updatedUser = current.copy(
+                location = location,
+                travelingToLocation = travelingToLocation,
+            )
+            _currentUser = updatedUser
+            _authState.value = AuthState.LoggedIn(updatedUser)
         }
-        if (published !is AuthState.LoggedIn) {
-            _currentUser = null
-            return
+    }
+
+    internal fun handleEvent(event: PipelineEvent) {
+        handleEvent(event, sessionRuntime.currentAccount())
+    }
+
+    private suspend fun onLoginSuccess(session: SessionToken, user: CurrentUser) {
+        if (publishLoginSuccess(session, user)) fetchAuthToken(session)
+    }
+
+    private suspend fun commitAuthenticatedSession(session: SessionToken): Boolean {
+        val committed = try {
+            withContext(ioDispatcher) { cookieJar.commitAuthenticatedSession() }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            false
         }
-        // Point the account scope at the new session only once it is published,
-        // so a login that lost the race above leaves nothing bound.
-        accountScope.bind(user.id)
-        fetchAuthToken()
+        if (!isSessionCurrent(session)) return false
+
+        if (!committed) {
+            // The server accepted this account, but publishing it while the old
+            // durable blob can still win on restart creates a split session.
+            withContext(NonCancellable + ioDispatcher) { cookieJar.clearAll() }
+            reportStorageError(AUTHENTICATED_SESSION_STORAGE_ERROR)
+            setErrorUnlessLoggedOut(session, AUTHENTICATED_SESSION_STORAGE_ERROR)
+            return false
+        }
+
+        if (cookieJar.storageStatus.value == CookieStorageStatus.LEGACY_CLEANUP_FAILED) {
+            reportStorageError(COOKIE_LEGACY_CLEANUP_ERROR)
+        } else {
+            _storageError.value = null
+        }
+        return true
+    }
+
+    private suspend fun restoreCookiesIfCurrent(session: SessionToken, snapshot: Map<String, String>) {
+        if (!isSessionCurrent(session)) return
+        val restored = withContext(NonCancellable + ioDispatcher) {
+            cookieJar.restore(snapshot)
+        }
+        if (isSessionCurrent(session) && !restored) {
+            reportStorageError(COOKIE_RESTORE_ERROR)
+        }
+    }
+
+    private fun publishLoginSuccess(session: SessionToken, user: CurrentUser): Boolean = withCurrentSession(session) {
+        if (_authState.value is AuthState.NotLoggedIn) {
+            false
+        } else {
+            clearAccountRuntimeState()
+            // The token belongs to the session being replaced. Left in place, a failed
+            // fetch below would let ensureSessionReady() wave the service through and
+            // connect the pipeline with the previous session's token.
+            _authToken = null
+            _currentUser = user
+            _authState.value = AuthState.LoggedIn(user)
+            sessionRuntime.bindAccount(user.id)
+            true
+        }
+    } == true
+
+    fun dismissStorageError() {
+        _storageError.value = null
+    }
+
+    private fun reportStorageError(message: String) {
+        _storageError.value = message
+    }
+
+    private fun cookieStorageError(status: CookieStorageStatus): String? = when (status) {
+        CookieStorageStatus.READY -> null
+        CookieStorageStatus.UNREADABLE -> COOKIE_STORAGE_UNREADABLE_ERROR
+        CookieStorageStatus.WRITE_FAILED -> COOKIE_STORAGE_WRITE_ERROR
+        CookieStorageStatus.LEGACY_CLEANUP_FAILED -> COOKIE_LEGACY_CLEANUP_ERROR
     }
 
     /**
@@ -369,22 +599,33 @@ class AuthRepository @Inject constructor(
      * the background) into a permanent sign-out.
      */
     internal suspend fun handleUnauthorizedSignal() {
-        if (!hasPersistedSessionArtifacts()) {
-            return
-        }
-        when (val check = checkSession()) {
-            is SessionCheck.Active -> {
-                _currentUser = check.user
-                _authState.value = AuthState.LoggedIn(check.user)
-            }
-            is SessionCheck.TwoFactorRequired -> {
-                // The cookie survives; only the second factor lapsed. Clearing
-                // cookies here would strip the credential that verify2fa needs.
-                _authState.value = AuthState.RequiresTwoFactor(check.methods)
-            }
-            is SessionCheck.Inconclusive -> Unit
-            is SessionCheck.Rejected -> {
-                endSession()
+        unauthorizedCheckMutex.withLock {
+            // An auth request already in progress owns the shared cookie jar. Wait
+            // for it to finish, then keep ownership until this response has saved
+            // any cookies and its state outcome has been applied.
+            sessionRuntime.transition sessionOperation@{
+                val session = captureSession()
+                if (!hasPersistedSessionArtifacts()) return@sessionOperation
+                when (val check = checkSession()) {
+                    is SessionCheck.Active -> {
+                        withCurrentSession(session) {
+                            _currentUser = check.user
+                            _authState.value = AuthState.LoggedIn(check.user)
+                        }
+                    }
+
+                    is SessionCheck.TwoFactorRequired -> {
+                        // The cookie survives; only the second factor lapsed. Clearing
+                        // cookies here would strip the credential that verify2fa needs.
+                        withCurrentSession(session) {
+                            _authState.value = AuthState.RequiresTwoFactor(check.methods)
+                        }
+                    }
+
+                    is SessionCheck.Inconclusive -> Unit
+
+                    is SessionCheck.Rejected -> endSessionIfCurrent(session)
+                }
             }
         }
     }
@@ -396,65 +637,92 @@ class AuthRepository @Inject constructor(
      * interceptor-driven 401 — tears the background connection down without the
      * data layer knowing the service exists.
      */
-    private suspend fun endSession() {
-        clearAccountRuntimeState()
-        clearAuthSession()
-        _authState.value = AuthState.NotLoggedIn
+    private suspend fun endSessionIfCurrent(session: SessionToken): Boolean {
+        val ended = synchronized(sessionLock) {
+            if (session.generation != sessionGeneration) {
+                false
+            } else {
+                sessionGeneration++
+                clearAuthStateLocked()
+                true
+            }
+        }
+        if (ended) clearSessionArtifacts()
+        return ended
     }
 
-    private fun hasPersistedSessionArtifacts(): Boolean {
-        return _currentUser != null ||
-            _authToken != null ||
+    private suspend fun hasPersistedSessionArtifacts(): Boolean {
+        val hasRuntimeSession = synchronized(sessionLock) {
+            _currentUser != null || _authToken != null
+        }
+        return hasRuntimeSession || withContext(ioDispatcher) {
             cookieJar.getAuthCookie() != null
+        }
     }
 
     /** Outcome of asking VRChat whether the stored session is still usable. */
     private sealed interface SessionCheck {
         data class Active(val user: CurrentUser) : SessionCheck
         data class TwoFactorRequired(val methods: List<String>) : SessionCheck
+
         /** The server rejected the credentials — the session is gone for good. */
         data class Rejected(val message: String) : SessionCheck
+
         /** We never got an answer. The session may well still be valid. */
         data class Inconclusive(val message: String) : SessionCheck
     }
 
-    private suspend fun checkSession(): SessionCheck {
-        return try {
-            val response = authApi.getCurrentUser()
-            val jsonObj = response.jsonObject
-            if (jsonObj.containsKey("requiresTwoFactorAuth")) {
-                val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
-                    ?.map { it.jsonPrimitive.content }
-                    ?: emptyList()
-                SessionCheck.TwoFactorRequired(methods)
-            } else {
-                SessionCheck.Active(json.decodeFromJsonElement(CurrentUser.serializer(), response))
-            }
-        } catch (e: HttpException) {
-            if (e.code() == 401 || e.code() == 403) {
-                SessionCheck.Rejected(e.message ?: "Session expired")
-            } else {
-                SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+    private suspend fun checkSession(): SessionCheck = try {
+        val response = authApi.getCurrentUser()
+        val jsonObj = response.jsonObject
+        if (jsonObj.containsKey("requiresTwoFactorAuth")) {
+            val methods = jsonObj["requiresTwoFactorAuth"]?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+                .orEmpty()
+            SessionCheck.TwoFactorRequired(methods)
+        } else {
+            SessionCheck.Active(json.decodeFromJsonElement(CurrentUser.serializer(), response))
+        }
+    } catch (e: HttpException) {
+        if (e.code() == 401 || e.code() == 403) {
+            SessionCheck.Rejected(e.message ?: "Session expired")
+        } else {
             SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
         }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        SessionCheck.Inconclusive(e.message ?: UNREACHABLE_MESSAGE)
     }
 
-    /**
-     * Drops the credential material for the session that is ending. Repository
-     * state belongs to [clearAccountRuntimeState], which runs first so a late
-     * in-flight refresh can't repopulate a repository after its cookies are gone.
-     * Nothing here may throw: the caller's state transition follows it.
-     */
-    private fun clearAuthSession() {
+    private suspend fun resetSessionIfCurrent(session: SessionToken): Boolean {
+        val reset = synchronized(sessionLock) {
+            if (session.generation != sessionGeneration) {
+                false
+            } else {
+                clearAuthStateLocked()
+                true
+            }
+        }
+        if (!reset) return false
+        clearSessionArtifacts()
+        return isSessionCurrent(session)
+    }
+
+    /** Caller owns [sessionLock]; durable cleanup happens later, without that monitor. */
+    private fun clearAuthStateLocked() {
+        clearAccountRuntimeState()
         _currentUser = null
         _authToken = null
-        authInterceptor.clearBasicAuth()
-        cookieJar.clearAll()
-        dedup.clearCache()
+        sessionRuntime.clearRequestCache()
+        _authState.value = AuthState.NotLoggedIn
+    }
+
+    /** Once teardown is published, cancellation must not leave its cookies on disk. */
+    private suspend fun clearSessionArtifacts() {
+        withContext(NonCancellable + ioDispatcher) {
+            cookieJar.clearAll()
+        }
     }
 
     /**
@@ -464,7 +732,7 @@ class AuthRepository @Inject constructor(
      * list here to forget to add to.
      */
     private fun clearAccountRuntimeState() {
-        accountScope.invalidate()
+        sessionRuntime.invalidateAccount()
     }
 
     /**
@@ -479,22 +747,74 @@ class AuthRepository @Inject constructor(
      *   - the Unauthorized collector on its own coroutine     → `NotLoggedIn`
      * and whichever wrote last wins.
      */
-    private fun setErrorUnlessLoggedOut(message: String) {
-        _authState.update { current ->
-            if (current is AuthState.NotLoggedIn) current
-            else AuthState.Error(message)
-        }
-    }
-
-    private fun setTwoFactorError(message: String) {
-        _authState.update { current ->
-            if (current is AuthState.RequiresTwoFactor) {
-                current.copy(verification = TwoFactorVerification.Failed(message))
-            } else {
-                current
+    private fun setErrorUnlessLoggedOut(session: SessionToken, message: String) {
+        withCurrentSession(session) {
+            _authState.update { current ->
+                if (current is AuthState.NotLoggedIn) {
+                    current
+                } else {
+                    AuthState.Error(message)
+                }
             }
         }
     }
+
+    private fun setTwoFactorError(session: SessionToken, message: String) {
+        withCurrentSession(session) {
+            _authState.update { current ->
+                if (current is AuthState.RequiresTwoFactor) {
+                    current.copy(verification = TwoFactorVerification.Failed(message))
+                } else {
+                    current
+                }
+            }
+        }
+    }
+
+    private suspend fun fetchAuthToken(session: SessionToken) {
+        val token = runCatchingCancellable { authApi.getAuthToken().token }.getOrNull() ?: return
+        withCurrentSession(session) { _authToken = token }
+    }
+
+    private suspend fun runSessionTransition(block: suspend (SessionToken) -> Unit) {
+        sessionRuntime.transition {
+            block(beginSessionTransition())
+        }
+    }
+
+    private fun beginSessionTransition(): SessionToken = synchronized(sessionLock) {
+        SessionToken(++sessionGeneration)
+    }
+
+    private fun beginPipelineTransition(expectedAccount: AccountScope.Token): SessionToken? =
+        synchronized(sessionLock) {
+            val account = sessionRuntime.currentAccount()
+            if (account != expectedAccount || _currentUser?.id != account.ownerUserId) {
+                null
+            } else {
+                SessionToken(++sessionGeneration)
+            }
+        }
+
+    private fun captureSession(): SessionToken = synchronized(sessionLock) {
+        SessionToken(sessionGeneration)
+    }
+
+    private fun isSessionCurrent(session: SessionToken): Boolean = synchronized(sessionLock) {
+        session.generation == sessionGeneration
+    }
+
+    private fun publishIfCurrent(session: SessionToken, publish: () -> Unit): Boolean = synchronized(sessionLock) {
+        if (session.generation != sessionGeneration) return false
+        publish()
+        true
+    }
+
+    private fun <T> withCurrentSession(session: SessionToken, block: () -> T): T? = synchronized(sessionLock) {
+        if (session.generation != sessionGeneration) null else block()
+    }
+
+    private data class SessionToken(val generation: Long)
 
     private companion object {
         /** VRChat renders recovery codes as 4+4 alphanumeric characters. */
@@ -507,5 +827,20 @@ class AuthRepository @Inject constructor(
          */
         val RESUME_RETRY_DELAYS_MS = longArrayOf(0L, 2_000L, 5_000L)
         const val UNREACHABLE_MESSAGE = "Couldn't reach VRChat"
+        const val COOKIE_STORAGE_UNREADABLE_ERROR =
+            "Saved session data couldn't be read. Sign in again to replace it safely."
+        const val COOKIE_STORAGE_WRITE_ERROR =
+            "Saved session data couldn't be moved to secure storage."
+        const val AUTHENTICATED_SESSION_STORAGE_ERROR =
+            "VRChat accepted the sign-in, but the new session couldn't be saved securely."
+        const val COOKIE_LEGACY_CLEANUP_ERROR =
+            "The new session is secure, but an older saved session copy couldn't be removed."
+        const val LOGOUT_STORAGE_ERROR =
+            "Signed out, but some saved sign-in data couldn't be removed from this device."
+        const val COOKIE_RESTORE_ERROR =
+            "The previous saved session couldn't be restored after sign-in failed."
     }
 }
+
+private fun JsonObject.stringOrNull(key: String): String? =
+    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull

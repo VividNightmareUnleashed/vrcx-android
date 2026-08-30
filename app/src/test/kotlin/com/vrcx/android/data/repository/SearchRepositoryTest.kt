@@ -4,6 +4,7 @@ import com.vrcx.android.data.api.AvatarApi
 import com.vrcx.android.data.api.GroupApi
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.WorldApi
+import com.vrcx.android.directTestDispatcher
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -36,7 +37,7 @@ class SearchRepositoryTest {
     private val connectionPool = ConnectionPool()
     private val sessionCookieJar = object : CookieJar {
         override fun loadForRequest(url: HttpUrl): List<Cookie> = listOf(
-            Cookie.Builder().name("auth").value("authcookie_test").domain(url.host).build()
+            Cookie.Builder().name("auth").value("authcookie_test").domain(url.host).build(),
         )
 
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = Unit
@@ -56,6 +57,7 @@ class SearchRepositoryTest {
         groupApi = groupApi,
         okHttpClient = okHttpClient,
         json = Json { ignoreUnknownKeys = true },
+        ioDispatcher = directTestDispatcher,
     )
 
     @Before
@@ -121,6 +123,47 @@ class SearchRepositoryTest {
             assertEquals("needle", url.queryParameter("search"))
             assertEquals("1000", url.queryParameter("n"))
         }
+    }
+
+    @Test
+    fun `mixed remote avatar results keep valid siblings and ignore malformed fields`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """
+                [
+                  {"id":{"unexpected":true},"name":"Bad id"},
+                  {
+                    "id":"avtr_valid",
+                    "name":42,
+                    "Name":"Fallback name",
+                    "imageUrl":[],
+                    "ImageUrl":"https://example.com/avatar.png"
+                  },
+                  [],
+                  {"id":"avtr_second","name":"Second"}
+                ]
+                """.trimIndent(),
+            ),
+        )
+
+        val avatars = repository.searchRemoteAvatars("test", server.url("/provider").toString())
+
+        assertEquals(listOf("avtr_valid", "avtr_second"), avatars.map { it.id })
+        assertEquals("Fallback name", avatars.first().name)
+        assertEquals("https://example.com/avatar.png", avatars.first().imageUrl)
+        assertEquals("https://example.com/avatar.png", avatars.first().thumbnailImageUrl)
+    }
+
+    @Test
+    fun `wrong-shaped remote avatar envelope preserves the IOException contract`() = runBlocking {
+        server.enqueue(jsonResponse("""{"avatars":{"id":"avtr_not_an_array"}}"""))
+
+        val error = runCatching {
+            repository.searchRemoteAvatars("test", server.url("/provider").toString())
+        }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertEquals("Remote avatar provider returned an unsupported response format.", error?.message)
     }
 
     @Test

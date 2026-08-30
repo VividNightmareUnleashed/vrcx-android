@@ -1,7 +1,6 @@
 package com.vrcx.android.service
 
-import android.app.Notification
-import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,83 +11,141 @@ import android.net.Network
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import com.vrcx.android.MainActivity
-import com.vrcx.android.R
-import com.vrcx.android.data.model.FriendTransition
+import com.vrcx.android.data.preferences.NotificationPolicy
 import com.vrcx.android.data.preferences.VrcxPreferences
-import com.vrcx.android.data.repository.AccountChangedException
+import com.vrcx.android.data.repository.AccountScope
 import com.vrcx.android.data.repository.AuthRepository
-import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.GalleryRepository
 import com.vrcx.android.data.repository.GroupRepository
-import com.vrcx.android.data.repository.NotificationKind
 import com.vrcx.android.data.repository.NotificationRepository
+import com.vrcx.android.data.repository.UnifiedNotification
 import com.vrcx.android.data.websocket.PipelineEvent
 import com.vrcx.android.data.websocket.PipelineOkHttpClient
 import com.vrcx.android.data.websocket.VRChatWebSocket
 import com.vrcx.android.data.websocket.shouldForceReconnect
+import com.vrcx.android.di.IoDispatcher
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+
+internal const val SERVICE_LOG_TAG = "WebSocketForegroundService"
+
+private data class NotificationSettings(val policy: NotificationPolicy, val enabledFriendIds: Set<String>)
+
+private data class DetachedPipeline(
+    val scope: CoroutineScope?,
+    val socket: VRChatWebSocket?,
+    val networkCallback: ConnectivityManager.NetworkCallback?,
+)
+
+private data class PipelineConnection(val socket: VRChatWebSocket, val authToken: String, val previousNetwork: Network?)
+
+internal suspend fun <T> launchSubscribedCollector(
+    scope: CoroutineScope,
+    events: SharedFlow<T>,
+    consume: suspend (T) -> Unit,
+): Job {
+    val subscribed = CompletableDeferred<Unit>()
+    val collector = scope.launch {
+        events
+            .onSubscription { subscribed.complete(Unit) }
+            .collect { event -> consume(event) }
+    }
+    collector.invokeOnCompletion { cause ->
+        subscribed.completeExceptionally(
+            cause ?: IllegalStateException("Event collector completed before subscribing"),
+        )
+    }
+    try {
+        subscribed.await()
+    } catch (cancellation: CancellationException) {
+        collector.cancel(cancellation)
+        throw cancellation
+    }
+    return collector
+}
 
 @AndroidEntryPoint
 class WebSocketForegroundService : Service() {
 
     @Inject lateinit var authRepository: AuthRepository
+
+    @Inject lateinit var accountScope: AccountScope
+
     @Inject lateinit var friendRepository: FriendRepository
+
     @Inject lateinit var notificationRepository: NotificationRepository
+
     @Inject lateinit var groupRepository: GroupRepository
+
     @Inject lateinit var galleryRepository: GalleryRepository
+
     @Inject lateinit var json: Json
+
     @Inject lateinit var okHttpClient: PipelineOkHttpClient
+
     @Inject lateinit var preferences: VrcxPreferences
 
-    @Volatile private var prefNotifyInvite = true
-    @Volatile private var prefNotifyFriendRequest = true
-    @Volatile private var prefNotifyGeneral = true
+    @Inject lateinit var notificationHelper: NotificationHelper
+
+    @Inject lateinit var pipelineStateResynchronizer: PipelineStateResynchronizer
+
+    @Inject @IoDispatcher
+    lateinit var ioDispatcher: CoroutineDispatcher
+
+    @Volatile private var prefNotifyInvite = false
+
+    @Volatile private var prefNotifyFriendRequest = false
+
+    @Volatile private var prefNotifyGeneral = false
+
     @Volatile private var notifyEnabledFriendIds: Set<String> = emptySet()
 
     // Written on serviceScope, read from the ConnectivityManager callback thread
     // and from onDestroy on the main thread. Observing a stale null there drops
     // the reconnect after a network transition, or skips the socket teardown.
     @Volatile private var webSocket: VRChatWebSocket? = null
+
     @Volatile private var currentAuthToken: String? = null
-    private var notificationHelper: NotificationHelper? = null
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val serviceScope by lazy(LazyThreadSafetyMode.NONE) {
+        CoroutineScope(SupervisorJob() + ioDispatcher)
+    }
+    private val pipelineLock = Any()
+    private var pipelineScope: CoroutineScope? = null
+    private var activePipelineAccount: AccountScope.Token? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     @Volatile private var activeNetwork: Network? = null
     private var startupJob: Job? = null
+
     @Volatile private var reauthJob: Job? = null
+
     @Volatile private var handshakeRejections = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onCreate() {
-        super.onCreate()
-        // NotificationHelper's init registers the shared notification channels.
-        notificationHelper = NotificationHelper(this)
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = when (intent?.action) {
             ACTION_START -> ServiceMode.FOREGROUND
+
             ACTION_START_NON_FOREGROUND -> ServiceMode.NON_FOREGROUND
+
             // A START_STICKY redelivery carries a null action. Only foreground
             // mode asks for one, so anything else is a restart to decline.
             else -> serviceMode(this).takeIf { it == ServiceMode.FOREGROUND }
@@ -112,10 +169,13 @@ class WebSocketForegroundService : Service() {
         val previous = serviceMode(this)
         setServiceMode(this, mode)
         // Declaring a mode supersedes any pending Android 15 recovery.
-        notificationHelper?.cancelServiceReconnectRequired()
+        notificationHelper.cancelServiceReconnectRequired()
         if (mode == ServiceMode.FOREGROUND) {
             // Must call startForeground immediately to avoid crash on Android 12+
-            startForeground(NOTIFICATION_ID, createServiceNotification())
+            startForeground(
+                NotificationHelper.SERVICE_NOTIFICATION_ID,
+                notificationHelper.createWebSocketServiceNotification(),
+            )
         } else if (previous == ServiceMode.FOREGROUND) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
@@ -131,96 +191,131 @@ class WebSocketForegroundService : Service() {
             // this returns, and the recorded mode is the only thing that brings
             // the socket back on the next activity start.
             setServiceMode(this, ServiceMode.TIMED_OUT, synchronous = true)
-            notificationHelper?.notifyServiceReconnectRequired()
-            webSocket?.disconnect()
-            webSocket = null
+            notificationHelper.notifyServiceReconnectRequired()
+            clearPipeline()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
         }
     }
 
     private fun startWebSocket() {
-        // Prevent duplicate connections
-        if (webSocket != null || startupJob?.isActive == true) return
-        startupJob = serviceScope.launch { runStartup() }
+        var detached: DetachedPipeline? = null
+        synchronized(pipelineLock) {
+            val hasPipeline = webSocket != null || startupJob?.isActive == true
+            if (hasPipeline) {
+                val origin = activePipelineAccount
+                if (origin == null || isCurrentPipelineOrigin(accountScope, origin)) return
+                detached = detachPipelineLocked()
+            }
+            val scope = CoroutineScope(
+                serviceScope.coroutineContext + SupervisorJob(serviceScope.coroutineContext[Job]),
+            )
+            pipelineScope = scope
+            startupJob = scope.launch { runStartup(scope) }
+        }
+        detached?.let(::disposePipeline)
     }
 
-    private suspend fun runStartup() {
+    private suspend fun runStartup(scope: CoroutineScope) {
         try {
-            if (!awaitSession()) return
-            val token = authRepository.authToken ?: run {
-                stopWithCleanup()
+            if (!awaitSession(scope)) return
+            val pipelineSession = authRepository.pipelineSession()
+            if (shouldRestartPipelineStartup(accountScope, pipelineSession)) {
+                restartPipeline(scope)
                 return
             }
-            currentAuthToken = token
-
-            val userId = authRepository.currentUser?.id ?: ""
+            val readySession = requireNotNull(pipelineSession)
+            val token = readySession.authToken
+            val pipelineAccount = readySession.account
+            if (!claimPipeline(scope, pipelineAccount, token)) {
+                restartPipeline(scope)
+                return
+            }
+            val userId = pipelineAccount.ownerUserId
 
             // The service owns its own lifecycle, so the session ending — an
             // explicit sign-out or a 401 AuthRepository confirmed — is what takes
             // the socket and the ongoing notification down. The data layer does
             // not reach into the service to do it.
-            serviceScope.launch {
-                stopWhenSessionEnds(authRepository.authState) { stopWithCleanup() }
+            scope.launch {
+                watchPipelineSession(
+                    authState = authRepository.authState,
+                    expectedUserId = userId,
+                    stop = { stopWithCleanup(scope) },
+                    restart = ::startWebSocket,
+                )
             }
 
             try {
-                friendRepository.loadFriendsList()
+                friendRepository.loadFriendsList(pipelineAccount)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
                 Log.w(SERVICE_LOG_TAG, "Failed to preload friends list", error)
             }
-
-            // Observe global notification preferences (invites + friend requests
-            // + everything this app doesn't model)
-            serviceScope.launch {
-                combine(
-                    preferences.notifyInvite,
-                    preferences.notifyFriendRequest,
-                    preferences.notifyGeneral,
-                ) { invite: Boolean, friendReq: Boolean, general: Boolean ->
-                    prefNotifyInvite = invite
-                    prefNotifyFriendRequest = friendReq
-                    prefNotifyGeneral = general
-                }.collect {}
+            if (!isCurrentPipelineOrigin(accountScope, pipelineAccount)) {
+                stopWithCleanup(scope)
+                return
             }
 
-            // Observe per-friend notification enabled set
-            serviceScope.launch {
-                friendRepository.observeNotifyEnabledIds(userId).collect { ids ->
-                    notifyEnabledFriendIds = ids
+            // Policy must be available before the handshake burst begins.
+            val notificationPreferencesReady = CompletableDeferred<Unit>()
+            scope.launch {
+                try {
+                    combine(
+                        preferences.notificationPolicy,
+                        friendRepository.observeNotifyEnabledIds(userId),
+                    ) { policy: NotificationPolicy, enabledFriendIds: Set<String> ->
+                        NotificationSettings(policy, enabledFriendIds)
+                    }.collect { snapshot ->
+                        publishNotificationSettings(scope, snapshot)
+                        notificationPreferencesReady.complete(Unit)
+                    }
+                    if (!notificationPreferencesReady.isCompleted) {
+                        notificationPreferencesReady.completeExceptionally(
+                            IllegalStateException("Notification policy completed before its initial value"),
+                        )
+                    }
+                } catch (cancellation: CancellationException) {
+                    notificationPreferencesReady.cancel(cancellation)
+                    throw cancellation
+                } catch (error: Exception) {
+                    notificationPreferencesReady.completeExceptionally(error)
+                }
+            }
+            notificationPreferencesReady.await()
+            if (!isCurrentPipelineOrigin(accountScope, pipelineAccount)) {
+                stopWithCleanup(scope)
+                return
+            }
+
+            // This replay-zero flow is fed by handshake frames, so it must be
+            // subscribed before the socket can deliver its initial burst.
+            launchSubscribedCollector(scope, friendRepository.friendTransitions) { event ->
+                if (isFriendNotificationEnabled(scope, event.value.userId)) {
+                    consumeAccountScopedPipelineEvent(accountScope, pipelineAccount, event) { transition ->
+                        notifyFriendTransition(notificationHelper, transition)
+                    }
                 }
             }
 
-            // Map friend online/location/status transitions to notifications.
-            // FriendRepository resolves userId + display name (tolerating the
-            // lowercase "userid" key) and the location/status comparisons, so
-            // the service no longer re-parses the raw event payload.
-            serviceScope.launch {
-                friendRepository.friendTransitions.collect { transition ->
-                    if (transition.userId !in notifyEnabledFriendIds) return@collect
-                    val helper = notificationHelper ?: return@collect
-                    notifyFriendTransition(helper, transition)
-                }
+            val ws = VRChatWebSocket(json, okHttpClient, ioDispatcher) {
+                refreshTokenAndReconnect(pipelineAccount, scope)
+            }
+            if (!installWebSocket(scope, ws)) return
+            // Subscribe before connecting. The event flow has no replay, so
+            // anything VRChat pushes between the handshake completing and
+            // the collector arriving would be dropped without a trace —
+            // including the burst it sends immediately after connect.
+            launchSubscribedCollector(scope, ws.events) { event ->
+                routeEvent(event, pipelineAccount, scope)
+            }
+            if (!connectPipeline(scope, pipelineAccount, ws, token)) {
+                stopWithCleanup(scope)
+                return
             }
 
-            webSocket = VRChatWebSocket(json, okHttpClient, ::refreshTokenAndReconnect).also { ws ->
-                // Subscribe before connecting. The event flow has no replay, so
-                // anything VRChat pushes between the handshake completing and
-                // the collector arriving would be dropped without a trace —
-                // including the burst it sends immediately after connect.
-                val subscribed = CompletableDeferred<Unit>()
-                serviceScope.launch {
-                    ws.events
-                        .onSubscription { subscribed.complete(Unit) }
-                        .collect { event -> routeEvent(event) }
-                }
-                subscribed.await()
-                ws.connect(token)
-            }
-
-            registerNetworkCallback()
+            registerNetworkCallback(pipelineAccount, scope)
         } catch (cancellation: CancellationException) {
             // onDestroy cancels serviceScope; that is a normal shutdown and must
             // not be answered with more teardown.
@@ -229,9 +324,11 @@ class WebSocketForegroundService : Service() {
             // startForeground has already run by this point, so leaving the job
             // dead would strand an "ongoing" notification over no connection.
             Log.e(SERVICE_LOG_TAG, "WebSocket service startup failed", error)
-            stopWithCleanup()
+            stopWithCleanup(scope)
         } finally {
-            startupJob = null
+            synchronized(pipelineLock) {
+                if (pipelineScope === scope) startupJob = null
+            }
         }
     }
 
@@ -244,7 +341,7 @@ class WebSocketForegroundService : Service() {
      * discarding them. Stopping the service there kills background presence for
      * the rest of the process's life, and nothing schedules another attempt.
      */
-    private suspend fun awaitSession(): Boolean {
+    private suspend fun awaitSession(scope: CoroutineScope): Boolean {
         var attempt = 0
         while (true) {
             if (authRepository.ensureSessionReady()) return true
@@ -253,7 +350,7 @@ class WebSocketForegroundService : Service() {
                 hasResumableSession = authRepository.hasResumableSession(),
             )
             if (decision == SessionStartup.STOP) {
-                stopWithCleanup()
+                stopWithCleanup(scope)
                 return false
             }
             attempt++
@@ -269,79 +366,256 @@ class WebSocketForegroundService : Service() {
      * succeed. If the session is genuinely gone, the token request's own 401
      * ends it through AuthRepository and stops the service from under us.
      */
-    private fun refreshTokenAndReconnect() {
-        if (reauthJob?.isActive == true) return
-        reauthJob = serviceScope.launch {
-            handshakeRejections++
-            // Back off first, so a persistently refused token cannot turn into
-            // a request storm against the auth endpoints.
-            delay(sessionRetryDelayMs(handshakeRejections))
-            authRepository.fetchAuthToken()
-            // Reconnect with whatever we have: a fetch that failed leaves the
-            // old token, and letting the attempt happen keeps the rejection
-            // loop alive rather than parking the socket for good.
-            val token = authRepository.authToken ?: currentAuthToken ?: return@launch
-            currentAuthToken = token
-            webSocket?.reconnectNow(token)
+    private fun refreshTokenAndReconnect(origin: AccountScope.Token, scope: CoroutineScope) {
+        if (!isCurrentPipelineOrigin(accountScope, origin)) {
+            stopWithCleanup(scope)
+            return
+        }
+        synchronized(pipelineLock) {
+            if (pipelineScope !== scope || reauthJob?.isActive == true) return
+            reauthJob = scope.launch {
+                if (!isCurrentPipelineOrigin(accountScope, origin)) {
+                    stopWithCleanup(scope)
+                    return@launch
+                }
+                val rejectionCount = synchronized(pipelineLock) {
+                    if (pipelineScope !== scope) return@synchronized null
+                    ++handshakeRejections
+                } ?: return@launch
+                // Back off first, so a persistently refused token cannot turn into
+                // a request storm against the auth endpoints.
+                delay(sessionRetryDelayMs(rejectionCount))
+                if (!isCurrentPipelineOrigin(accountScope, origin)) {
+                    stopWithCleanup(scope)
+                    return@launch
+                }
+                val session = authRepository.refreshPipelineSession(origin) ?: run {
+                    stopWithCleanup(scope)
+                    return@launch
+                }
+                // A fetch that failed leaves the old token in the same session, and
+                // retrying it keeps the rejection loop alive rather than parking.
+                val socket = synchronized(pipelineLock) {
+                    if (pipelineScope !== scope) return@synchronized null
+                    currentAuthToken = session.authToken
+                    webSocket
+                } ?: return@launch
+                reconnectPipeline(scope, origin, socket, session.authToken)
+            }
         }
     }
 
-    private fun stopWithCleanup() {
+    private fun stopWithCleanup(expectedScope: CoroutineScope? = null) {
+        if (!clearPipeline(expectedScope)) return
         if (serviceMode(this) == ServiceMode.FOREGROUND) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
         stopSelf()
     }
 
-    private suspend fun routeEvent(event: PipelineEvent) {
-        containPipelineFailure("friends") { friendRepository.handleEvent(event) }
-        containPipelineFailure("notifications") { notificationRepository.handleEvent(event) }
-        containPipelineFailure("session") { authRepository.handleEvent(event) }
-        containPipelineFailure("groups") { groupRepository.handleEvent(event) }
-        containPipelineFailure("gallery") { handleContentRefresh(event) }
-        containPipelineFailure("system notifications") { dispatchNotification(event) }
+    private fun restartPipeline(expectedScope: CoroutineScope) {
+        if (clearPipeline(expectedScope)) startWebSocket()
     }
 
-    private fun registerNetworkCallback() {
-        if (networkCallback != null) return
+    private suspend fun routeEvent(event: PipelineEvent, origin: AccountScope.Token, scope: CoroutineScope) {
+        if (!isCurrentPipelineOrigin(accountScope, origin)) return
+        if (event === PipelineEvent.StreamGap) {
+            recoverPipelineState(origin, scope)
+            return
+        }
+        containPipelineFailure("friends") { friendRepository.handleEvent(event, origin) }
+        if (!isCurrentPipelineOrigin(accountScope, origin)) return
+        val notification = containPipelineFailure("notifications") {
+            notificationRepository.handleEvent(event, origin)
+        }
+        if (!isCurrentPipelineOrigin(accountScope, origin)) return
+        containPipelineFailure("session") { authRepository.handleEvent(event, origin) }
+        if (!isCurrentPipelineOrigin(accountScope, origin)) return
+        containPipelineFailure("groups") { groupRepository.handleEvent(event, origin) }
+        if (!isCurrentPipelineOrigin(accountScope, origin)) return
+        containPipelineFailure("gallery") { handleContentRefresh(event, origin, scope) }
+        notification?.let { scopedNotification ->
+            consumeAccountScopedPipelineEvent(accountScope, origin, scopedNotification) { value ->
+                containPipelineFailure("system notifications") { dispatchNotification(value) }
+            }
+        }
+    }
+
+    private suspend fun recoverPipelineState(origin: AccountScope.Token, scope: CoroutineScope) {
+        val recovered = retryPipelineStateRecovery(
+            isCurrent = { isPipelineRecoveryCurrent(origin, scope) },
+            recoverCore = { pipelineStateResynchronizer.resynchronizeCore(origin) },
+        )
+        if (!recovered) return
+        val connection = currentPipelineConnection(scope) ?: return
+        if (resumePipelineAfterRecovery(scope, origin, connection.socket, connection.authToken)) {
+            scope.launch {
+                if (isPipelineRecoveryCurrent(origin, scope)) {
+                    pipelineStateResynchronizer.resynchronizeGallery(origin)
+                }
+            }
+        }
+    }
+
+    private fun isPipelineRecoveryCurrent(origin: AccountScope.Token, scope: CoroutineScope): Boolean =
+        isCurrentPipelineOrigin(accountScope, origin) && synchronized(pipelineLock) { pipelineScope === scope }
+
+    private fun currentPipelineConnection(scope: CoroutineScope): PipelineConnection? = synchronized(pipelineLock) {
+        val socket = webSocket
+        val authToken = currentAuthToken
+        if (pipelineScope === scope && socket != null && authToken != null) {
+            PipelineConnection(socket, authToken, activeNetwork)
+        } else {
+            null
+        }
+    }
+
+    private fun registerNetworkCallback(origin: AccountScope.Token, scope: CoroutineScope) {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(SERVICE_LOG_TAG, "Network available")
-                val previousNetwork = activeNetwork
-                activeNetwork = network
-                val ws = webSocket ?: return
-                val token = currentAuthToken ?: return
-                val networkWasReplaced = previousNetwork != null && previousNetwork != network
-                if (shouldForceReconnect(networkWasReplaced, ws.state.value)) {
-                    ws.reconnectNow(token)
+                if (!isCurrentPipelineOrigin(accountScope, origin)) {
+                    stopWithCleanup(scope)
+                    return
+                }
+                val connection = synchronized(pipelineLock) {
+                    if (pipelineScope !== scope) return
+                    val previousNetwork = activeNetwork
+                    activeNetwork = network
+                    PipelineConnection(webSocket ?: return, currentAuthToken ?: return, previousNetwork)
+                }
+                val networkWasReplaced =
+                    connection.previousNetwork != null && connection.previousNetwork != network
+                if (shouldForceReconnect(networkWasReplaced, connection.socket.state.value)) {
+                    reconnectPipeline(scope, origin, connection.socket, connection.authToken)
                 }
             }
 
             override fun onLost(network: Network) {
                 Log.d(SERVICE_LOG_TAG, "Network lost")
-                if (activeNetwork != network) return
-                activeNetwork = null
-                val ws = webSocket ?: return
-                val token = currentAuthToken ?: return
-                ws.reconnectNow(token)
+                if (!isCurrentPipelineOrigin(accountScope, origin)) {
+                    stopWithCleanup(scope)
+                    return
+                }
+                val connection = synchronized(pipelineLock) {
+                    if (pipelineScope !== scope || activeNetwork != network) return
+                    activeNetwork = null
+                    PipelineConnection(webSocket ?: return, currentAuthToken ?: return, null)
+                }
+                reconnectPipeline(scope, origin, connection.socket, connection.authToken)
             }
         }
-        networkCallback = callback
-        cm.registerDefaultNetworkCallback(callback)
+        synchronized(pipelineLock) {
+            if (pipelineScope !== scope || networkCallback != null) return
+            cm.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        }
+    }
+
+    private fun claimPipeline(scope: CoroutineScope, account: AccountScope.Token, authToken: String): Boolean =
+        synchronized(pipelineLock) {
+            if (pipelineScope !== scope || !isCurrentPipelineOrigin(accountScope, account)) return false
+            activePipelineAccount = account
+            currentAuthToken = authToken
+            true
+        }
+
+    private fun installWebSocket(scope: CoroutineScope, socket: VRChatWebSocket): Boolean = synchronized(pipelineLock) {
+        if (pipelineScope !== scope) return false
+        webSocket = socket
+        true
+    }
+
+    private fun publishNotificationSettings(scope: CoroutineScope, settings: NotificationSettings): Boolean =
+        synchronized(pipelineLock) {
+            if (pipelineScope !== scope) return false
+            prefNotifyInvite = settings.policy.invites
+            prefNotifyFriendRequest = settings.policy.friendRequests
+            prefNotifyGeneral = settings.policy.general
+            notifyEnabledFriendIds = settings.enabledFriendIds
+            true
+        }
+
+    private fun isFriendNotificationEnabled(scope: CoroutineScope, userId: String): Boolean =
+        synchronized(pipelineLock) {
+            pipelineScope === scope && userId in notifyEnabledFriendIds
+        }
+
+    private fun connectPipeline(
+        scope: CoroutineScope,
+        origin: AccountScope.Token,
+        socket: VRChatWebSocket,
+        authToken: String,
+    ): Boolean = synchronized(pipelineLock) {
+        if (pipelineScope !== scope || webSocket !== socket) return false
+        accountScope.publishIfCurrent(origin) { socket.connect(authToken) }
+    }
+
+    private fun reconnectPipeline(
+        scope: CoroutineScope,
+        origin: AccountScope.Token,
+        socket: VRChatWebSocket,
+        authToken: String,
+    ): Boolean = synchronized(pipelineLock) {
+        if (pipelineScope !== scope || webSocket !== socket) return false
+        accountScope.publishIfCurrent(origin) { socket.reconnectNow(authToken) }
+    }
+
+    private fun resumePipelineAfterRecovery(
+        scope: CoroutineScope,
+        origin: AccountScope.Token,
+        socket: VRChatWebSocket,
+        authToken: String,
+    ): Boolean = synchronized(pipelineLock) {
+        if (pipelineScope !== scope || webSocket !== socket) return false
+        accountScope.publishIfCurrent(origin) { socket.reconnectAfterRecovery(authToken) }
+    }
+
+    private fun clearPipeline(expectedScope: CoroutineScope? = null): Boolean {
+        val detached = synchronized(pipelineLock) {
+            if (expectedScope != null && pipelineScope !== expectedScope) return false
+            detachPipelineLocked()
+        }
+        disposePipeline(detached)
+        return true
+    }
+
+    private fun detachPipelineLocked(): DetachedPipeline {
+        val detached = DetachedPipeline(
+            scope = pipelineScope,
+            socket = webSocket,
+            networkCallback = networkCallback,
+        )
+        pipelineScope = null
+        startupJob = null
+        reauthJob = null
+        activePipelineAccount = null
+        currentAuthToken = null
+        handshakeRejections = 0
+        prefNotifyInvite = false
+        prefNotifyFriendRequest = false
+        prefNotifyGeneral = false
+        notifyEnabledFriendIds = emptySet()
+        networkCallback = null
+        activeNetwork = null
+        webSocket = null
+        return detached
+    }
+
+    private fun disposePipeline(pipeline: DetachedPipeline) {
+        pipeline.scope?.cancel()
+        pipeline.socket?.disconnect()
+        pipeline.networkCallback?.let { callback ->
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            runCatching { cm.unregisterNetworkCallback(callback) }
+                .onFailure { Log.w(SERVICE_LOG_TAG, "Unable to unregister network callback", it) }
+        }
     }
 
     override fun onDestroy() {
-        networkCallback?.let {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            cm.unregisterNetworkCallback(it)
-            networkCallback = null
-        }
-        activeNetwork = null
+        clearPipeline()
         serviceScope.cancel()
-        startupJob = null
-        webSocket?.disconnect()
-        webSocket = null
         // onTimeout stops the service, so onDestroy runs straight after it —
         // writing NONE here unconditionally would erase the recovery it just
         // recorded.
@@ -351,50 +625,32 @@ class WebSocketForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun createServiceNotification(): Notification {
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        return Notification.Builder(this, CHANNEL_SERVICE)
-            .setContentTitle("VRCX")
-            .setContentText("Connected to VRChat")
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build()
-    }
-
-    private fun handleContentRefresh(event: PipelineEvent) {
+    private fun handleContentRefresh(event: PipelineEvent, origin: AccountScope.Token, scope: CoroutineScope) {
         if (event !is PipelineEvent.ContentRefresh) return
         val contentType = event.contentObject()?.stringOrNull("contentType") ?: return
-        val userId = authRepository.currentUser?.id ?: return
+        val userId = origin.ownerUserId
         // The boundary belongs inside the launch: a throw from the child would
         // otherwise reach the default handler long after routeEvent returned.
-        serviceScope.launch {
+        scope.launch {
             containPipelineFailure("gallery refresh") {
-                galleryRepository.handleContentRefresh(contentType, userId)
+                galleryRepository.handleContentRefresh(contentType, userId, origin)
             }
         }
     }
 
-    private fun dispatchNotification(event: PipelineEvent) {
-        val helper = notificationHelper ?: return
-        dispatchNotification(helper, event, prefNotifyInvite, prefNotifyFriendRequest, prefNotifyGeneral)
+    private fun dispatchNotification(notification: UnifiedNotification) {
+        dispatchNotification(
+            notificationHelper,
+            notification,
+            prefNotifyInvite,
+            prefNotifyFriendRequest,
+            prefNotifyGeneral,
+        )
     }
 
     companion object {
         private const val ACTION_START = "com.vrcx.android.START_WEBSOCKET"
         private const val ACTION_START_NON_FOREGROUND = "com.vrcx.android.START_WEBSOCKET_NON_FOREGROUND"
-        private const val NOTIFICATION_ID = 1
-        const val CHANNEL_SERVICE = "vrcx_service"
-        const val CHANNEL_FRIEND_ONLINE = "vrcx_friend_online"
-        const val CHANNEL_FRIEND_OFFLINE = "vrcx_friend_offline"
-        const val CHANNEL_INVITES = "vrcx_invites"
-        const val CHANNEL_FRIEND_REQUEST = "vrcx_friend_request"
-        const val CHANNEL_GENERAL = "vrcx_general"
         private const val SERVICE_STATE_PREFERENCES = "websocket_service_state"
         private const val KEY_SERVICE_MODE = "requested_mode"
 
@@ -406,7 +662,13 @@ class WebSocketForegroundService : Service() {
 
         internal fun setServiceMode(context: Context, mode: ServiceMode, synchronous: Boolean = false) {
             val editor = statePreferences(context).edit().putInt(KEY_SERVICE_MODE, mode.storedValue)
-            if (synchronous) editor.commit() else editor.apply()
+            if (synchronous) persistBeforePossibleProcessExit(editor) else editor.apply()
+        }
+
+        /** The timeout callback may be followed immediately by process teardown. */
+        @SuppressLint("ApplySharedPref")
+        private fun persistBeforePossibleProcessExit(editor: SharedPreferences.Editor) {
+            editor.commit()
         }
 
         fun start(context: Context): Boolean {
@@ -436,10 +698,7 @@ class WebSocketForegroundService : Service() {
         }
 
         fun stop(context: Context): Boolean {
-            // Also clear the recorded mode: a service that already stopped itself
-            // on an Android 15 timeout never reaches onDestroy, and its pending
-            // recovery must not outlive an explicit sign-out. Sign-out teardown
-            // has to finish even when a step of it cannot.
+            // Explicit stop revokes timeout recovery even after the service self-terminated.
             runCatching { setServiceMode(context, ServiceMode.NONE) }
             return runCatching {
                 context.stopService(Intent(context, WebSocketForegroundService::class.java))
@@ -467,197 +726,9 @@ class WebSocketForegroundService : Service() {
     }
 }
 
-/**
- * What the service has been asked to be, as a single value.
- *
- * This used to be a persisted int, a persisted boolean and an in-memory
- * boolean, which made combinations like "not running, but timed out from
- * non-foreground mode" representable and left three places to keep in step.
- * The stored values are explicit so reordering the enum cannot reinterpret
- * what is already on disk.
- */
-internal enum class ServiceMode(val storedValue: Int) {
-    NONE(0),
-    FOREGROUND(1),
-    NON_FOREGROUND(2),
-    TIMED_OUT(3);
-
-    companion object {
-        fun fromStored(value: Int): ServiceMode = values().firstOrNull { it.storedValue == value } ?: NONE
-    }
-}
-
-/**
- * Turns a friend transition into its system notification.
- *
- * The transition already carries the friend's id, so the notification points at
- * that friend's screen — a "went online" the user taps has to land on the person
- * it names, not on whichever tab the app happens to start on.
- */
-internal fun notifyFriendTransition(helper: NotificationHelper, transition: FriendTransition) {
-    when (transition) {
-        is FriendTransition.CameOnline ->
-            helper.notifyFriendOnline(transition.displayName, transition.userId)
-        is FriendTransition.CameOffline ->
-            helper.notifyFriendOffline(transition.displayName, transition.userId)
-        is FriendTransition.ChangedLocation ->
-            helper.notifyFriendLocation(transition.displayName, transition.worldName, transition.userId)
-        is FriendTransition.ChangedStatus ->
-            helper.notifyFriendStatusChange(transition.displayName, transition.status, transition.userId)
-    }
-}
-
-/**
- * Stop the service the moment the session ends.
- *
- * The lifecycle belongs to the service, not to the data layer: AuthRepository
- * publishes [AuthState.NotLoggedIn] and the socket, the ongoing notification and
- * this process's claim on the foreground go with it. Top-level so the rule can
- * be asserted without standing a Service up.
- */
-internal suspend fun stopWhenSessionEnds(authState: Flow<AuthState>, stop: () -> Unit) {
-    authState.collect { state -> if (state is AuthState.NotLoggedIn) stop() }
-}
-
-/**
- * Turns a pipeline frame into a system notification, gated by the three
- * notification preferences the app exposes.
- *
- * Top-level rather than a service method so the classification, the preference
- * gates and the deep-link target can be asserted without standing a Service up.
- */
-internal fun dispatchNotification(
-    helper: NotificationHelper,
-    event: PipelineEvent,
-    notifyInvite: Boolean,
-    notifyFriendRequest: Boolean,
-    notifyGeneral: Boolean,
-) {
-    when (event) {
-        is PipelineEvent.Notification -> {
-            val content = event.contentObject() ?: return
-            val type = content.stringOrNull("type").orEmpty()
-            val sender = content.stringOrNull("senderUsername") ?: "Someone"
-            val senderId = content.stringOrNull("senderUserId")
-            when (NotificationKind.fromType(type)) {
-                NotificationKind.FRIEND_REQUEST ->
-                    if (notifyFriendRequest) helper.notifyFriendRequest(sender, senderId)
-                NotificationKind.INVITE, NotificationKind.REQUEST_INVITE ->
-                    if (notifyInvite) helper.notifyInvite(sender, senderId)
-                NotificationKind.OTHER -> {}
-            }
-        }
-        is PipelineEvent.NotificationV2 -> {
-            val content = event.contentObject() ?: return
-            val type = content.stringOrNull("type").orEmpty()
-            val sender = content.stringOrNull("senderUsername") ?: "Someone"
-            val senderId = content.stringOrNull("senderUserId")
-            val title = content.stringOrNull("title").orEmpty()
-            val message = content.stringOrNull("message").orEmpty()
-            when (NotificationKind.fromType(type)) {
-                NotificationKind.FRIEND_REQUEST ->
-                    if (notifyFriendRequest) helper.notifyFriendRequest(sender, senderId)
-                NotificationKind.INVITE, NotificationKind.REQUEST_INVITE ->
-                    if (notifyInvite) helper.notifyInvite(sender, senderId)
-                // A type this app doesn't model still reaches the shade, so
-                // whoever originated it chooses the text there. Give the user a
-                // switch for the whole category, bound what does get through,
-                // and don't echo the raw type back as the body.
-                NotificationKind.OTHER ->
-                    if (notifyGeneral) helper.notifyGeneral(
-                        title = boundRemoteText(title.ifBlank { sender }),
-                        text = boundRemoteText(message.ifBlank { "New notification" }),
-                    )
-            }
-        }
-        is PipelineEvent.InstanceClosed -> {
-            val location = event.contentObject()?.stringOrNull("instanceLocation").orEmpty()
-            helper.notifyGeneral(
-                title = "Instance Closed",
-                text = boundRemoteText(location.ifBlank { "A queued instance closed" }),
-            )
-        }
-        else -> {}
-    }
-}
-
-/**
- * One malformed frame costs one capability, not the process.
- *
- * VRChat returns several payload fields as more than one shape, so a frame the
- * app has never seen can throw out of a handler. The pipeline fan-out is a
- * single root coroutine with no exception handler, so that throw would reach
- * the thread's default handler and kill the process — and the pipeline has no
- * replay, so everything that arrives during the restart is lost for good.
- */
-internal inline fun containPipelineFailure(capability: String, block: () -> Unit) {
-    try {
-        block()
-    } catch (stale: AccountChangedException) {
-        // Manufactured staleness, not real cancellation: the work belonged to an
-        // account that has since been switched away from. Dropping it is the
-        // point — the current account keeps being served.
-        Log.d(SERVICE_LOG_TAG, "Discarded stale $capability work after an account change")
-    } catch (cancellation: CancellationException) {
-        // Genuine cancellation. Swallowing it would leave collectors running
-        // after their scope is gone.
-        throw cancellation
-    } catch (error: Exception) {
-        Log.w(SERVICE_LOG_TAG, "Pipeline event dropped by $capability", error)
-    }
-}
-
-/**
- * One tag for the whole class. The statics used to log under a second, shorter
- * one, so `adb logcat -s WebSocketForegroundService` silently omitted every
- * start/stop failure — the class of failure that is hardest to reproduce.
- */
-internal const val SERVICE_LOG_TAG = "WebSocketForegroundService"
-
-internal enum class SessionStartup { RETRY, STOP }
-
-/**
- * What to do when the session is not ready yet.
- *
- * A rejection from VRChat clears the stored cookie and a two-factor challenge
- * needs the user, so in both cases the socket has nothing to wait for. Anything
- * else — no radio yet, a timeout, a 5xx — proves nothing: AuthRepository keeps
- * the cookies precisely because the session may still be good, so the service
- * has to try again rather than stop until the user reopens the app.
- */
-internal fun sessionStartupDecision(
-    authState: AuthState,
-    hasResumableSession: Boolean,
-): SessionStartup = when {
-    !hasResumableSession -> SessionStartup.STOP
-    authState is AuthState.RequiresTwoFactor -> SessionStartup.STOP
-    else -> SessionStartup.RETRY
-}
-
-private const val SESSION_RETRY_BASE_DELAY_MS = 10_000L
-private const val SESSION_RETRY_MAX_DELAY_MS = 300_000L
-
-/**
- * Backoff between session-resume attempts. Each attempt re-runs AuthRepository's
- * own 0/2s/5s ladder, so the first wait starts well clear of it.
- */
-internal fun sessionRetryDelayMs(attempt: Int): Long {
-    val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(10)
-    return minOf(SESSION_RETRY_BASE_DELAY_MS shl exponent, SESSION_RETRY_MAX_DELAY_MS)
-}
-
-private const val MAX_REMOTE_NOTIFICATION_CHARS = 120
-
-/**
- * Cap text that came straight off the pipeline. Notification types this app does
- * not model are rendered verbatim, so the originator chooses what appears on the
- * lock screen; a bound keeps that to a line.
- */
-internal fun boundRemoteText(value: String, max: Int = MAX_REMOTE_NOTIFICATION_CHARS): String =
-    if (value.length <= max) value else value.take(max - 1).trimEnd() + "…"
-
 /** Null rather than a throw when VRChat sends the other shape for a field. */
 private fun PipelineEvent.contentObject(): JsonObject? = content as? JsonObject
 
-private fun JsonObject.stringOrNull(key: String): String? =
-    (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+private fun JsonObject.stringOrNull(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf {
+    it !is JsonNull
+}?.content

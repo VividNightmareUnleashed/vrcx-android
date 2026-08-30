@@ -1,5 +1,8 @@
 package com.vrcx.android.ui.screen.profile
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,13 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Group
@@ -27,8 +29,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
@@ -43,7 +43,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +54,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.UpdateCurrentUserRequest
@@ -62,6 +62,7 @@ import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.UserRepository
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.TrustRankBadge
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
@@ -70,15 +71,14 @@ import com.vrcx.android.ui.components.VrcxTopBar
 import com.vrcx.android.ui.navigation.VrcxRoutes
 import com.vrcx.android.ui.theme.vrcxColors
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
@@ -87,15 +87,12 @@ class ProfileViewModel @Inject constructor(
 ) : ViewModel() {
     val currentUser: StateFlow<CurrentUser?> = authRepository.authState.map { state ->
         (state as? AuthState.LoggedIn)?.user
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }.stateIn(viewModelScope, whileUiSubscribed, null)
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private fun updateCurrentUser(
-        payload: UpdateCurrentUserRequest,
-        successMessage: String,
-    ) {
+    private fun updateCurrentUser(payload: UpdateCurrentUserRequest, successMessage: String) {
         viewModelScope.launch {
             try {
                 val uid = currentUser.value?.id ?: return@launch
@@ -141,28 +138,28 @@ class ProfileViewModel @Inject constructor(
         )
     }
 
-    fun clearMessage() { _message.value = null }
+    fun clearMessage() {
+        _message.value = null
+    }
 
     fun logout() {
-        // authRepository.logout() now tears down the websocket service itself,
-        // so ProfileViewModel no longer has to stop it separately.
         viewModelScope.launch { authRepository.logout() }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen(
-    viewModel: ProfileViewModel = hiltViewModel(),
-    onNavigate: (String) -> Unit = {},
-) {
+fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel(), onNavigate: (String) -> Unit = {}) {
     val user by viewModel.currentUser.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<ProfileField?>(null) }
 
     LaunchedEffect(message) {
-        message?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessage() }
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearMessage()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -182,7 +179,11 @@ fun ProfileScreen(
                             Spacer(Modifier.height(12.dp))
                             ProfileEditableRow(
                                 label = "Status",
-                                value = if (u.statusDescription.isBlank()) u.status else "${u.status}: ${u.statusDescription}",
+                                value = if (u.statusDescription.isBlank()) {
+                                    u.status
+                                } else {
+                                    "${u.status}: ${u.statusDescription}"
+                                },
                                 onEdit = { editingField = ProfileField.STATUS },
                             )
                             Spacer(Modifier.height(12.dp))
@@ -208,7 +209,11 @@ fun ProfileScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Home Location", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        "Home Location",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
                                     Spacer(Modifier.height(4.dp))
                                     Text(u.homeLocation, style = MaterialTheme.typography.bodySmall)
                                 }
@@ -238,7 +243,11 @@ fun ProfileScreen(
 
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton(onClick = { viewModel.logout() }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.AutoMirrored.Filled.Logout,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                     Spacer(Modifier.size(8.dp))
                     Text("Logout", color = MaterialTheme.colorScheme.error)
                 }
@@ -293,10 +302,10 @@ private fun ProfileEditDialog(
     var text by remember(user) {
         mutableStateOf(
             when (field) {
-                ProfileField.STATUS -> user?.statusDescription ?: ""
-                ProfileField.BIO -> user?.bio ?: ""
-                ProfileField.PRONOUNS -> user?.pronouns ?: ""
-            }
+                ProfileField.STATUS -> user?.statusDescription.orEmpty()
+                ProfileField.BIO -> user?.bio.orEmpty()
+                ProfileField.PRONOUNS -> user?.pronouns.orEmpty()
+            },
         )
     }
     AlertDialog(
@@ -310,7 +319,11 @@ private fun ProfileEditDialog(
                             TextButton(onClick = { status = option }) {
                                 Text(
                                     option,
-                                    color = if (status == option) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (status == option) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
                                 )
                             }
                         }
@@ -348,17 +361,18 @@ private fun NavItem(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.size(12.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = vrcxColors.panelMuted)
     }
 }
 
 @Composable
-private fun ProfileEditableRow(
-    label: String,
-    value: String,
-    onEdit: () -> Unit,
-) {
+private fun ProfileEditableRow(label: String, value: String, onEdit: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

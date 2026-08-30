@@ -12,13 +12,13 @@ import com.vrcx.android.ui.common.failLoad
 import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class AvatarDetailViewModel @Inject constructor(
@@ -26,7 +26,7 @@ class AvatarDetailViewModel @Inject constructor(
     private val avatarRepository: AvatarRepository,
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
-    val avatarId: String = savedStateHandle.get<String>("avatarId") ?: ""
+    val avatarId: String = savedStateHandle.get<String>("avatarId").orEmpty()
 
     private val _avatar = MutableStateFlow<LoadState<Avatar>>(LoadState.NotLoaded)
     val avatar: StateFlow<LoadState<Avatar>> = _avatar.asStateFlow()
@@ -98,7 +98,9 @@ class AvatarDetailViewModel @Inject constructor(
         }
     }
 
-    fun clearMessage() { _message.value = null }
+    fun clearMessage() {
+        _message.value = null
+    }
 
     private fun loadFavoriteStatus() {
         viewModelScope.launch {

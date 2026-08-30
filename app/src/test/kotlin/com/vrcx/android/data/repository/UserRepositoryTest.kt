@@ -3,6 +3,7 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.api.RequestDeduplicator
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.model.VrcUser
+import com.vrcx.android.directTestDispatcher
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -21,7 +22,7 @@ class UserRepositoryTest {
     fun `an account change prevents a late user result from entering the new cache`() = runBlocking {
         val userApi = mock<UserApi>()
         val accountScope = AccountScope()
-        val repository = UserRepository(userApi, RequestDeduplicator(), accountScope)
+        val repository = UserRepository(userApi, RequestDeduplicator(directTestDispatcher), accountScope)
         val calls = AtomicInteger()
         val oldRequestStarted = CompletableDeferred<Unit>()
         val releaseOldRequest = CompletableDeferred<Unit>()

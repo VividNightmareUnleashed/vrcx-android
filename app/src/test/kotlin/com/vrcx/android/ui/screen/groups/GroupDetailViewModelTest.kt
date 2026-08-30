@@ -8,14 +8,17 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.repository.GroupPage
 import com.vrcx.android.data.repository.GroupRepository
+import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.MainDispatcherRule
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -47,8 +50,8 @@ class GroupDetailViewModelTest {
         verify(repo, never()).getGroupInstances(any())
         verify(repo, never()).getGroupPostsPage(any(), any(), any())
         assertEquals(25, ready(vm.state.value.members).totalCount)
-        assertTrue(vm.state.value.instances == GroupResourceState.NotLoaded)
-        assertTrue(vm.state.value.posts == GroupResourceState.NotLoaded)
+        assertTrue(vm.state.value.instances == LoadState.NotLoaded)
+        assertTrue(vm.state.value.posts == LoadState.NotLoaded)
     }
 
     @Test
@@ -79,6 +82,7 @@ class GroupDetailViewModelTest {
 
         verify(repo, times(1)).getGroupInstances("grp_x")
         verify(repo, times(1)).getGroupPostsPage(eq("grp_x"), eq(0), any())
+        assertEquals(GroupTab.POSTS, vm.state.value.selectedTab)
         assertEquals("instance_1", ready(vm.state.value.instances).single().instanceId)
         assertEquals("post_1", ready(vm.state.value.posts).items.single().id)
     }
@@ -167,9 +171,9 @@ class GroupDetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals("grp_x", ready(vm.state.value.group).id)
-        assertEquals("members unavailable", (vm.state.value.members as GroupResourceState.Error).message)
-        assertTrue(vm.state.value.instances == GroupResourceState.NotLoaded)
-        assertTrue(vm.state.value.posts == GroupResourceState.NotLoaded)
+        assertEquals("members unavailable", (vm.state.value.members as LoadState.Failed).message)
+        assertTrue(vm.state.value.instances == LoadState.NotLoaded)
+        assertTrue(vm.state.value.posts == LoadState.NotLoaded)
 
         vm.retryMembers()
         advanceUntilIdle()
@@ -205,7 +209,51 @@ class GroupDetailViewModelTest {
     }
 
     @Test
-    fun `cancelling the view model does not turn cancellation into an error`() = runTest(testDispatcher) {
+    fun `failed first-page refresh keeps the loaded members as stale data`() = runTest(testDispatcher) {
+        val repo = mock<GroupRepository>()
+        whenever(repo.getGroup("grp_x")).thenReturn(Group(id = "grp_x", memberCount = 1))
+        whenever(repo.getGroupMembersPage(eq("grp_x"), eq(0), any()))
+            .thenReturn(GroupPage(listOf(member("a")), nextOffset = 1, hasMore = false))
+            .thenThrow(RuntimeException("refresh failed"))
+        val vm = buildViewModel(repository = repo)
+        advanceUntilIdle()
+
+        vm.retryMembers()
+        advanceUntilIdle()
+
+        val members = vm.state.value.members as LoadState.Loaded<GroupPagedData<GroupMember>>
+        assertEquals(listOf("usr_a"), members.value.items.map { it.userId })
+        assertEquals("refresh failed", members.staleError)
+        assertFalse(members.isRefreshing)
+    }
+
+    @Test
+    fun `clearing one displayed message preserves unseen resource failures`() = runTest(testDispatcher) {
+        val repo = initialRepository()
+        whenever(repo.getGroup("grp_x"))
+            .thenReturn(Group(id = "grp_x"))
+            .thenThrow(RuntimeException("group refresh failed"))
+        val vm = buildViewModel(repository = repo)
+        advanceUntilIdle()
+
+        vm.retryGroup()
+        advanceUntilIdle()
+
+        val failedRefresh = vm.state.value.group as LoadState.Loaded<Group>
+        assertEquals("group refresh failed", failedRefresh.staleError)
+
+        vm.clearMessage(GroupDetailMessageSource.ACTION)
+        assertEquals(
+            "group refresh failed",
+            (vm.state.value.group as LoadState.Loaded<Group>).staleError,
+        )
+
+        vm.clearMessage(GroupDetailMessageSource.GROUP)
+        assertNull((vm.state.value.group as LoadState.Loaded<Group>).staleError)
+    }
+
+    @Test
+    fun `cancelling the view model settles its loading state without publishing an error`() = runTest(testDispatcher) {
         val repo = mock<GroupRepository>()
         val memberLoadStarted = CompletableDeferred<Unit>()
         val neverCompletes = CompletableDeferred<GroupPage<GroupMember>>()
@@ -221,7 +269,7 @@ class GroupDetailViewModelTest {
         vm.viewModelScope.cancel()
         advanceUntilIdle()
 
-        assertTrue(vm.state.value.members == GroupResourceState.Loading)
+        assertTrue(vm.state.value.members == LoadState.NotLoaded)
     }
 
     @Test
@@ -235,6 +283,60 @@ class GroupDetailViewModelTest {
         )
         assertTrue(vm.canManageMembers(memberGroup(permissions = listOf("group-members-manage"))))
         assertTrue(vm.canManageMembers(memberGroup(permissions = listOf("*"))))
+    }
+
+    @Test
+    fun `member removal policy follows owner and current-member identities`() {
+        val vm = buildViewModel()
+        val group = memberGroup(permissions = listOf("group-members-manage")).copy(
+            ownerId = "usr_owner",
+            myMember = memberGroup(listOf("group-members-manage")).myMember?.copy(userId = "usr_me"),
+        )
+
+        assertFalse(vm.canRemoveMember(group, member("owner").copy(userId = "usr_owner")))
+        assertFalse(vm.canRemoveMember(group, member("me").copy(userId = "usr_me")))
+        assertTrue(vm.canRemoveMember(group, member("other").copy(userId = "usr_other")))
+
+        val changed = group.copy(
+            ownerId = "usr_other",
+            myMember = group.myMember?.copy(userId = "usr_owner"),
+        )
+        assertFalse(vm.canRemoveMember(changed, member("other").copy(userId = "usr_other")))
+        assertFalse(vm.canRemoveMember(changed, member("owner").copy(userId = "usr_owner")))
+    }
+
+    @Test
+    fun `kick state identifies the member in flight and rejects a second action`() = runTest(testDispatcher) {
+        val kickStarted = CompletableDeferred<Unit>()
+        val releaseKick = CompletableDeferred<Unit>()
+        val repo = mock<GroupRepository>()
+        whenever(repo.getGroup("grp_x")).thenReturn(Group(id = "grp_x", memberCount = 2))
+        whenever(repo.getGroupMembersPage(eq("grp_x"), eq(0), any())).thenReturn(
+            GroupPage(listOf(member("a"), member("b")), nextOffset = 2, hasMore = false),
+        )
+        whenever(repo.kickGroupMember("grp_x", "usr_a")).doSuspendableAnswer {
+            kickStarted.complete(Unit)
+            releaseKick.await()
+            true
+        }
+        val vm = buildViewModel(repository = repo)
+        advanceUntilIdle()
+
+        vm.kickMember("usr_a")
+        runCurrent()
+        kickStarted.await()
+
+        assertTrue(vm.state.value.isActionLoading)
+        assertEquals("usr_a", vm.state.value.removingMemberUserId)
+        vm.kickMember("usr_b")
+        runCurrent()
+        verify(repo, never()).kickGroupMember("grp_x", "usr_b")
+
+        releaseKick.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.isActionLoading)
+        assertNull(vm.state.value.removingMemberUserId)
     }
 
     @Test
@@ -257,7 +359,7 @@ class GroupDetailViewModelTest {
     }
 
     @Test
-    fun `member append cannot restore a member removed by a concurrent kick`() = runTest(testDispatcher) {
+    fun `kick cannot shift the server page while a member append is in flight`() = runTest(testDispatcher) {
         val repo = mock<GroupRepository>()
         val appendStarted = CompletableDeferred<Unit>()
         val releaseAppend = CompletableDeferred<Unit>()
@@ -279,10 +381,20 @@ class GroupDetailViewModelTest {
         appendStarted.await()
 
         vm.kickMember("usr_a")
-        advanceUntilIdle()
-        assertEquals(listOf("usr_b"), ready(vm.state.value.members).items.map { it.userId })
+        runCurrent()
+
+        verify(repo, never()).kickGroupMember("grp_x", "usr_a")
+        assertEquals(listOf("usr_a", "usr_b"), ready(vm.state.value.members).items.map { it.userId })
 
         releaseAppend.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("usr_a", "usr_b", "usr_c"),
+            ready(vm.state.value.members).items.map { it.userId },
+        )
+
+        vm.kickMember("usr_a")
         advanceUntilIdle()
 
         val page = ready(vm.state.value.members)
@@ -290,6 +402,7 @@ class GroupDetailViewModelTest {
         assertEquals(2, page.nextOffset)
         assertEquals(2, page.totalCount)
         assertFalse(page.hasMore)
+        verify(repo, times(1)).kickGroupMember("grp_x", "usr_a")
     }
 
     private suspend fun initialRepository(group: Group = Group(id = "grp_x")): GroupRepository {
@@ -313,16 +426,11 @@ class GroupDetailViewModelTest {
         ),
     )
 
-    private fun buildViewModel(
-        groupId: String = "grp_x",
-        repository: GroupRepository = mock(),
-    ): GroupDetailViewModel {
+    private fun buildViewModel(groupId: String = "grp_x", repository: GroupRepository = mock()): GroupDetailViewModel {
         val handle = SavedStateHandle(mapOf("groupId" to groupId))
         return GroupDetailViewModel(handle, repository)
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> ready(state: GroupResourceState<T>): T =
-        (state as GroupResourceState.Ready<T>).value
-
+    private fun <T> ready(state: LoadState<T>): T = (state as LoadState.Loaded<T>).value
 }

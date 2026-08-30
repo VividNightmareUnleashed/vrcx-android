@@ -1,5 +1,6 @@
 package com.vrcx.android.data.api
 
+import com.vrcx.android.directTestDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,7 +27,7 @@ class DedupInterceptorTest {
     @Before
     fun setUp() {
         server = MockWebServer().apply { start() }
-        deduplicator = RequestDeduplicator()
+        deduplicator = RequestDeduplicator(directTestDispatcher)
         client = OkHttpClient.Builder()
             .addInterceptor(DedupInterceptor(deduplicator))
             .build()
@@ -124,7 +125,7 @@ class DedupInterceptorTest {
             .baseUrl(server.url("/"))
             .client(client)
             .addConverterFactory(
-                Json.asConverterFactory("application/json".toMediaType())
+                Json.asConverterFactory("application/json".toMediaType()),
             )
             .build()
             .create(AuthApi::class.java)

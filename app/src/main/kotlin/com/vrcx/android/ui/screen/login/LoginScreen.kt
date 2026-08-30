@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -24,12 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -40,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.TwoFactorVerification
 import com.vrcx.android.ui.components.VrcxCard
@@ -47,13 +43,14 @@ import com.vrcx.android.ui.components.VrcxInputField
 import com.vrcx.android.ui.theme.vrcxColors
 
 @Composable
-fun LoginScreen(
-    viewModel: LoginViewModel = hiltViewModel(),
-) {
+fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val username by viewModel.username.collectAsStateWithLifecycle()
     val password by viewModel.password.collectAsStateWithLifecycle()
     val twoFactorCode by viewModel.twoFactorCode.collectAsStateWithLifecycle()
+    val canResendEmailCode by viewModel.canResendEmailCode.collectAsStateWithLifecycle()
+    val passwordVisible by viewModel.passwordVisible.collectAsStateWithLifecycle()
+    val rememberMe by viewModel.rememberMe.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val uriHandler = LocalUriHandler.current
 
@@ -61,6 +58,31 @@ fun LoginScreen(
         (authState as? AuthState.Error)?.let { snackbarHostState.showSnackbar(it.message) }
     }
 
+    LoginScaffold(snackbarHostState) {
+        LoginAuthContent(
+            authState = authState,
+            username = username,
+            password = password,
+            twoFactorCode = twoFactorCode,
+            canResendEmailCode = canResendEmailCode,
+            passwordVisible = passwordVisible,
+            rememberMe = rememberMe,
+            onUsernameChange = viewModel::updateUsername,
+            onPasswordChange = viewModel::updatePassword,
+            onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
+            onToggleRememberMe = viewModel::toggleRememberMe,
+            onLogin = viewModel::login,
+            onCodeChange = viewModel::updateTwoFactorCode,
+            onSubmitTwoFactor = viewModel::submitTwoFactor,
+            onResendEmail = viewModel::resendEmailCode,
+            onOpenRegister = { uriHandler.openUri("https://vrchat.com/register") },
+            onOpenForgotPassword = { uriHandler.openUri("https://vrchat.com/home/password/forgot") },
+        )
+    }
+}
+
+@Composable
+private fun LoginScaffold(snackbarHostState: SnackbarHostState, content: @Composable () -> Unit) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.vrcxColors.shellGradientStart,
@@ -88,41 +110,57 @@ fun LoginScreen(
                 textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(24.dp))
-
-            when (authState) {
-                is AuthState.RequiresTwoFactor -> {
-                    val phase = authState as AuthState.RequiresTwoFactor
-                    TwoFactorCard(
-                        methods = phase.methods,
-                        code = twoFactorCode,
-                        isLoading = phase.verification is TwoFactorVerification.InProgress,
-                        errorMessage = (phase.verification as? TwoFactorVerification.Failed)?.message,
-                        onCodeChange = viewModel::updateTwoFactorCode,
-                        onSubmit = viewModel::submitTwoFactor,
-                        onResendEmail = viewModel::resendEmailCode,
-                    )
-                }
-
-                else -> {
-                    val passwordVisible by viewModel.passwordVisible.collectAsStateWithLifecycle()
-                    val rememberMe by viewModel.rememberMe.collectAsStateWithLifecycle()
-                    LoginCard(
-                        username = username,
-                        password = password,
-                        isLoading = authState is AuthState.LoggingIn,
-                        passwordVisible = passwordVisible,
-                        rememberMe = rememberMe,
-                        onUsernameChange = viewModel::updateUsername,
-                        onPasswordChange = viewModel::updatePassword,
-                        onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
-                        onToggleRememberMe = viewModel::toggleRememberMe,
-                        onLogin = viewModel::login,
-                        onOpenRegister = { uriHandler.openUri("https://vrchat.com/register") },
-                        onOpenForgotPassword = { uriHandler.openUri("https://vrchat.com/home/password/forgot") },
-                    )
-                }
-            }
+            content()
         }
+    }
+}
+
+@Composable
+private fun LoginAuthContent(
+    authState: AuthState,
+    username: String,
+    password: String,
+    twoFactorCode: String,
+    canResendEmailCode: Boolean,
+    passwordVisible: Boolean,
+    rememberMe: Boolean,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onTogglePasswordVisibility: () -> Unit,
+    onToggleRememberMe: () -> Unit,
+    onLogin: () -> Unit,
+    onCodeChange: (String) -> Unit,
+    onSubmitTwoFactor: (useEmail: Boolean) -> Unit,
+    onResendEmail: () -> Unit,
+    onOpenRegister: () -> Unit,
+    onOpenForgotPassword: () -> Unit,
+) {
+    when (authState) {
+        is AuthState.RequiresTwoFactor -> TwoFactorCard(
+            methods = authState.methods,
+            code = twoFactorCode,
+            isLoading = authState.verification is TwoFactorVerification.InProgress,
+            errorMessage = (authState.verification as? TwoFactorVerification.Failed)?.message,
+            canResendEmailCode = canResendEmailCode,
+            onCodeChange = onCodeChange,
+            onSubmit = onSubmitTwoFactor,
+            onResendEmail = onResendEmail,
+        )
+
+        else -> LoginCard(
+            username = username,
+            password = password,
+            isLoading = authState is AuthState.LoggingIn,
+            passwordVisible = passwordVisible,
+            rememberMe = rememberMe,
+            onUsernameChange = onUsernameChange,
+            onPasswordChange = onPasswordChange,
+            onTogglePasswordVisibility = onTogglePasswordVisibility,
+            onToggleRememberMe = onToggleRememberMe,
+            onLogin = onLogin,
+            onOpenRegister = onOpenRegister,
+            onOpenForgotPassword = onOpenForgotPassword,
+        )
     }
 }
 
@@ -171,7 +209,12 @@ private fun LoginCard(
                 value = password,
                 onValueChange = onPasswordChange,
                 placeholder = "Enter your password",
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation =
+                    if (passwordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                 trailingContent = {
                     TextButton(onClick = onTogglePasswordVisibility) {
                         Text(if (passwordVisible) "Hide" else "Show")
@@ -204,17 +247,9 @@ private fun LoginCard(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading && username.isNotBlank() && password.isNotBlank(),
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text("Sign In")
-                }
+                LoadingButtonContent(isLoading = isLoading, label = "Sign In")
             }
-            androidx.compose.foundation.layout.Row(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -227,128 +262,4 @@ private fun LoginCard(
             }
         }
     }
-}
-
-@Composable
-private fun TwoFactorCard(
-    methods: List<String>,
-    code: String,
-    isLoading: Boolean,
-    errorMessage: String?,
-    onCodeChange: (String) -> Unit,
-    onSubmit: (useEmail: Boolean) -> Unit,
-    onResendEmail: () -> Unit,
-) {
-    val hasEmail = methods.contains("emailOtp")
-    val hasTotp = methods.contains("totp") || methods.contains("otp")
-    // Saveable: this choice picks which endpoint the code is submitted to, so a
-    // rotation mid-challenge must not silently send an authenticator user back
-    // to email.
-    var useEmail by rememberSaveable(methods) { mutableStateOf(shouldUseEmailOtpByDefault(methods)) }
-    val label = if (useEmail) "6-digit email code" else "Authenticator or recovery code"
-    val helperText = if (useEmail) {
-        "Enter the code sent to your email"
-    } else {
-        "Enter your 6-digit authenticator code or 8-character recovery code"
-    }
-    val isValidCode = isTwoFactorCodeValid(code, useEmail)
-
-    VrcxCard {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text = "Two-Factor Authentication",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = helperText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.vrcxColors.panelMuted,
-            )
-            VrcxInputField(
-                value = code,
-                onValueChange = { onCodeChange(normalizeTwoFactorCode(it)) },
-                placeholder = label,
-                keyboardOptions = KeyboardOptions(
-                    // Recovery codes carry letters, so only the email branch can
-                    // ask for the numeric keyboard.
-                    keyboardType = if (useEmail) KeyboardType.Number else KeyboardType.Text,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = { if (isValidCode && !isLoading) onSubmit(useEmail) },
-                ),
-                enabled = !isLoading,
-            )
-            errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            Button(
-                onClick = { onSubmit(useEmail) },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = isValidCode && !isLoading,
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text("Verify")
-                }
-            }
-            if (hasEmail && hasTotp) {
-                TextButton(
-                    onClick = { useEmail = !useEmail },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        if (useEmail) "Use authenticator app instead"
-                        else "Use email code instead",
-                    )
-                }
-            }
-            if (hasEmail && useEmail) {
-                TextButton(
-                    onClick = onResendEmail,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Resend Email Code")
-                }
-            }
-        }
-    }
-}
-
-private fun normalizeTwoFactorCode(input: String): String {
-    return buildString {
-        input.forEach { char ->
-            if (char.isLetterOrDigit() || char == '-') {
-                append(char)
-            }
-        }
-    }.take(9)
-}
-
-internal fun isTwoFactorCodeValid(code: String, useEmail: Boolean): Boolean {
-    val characters = code.filter(Char::isLetterOrDigit)
-    return if (useEmail) {
-        // Email codes are always 6 digits; recovery codes are the ones with letters.
-        characters.length == 6 && characters.all(Char::isDigit)
-    } else {
-        characters.length == 6 || characters.length == 8
-    }
-}
-
-internal fun shouldUseEmailOtpByDefault(methods: List<String>): Boolean {
-    val hasEmail = methods.contains("emailOtp")
-    val hasTotp = methods.contains("totp") || methods.contains("otp")
-    return hasEmail && !hasTotp
 }

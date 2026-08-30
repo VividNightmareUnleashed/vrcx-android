@@ -64,25 +64,24 @@ class ChartsViewModelTest {
     }
 
     @Test
-    fun `a refresh that fails over loaded history keeps the charts and notes the failure`() =
-        runTest(testDispatcher) {
-            var attempt = 0
-            val feedRepository = mock<FeedRepository>().also {
-                whenever(it.getAllGpsFeed(any())).thenReturn(
-                    flow {
-                        if (attempt++ == 0) emit(recentVisits) else error("history unavailable")
-                    },
-                )
-            }
-            val viewModel = ChartsViewModel(feedRepository, loggedInAuthRepository())
-            viewModel.state.awaitVisits(recentVisits.size)
-
-            viewModel.refresh()
-
-            val stale = viewModel.state.first { (it as? LoadState.Loaded)?.staleError != null }
-            assertEquals("history unavailable", (stale as LoadState.Loaded).staleError)
-            assertTrue(stale.value.hasData)
+    fun `a refresh that fails over loaded history keeps the charts and notes the failure`() = runTest(testDispatcher) {
+        var attempt = 0
+        val feedRepository = mock<FeedRepository>().also {
+            whenever(it.getAllGpsFeed(any())).thenReturn(
+                flow {
+                    if (attempt++ == 0) emit(recentVisits) else error("history unavailable")
+                },
+            )
         }
+        val viewModel = ChartsViewModel(feedRepository, loggedInAuthRepository(), testDispatcher)
+        viewModel.state.awaitVisits(recentVisits.size)
+
+        viewModel.refresh()
+
+        val stale = viewModel.state.first { (it as? LoadState.Loaded)?.staleError != null }
+        assertEquals("history unavailable", (stale as LoadState.Loaded).staleError)
+        assertTrue(stale.value.hasData)
+    }
 
     /** Every series must describe the same range as the summary beside it. */
     private fun assertConsistent(data: ChartsData) {
@@ -101,7 +100,7 @@ class ChartsViewModelTest {
         val feedRepository = mock<FeedRepository>().also {
             whenever(it.getAllGpsFeed(any())).thenReturn(flowOf(rows))
         }
-        return ChartsViewModel(feedRepository, loggedInAuthRepository())
+        return ChartsViewModel(feedRepository, loggedInAuthRepository(), testDispatcher)
     }
 
     private fun loggedInAuthRepository() = mock<AuthRepository>().also {

@@ -3,6 +3,7 @@ package com.vrcx.android.data.repository
 import com.vrcx.android.data.db.dao.FeedDao
 import com.vrcx.android.data.db.dao.UnifiedFeedRow
 import com.vrcx.android.data.preferences.VrcxPreferences
+import com.vrcx.android.directTestDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -86,7 +87,7 @@ class FeedRepositoryTest {
 
     private fun repository(accountScope: AccountScope = AccountScope()): FeedRepository {
         whenever(preferences.maxFeedSize).thenReturn(flowOf(1000))
-        return FeedRepository(feedDao, preferences, accountScope)
+        return FeedRepository(feedDao, preferences, accountScope, directTestDispatcher)
     }
 
     private fun stubGpsFeed(vararg rows: UnifiedFeedRow) {

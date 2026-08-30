@@ -15,6 +15,14 @@ class VRChatWebSocketTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
+    fun `pipeline admission is bounded independently by frame count and UTF-8 bytes`() {
+        assertFalse(isPipelineBufferFull(PIPELINE_FRAME_QUEUE_CAPACITY - 1, 0, 1))
+        assertTrue(isPipelineBufferFull(PIPELINE_FRAME_QUEUE_CAPACITY, 0, 1))
+        assertFalse(isPipelineBufferFull(1, MAX_PIPELINE_BUFFER_BYTES - 1, 1))
+        assertTrue(isPipelineBufferFull(1, MAX_PIPELINE_BUFFER_BYTES, 1))
+    }
+
+    @Test
     fun `every pipeline event type from the desktop spec parses to its sealed subclass`() {
         // Map each desktop pipeline type name to the expected typed event class.
         val cases = listOf(
@@ -82,7 +90,12 @@ class VRChatWebSocketTest {
         // An absent key and a null value are different frames. JsonNull is a
         // JsonPrimitive, so a null value can slip through as a non-null element
         // and then every downstream `content?.jsonObject` throws.
-        for (type in listOf("friend-online", "friend-location", "notification-v2", "instance-closed")) {
+        for (type in listOf(
+            "friend-online",
+            "friend-location",
+            "notification-v2",
+            "instance-closed",
+        )) {
             val event = parsePipelineMessage(json, """{"type":"$type","content":null}""")
             assertNotNull("type=$type should parse", event)
             assertNull("type=$type must carry a null content", event!!.content)
@@ -93,15 +106,25 @@ class VRChatWebSocketTest {
     fun `a reconnecting socket still counts as not connected when the network returns`() {
         // Break-before-make loss: onLost cleared the previous network, so the
         // only thing left to check is the socket's own state.
-        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.RECONNECTING))
-        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTING))
-        assertTrue(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.DISCONNECTED))
+        assertTrue(
+            shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.RECONNECTING),
+        )
+        assertTrue(
+            shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTING),
+        )
+        assertTrue(
+            shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.DISCONNECTED),
+        )
     }
 
     @Test
     fun `a healthy socket is left alone unless the network was actually replaced`() {
-        assertFalse(shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTED))
-        assertTrue(shouldForceReconnect(networkWasReplaced = true, state = WebSocketState.CONNECTED))
+        assertFalse(
+            shouldForceReconnect(networkWasReplaced = false, state = WebSocketState.CONNECTED),
+        )
+        assertTrue(
+            shouldForceReconnect(networkWasReplaced = true, state = WebSocketState.CONNECTED),
+        )
     }
 
     @Test
@@ -124,6 +147,39 @@ class VRChatWebSocketTest {
     fun `returns null for messages with no type field`() {
         val frame = """{"content":{"foo":"bar"}}"""
         assertNull(parsePipelineMessage(json, frame))
+    }
+
+    @Test
+    fun `returns null when type is not a string`() {
+        for (type in listOf("42", "true", "{}", "[]", "null")) {
+            assertNull(
+                "type=$type must not escape the parser",
+                parsePipelineMessage(json, """{"type":$type,"content":{}}"""),
+            )
+        }
+    }
+
+    @Test
+    fun `content with an unexpected shape remains contained as a JsonElement`() {
+        for (content in listOf("42", "true", "[]")) {
+            assertNotNull(
+                "content=$content must not escape the parser",
+                parsePipelineMessage(json, """{"type":"friend-online","content":$content}"""),
+            )
+        }
+
+        assertNotNull(parsePipelineMessage(json, """{"type":"friend-online","content":"[]"}"""))
+    }
+
+    @Test
+    fun `keeps string content used by notification id events`() {
+        val event = parsePipelineMessage(
+            json,
+            """{"type":"see-notification","content":"\"not_123\""}""",
+        ) as? PipelineEvent.SeeNotification
+
+        assertNotNull(event)
+        assertEquals("not_123", event!!.content!!.jsonPrimitive.content)
     }
 
     @Test

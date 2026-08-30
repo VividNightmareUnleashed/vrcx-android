@@ -93,6 +93,12 @@ class FriendsLocationsViewModelTest {
         val feedRepository = mock<FeedRepository>().also {
             whenever(it.getGpsFeed(any(), any())).thenReturn(flowOf(emptyList()))
         }
-        return FriendsLocationsViewModel(authRepository, friendRepository, worldRepository, feedRepository)
+        return FriendsLocationsViewModel(
+            authRepository,
+            friendRepository,
+            worldRepository,
+            feedRepository,
+            testDispatcher,
+        )
     }
 }

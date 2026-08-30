@@ -1,6 +1,7 @@
 package com.vrcx.android.service
 
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Intent
 import android.net.Uri
@@ -74,13 +75,50 @@ class NotificationHelperTest {
         // 1 is the foreground service, 98 and 99 the reconnect prompts, and 1001
         // is the id WorkManager owns while BootReconnectWorker holds the
         // foreground — a rolling id landing on it replaces someone else's.
-        val reserved = setOf(1, 98, 99, 1001)
+        val reserved = setOf(
+            NotificationHelper.SERVICE_NOTIFICATION_ID,
+            98,
+            99,
+            NotificationHelper.BOOT_WORKER_NOTIFICATION_ID,
+        )
 
         NotificationHelper(application).notifyFriendOnline("Alice", "usr_alice")
 
         val id = notificationManager.activeNotifications.single().id
         assertFalse("$id collides with a fixed id", id in reserved)
         assertTrue("rolling ids must start above $reserved, got $id", id > reserved.max())
+    }
+
+    @Test
+    fun `the shared owner registers channels and builds both ongoing notifications`() {
+        val helper = NotificationHelper(application)
+
+        val expectedChannels = setOf(
+            NotificationHelper.CHANNEL_SERVICE,
+            NotificationHelper.CHANNEL_FRIEND_ONLINE,
+            NotificationHelper.CHANNEL_FRIEND_OFFLINE,
+            NotificationHelper.CHANNEL_INVITES,
+            NotificationHelper.CHANNEL_FRIEND_REQUEST,
+            NotificationHelper.CHANNEL_GENERAL,
+        )
+        assertEquals(
+            expectedChannels,
+            notificationManager.notificationChannels.map {
+                it.id
+            }.toSet().intersect(expectedChannels),
+        )
+
+        val service = helper.createWebSocketServiceNotification()
+        val worker = helper.createBootWorkerNotification()
+        assertEquals(NotificationHelper.CHANNEL_SERVICE, service.channelId)
+        assertEquals(NotificationHelper.CHANNEL_SERVICE, worker.channelId)
+        assertTrue(service.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertTrue(worker.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertEquals("Connected to VRChat", service.extras.getCharSequence("android.text"))
+        assertEquals(
+            "Restoring background connection",
+            worker.extras.getCharSequence("android.text"),
+        )
     }
 
     private fun postedContentIntent(): Intent {

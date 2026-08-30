@@ -25,6 +25,7 @@ object BulkPaginator {
      *   matching page is still included.
      * @param fetcher Suspend function that takes (offset, count) and returns a list of items
      * @return Every item fetched, in page order
+     * @throws IllegalArgumentException if a limit is non-positive or the delay is negative
      */
     suspend fun <T> fetchAll(
         pageSize: Int = 100,
@@ -34,25 +35,24 @@ object BulkPaginator {
         stopWhen: (page: List<T>, fetchedSoFar: Int) -> Boolean = { _, _ -> false },
         fetcher: suspend (offset: Int, count: Int) -> List<T>,
     ): List<T> {
+        require(pageSize > 0) { "pageSize must be positive" }
+        require(maxPages > 0) { "maxPages must be positive" }
+        require(delayBetweenPagesMs >= 0) { "delayBetweenPagesMs cannot be negative" }
+
         val allItems = mutableListOf<T>()
         var offset = 0
-        var page = 0
-
-        while (page < maxPages) {
+        repeat(maxPages) { pageIndex ->
             val results = fetcher(offset, pageSize)
             allItems.addAll(results)
-            if (results.isEmpty()) {
-                break
-            }
-            if (stopOnShortPage && results.size < pageSize) {
-                break
-            }
-            if (stopWhen(results, allItems.size)) {
-                break
-            }
+            val reachedEnd = results.isEmpty() ||
+                (stopOnShortPage && results.size < pageSize) ||
+                stopWhen(results, allItems.size)
+            if (reachedEnd) return allItems
+
             offset += results.size
-            page++
-            delay(delayBetweenPagesMs)
+            if (pageIndex + 1 < maxPages && delayBetweenPagesMs > 0) {
+                delay(delayBetweenPagesMs)
+            }
         }
         return allItems
     }

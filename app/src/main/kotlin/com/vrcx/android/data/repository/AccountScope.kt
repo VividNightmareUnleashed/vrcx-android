@@ -1,9 +1,9 @@
 package com.vrcx.android.data.repository
 
-import kotlinx.coroutines.CancellationException
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 /**
  * Runtime state that belongs to one signed-in account and must not outlive it.
@@ -27,9 +27,10 @@ interface AccountScoped {
  * [CancellationException] so it unwinds a multi-step load without being
  * reported as a failure, but is distinguishable from genuine cancellation.
  */
-class AccountChangedException(
-    message: String = "Invalidated by account change",
-) : CancellationException(message)
+class AccountChangedException(message: String = "Invalidated by account change") : CancellationException(message)
+
+/** A value that may be consumed only while the account that produced it is current. */
+data class AccountScopedEvent<out T>(val origin: AccountScope.Token, val value: T)
 
 /**
  * The signed-in account's id plus a generation counter that advances on every
@@ -111,6 +112,5 @@ class AccountScope @Inject constructor() {
         }
     }
 
-    private fun isCurrentLocked(token: Token): Boolean =
-        token.generation == generation && token.ownerUserId == owner
+    private fun isCurrentLocked(token: Token): Boolean = token.generation == generation && token.ownerUserId == owner
 }
