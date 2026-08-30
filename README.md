@@ -5,7 +5,7 @@
 A native Android companion app for VRChat social tracking, alerts, world browsing, and account utilities.
 
 [![Latest Release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=latest)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
-[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.6.1%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/d6aa5f6035f20101fceb8257beddba16185c546e26f15ba0132361066042c787)
+[![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.7.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](https://developer.android.com/compose)
 
@@ -55,10 +55,10 @@ Requirements:
 
 Current signed release integrity:
 
-- APK: `vrcx-android-1.6.1.apk`
-- SHA-256: `d6aa5f6035f20101fceb8257beddba16185c546e26f15ba0132361066042c787`
-- VirusTotal: [public report](https://www.virustotal.com/gui/file/d6aa5f6035f20101fceb8257beddba16185c546e26f15ba0132361066042c787)
-- Last analysis: 2026-08-13, with 0 malicious and 0 suspicious detections in the release evidence
+- APK: `vrcx-android-1.7.0.apk`
+- SHA-256: `1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1`
+- VirusTotal: [public report](https://www.virustotal.com/gui/file/1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1)
+- Last analysis: 2026-08-30, with 0 malicious and 0 suspicious detections in the release evidence
 
 ## Build from source
 
