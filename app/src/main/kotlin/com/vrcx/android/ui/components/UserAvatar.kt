@@ -5,20 +5,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.ui.theme.vrcxColors
+
+private const val PLACEHOLDER_ICON_SCALE = 0.6f
 
 @Composable
 fun UserAvatar(
@@ -43,7 +45,7 @@ fun UserAvatar(
                 Icon(
                     Icons.Default.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(size * 0.6f),
+                    modifier = Modifier.size(size * PLACEHOLDER_ICON_SCALE),
                     tint = vrcxColors.panelMuted,
                 )
             }

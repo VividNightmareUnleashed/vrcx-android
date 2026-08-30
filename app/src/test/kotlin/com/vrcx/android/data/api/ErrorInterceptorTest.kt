@@ -24,14 +24,14 @@ class ErrorInterceptorTest {
 
     private lateinit var server: MockWebServer
     private lateinit var bus: AuthEventBus
-    private lateinit var retryDelaysMs: MutableList<Long>
+    private val retryDelaysMs = mutableListOf<Long>()
     private lateinit var client: OkHttpClient
 
     @Before
     fun setUp() {
         server = MockWebServer().apply { start() }
         bus = AuthEventBus()
-        retryDelaysMs = mutableListOf()
+        retryDelaysMs.clear()
         // Record the retry wait instead of serving it: the assertion becomes the
         // exact delay the interceptor chose, and the suite doesn't sleep for it.
         client = OkHttpClient.Builder()

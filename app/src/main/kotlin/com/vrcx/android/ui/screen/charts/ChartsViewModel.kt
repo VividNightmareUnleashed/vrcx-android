@@ -71,7 +71,7 @@ class ChartsViewModel @Inject constructor(
 
     private val historyState = MutableStateFlow<LoadState<List<GpsPoint>>>(LoadState.NotLoaded)
 
-    private val _selectedRangeDays = MutableStateFlow<Int?>(30)
+    private val _selectedRangeDays = MutableStateFlow<Int?>(DEFAULT_RANGE_DAYS)
     val selectedRangeDays: StateFlow<Int?> = _selectedRangeDays.asStateFlow()
 
     /**
@@ -119,14 +119,16 @@ class ChartsViewModel @Inject constructor(
                     return@launch
                 }
                 val zone = ZoneId.systemDefault()
-                val points = withContext(defaultDispatcher) {
-                    feedRepository.getAllGpsFeed(userId).first().map { it.toGpsPoint(zone) }
+                val points = runCatching {
+                    withContext(defaultDispatcher) {
+                        feedRepository.getAllGpsFeed(userId).first().map { it.toGpsPoint(zone) }
+                    }
+                }.getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    historyState.update { it.failLoad(error.message ?: "Failed to load chart data") }
+                    return@launch
                 }
                 historyState.update { it.completeLoad(points) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                historyState.update { it.failLoad(e.message ?: "Failed to load chart data") }
             } finally {
                 historyState.update { it.settleLoad() }
             }
@@ -135,17 +137,17 @@ class ChartsViewModel @Inject constructor(
 
     private fun buildCharts(points: List<GpsPoint>, rangeDays: Int?): ChartsData {
         val cutoffMs = rangeDays?.let {
-            Instant.now().toEpochMilli() - it.toLong() * 24L * 60L * 60L * 1000L
+            Instant.now().toEpochMilli() - it.toLong() * MILLIS_PER_DAY
         }
         val filtered = if (cutoffMs == null) points else points.filter { it.epochMs > cutoffMs }
 
-        val hourBuckets = IntArray(24)
-        val dayBuckets = IntArray(7)
+        val hourBuckets = IntArray(HOURS_PER_DAY)
+        val dayBuckets = IntArray(DAYS_PER_WEEK)
         val worldCounts = LinkedHashMap<String, Int>()
         val dateCounts = LinkedHashMap<String, Int>()
         filtered.forEach { p ->
-            if (p.hour in 0..23) hourBuckets[p.hour]++
-            if (p.dayOfWeek in 1..7) dayBuckets[p.dayOfWeek - 1]++
+            if (p.hour in 0 until HOURS_PER_DAY) hourBuckets[p.hour]++
+            if (p.dayOfWeek in 1..DAYS_PER_WEEK) dayBuckets[p.dayOfWeek - 1]++
             worldCounts[p.worldKey] = (worldCounts[p.worldKey] ?: 0) + 1
             dateCounts[p.dateKey] = (dateCounts[p.dateKey] ?: 0) + 1
         }
@@ -159,13 +161,13 @@ class ChartsViewModel @Inject constructor(
             dailyActivity = dateCounts.entries
                 .map { it.key to it.value }
                 .sortedBy { it.first }
-                .takeLast(30),
+                .takeLast(RECENT_ACTIVITY_DAYS),
             topWorlds = worldCounts.entries
                 .map { it.key to it.value }
                 .sortedByDescending { it.second }
-                .take(10),
-            hourlyActivity = (0..23).map { "%02d:00".format(it) to hourBuckets[it] },
-            weekdayActivity = (1..7).map { weekdayLabel(it) to dayBuckets[it - 1] },
+                .take(TOP_WORLD_LIMIT),
+            hourlyActivity = (0 until HOURS_PER_DAY).map { "%02d:00".format(it) to hourBuckets[it] },
+            weekdayActivity = (1..DAYS_PER_WEEK).map { weekdayLabel(it) to dayBuckets[it - 1] },
         )
     }
 
@@ -179,7 +181,7 @@ class ChartsViewModel @Inject constructor(
             // Same zoned instant as the hour/weekday buckets — `createdAt` is a
             // UTC ISO-8601 string, so slicing it files evening sessions under
             // the wrong local day for anyone off UTC.
-            dateKey = zoned?.toLocalDate()?.toString() ?: createdAt.take(10),
+            dateKey = zoned?.toLocalDate()?.toString() ?: createdAt.take(ISO_DATE_LENGTH),
             worldKey = worldName.ifBlank { location.substringBefore(":") },
         )
     }
@@ -187,3 +189,15 @@ class ChartsViewModel @Inject constructor(
     private fun weekdayLabel(dayValue: Int): String = java.time.DayOfWeek.of(dayValue)
         .getDisplayName(TextStyle.SHORT, Locale.getDefault())
 }
+
+private const val DEFAULT_RANGE_DAYS = 30
+private const val RECENT_ACTIVITY_DAYS = 30
+private const val TOP_WORLD_LIMIT = 10
+private const val HOURS_PER_DAY = 24
+private const val DAYS_PER_WEEK = 7
+private const val ISO_DATE_LENGTH = 10
+private const val MINUTES_PER_HOUR = 60L
+private const val SECONDS_PER_MINUTE = 60L
+private const val MILLIS_PER_SECOND = 1_000L
+private const val MILLIS_PER_DAY =
+    24L * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MILLIS_PER_SECOND

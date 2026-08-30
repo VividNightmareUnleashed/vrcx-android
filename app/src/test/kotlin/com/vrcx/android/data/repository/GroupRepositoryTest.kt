@@ -91,7 +91,7 @@ class GroupRepositoryTest {
 
         whenever(groupApi.getGroup("grp_1"))
             .thenReturn(cachedGroup)
-            .thenThrow(RuntimeException("timeout"))
+            .thenThrow(GroupRefreshTimeoutException())
             .thenReturn(refreshedGroup)
         whenever(groupApi.joinGroup("grp_1")).thenReturn(buildJsonObject { })
 
@@ -195,7 +195,7 @@ class GroupRepositoryTest {
             } else {
                 started.complete(Unit)
                 release.await()
-                throw RuntimeException("timeout")
+                throw GroupRefreshTimeoutException()
             }
         }
         // A known public group is what makes the fallback publish a member
@@ -211,6 +211,8 @@ class GroupRepositoryTest {
 
         assertEquals(emptyList<Group>(), repository.userGroups.value)
     }
+
+    private class GroupRefreshTimeoutException : RuntimeException("timeout")
 
     @Test
     fun `malformed group frames leave the published groups untouched`() = repositoryTest {

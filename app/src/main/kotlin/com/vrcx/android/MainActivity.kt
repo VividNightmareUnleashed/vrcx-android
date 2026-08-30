@@ -99,21 +99,25 @@ class MainActivity : ComponentActivity() {
  * well-formed — are left alone.
  */
 internal fun normalizeVrchatDeepLink(uri: Uri): Uri? {
-    if (uri.scheme != "https" || uri.host != DeepLinkSection.WEB_HOST) return null
     val segments = uri.pathSegments
-    if (segments.size < 3 || segments[0] != "home") return null
-    val section = DeepLinkSection.fromSegment(segments[1]) ?: return null
-    val id = segments[2]
-    if (id.isEmpty()) return null
+    val section = segments.getOrNull(1)?.let(DeepLinkSection::fromSegment)
+    val id = segments.getOrNull(2)
+    val isVrchatHomeLink = uri.scheme == "https" &&
+        uri.host == DeepLinkSection.WEB_HOST &&
+        segments.firstOrNull() == "home"
     // pathSegments hands back percent-DECODED text. Rebuilding by string
     // interpolation would turn an id carrying an encoded '?' or '/' into
     // structure — a query, or two segments the route pattern can't match — so
     // let the builder put the encoding back.
-    return Uri.Builder()
-        .scheme("https")
-        .authority(DeepLinkSection.WEB_HOST)
-        .appendPath("home")
-        .appendPath(section.segment)
-        .appendPath(id)
-        .build()
+    return if (isVrchatHomeLink && section != null && !id.isNullOrEmpty()) {
+        Uri.Builder()
+            .scheme("https")
+            .authority(DeepLinkSection.WEB_HOST)
+            .appendPath("home")
+            .appendPath(section.segment)
+            .appendPath(id)
+            .build()
+    } else {
+        null
+    }
 }

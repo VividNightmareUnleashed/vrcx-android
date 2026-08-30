@@ -40,19 +40,12 @@ internal class FriendLogSynchronizer @Inject constructor(
     fun history(ownerId: String, limit: Int): Flow<List<FriendLogHistoryEntity>> =
         friendLogDao.getHistory(ownerId, limit)
 
-    private data class Snapshot(
-        val compositeId: String,
-        val displayName: String,
-        val trustLevel: String,
-        val friendNumber: Int,
-    )
-
     suspend fun synchronize(ownerId: String, friends: Map<String, FriendContext>) = database.withTransaction {
         val currentEntries = friendLogDao.getCurrentFriends(ownerId)
         if (currentEntries.isEmpty()) {
             friendLogDao.insertCurrent(
                 friends.values.map { friend ->
-                    currentEntry(
+                    friendLogCurrentEntry(
                         ownerId = ownerId,
                         userId = friend.id,
                         displayName = friend.ref?.displayName ?: friend.name,
@@ -69,17 +62,17 @@ internal class FriendLogSynchronizer @Inject constructor(
         var nextFriendNumber = (currentEntries.maxOfOrNull { it.friendNumber } ?: 0) + 1
 
         friends.values.forEach { friend ->
-            val compositeId = compositeId(ownerId, friend.id)
+            val compositeId = friendLogCompositeId(ownerId, friend.id)
             val displayName = friend.ref?.displayName ?: friend.name
             val tags = friend.ref?.tags.orEmpty()
             val existing = currentById[compositeId]
             seenIds += compositeId
 
             if (existing == null) {
-                val snapshot = Snapshot(
+                val snapshot = FriendLogSnapshot(
                     compositeId = compositeId,
                     displayName = displayName,
-                    trustLevel = trustLevel(tags),
+                    trustLevel = friendTrustLevel(tags),
                     friendNumber = nextFriendNumber++,
                 )
                 insertHistory(ownerId, FriendLogEventType.FRIEND, snapshot)
@@ -104,7 +97,7 @@ internal class FriendLogSynchronizer @Inject constructor(
             insertHistory(
                 ownerId = ownerId,
                 type = FriendLogEventType.UNFRIEND,
-                snapshot = Snapshot(
+                snapshot = FriendLogSnapshot(
                     compositeId = entry.odUserId,
                     displayName = entry.odDisplayName,
                     trustLevel = entry.trustLevel,
@@ -123,15 +116,15 @@ internal class FriendLogSynchronizer @Inject constructor(
         tags: List<String>,
     ) {
         val previousDisplayName = previous.ref?.displayName ?: previous.name
-        val previousTrustLevel = trustLevel(previous.ref?.tags.orEmpty())
-        if (previousDisplayName == displayName && previousTrustLevel == trustLevel(tags)) return
+        val previousTrustLevel = friendTrustLevel(previous.ref?.tags.orEmpty())
+        if (previousDisplayName == displayName && previousTrustLevel == friendTrustLevel(tags)) return
 
         database.withTransaction {
-            val compositeId = compositeId(ownerId, userId)
+            val compositeId = friendLogCompositeId(ownerId, userId)
             val existing = friendLogDao.getCurrent(compositeId)
             if (existing == null) {
                 friendLogDao.insertCurrent(
-                    currentEntry(
+                    friendLogCurrentEntry(
                         ownerId = ownerId,
                         userId = userId,
                         displayName = displayName,
@@ -146,13 +139,13 @@ internal class FriendLogSynchronizer @Inject constructor(
     }
 
     suspend fun recordAdded(ownerId: String, userId: String, user: VrcUser?) = database.withTransaction {
-        val compositeId = compositeId(ownerId, userId)
+        val compositeId = friendLogCompositeId(ownerId, userId)
         if (friendLogDao.getCurrent(compositeId) != null) return@withTransaction
 
-        val snapshot = Snapshot(
+        val snapshot = FriendLogSnapshot(
             compositeId = compositeId,
             displayName = user?.displayName ?: userId,
-            trustLevel = trustLevel(user?.tags.orEmpty()),
+            trustLevel = friendTrustLevel(user?.tags.orEmpty()),
             friendNumber = (friendLogDao.getMaxFriendNumber(ownerId) ?: 0) + 1,
         )
         insertHistory(ownerId, FriendLogEventType.FRIEND, snapshot)
@@ -160,12 +153,12 @@ internal class FriendLogSynchronizer @Inject constructor(
     }
 
     suspend fun recordRemoved(ownerId: String, userId: String) = database.withTransaction {
-        val compositeId = compositeId(ownerId, userId)
+        val compositeId = friendLogCompositeId(ownerId, userId)
         val existing = friendLogDao.getCurrent(compositeId) ?: return@withTransaction
         insertHistory(
             ownerId = ownerId,
             type = FriendLogEventType.UNFRIEND,
-            snapshot = Snapshot(
+            snapshot = FriendLogSnapshot(
                 compositeId = compositeId,
                 displayName = existing.odDisplayName,
                 trustLevel = existing.trustLevel,
@@ -182,10 +175,10 @@ internal class FriendLogSynchronizer @Inject constructor(
         displayName: String,
         tags: List<String>,
     ) {
-        val snapshot = Snapshot(
-            compositeId = compositeId(ownerId, userId),
+        val snapshot = FriendLogSnapshot(
+            compositeId = friendLogCompositeId(ownerId, userId),
             displayName = displayName,
-            trustLevel = trustLevel(tags),
+            trustLevel = friendTrustLevel(tags),
             friendNumber = existing.friendNumber,
         )
         if (existing.odDisplayName != displayName && existing.odDisplayName.isNotBlank()) {
@@ -215,7 +208,7 @@ internal class FriendLogSynchronizer @Inject constructor(
     private suspend fun insertHistory(
         ownerId: String,
         type: FriendLogEventType,
-        snapshot: Snapshot,
+        snapshot: FriendLogSnapshot,
         previousDisplayName: String = "",
         previousTrustLevel: String = "",
     ) {
@@ -234,32 +227,6 @@ internal class FriendLogSynchronizer @Inject constructor(
         )
     }
 
-    private fun currentEntry(
-        ownerId: String,
-        userId: String,
-        displayName: String,
-        tags: List<String>,
-        friendNumber: Int,
-    ) = FriendLogCurrentEntity(
-        odUserId = compositeId(ownerId, userId),
-        ownerUserId = ownerId,
-        odDisplayName = displayName,
-        trustLevel = trustLevel(tags),
-        friendNumber = friendNumber,
-    )
-
-    private fun Snapshot.toCurrent(ownerId: String) = FriendLogCurrentEntity(
-        odUserId = compositeId,
-        ownerUserId = ownerId,
-        odDisplayName = displayName,
-        trustLevel = trustLevel,
-        friendNumber = friendNumber,
-    )
-
-    private fun compositeId(ownerId: String, userId: String) = accountScopedKey(ownerId, userId)
-
-    private fun trustLevel(tags: List<String>) = TrustRank.fromTags(tags).label
-
     private companion object {
         const val FRIENDS_PER_TRUSTED_REMOVAL = 4
 
@@ -267,3 +234,36 @@ internal class FriendLogSynchronizer @Inject constructor(
         const val MAX_TRUSTED_REMOVALS = 5
     }
 }
+
+private data class FriendLogSnapshot(
+    val compositeId: String,
+    val displayName: String,
+    val trustLevel: String,
+    val friendNumber: Int,
+)
+
+private fun friendLogCurrentEntry(
+    ownerId: String,
+    userId: String,
+    displayName: String,
+    tags: List<String>,
+    friendNumber: Int,
+) = FriendLogCurrentEntity(
+    odUserId = friendLogCompositeId(ownerId, userId),
+    ownerUserId = ownerId,
+    odDisplayName = displayName,
+    trustLevel = friendTrustLevel(tags),
+    friendNumber = friendNumber,
+)
+
+private fun FriendLogSnapshot.toCurrent(ownerId: String) = FriendLogCurrentEntity(
+    odUserId = compositeId,
+    ownerUserId = ownerId,
+    odDisplayName = displayName,
+    trustLevel = trustLevel,
+    friendNumber = friendNumber,
+)
+
+private fun friendLogCompositeId(ownerId: String, userId: String) = accountScopedKey(ownerId, userId)
+
+private fun friendTrustLevel(tags: List<String>) = TrustRank.fromTags(tags).label

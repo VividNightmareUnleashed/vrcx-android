@@ -255,102 +255,117 @@ fun PlayerListScreen(
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friends Roster", onBack = onBack)
-
         Text(
             text = state.helperText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
-
         VrcxSearchBar(
             query = controls.query,
             onQueryChange = viewModel::updateSearch,
-            placeholder = when (controls.scope) {
-                PlayerListScope.SAME_INSTANCE -> "Search your current instance"
-                PlayerListScope.SAME_WORLD -> "Search your current world"
-                PlayerListScope.FRIENDS -> "Search friends"
-            },
+            placeholder = playerSearchPlaceholder(controls.scope),
             modifier = Modifier.fillMaxWidth(),
         )
+        PlayerListFilters(controls, viewModel)
+        PlayerListContent(state, onUserClick)
+    }
+}
 
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PlayerListScope.entries.forEach { candidate ->
-                FilterChip(
-                    selected = controls.scope == candidate,
-                    onClick = { viewModel.selectScope(candidate) },
-                    label = { Text(candidate.label) },
-                )
-            }
+private fun playerSearchPlaceholder(scope: PlayerListScope): String = when (scope) {
+    PlayerListScope.SAME_INSTANCE -> "Search your current instance"
+    PlayerListScope.SAME_WORLD -> "Search your current world"
+    PlayerListScope.FRIENDS -> "Search friends"
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun PlayerListFilters(controls: PlayerListControls, viewModel: PlayerListViewModel) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PlayerListScope.entries.forEach { scope ->
+            FilterChip(
+                selected = controls.scope == scope,
+                onClick = { viewModel.selectScope(scope) },
+                label = { Text(scope.label) },
+            )
         }
+    }
+    if (controls.scope == PlayerListScope.FRIENDS) {
+        FriendStateFilters(controls.selectedStates, viewModel::toggleState)
+        RosterSortFilters(controls.sort, viewModel::selectSort)
+    }
+}
 
-        if (controls.scope == PlayerListScope.FRIENDS) {
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FriendState.entries.forEach { friendState ->
-                    FilterChip(
-                        selected = friendState in controls.selectedStates,
-                        onClick = { viewModel.toggleState(friendState) },
-                        label = { Text(friendState.label) },
-                    )
-                }
-            }
-
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                RosterSort.entries.forEach { option ->
-                    FilterChip(
-                        selected = controls.sort == option,
-                        onClick = { viewModel.selectSort(option) },
-                        label = { Text(option.label) },
-                    )
-                }
-            }
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun FriendStateFilters(selectedStates: Set<FriendState>, onToggle: (FriendState) -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FriendState.entries.forEach { state ->
+            FilterChip(
+                selected = state in selectedStates,
+                onClick = { onToggle(state) },
+                label = { Text(state.label) },
+            )
         }
+    }
+}
 
-        if (state.players.isEmpty()) {
-            EmptyState(
-                message = when (state.scope) {
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun RosterSortFilters(selectedSort: RosterSort, onSelect: (RosterSort) -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RosterSort.entries.forEach { sort ->
+            FilterChip(
+                selected = selectedSort == sort,
+                onClick = { onSelect(sort) },
+                label = { Text(sort.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerListContent(state: RosterState, onUserClick: (String) -> Unit) {
+    if (state.players.isEmpty()) {
+        EmptyState(
+            message =
+                when (state.scope) {
                     PlayerListScope.SAME_INSTANCE -> "No friends are in your current instance"
                     PlayerListScope.SAME_WORLD -> "No friends are in your current world"
                     PlayerListScope.FRIENDS -> "No friends match those filters"
                 },
-                icon = Icons.Outlined.Groups,
-                subtitle = when (state.scope) {
-                    PlayerListScope.FRIENDS -> "This fallback view keeps the full friend roster available."
-
-                    else ->
-                        "Android can match friend presence to your current world even without desktop photon tooling."
+            icon = Icons.Outlined.Groups,
+            subtitle =
+                if (state.scope == PlayerListScope.FRIENDS) {
+                    "This fallback view keeps the full friend roster available."
+                } else {
+                    "Android can match friend presence to your current world even without " +
+                        "desktop photon tooling."
                 },
-            )
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(state.players, key = { it.id }) { player ->
-                    UserListItem(
-                        avatarUrl = player.ref?.displayAvatarUrl(),
-                        displayName = player.name,
-                        subtitle = describePlayerScope(player, state.scope, state.activeLocation),
-                        tags = player.ref?.tags.orEmpty(),
-                        state = player.state,
-                        onClick = { onUserClick(player.id) },
-                    )
-                }
+        )
+    } else {
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(state.players, key = { it.id }) { player ->
+                UserListItem(
+                    avatarUrl = player.ref?.displayAvatarUrl(),
+                    displayName = player.name,
+                    subtitle = describePlayerScope(player, state.scope, state.activeLocation),
+                    tags = player.ref?.tags.orEmpty(),
+                    state = player.state,
+                    onClick = { onUserClick(player.id) },
+                )
             }
         }
     }

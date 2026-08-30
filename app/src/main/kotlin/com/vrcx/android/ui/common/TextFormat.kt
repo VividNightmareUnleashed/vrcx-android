@@ -2,14 +2,15 @@ package com.vrcx.android.ui.common
 
 import java.util.Locale
 
+private const val BYTES_PER_BINARY_UNIT = 1024
+
 /**
  * Turns a VRChat visibility/permission token (e.g. "friends-only") into a
  * human-readable label ("Friends only"). Shared by favorites and profile
  * detail screens.
  */
-fun String.prettyVisibility(): String =
-    replace('-', ' ')
-        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+fun String.prettyVisibility(): String = replace('-', ' ')
+    .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
 /** Maps a VRChat unity-package platform code to a display label. */
 fun platformLabel(platform: String): String = when (platform) {
@@ -29,12 +30,12 @@ fun displayableTags(tags: List<String>): List<String> =
  * shows a size, whatever the device locale is.
  */
 fun formatByteCount(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
+    if (bytes < BYTES_PER_BINARY_UNIT) return "$bytes B"
     val units = listOf("KB", "MB", "GB")
     var value = bytes.toDouble()
     var unitIndex = -1
-    while (value >= 1024 && unitIndex < units.lastIndex) {
-        value /= 1024
+    while (value >= BYTES_PER_BINARY_UNIT && unitIndex < units.lastIndex) {
+        value /= BYTES_PER_BINARY_UNIT
         unitIndex++
     }
     return String.format(Locale.US, "%.1f %s", value, units[unitIndex])

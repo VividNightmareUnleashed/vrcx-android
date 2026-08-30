@@ -21,28 +21,36 @@ sealed interface UploadBytesResult {
  * never buffered in full. The stream is closed on the way out; a null stream
  * is [UploadBytesResult.Unreadable].
  */
-fun readUploadBytesBounded(
-    input: InputStream?,
-    maxBytes: Int = MAX_UPLOAD_SIZE_BYTES,
-): UploadBytesResult {
-    if (input == null) return UploadBytesResult.Unreadable
+fun readUploadBytesBounded(input: InputStream?, maxBytes: Int = MAX_UPLOAD_SIZE_BYTES): UploadBytesResult =
+    if (input == null) {
+        UploadBytesResult.Unreadable
+    } else {
+        input.use { readUploadBytes(it, maxBytes) }
+    }
+
+private fun readUploadBytes(input: InputStream, maxBytes: Int): UploadBytesResult {
     val output = ByteArrayOutputStream()
     val buffer = ByteArray(UPLOAD_READ_BUFFER_SIZE)
-    var total = 0
+    var total = 0L
+    var complete = false
+    var tooLarge = maxBytes < 0
 
-    input.use {
-        while (true) {
-            val maxReadable = maxBytes + 1 - total
-            if (maxReadable <= 0) return UploadBytesResult.TooLarge
-
-            val read = it.read(buffer, 0, minOf(buffer.size, maxReadable))
-            if (read == -1) break
-
+    while (!complete && !tooLarge) {
+        val remaining = maxBytes.toLong() - total
+        val bytesToRequest = minOf(buffer.size.toLong(), remaining + 1L).toInt()
+        val read = input.read(buffer, 0, bytesToRequest)
+        if (read == -1) {
+            complete = true
+        } else {
             total += read
-            if (total > maxBytes) return UploadBytesResult.TooLarge
-            output.write(buffer, 0, read)
+            tooLarge = total > maxBytes
+            if (!tooLarge) output.write(buffer, 0, read)
         }
     }
 
-    return UploadBytesResult.Success(output.toByteArray())
+    return if (tooLarge) {
+        UploadBytesResult.TooLarge
+    } else {
+        UploadBytesResult.Success(output.toByteArray())
+    }
 }

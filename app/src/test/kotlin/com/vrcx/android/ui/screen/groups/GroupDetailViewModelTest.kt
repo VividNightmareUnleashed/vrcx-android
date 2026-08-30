@@ -71,13 +71,13 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.onTabSelected(GroupTab.INSTANCES)
-        vm.onTabSelected(GroupTab.INSTANCES)
-        vm.onTabSelected(GroupTab.POSTS)
-        vm.onTabSelected(GroupTab.POSTS)
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.INSTANCES))
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.INSTANCES))
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.POSTS))
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.POSTS))
         advanceUntilIdle()
-        vm.onTabSelected(GroupTab.INSTANCES)
-        vm.onTabSelected(GroupTab.POSTS)
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.INSTANCES))
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.POSTS))
         advanceUntilIdle()
 
         verify(repo, times(1)).getGroupInstances("grp_x")
@@ -85,6 +85,44 @@ class GroupDetailViewModelTest {
         assertEquals(GroupTab.POSTS, vm.state.value.selectedTab)
         assertEquals("instance_1", ready(vm.state.value.instances).single().instanceId)
         assertEquals("post_1", ready(vm.state.value.posts).items.single().id)
+    }
+
+    @Test
+    fun `join action publishes the authoritative requested membership`() = runTest(testDispatcher) {
+        val repo = initialRepository()
+        val requested = Group(
+            id = "grp_x",
+            myMember = GroupMember(membershipStatus = "requested"),
+        )
+        whenever(repo.joinGroup("grp_x")).thenReturn(requested)
+        val vm = buildViewModel(repository = repo)
+        advanceUntilIdle()
+
+        vm.dispatch(GroupDetailIntent.JoinOrLeaveGroup)
+        advanceUntilIdle()
+
+        verify(repo).joinGroup("grp_x")
+        assertEquals(requested, ready(vm.state.value.group))
+        assertEquals("Join request sent", vm.state.value.message)
+        assertFalse(vm.state.value.isActionLoading)
+    }
+
+    @Test
+    fun `leave action uses the current membership and publishes the result`() = runTest(testDispatcher) {
+        val member = memberGroup(permissions = emptyList())
+        val departed = Group(id = "grp_x")
+        val repo = initialRepository(group = member)
+        whenever(repo.leaveGroup("grp_x")).thenReturn(departed)
+        val vm = buildViewModel(repository = repo)
+        advanceUntilIdle()
+
+        vm.dispatch(GroupDetailIntent.JoinOrLeaveGroup)
+        advanceUntilIdle()
+
+        verify(repo).leaveGroup("grp_x")
+        assertEquals(departed, ready(vm.state.value.group))
+        assertEquals("Left group", vm.state.value.message)
+        assertFalse(vm.state.value.isActionLoading)
     }
 
     @Test
@@ -108,8 +146,8 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.loadMoreMembers()
-        vm.loadMoreMembers()
+        vm.dispatch(GroupDetailIntent.LoadMoreMembers)
+        vm.dispatch(GroupDetailIntent.LoadMoreMembers)
         advanceUntilIdle()
 
         val page = ready(vm.state.value.members)
@@ -141,11 +179,11 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.onTabSelected(GroupTab.POSTS)
+        vm.dispatch(GroupDetailIntent.SelectTab(GroupTab.POSTS))
         advanceUntilIdle()
         assertEquals(listOf("post_1"), ready(vm.state.value.posts).items.map { it.id })
 
-        vm.loadMorePosts()
+        vm.dispatch(GroupDetailIntent.LoadMorePosts)
         advanceUntilIdle()
 
         val page = ready(vm.state.value.posts)
@@ -175,7 +213,7 @@ class GroupDetailViewModelTest {
         assertTrue(vm.state.value.instances == LoadState.NotLoaded)
         assertTrue(vm.state.value.posts == LoadState.NotLoaded)
 
-        vm.retryMembers()
+        vm.dispatch(GroupDetailIntent.RetryMembers)
         advanceUntilIdle()
 
         assertEquals(listOf("usr_a"), ready(vm.state.value.members).items.map { it.userId })
@@ -195,13 +233,13 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.loadMoreMembers()
+        vm.dispatch(GroupDetailIntent.LoadMoreMembers)
         advanceUntilIdle()
         val failedPage = ready(vm.state.value.members)
         assertEquals(listOf("usr_a"), failedPage.items.map { it.userId })
         assertEquals("next page failed", (failedPage.appendState as GroupAppendState.Error).message)
 
-        vm.loadMoreMembers()
+        vm.dispatch(GroupDetailIntent.LoadMoreMembers)
         advanceUntilIdle()
 
         assertEquals(listOf("usr_a", "usr_b"), ready(vm.state.value.members).items.map { it.userId })
@@ -218,7 +256,7 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.retryMembers()
+        vm.dispatch(GroupDetailIntent.RetryMembers)
         advanceUntilIdle()
 
         val members = vm.state.value.members as LoadState.Loaded<GroupPagedData<GroupMember>>
@@ -236,19 +274,19 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.retryGroup()
+        vm.dispatch(GroupDetailIntent.RetryGroup)
         advanceUntilIdle()
 
         val failedRefresh = vm.state.value.group as LoadState.Loaded<Group>
         assertEquals("group refresh failed", failedRefresh.staleError)
 
-        vm.clearMessage(GroupDetailMessageSource.ACTION)
+        vm.dispatch(GroupDetailIntent.ClearMessage(GroupDetailMessageSource.ACTION))
         assertEquals(
             "group refresh failed",
             (vm.state.value.group as LoadState.Loaded<Group>).staleError,
         )
 
-        vm.clearMessage(GroupDetailMessageSource.GROUP)
+        vm.dispatch(GroupDetailIntent.ClearMessage(GroupDetailMessageSource.GROUP))
         assertNull((vm.state.value.group as LoadState.Loaded<Group>).staleError)
     }
 
@@ -274,35 +312,62 @@ class GroupDetailViewModelTest {
 
     @Test
     fun `canManageMembers requires the explicit permission or wildcard`() {
-        val vm = buildViewModel()
-        assertFalse(vm.canManageMembers(null))
+        assertFalse(GroupMembershipPolicy.canManageMembers(null))
         assertFalse(
-            vm.canManageMembers(
+            GroupMembershipPolicy.canManageMembers(
                 memberGroup(permissions = listOf("group-announcements-manage")),
             ),
         )
-        assertTrue(vm.canManageMembers(memberGroup(permissions = listOf("group-members-manage"))))
-        assertTrue(vm.canManageMembers(memberGroup(permissions = listOf("*"))))
+        assertTrue(
+            GroupMembershipPolicy.canManageMembers(
+                memberGroup(permissions = listOf("group-members-manage")),
+            ),
+        )
+        assertTrue(GroupMembershipPolicy.canManageMembers(memberGroup(permissions = listOf("*"))))
     }
 
     @Test
     fun `member removal policy follows owner and current-member identities`() {
-        val vm = buildViewModel()
         val group = memberGroup(permissions = listOf("group-members-manage")).copy(
             ownerId = "usr_owner",
             myMember = memberGroup(listOf("group-members-manage")).myMember?.copy(userId = "usr_me"),
         )
 
-        assertFalse(vm.canRemoveMember(group, member("owner").copy(userId = "usr_owner")))
-        assertFalse(vm.canRemoveMember(group, member("me").copy(userId = "usr_me")))
-        assertTrue(vm.canRemoveMember(group, member("other").copy(userId = "usr_other")))
+        assertFalse(
+            GroupMembershipPolicy.canRemoveMember(
+                group,
+                member("owner").copy(userId = "usr_owner"),
+            ),
+        )
+        assertFalse(
+            GroupMembershipPolicy.canRemoveMember(
+                group,
+                member("me").copy(userId = "usr_me"),
+            ),
+        )
+        assertTrue(
+            GroupMembershipPolicy.canRemoveMember(
+                group,
+                member("other").copy(userId = "usr_other"),
+            ),
+        )
 
         val changed = group.copy(
             ownerId = "usr_other",
             myMember = group.myMember?.copy(userId = "usr_owner"),
         )
-        assertFalse(vm.canRemoveMember(changed, member("other").copy(userId = "usr_other")))
-        assertFalse(vm.canRemoveMember(changed, member("owner").copy(userId = "usr_owner")))
+        assertFalse(
+            GroupMembershipPolicy.canRemoveMember(
+                changed,
+                member("other").copy(userId = "usr_other"),
+            ),
+        )
+        assertFalse(
+            GroupMembershipPolicy.canRemoveMember(
+                changed,
+                member("owner").copy(userId = "usr_owner"),
+            ),
+        )
     }
 
     @Test
@@ -322,13 +387,13 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.kickMember("usr_a")
+        vm.dispatch(GroupDetailIntent.KickMember("usr_a"))
         runCurrent()
         kickStarted.await()
 
         assertTrue(vm.state.value.isActionLoading)
         assertEquals("usr_a", vm.state.value.removingMemberUserId)
-        vm.kickMember("usr_b")
+        vm.dispatch(GroupDetailIntent.KickMember("usr_b"))
         runCurrent()
         verify(repo, never()).kickGroupMember("grp_x", "usr_b")
 
@@ -350,7 +415,7 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.kickMember("usr_a")
+        vm.dispatch(GroupDetailIntent.KickMember("usr_a"))
         advanceUntilIdle()
 
         assertEquals(listOf("usr_b"), ready(vm.state.value.members).items.map { it.userId })
@@ -376,11 +441,11 @@ class GroupDetailViewModelTest {
         val vm = buildViewModel(repository = repo)
         advanceUntilIdle()
 
-        vm.loadMoreMembers()
+        vm.dispatch(GroupDetailIntent.LoadMoreMembers)
         advanceUntilIdle()
         appendStarted.await()
 
-        vm.kickMember("usr_a")
+        vm.dispatch(GroupDetailIntent.KickMember("usr_a"))
         runCurrent()
 
         verify(repo, never()).kickGroupMember("grp_x", "usr_a")
@@ -394,7 +459,7 @@ class GroupDetailViewModelTest {
             ready(vm.state.value.members).items.map { it.userId },
         )
 
-        vm.kickMember("usr_a")
+        vm.dispatch(GroupDetailIntent.KickMember("usr_a"))
         advanceUntilIdle()
 
         val page = ready(vm.state.value.members)

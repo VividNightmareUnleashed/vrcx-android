@@ -12,17 +12,16 @@ import kotlinx.coroutines.CancellationException
  * cross-account write. Every best-effort step needs the same two-clause
  * preamble to avoid that, so it lives here once.
  */
-suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> = try {
-    Result.success(block())
-} catch (cancellation: CancellationException) {
-    throw cancellation
-} catch (failure: Exception) {
-    Result.failure(failure)
+suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> {
+    val result = runCatching { block() }
+    result.exceptionOrNull()
+        ?.takeIf { it is CancellationException || it !is Exception }
+        ?.let { throw it }
+    return result
 }
 
 /** The failure [block] threw, or null if it succeeded. */
-suspend fun captureFailure(block: suspend () -> Unit): Throwable? =
-    runCatchingCancellable(block).exceptionOrNull()
+suspend fun captureFailure(block: suspend () -> Unit): Throwable? = runCatchingCancellable(block).exceptionOrNull()
 
 /** For a step whose failure the caller has nothing to do about. */
 suspend fun runIgnoringFailure(block: suspend () -> Unit) {

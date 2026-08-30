@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -38,14 +39,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import com.vrcx.android.ui.theme.vrcxColors
 
-data class BottomNavItem(
+private data class BottomNavItem(
     val route: String,
     val label: String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
 )
 
-val bottomNavItems = listOf(
+private val bottomNavItems = listOf(
     BottomNavItem(VrcxRoutes.FEED, "Feed", Icons.Filled.DynamicFeed, Icons.Outlined.DynamicFeed),
     BottomNavItem(VrcxRoutes.FRIENDS, "Friends", Icons.Filled.Group, Icons.Outlined.Group),
     BottomNavItem(VrcxRoutes.SEARCH, "Search", Icons.Filled.Search, Icons.Outlined.Search),
@@ -60,9 +61,16 @@ fun VrcxBottomBar(navController: NavController) {
 
     if (currentRoute !in VrcxRoutes.tabRoutes) return
 
-    val isWallpaperActive = LocalWallpaperActive.current
-    val vrcxColors = MaterialTheme.vrcxColors
+    BottomNavigationPanel(
+        currentRoute = currentRoute,
+        isWallpaperActive = LocalWallpaperActive.current,
+        onNavigate = { route -> navController.navigateToTab(route) },
+    )
+}
 
+@Composable
+private fun BottomNavigationPanel(currentRoute: String?, isWallpaperActive: Boolean, onNavigate: (String) -> Unit) {
+    val vrcxColors = MaterialTheme.vrcxColors
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -86,45 +94,51 @@ fun VrcxBottomBar(navController: NavController) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 bottomNavItems.forEach { item ->
-                    val selected = currentRoute == item.route
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                color = if (selected) vrcxColors.navActive else Color.Transparent,
-                                shape = MaterialTheme.shapes.small,
-                            )
-                            .clickable {
-                                if (currentRoute != item.route) {
-                                    navController.navigate(item.route) {
-                                        popUpTo(VrcxRoutes.FEED) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            }
-                            .padding(horizontal = 4.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier.size(28.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                contentDescription = item.label,
-                                tint = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
-                            )
-                        }
-                        Text(
-                            text = item.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
-                        )
-                    }
+                    BottomNavigationItem(
+                        item = item,
+                        selected = currentRoute == item.route,
+                        onClick = { onNavigate(item.route) },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.BottomNavigationItem(item: BottomNavItem, selected: Boolean, onClick: () -> Unit) {
+    val vrcxColors = MaterialTheme.vrcxColors
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .background(
+                color = if (selected) vrcxColors.navActive else Color.Transparent,
+                shape = MaterialTheme.shapes.small,
+            )
+            .clickable { if (!selected) onClick() }
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                contentDescription = item.label,
+                tint = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
+            )
+        }
+        Text(
+            text = item.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) vrcxColors.navActiveContent else vrcxColors.navInactiveContent,
+        )
+    }
+}
+
+private fun NavController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(VrcxRoutes.FEED) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

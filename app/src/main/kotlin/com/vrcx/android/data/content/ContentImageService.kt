@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
-import com.vrcx.android.data.repository.GalleryRepository
+import com.vrcx.android.data.repository.GalleryUploadFileNames
 import com.vrcx.android.data.screenshot.ScreenshotMetadataReader
 import com.vrcx.android.data.screenshot.ScreenshotReadResult
 import com.vrcx.android.data.util.MAX_UPLOAD_SIZE_BYTES
@@ -88,7 +88,7 @@ class ContentImageService @Inject constructor(
         )
             ?: return@withContext GalleryPreparationResult.Unreadable
         val fileName = details.fileName?.takeIf { it.isNotBlank() }
-            ?: GalleryRepository.defaultFileNameFor(mimeType)
+            ?: GalleryUploadFileNames.defaultFor(mimeType)
         val needsResize =
             bounds.outWidth > MAX_UPLOAD_DIMENSION ||
                 bounds.outHeight > MAX_UPLOAD_DIMENSION ||

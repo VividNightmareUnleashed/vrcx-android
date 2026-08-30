@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,6 +71,9 @@ data class DashboardUiState(
     val activityBreakdown: DashboardActivityBreakdown = DashboardActivityBreakdown(),
 )
 
+private const val RECENT_ACTIVITY_LIMIT = 6
+private const val FAVORITE_FRIEND_LIMIT = 5
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -78,9 +82,6 @@ class DashboardViewModel @Inject constructor(
     feedRepository: FeedRepository,
     @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
-    private val recentActivityLimit = 6
-    private val favoriteFriendLimit = 5
-
     private val currentUser = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user }
         .distinctUntilChanged()
@@ -94,7 +95,7 @@ class DashboardViewModel @Inject constructor(
             if (userId.isBlank()) {
                 flowOf(emptyList())
             } else {
-                feedRepository.getUnifiedFeed(userId).map { it.take(recentActivityLimit) }
+                feedRepository.getUnifiedFeed(userId).map { it.take(RECENT_ACTIVITY_LIMIT) }
             }
         }
         .onStart { emit(emptyList()) }
@@ -111,7 +112,7 @@ class DashboardViewModel @Inject constructor(
             favoriteOnlineFriends = friends.values
                 .filter { it.id in favoriteIds && it.state == FriendState.ONLINE }
                 .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-                .take(favoriteFriendLimit),
+                .take(FAVORITE_FRIEND_LIMIT),
             recentEntries = entries,
             activityBreakdown = DashboardActivityBreakdown(
                 moves = entries.count { it.type == FeedEntryType.GPS },
@@ -144,165 +145,192 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        UserAvatar(
-                            imageUrl = currentUser?.displayAvatarUrl(),
-                            size = 56.dp,
-                            showStatusDot = false,
-                        )
-                        Spacer(Modifier.size(12.dp))
-                        Column {
-                            Text(
-                                currentUser?.displayName ?: "Not signed in",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                currentUser?.statusDescription
-                                    ?.ifBlank { currentUser.status }
-                                    ?: "No status",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+                DashboardUserCard(currentUser)
             }
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FriendState.entries.forEach { state ->
-                        DashboardMetric(state.label, friendCounts[state] ?: 0, Modifier.weight(1f))
-                    }
-                }
+                FriendMetrics(friendCounts)
             }
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    DashboardMetric("Moves", activityBreakdown.moves, Modifier.weight(1f))
-                    DashboardMetric("Status", activityBreakdown.statusChanges, Modifier.weight(1f))
-                    DashboardMetric("Avatars", activityBreakdown.avatarChanges, Modifier.weight(1f))
-                }
+                ActivityMetrics(activityBreakdown)
             }
-            item {
+            favoriteFriendsSection(favoriteOnlineFriends, onUserClick)
+            recentActivitySection(recentEntries, onUserClick)
+        }
+    }
+}
+
+@Composable
+private fun DashboardUserCard(currentUser: CurrentUser?) {
+    VrcxCard(Modifier.padding(horizontal = 16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            UserAvatar(
+                imageUrl = currentUser?.displayAvatarUrl(),
+                size = 56.dp,
+                showStatusDot = false,
+            )
+            Spacer(Modifier.size(12.dp))
+            Column {
                 Text(
-                    "Favorite Friends Online",
+                    text = currentUser?.displayName ?: "Not signed in",
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Text(
+                    text =
+                        currentUser?.statusDescription?.ifBlank { currentUser.status }
+                            ?: "No status",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (favoriteOnlineFriends.isEmpty()) {
-                item {
-                    VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                        Text(
-                            "No favorite friends are online right now.",
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            } else {
-                items(favoriteOnlineFriends, key = { "vip_${it.id}" }) { friend ->
-                    VrcxCard(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .clickable { onUserClick(friend.id) },
-                    ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            UserAvatar(
-                                imageUrl = friend.ref?.displayAvatarUrl(),
-                                status = friend.ref?.status,
-                                state = friend.state,
-                                size = 40.dp,
-                            )
-                            Spacer(Modifier.size(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    friend.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    friend.ref?.statusDescription?.ifBlank { friend.state.label }.orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Text(
-                                friend.state.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-            }
-            item {
+        }
+    }
+}
+
+@Composable
+private fun FriendMetrics(friendCounts: Map<FriendState, Int>) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FriendState.entries.forEach { state ->
+            DashboardMetric(state.label, friendCounts[state] ?: 0, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun ActivityMetrics(activity: DashboardActivityBreakdown) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DashboardMetric("Moves", activity.moves, Modifier.weight(1f))
+        DashboardMetric("Status", activity.statusChanges, Modifier.weight(1f))
+        DashboardMetric("Avatars", activity.avatarChanges, Modifier.weight(1f))
+    }
+}
+
+private fun LazyListScope.favoriteFriendsSection(friends: List<FriendContext>, onUserClick: (String) -> Unit) {
+    item {
+        Text(
+            text = "Favorite Friends Online",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+    }
+    if (friends.isEmpty()) {
+        item {
+            VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                 Text(
-                    "Recent Activity",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    text = "No favorite friends are online right now.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (recentEntries.isEmpty()) {
-                item {
-                    EmptyState(
-                        message = "No recent activity yet",
-                        subtitle = "Feed entries will show up here once your friends start moving around.",
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                }
-            } else {
-                items(recentEntries, key = { it.key }) { entry ->
-                    VrcxCard(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .clickable { onUserClick(entry.userId) },
-                    ) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    entry.displayName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    relativeTime(entry.createdAt),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Text(
-                                entry.activityLabel(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+        }
+    } else {
+        items(friends, key = { "vip_${it.id}" }) { friend ->
+            FavoriteFriendCard(friend, onUserClick)
+        }
+    }
+}
+
+@Composable
+private fun FavoriteFriendCard(friend: FriendContext, onUserClick: (String) -> Unit) {
+    VrcxCard(
+        modifier =
+            Modifier.padding(horizontal = 16.dp).clickable { onUserClick(friend.id) },
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            UserAvatar(
+                imageUrl = friend.ref?.displayAvatarUrl(),
+                status = friend.ref?.status,
+                state = friend.state,
+                size = 40.dp,
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = friend.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text =
+                        friend.ref
+                            ?.statusDescription
+                            ?.ifBlank { friend.state.label }
+                            .orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            Text(
+                text = friend.state.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+private fun LazyListScope.recentActivitySection(entries: List<FeedEntry>, onUserClick: (String) -> Unit) {
+    item {
+        Text(
+            text = "Recent Activity",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+    }
+    if (entries.isEmpty()) {
+        item {
+            EmptyState(
+                message = "No recent activity yet",
+                subtitle = "Feed entries will show up here once your friends start moving around.",
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+    } else {
+        items(entries, key = { it.key }) { entry ->
+            RecentActivityCard(entry, onUserClick)
+        }
+    }
+}
+
+@Composable
+private fun RecentActivityCard(entry: FeedEntry, onUserClick: (String) -> Unit) {
+    VrcxCard(
+        modifier =
+            Modifier.padding(horizontal = 16.dp).clickable { onUserClick(entry.userId) },
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = entry.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = relativeTime(entry.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = entry.activityLabel(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

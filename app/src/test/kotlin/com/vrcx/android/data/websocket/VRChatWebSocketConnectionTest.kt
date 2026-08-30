@@ -2,10 +2,12 @@ package com.vrcx.android.data.websocket
 
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
@@ -39,18 +41,21 @@ class VRChatWebSocketConnectionTest {
 
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var server: MockWebServer
+    private lateinit var socketDispatcher: ExecutorCoroutineDispatcher
     private var client: OkHttpClient? = null
 
     @Before
     fun setUp() {
         server = MockWebServer()
         server.start()
+        socketDispatcher = Executors.newFixedThreadPool(SOCKET_TEST_THREADS).asCoroutineDispatcher()
     }
 
     @After
     fun tearDown() {
         client?.dispatcher?.executorService?.shutdown()
         client?.connectionPool?.evictAll()
+        socketDispatcher.close()
         server.shutdown()
     }
 
@@ -70,7 +75,7 @@ class VRChatWebSocketConnectionTest {
     )
 
     /** Completes the closing handshake so MockWebServer can shut down cleanly. */
-    private abstract class ClosingServerListener : WebSocketListener() {
+    private open class ClosingServerListener : WebSocketListener() {
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             webSocket.close(1000, null)
         }
@@ -91,11 +96,11 @@ class VRChatWebSocketConnectionTest {
             }),
         )
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val gate = CompletableDeferred<Unit>()
         val subscribed = CompletableDeferred<Unit>()
         val received = Collections.synchronizedList(mutableListOf<String>())
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { event ->
@@ -135,11 +140,11 @@ class VRChatWebSocketConnectionTest {
             }),
         )
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val subscribed = CompletableDeferred<Unit>()
         val unexpectedShapeDelivered = CompletableDeferred<Unit>()
         val delivered = CompletableDeferred<String>()
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { event ->
@@ -190,12 +195,12 @@ class VRChatWebSocketConnectionTest {
             }),
         )
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val subscribed = CompletableDeferred<Unit>()
         val delivered = CompletableDeferred<String>()
         val recoveryRequested = CompletableDeferred<Unit>()
         val received = Collections.synchronizedList(mutableListOf<String>())
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { event ->
@@ -258,14 +263,14 @@ class VRChatWebSocketConnectionTest {
             }),
         )
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val gate = CompletableDeferred<Unit>()
         val subscribed = CompletableDeferred<Unit>()
         val firstDelivered = CompletableDeferred<Unit>()
         val recoveryRequested = CompletableDeferred<Unit>()
         val recoveryCount = AtomicInteger()
         val received = Collections.synchronizedList(mutableListOf<String>())
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { event ->
@@ -318,10 +323,10 @@ class VRChatWebSocketConnectionTest {
             }),
         )
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val received = mutableListOf<PipelineEvent>()
         val subscribed = CompletableDeferred<Unit>()
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { received += it }
@@ -350,7 +355,7 @@ class VRChatWebSocketConnectionTest {
         server.enqueue(MockResponse().withWebSocketUpgrade(object : ClosingServerListener() {}))
         server.enqueue(MockResponse().withWebSocketUpgrade(object : ClosingServerListener() {}))
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         socket.connect("test-token")
         withTimeout(SETUP_TIMEOUT_MS) {
             while (socket.state.value != WebSocketState.CONNECTED) delay(5)
@@ -376,7 +381,7 @@ class VRChatWebSocketConnectionTest {
                 }
             }),
         )
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
 
         socket.connect("token-a")
         withTimeout(SETUP_TIMEOUT_MS) {
@@ -409,10 +414,10 @@ class VRChatWebSocketConnectionTest {
         )
         server.enqueue(MockResponse().withWebSocketUpgrade(object : ClosingServerListener() {}))
 
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO)
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher)
         val received = mutableListOf<PipelineEvent>()
         val subscribed = CompletableDeferred<Unit>()
-        val collector = launch(Dispatchers.IO) {
+        val collector = launch(socketDispatcher) {
             socket.events
                 .onSubscription { subscribed.complete(Unit) }
                 .collect { received += it }
@@ -445,7 +450,7 @@ class VRChatWebSocketConnectionTest {
         // RECONNECTING against a dead credential with every realtime event gone.
         server.enqueue(MockResponse().setResponseCode(401))
         val rejected = CompletableDeferred<Unit>()
-        val socket = VRChatWebSocket(json, localClient(), Dispatchers.IO) { rejected.complete(Unit) }
+        val socket = VRChatWebSocket(json, localClient(), socketDispatcher) { rejected.complete(Unit) }
 
         socket.connect("stale-token")
 
@@ -457,6 +462,7 @@ class VRChatWebSocketConnectionTest {
     }
 
     private companion object {
+        const val SOCKET_TEST_THREADS = 4
         const val SETUP_TIMEOUT_MS = 10_000L
         const val RECOVERY_TIMEOUT_MS = 15_000L
         const val DELIVERY_TIMEOUT_MS = 20_000L

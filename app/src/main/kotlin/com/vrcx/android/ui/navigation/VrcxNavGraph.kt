@@ -331,7 +331,7 @@ private fun vrchatDetailDeepLinks(section: DeepLinkSection): List<NavDeepLink> =
 
 internal fun encodeRouteSegment(value: String): String = buildString {
     value.toByteArray(StandardCharsets.UTF_8).forEach { byte ->
-        val unsigned = byte.toInt() and 0xff
+        val unsigned = byte.toInt() and UNSIGNED_BYTE_MASK
         val unreserved = unsigned in 'a'.code..'z'.code ||
             unsigned in 'A'.code..'Z'.code ||
             unsigned in '0'.code..'9'.code ||
@@ -340,10 +340,13 @@ internal fun encodeRouteSegment(value: String): String = buildString {
             append(unsigned.toChar())
         } else {
             append('%')
-            append(HEX_DIGITS[unsigned ushr 4])
-            append(HEX_DIGITS[unsigned and 0x0f])
+            append(HEX_DIGITS[unsigned ushr HIGH_NIBBLE_SHIFT])
+            append(HEX_DIGITS[unsigned and LOW_NIBBLE_MASK])
         }
     }
 }
 
 private const val HEX_DIGITS = "0123456789ABCDEF"
+private const val UNSIGNED_BYTE_MASK = 0xff
+private const val HIGH_NIBBLE_SHIFT = 4
+private const val LOW_NIBBLE_MASK = 0x0f

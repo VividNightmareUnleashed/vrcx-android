@@ -57,9 +57,9 @@ class ProfilePicCacheManager internal constructor(
         val digest = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
         val hex = CharArray(digest.size * 2)
         digest.forEachIndexed { index, byte ->
-            val value = byte.toInt() and 0xff
-            hex[index * 2] = HEX_DIGITS[value ushr 4]
-            hex[index * 2 + 1] = HEX_DIGITS[value and 0x0f]
+            val value = byte.toInt() and UNSIGNED_BYTE_MASK
+            hex[index * 2] = HEX_DIGITS[value ushr HIGH_NIBBLE_SHIFT]
+            hex[index * 2 + 1] = HEX_DIGITS[value and LOW_NIBBLE_MASK]
         }
         return String(hex)
     }
@@ -88,19 +88,19 @@ class ProfilePicCacheManager internal constructor(
         // the same avatar, and the loser's partial file would win the rename.
         val tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX, cacheDir)
         try {
-            val request = Request.Builder().url(url).build()
-            val response = okHttpClient.newCall(request).execute()
-            response.use { resp ->
-                if (!resp.isSuccessful) return
-                val body = resp.body ?: return
-                if (!bodyWriter.write(body, tempFile)) return
-            }
-            if (tempFile.length() > 0 && tempFile.renameTo(file)) {
+            if (download(url, tempFile) && tempFile.length() > 0 && tempFile.renameTo(file)) {
                 file.setLastModified(System.currentTimeMillis())
                 if (trimAfterWrite) maybeTrim()
             }
         } finally {
             tempFile.delete()
+        }
+    }
+
+    private fun download(url: String, destination: File): Boolean {
+        val request = Request.Builder().url(url).build()
+        return okHttpClient.newCall(request).execute().use { response ->
+            response.isSuccessful && response.body?.let { bodyWriter.write(it, destination) } == true
         }
     }
 
@@ -195,6 +195,9 @@ class ProfilePicCacheManager internal constructor(
         const val TEMP_FILE_PREFIX = "pic"
         const val TEMP_FILE_SUFFIX = ".tmp"
         const val CACHE_WARMUP_CONCURRENCY = 4
+        const val UNSIGNED_BYTE_MASK = 0xff
+        const val HIGH_NIBBLE_SHIFT = 4
+        const val LOW_NIBBLE_MASK = 0x0f
         val HEX_DIGITS = "0123456789abcdef".toCharArray()
     }
 }

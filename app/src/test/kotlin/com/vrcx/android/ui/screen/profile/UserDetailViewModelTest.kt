@@ -62,8 +62,8 @@ class UserDetailViewModelTest {
         verify(repository, never()).loadWorlds("usr_target")
         verify(repository, never()).loadAvatars("usr_target")
 
-        viewModel.selectTab(UserDetailTab.MUTUALS)
-        viewModel.selectTab(UserDetailTab.MUTUALS)
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.MUTUALS))
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.MUTUALS))
         runCurrent()
 
         assertTrue(UserDetailTab.MUTUALS in viewModel.uiState.value.loadingTabs)
@@ -77,8 +77,8 @@ class UserDetailViewModelTest {
         assertTrue(UserDetailTab.MUTUALS in state.loadedTabs)
         assertFalse(UserDetailTab.MUTUALS in state.loadingTabs)
 
-        viewModel.selectTab(UserDetailTab.INFO)
-        viewModel.selectTab(UserDetailTab.MUTUALS)
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.INFO))
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.MUTUALS))
         advanceUntilIdle()
         verify(repository, times(1)).loadMutualFriends("usr_target")
     }
@@ -102,11 +102,11 @@ class UserDetailViewModelTest {
         )
         advanceUntilIdle()
 
-        viewModel.selectTab(UserDetailTab.FAVORITE_WORLDS)
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.FAVORITE_WORLDS))
         advanceUntilIdle()
         assertFalse(UserDetailTab.FAVORITE_WORLDS in viewModel.uiState.value.loadedTabs)
 
-        viewModel.selectTab(UserDetailTab.FAVORITE_WORLDS)
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.FAVORITE_WORLDS))
         advanceUntilIdle()
         assertTrue(UserDetailTab.FAVORITE_WORLDS in viewModel.uiState.value.loadedTabs)
         verify(repository, times(2)).loadFavoriteWorlds("usr_target")
@@ -132,11 +132,13 @@ class UserDetailViewModelTest {
         )
         advanceUntilIdle()
 
-        viewModel.selectTab(UserDetailTab.MUTUALS)
+        viewModel.onIntent(UserDetailIntent.SelectTab(UserDetailTab.MUTUALS))
         advanceUntilIdle()
         assertEquals(listOf("usr_mutual"), viewModel.uiState.value.mutualFriends.map { it.id })
 
-        viewModel.unfriend()
+        viewModel.onIntent(
+            UserDetailIntent.Mutate(UserDetailMutation.Social(UserDetailSocialAction.UNFRIEND)),
+        )
         advanceUntilIdle()
 
         verify(actionPerformer).unfriend("usr_target")
@@ -165,9 +167,9 @@ class UserDetailViewModelTest {
         )
         advanceUntilIdle()
 
-        viewModel.toggleFavorite()
+        viewModel.onIntent(UserDetailIntent.Mutate(UserDetailMutation.ToggleFavorite))
         runCurrent()
-        viewModel.toggleFavorite()
+        viewModel.onIntent(UserDetailIntent.Mutate(UserDetailMutation.ToggleFavorite))
         release.complete(Unit)
         advanceUntilIdle()
 
@@ -205,7 +207,7 @@ class UserDetailViewModelTest {
 
         assertTrue(viewModel.uiState.value.isFavorited)
 
-        viewModel.toggleFavorite()
+        viewModel.onIntent(UserDetailIntent.Mutate(UserDetailMutation.ToggleFavorite))
         advanceUntilIdle()
         verify(profilePreferenceActions).deleteFavorite("fvrt_1")
     }
@@ -228,7 +230,7 @@ class UserDetailViewModelTest {
         )
         advanceUntilIdle()
 
-        viewModel.toggleNotify()
+        viewModel.onIntent(UserDetailIntent.Mutate(UserDetailMutation.ToggleNotify))
         advanceUntilIdle()
 
         verify(profilePreferenceActions).toggleNotify("usr_target")

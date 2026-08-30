@@ -9,6 +9,7 @@ import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.util.runCatchingCancellable
 import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.FeedFilter
 import com.vrcx.android.ui.common.applyFeedFilter
@@ -16,7 +17,6 @@ import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.whileUiSubscribed
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,11 +66,10 @@ class FeedViewModel @Inject constructor(
             _isRefreshing.value = true
             _error.value = null
             try {
-                friendRepository.loadFriendsList()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to refresh"
+                _error.value =
+                    runCatchingCancellable { friendRepository.loadFriendsList() }
+                        .exceptionOrNull()
+                        ?.let { it.message ?: "Failed to refresh" }
             } finally {
                 _isRefreshing.value = false
             }

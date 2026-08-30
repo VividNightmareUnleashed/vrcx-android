@@ -10,11 +10,11 @@ import com.vrcx.android.data.api.model.FavoriteGroup
 import com.vrcx.android.data.api.model.FavoriteLimits
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.util.runCatchingCancellable
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
 class FavoriteRepository @Inject constructor(
@@ -24,8 +24,7 @@ class FavoriteRepository @Inject constructor(
     accountScope: AccountScope,
 ) : AccountScoped {
     private val account = accountScope.bindTo(this)
-    private val loadLock = Any()
-    private val loadedKeys = mutableSetOf<String>()
+    private val loadCache = FavoriteLoadCache()
 
     private val _favorites = MutableStateFlow<List<Favorite>>(emptyList())
     val favorites: StateFlow<List<Favorite>> = _favorites.asStateFlow()
@@ -43,37 +42,12 @@ class FavoriteRepository @Inject constructor(
     val favoriteAvatars: StateFlow<List<Avatar>> = _favoriteAvatars.asStateFlow()
 
     /**
-     * Runs [fetch] at most once per account for [key] and publishes the result
-     * only if the account hasn't changed underneath it — the load-once cache
-     * and the per-account isolation guard are the same policy, so they live in
-     * one place rather than once per endpoint.
-     */
-    private suspend fun <T> loadOnce(
-        key: String,
-        forceRefresh: Boolean,
-        fetch: suspend () -> T,
-        publish: (T) -> Unit,
-    ) {
-        val token = account.current()
-        val shouldLoad = synchronized(loadLock) {
-            if (forceRefresh) loadedKeys.remove(key)
-            key !in loadedKeys
-        }
-        if (!shouldLoad) return
-
-        val result = fetch()
-        account.publishIfCurrent(token) {
-            publish(result)
-            synchronized(loadLock) { loadedKeys.add(key) }
-        }
-    }
-
-    /**
      * Hydrates the world favorites list in one shot via /worlds/favorites instead
      * of resolving each Favorite by hitting /worlds/{id} N times. The bulk endpoint
      * is paginated server-side; iterate until a short page comes back.
      */
-    suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) = loadOnce(
+    suspend fun loadFavoriteWorldsBulk(forceRefresh: Boolean = false) = loadCache.loadOnce(
+        account = account,
         key = KEY_BULK_WORLDS,
         forceRefresh = forceRefresh,
         fetch = {
@@ -84,7 +58,8 @@ class FavoriteRepository @Inject constructor(
         publish = { _favoriteWorlds.value = it },
     )
 
-    suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) = loadOnce(
+    suspend fun loadFavoriteAvatarsBulk(forceRefresh: Boolean = false) = loadCache.loadOnce(
+        account = account,
         key = KEY_BULK_AVATARS,
         forceRefresh = forceRefresh,
         fetch = {
@@ -96,7 +71,7 @@ class FavoriteRepository @Inject constructor(
     )
 
     override fun clearRuntimeState() {
-        synchronized(loadLock) { loadedKeys.clear() }
+        loadCache.clear()
         _favorites.value = emptyList()
         _favoriteGroups.value = emptyList()
         favoriteLimits = null
@@ -105,8 +80,9 @@ class FavoriteRepository @Inject constructor(
     }
 
     /** Favorites are loaded per type and merged into one list rather than replacing it. */
-    suspend fun loadFavorites(type: String, forceRefresh: Boolean = false) = loadOnce(
-        key = favoritesKey(type),
+    suspend fun loadFavorites(type: String, forceRefresh: Boolean = false) = loadCache.loadOnce(
+        account = account,
+        key = "favorites:$type",
         forceRefresh = forceRefresh,
         fetch = {
             BulkPaginator.fetchAll(pageSize = FAVORITES_PAGE_SIZE) { offset, count ->
@@ -120,7 +96,8 @@ class FavoriteRepository @Inject constructor(
         publish = { items -> _favorites.value = _favorites.value.filterNot { it.type == type } + items },
     )
 
-    suspend fun loadFavoriteGroups(forceRefresh: Boolean = false) = loadOnce(
+    suspend fun loadFavoriteGroups(forceRefresh: Boolean = false) = loadCache.loadOnce(
+        account = account,
         key = KEY_GROUPS,
         forceRefresh = forceRefresh,
         fetch = {
@@ -134,7 +111,8 @@ class FavoriteRepository @Inject constructor(
         publish = { _favoriteGroups.value = it },
     )
 
-    suspend fun loadFavoriteLimits(forceRefresh: Boolean = false) = loadOnce(
+    suspend fun loadFavoriteLimits(forceRefresh: Boolean = false) = loadCache.loadOnce(
+        account = account,
         key = KEY_LIMITS,
         forceRefresh = forceRefresh,
         fetch = { favoriteApi.getFavoriteLimits() },
@@ -146,12 +124,13 @@ class FavoriteRepository @Inject constructor(
         val resolvedTags = if (tags.isNotEmpty()) {
             tags
         } else {
-            runCatchingCancellable { getPreferredFavoriteTags(type).ifEmpty { defaultFavoriteTags(type) } }
-                .getOrElse { defaultFavoriteTags(type) }
+            runCatchingCancellable {
+                getPreferredFavoriteTags(type).ifEmpty { FavoriteGroupSelector.defaultTags(type) }
+            }.getOrElse { FavoriteGroupSelector.defaultTags(type) }
         }
         account.ensureCurrent(token)
         val favorite = favoriteApi.addFavorite(
-            com.vrcx.android.data.api.model.FavoriteAddRequest(type, favoriteId, resolvedTags)
+            com.vrcx.android.data.api.model.FavoriteAddRequest(type, favoriteId, resolvedTags),
         )
         account.publishOrAbort(token) {
             _favorites.value = _favorites.value
@@ -175,6 +154,7 @@ class FavoriteRepository @Inject constructor(
                             .filterNot { it.id == world.id } + world
                     }
                 }
+
                 "avatar" -> {
                     val avatar = avatarApi.getAvatar(favoriteId)
                     account.publishOrAbort(token) {
@@ -185,11 +165,9 @@ class FavoriteRepository @Inject constructor(
             }
         }.onFailure {
             account.publishOrAbort(token) {
-                synchronized(loadLock) {
-                    when (type) {
-                        "world" -> loadedKeys.remove(KEY_BULK_WORLDS)
-                        "avatar" -> loadedKeys.remove(KEY_BULK_AVATARS)
-                    }
+                when (type) {
+                    "world" -> loadCache.invalidate(KEY_BULK_WORLDS)
+                    "avatar" -> loadCache.invalidate(KEY_BULK_AVATARS)
                 }
             }
         }
@@ -207,10 +185,13 @@ class FavoriteRepository @Inject constructor(
             // so observers never retain an item that was successfully deleted.
             if (existing != null) {
                 when (existing.type) {
-                    "world", "vrcPlusWorld" -> _favoriteWorlds.value =
-                        _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
-                    "avatar" -> _favoriteAvatars.value =
-                        _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
+                    "world", "vrcPlusWorld" ->
+                        _favoriteWorlds.value =
+                            _favoriteWorlds.value.filterNot { it.id == existing.favoriteId }
+
+                    "avatar" ->
+                        _favoriteAvatars.value =
+                            _favoriteAvatars.value.filterNot { it.id == existing.favoriteId }
                 }
             }
         }
@@ -221,45 +202,12 @@ class FavoriteRepository @Inject constructor(
         loadFavoriteGroups()
         loadFavoriteLimits()
 
-        val limits = favoriteLimits
-        val groupLimit = limits?.maxFavoritesPerGroup?.get(type)
-        val groupCounts = _favorites.value
-            .filter { it.type == type }
-            .flatMap { it.tags }
-            .groupingBy { it }
-            .eachCount()
-
-        val preferredTag = buildFavoriteGroupNames(type, limits).firstOrNull { groupName ->
-            groupLimit == null || groupCounts.getOrDefault(groupName, 0) < groupLimit
-        } ?: DEFAULT_FAVORITE_TAGS[type]
-
-        return listOfNotNull(preferredTag)
-    }
-
-    private fun buildFavoriteGroupNames(type: String, limits: FavoriteLimits?): List<String> {
-        val generatedNames = when (type) {
-            "friend" -> {
-                val max = limits?.maxFavoriteGroups?.get("friend") ?: 1
-                (0 until max).map { "group_$it" }
-            }
-            "world" -> {
-                val max = limits?.maxFavoriteGroups?.get("world") ?: 1
-                (1..max).map { "worlds$it" }
-            }
-            "avatar" -> {
-                val max = limits?.maxFavoriteGroups?.get("avatar") ?: 1
-                (1..max).map { "avatars$it" }
-            }
-            else -> emptyList()
-        }
-        val savedNames = _favoriteGroups.value
-            .filter { it.type == type }
-            .map { it.name }
-        return (savedNames + generatedNames).distinct()
-    }
-
-    private fun defaultFavoriteTags(type: String): List<String> {
-        return listOfNotNull(DEFAULT_FAVORITE_TAGS[type])
+        return FavoriteGroupSelector.preferredTags(
+            type = type,
+            limits = favoriteLimits,
+            favorites = _favorites.value,
+            groups = _favoriteGroups.value,
+        )
     }
 
     companion object {
@@ -267,13 +215,6 @@ class FavoriteRepository @Inject constructor(
         private const val KEY_BULK_AVATARS = "bulk:avatars"
         private const val KEY_GROUPS = "groups"
         private const val KEY_LIMITS = "limits"
-        private fun favoritesKey(type: String) = "favorites:$type"
-
-        private val DEFAULT_FAVORITE_TAGS = mapOf(
-            "friend" to "group_0",
-            "world" to "worlds1",
-            "avatar" to "avatars1",
-        )
         private const val FAVORITES_PAGE_SIZE = 100
         private const val FAVORITE_GROUPS_PAGE_SIZE = 50
     }

@@ -55,23 +55,23 @@ class WebSocketForegroundServiceTest {
 
     @Test
     fun `the recorded mode round-trips and anything unrecognised reads as NONE`() {
-        assertEquals(ServiceMode.NONE, WebSocketForegroundService.serviceMode(context))
+        assertEquals(ServiceMode.NONE, PipelineServiceStateStore.mode(context))
         for (mode in ServiceMode.values()) {
-            WebSocketForegroundService.setServiceMode(context, mode)
-            assertEquals(mode, WebSocketForegroundService.serviceMode(context))
+            PipelineServiceStateStore.set(context, mode)
+            assertEquals(mode, PipelineServiceStateStore.mode(context))
         }
 
         context.getSharedPreferences(SERVICE_STATE_PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putInt("requested_mode", 99)
             .commit()
-        assertEquals(ServiceMode.NONE, WebSocketForegroundService.serviceMode(context))
+        assertEquals(ServiceMode.NONE, PipelineServiceStateStore.mode(context))
     }
 
     @Test
     fun `the Android 15 recovery only starts the service after an actual timeout`() {
         for (mode in listOf(ServiceMode.NONE, ServiceMode.FOREGROUND, ServiceMode.NON_FOREGROUND)) {
-            WebSocketForegroundService.setServiceMode(context, mode)
+            PipelineServiceStateStore.set(context, mode)
             assertFalse(
                 "mode=$mode must not trigger the timeout recovery",
                 WebSocketForegroundService.restartAfterTimeoutIfNeeded(context),
@@ -79,7 +79,7 @@ class WebSocketForegroundServiceTest {
             assertNull(shadowOf(application).nextStartedService)
         }
 
-        WebSocketForegroundService.setServiceMode(context, ServiceMode.TIMED_OUT)
+        PipelineServiceStateStore.set(context, ServiceMode.TIMED_OUT)
         assertTrue(WebSocketForegroundService.restartAfterTimeoutIfNeeded(context))
         val started = shadowOf(application).nextStartedService
         assertNotNull(started)
@@ -92,11 +92,11 @@ class WebSocketForegroundServiceTest {
         // is not around to notice the session ending either, so stop() is the
         // only thing standing between a stale recovery and an ongoing
         // notification the user never asked for.
-        WebSocketForegroundService.setServiceMode(context, ServiceMode.TIMED_OUT)
+        PipelineServiceStateStore.set(context, ServiceMode.TIMED_OUT)
 
         WebSocketForegroundService.stop(context)
 
-        assertEquals(ServiceMode.NONE, WebSocketForegroundService.serviceMode(context))
+        assertEquals(ServiceMode.NONE, PipelineServiceStateStore.mode(context))
         shadowOf(application).clearStartedServices()
         assertFalse(WebSocketForegroundService.restartAfterTimeoutIfNeeded(context))
         assertNull(shadowOf(application).nextStartedService)
@@ -239,6 +239,17 @@ class WebSocketForegroundServiceTest {
 
         assertTrue(received.isCompleted)
         assertEquals(transition, received.await())
+        collector.cancel()
+    }
+
+    @Test
+    fun `the initial notification settings are applied before startup continues`() = runTest {
+        val settings = MutableStateFlow("ready")
+        var applied: String? = null
+
+        val collector = launchInitialValueCollector(this, settings) { applied = it }
+
+        assertEquals("ready", applied)
         collector.cancel()
     }
 

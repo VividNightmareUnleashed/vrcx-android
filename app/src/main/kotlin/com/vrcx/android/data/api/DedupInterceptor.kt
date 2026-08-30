@@ -25,9 +25,7 @@ import retrofit2.Invocation
  * sharing a single OkHttp Response body across multiple coroutine callers is
  * not safe at the interceptor level — the body stream is one-shot.
  */
-class DedupInterceptor(
-    private val deduplicator: RequestDeduplicator,
-) : Interceptor {
+class DedupInterceptor(private val deduplicator: RequestDeduplicator) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -35,20 +33,16 @@ class DedupInterceptor(
 
         val cacheKey = request.url.toString()
         val requestGeneration = deduplicator.currentGeneration()
-        deduplicator.getCachedFailure(cacheKey)?.let { code ->
-            return syntheticFailureResponse(chain, code)
-        }
+        return deduplicator.getCachedFailure(cacheKey)?.let { code ->
+            syntheticFailureResponse(chain, code)
+        } ?: chain.proceed(request).also { response ->
+            when (response.code) {
+                HTTP_NOT_FOUND ->
+                    deduplicator.cacheFailureIfCurrent(cacheKey, response.code, requestGeneration)
 
-        val response = chain.proceed(request)
-        when (response.code) {
-            404 -> deduplicator.cacheFailureIfCurrent(cacheKey, response.code, requestGeneration)
-            in 200..299 -> {
-                // A previously failing URL now returns success; clear the stale
-                // cache entry so subsequent calls don't keep replaying the 404.
-                deduplicator.invalidateFailure(cacheKey, requestGeneration)
+                in 200..299 -> deduplicator.invalidateFailure(cacheKey, requestGeneration)
             }
         }
-        return response
     }
 
     /**
@@ -60,14 +54,16 @@ class DedupInterceptor(
         return method.isAnnotationPresent(NoFailureCache::class.java)
     }
 
-    private fun syntheticFailureResponse(chain: Interceptor.Chain, code: Int): Response {
-        return Response.Builder()
-            .request(chain.request())
-            .protocol(Protocol.HTTP_1_1)
-            .code(code)
-            .message("Cached failure")
-            .body("".toResponseBody("application/json".toMediaTypeOrNull()))
-            .header("X-VRCX-Cached-Failure", "true")
-            .build()
+    private fun syntheticFailureResponse(chain: Interceptor.Chain, code: Int): Response = Response.Builder()
+        .request(chain.request())
+        .protocol(Protocol.HTTP_1_1)
+        .code(code)
+        .message("Cached failure")
+        .body("".toResponseBody("application/json".toMediaTypeOrNull()))
+        .header("X-VRCX-Cached-Failure", "true")
+        .build()
+
+    private companion object {
+        const val HTTP_NOT_FOUND = 404
     }
 }

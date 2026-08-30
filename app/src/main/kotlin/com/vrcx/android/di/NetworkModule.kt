@@ -39,6 +39,8 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
+private const val NETWORK_TIMEOUT_SECONDS = 30L
+
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -85,9 +87,9 @@ object NetworkModule {
             .addInterceptor(DedupInterceptor(deduplicator))
             .addNetworkInterceptor(sessionCookieResponseInterceptor)
             .addNetworkInterceptor(accountBoundCookieInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
         if (BuildConfig.DEBUG) {
             builder.addInterceptor(
@@ -109,9 +111,9 @@ object NetworkModule {
         .addInterceptor(SessionCookieRequestInterceptor(cookieJar))
         .addInterceptor(UserAgentInterceptor())
         .addNetworkInterceptor(SessionCookieResponseInterceptor(cookieJar))
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
     @Provides
@@ -120,9 +122,9 @@ object NetworkModule {
         OkHttpClient.Builder()
             .connectionPool(sharedConnectionPool)
             .addInterceptor(UserAgentInterceptor())
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build(),
     )
 

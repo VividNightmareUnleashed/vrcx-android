@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vrcx.android.data.api.model.displayAvatarUrl
+import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
@@ -76,71 +77,106 @@ fun FeedScreen(viewModel: FeedViewModel = hiltViewModel(), onUserClick: (String)
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = vipOnly,
-                    onClick = { viewModel.toggleVipOnly() },
-                    label = { Text("VIP") },
-                    leadingIcon = if (vipOnly) {
-                        { Icon(Icons.Outlined.Star, contentDescription = null, Modifier.padding(0.dp)) }
-                    } else {
-                        null
-                    },
-                )
-                FeedEntryType.entries.forEach { filter ->
-                    FilterChip(
-                        selected = filter in filters,
-                        onClick = { viewModel.toggleFilter(filter) },
-                        label = { Text(filter.label) },
-                    )
-                }
-            }
-
-            PullToRefreshBox(
+            FeedFilters(filters, vipOnly, viewModel::toggleVipOnly, viewModel::toggleFilter)
+            FeedList(
+                page = page,
+                friends = friends,
                 isRefreshing = isRefreshing,
                 onRefresh = viewModel::refresh,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                // The empty state lives inside the lazy list too: PullToRefreshBox only
-                // sees the gesture when a scrollable child dispatches it.
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    if (page.entries.isEmpty()) {
-                        item {
-                            EmptyState(
-                                message = "No feed entries yet",
-                                icon = Icons.Outlined.DynamicFeed,
-                                subtitle = "Activity from your friends will appear here",
-                                modifier = Modifier.fillParentMaxSize(),
-                            )
+                onLoadMore = viewModel::loadMore,
+                onUserClick = onUserClick,
+            )
+        }
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun FeedFilters(
+    filters: Set<FeedEntryType>,
+    vipOnly: Boolean,
+    onToggleVip: () -> Unit,
+    onToggleFilter: (FeedEntryType) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = vipOnly,
+            onClick = onToggleVip,
+            label = { Text("VIP") },
+            leadingIcon =
+                if (vipOnly) {
+                    { Icon(Icons.Outlined.Star, contentDescription = null, Modifier.padding(0.dp)) }
+                } else {
+                    null
+                },
+        )
+        FeedEntryType.entries.forEach { filter ->
+            FilterChip(
+                selected = filter in filters,
+                onClick = { onToggleFilter(filter) },
+                label = { Text(filter.label) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedList(
+    page: FeedPage,
+    friends: Map<String, FriendContext>,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
+    onUserClick: (String) -> Unit,
+) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        // Keeping the empty state inside the list preserves the pull gesture.
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            if (page.entries.isEmpty()) {
+                item {
+                    EmptyState(
+                        message = "No feed entries yet",
+                        icon = Icons.Outlined.DynamicFeed,
+                        subtitle = "Activity from your friends will appear here",
+                        modifier = Modifier.fillParentMaxSize(),
+                    )
+                }
+            } else {
+                items(page.entries, key = { it.key }) { entry ->
+                    val avatarUrl =
+                        entry.thumbnailUrl.ifEmpty {
+                            friends[entry.userId]
+                                ?.ref
+                                ?.displayAvatarUrl()
+                                ?.takeIf(String::isNotEmpty)
                         }
-                    } else {
-                        items(page.entries, key = { it.key }) { entry ->
-                            FeedItem(
-                                entry = entry,
-                                avatarUrl = entry.thumbnailUrl.ifEmpty {
-                                    friends[entry.userId]?.ref?.displayAvatarUrl()?.takeIf { it.isNotEmpty() }
-                                },
-                                onClick = { onUserClick(entry.userId) },
-                            )
-                        }
-                        if (page.canLoadMore) {
-                            item {
-                                OutlinedButton(
-                                    onClick = { viewModel.loadMore() },
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                ) { Text("Load More") }
-                            }
+                    FeedItem(
+                        entry = entry,
+                        avatarUrl = avatarUrl,
+                        onClick = { onUserClick(entry.userId) },
+                    )
+                }
+                if (page.canLoadMore) {
+                    item {
+                        OutlinedButton(
+                            onClick = onLoadMore,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        ) {
+                            Text("Load More")
                         }
                     }
                 }
             }
         }
-        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 

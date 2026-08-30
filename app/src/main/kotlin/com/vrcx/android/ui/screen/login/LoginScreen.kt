@@ -188,59 +188,17 @@ private fun LoginCard(
                 text = "Sign In",
                 style = MaterialTheme.typography.titleLarge,
             )
-
-            Text(
-                text = "Username",
-                style = MaterialTheme.typography.labelLarge,
-            )
-            VrcxInputField(
-                value = username,
-                onValueChange = onUsernameChange,
-                placeholder = "Enter your VRChat username",
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            LoginCredentials(
+                username = username,
+                password = password,
+                passwordVisible = passwordVisible,
                 enabled = !isLoading,
+                onUsernameChange = onUsernameChange,
+                onPasswordChange = onPasswordChange,
+                onTogglePasswordVisibility = onTogglePasswordVisibility,
+                onLogin = onLogin,
             )
-
-            Text(
-                text = "Password",
-                style = MaterialTheme.typography.labelLarge,
-            )
-            VrcxInputField(
-                value = password,
-                onValueChange = onPasswordChange,
-                placeholder = "Enter your password",
-                visualTransformation =
-                    if (passwordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                trailingContent = {
-                    TextButton(onClick = onTogglePasswordVisibility) {
-                        Text(if (passwordVisible) "Hide" else "Show")
-                    }
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { onLogin() }),
-                enabled = !isLoading,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = rememberMe,
-                    onCheckedChange = { onToggleRememberMe() },
-                )
-                Text(
-                    text = "Remember me",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+            RememberMeRow(rememberMe, onToggleRememberMe)
 
             Button(
                 onClick = onLogin,
@@ -249,17 +207,71 @@ private fun LoginCard(
             ) {
                 LoadingButtonContent(isLoading = isLoading, label = "Sign In")
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                TextButton(onClick = onOpenRegister, enabled = !isLoading) {
-                    Text("Register")
-                }
-                TextButton(onClick = onOpenForgotPassword, enabled = !isLoading) {
-                    Text("Forgot Password")
-                }
+            LoginLinks(!isLoading, onOpenRegister, onOpenForgotPassword)
+        }
+    }
+}
+
+@Composable
+private fun LoginCredentials(
+    username: String,
+    password: String,
+    passwordVisible: Boolean,
+    enabled: Boolean,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onTogglePasswordVisibility: () -> Unit,
+    onLogin: () -> Unit,
+) {
+    Text(text = "Username", style = MaterialTheme.typography.labelLarge)
+    VrcxInputField(
+        value = username,
+        onValueChange = onUsernameChange,
+        placeholder = "Enter your VRChat username",
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        enabled = enabled,
+    )
+    Text(text = "Password", style = MaterialTheme.typography.labelLarge)
+    VrcxInputField(
+        value = password,
+        onValueChange = onPasswordChange,
+        placeholder = "Enter your password",
+        visualTransformation =
+            if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingContent = {
+            TextButton(onClick = onTogglePasswordVisibility) {
+                Text(if (passwordVisible) "Hide" else "Show")
             }
+        },
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done,
+            ),
+        keyboardActions = KeyboardActions(onDone = { onLogin() }),
+        enabled = enabled,
+    )
+}
+
+@Composable
+private fun RememberMeRow(checked: Boolean, onToggle: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+        Text(text = "Remember me", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun LoginLinks(enabled: Boolean, onOpenRegister: () -> Unit, onOpenForgotPassword: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        TextButton(onClick = onOpenRegister, enabled = enabled) {
+            Text("Register")
+        }
+        TextButton(onClick = onOpenForgotPassword, enabled = enabled) {
+            Text("Forgot Password")
         }
     }
 }

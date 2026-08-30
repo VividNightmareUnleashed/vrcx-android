@@ -6,12 +6,12 @@ import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
 import com.vrcx.android.data.model.TrustRank
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.data.util.runCatchingCancellable
 import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.whileUiSubscribed
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -125,17 +125,14 @@ class FriendsViewModel @Inject constructor(
     }
     fun toggleFriendNotify(friendUserId: String) {
         viewModelScope.launch {
-            try {
-                friendRepository.toggleFriendNotify(friendUserId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                android.util.Log.e(
-                    "FriendsViewModel",
-                    "Failed to toggle notify for $friendUserId",
-                    e,
-                )
-            }
+            runCatchingCancellable { friendRepository.toggleFriendNotify(friendUserId) }
+                .onFailure { failure ->
+                    android.util.Log.e(
+                        "FriendsViewModel",
+                        "Failed to toggle notify for $friendUserId",
+                        failure,
+                    )
+                }
         }
     }
 
@@ -144,11 +141,13 @@ class FriendsViewModel @Inject constructor(
         operation.value = FriendsOperationState(isRefreshing = true)
         viewModelScope.launch {
             try {
-                friendRepository.loadFriendsList()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                operation.update { it.copy(error = e.message ?: "Failed to load friends") }
+                runCatchingCancellable { friendRepository.loadFriendsList() }
+                    .exceptionOrNull()
+                    ?.let { failure ->
+                        operation.update {
+                            it.copy(error = failure.message ?: "Failed to load friends")
+                        }
+                    }
             } finally {
                 operation.update { it.copy(isRefreshing = false) }
             }

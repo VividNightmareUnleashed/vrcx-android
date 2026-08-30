@@ -5,6 +5,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -68,48 +69,64 @@ fun VrcxInputField(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (leadingContent != null) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                ) {
-                    leadingContent()
-                }
-            }
-
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (value.isEmpty()) {
-                    Text(
-                        text = placeholder,
-                        style = textStyle,
-                        color = vrcxColors.panelMuted,
-                    )
-                }
-
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = enabled,
-                    singleLine = singleLine,
-                    textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                    keyboardOptions = keyboardOptions,
-                    keyboardActions = keyboardActions,
-                    visualTransformation = visualTransformation,
-                    interactionSource = interactionSource,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                )
-            }
-
-            if (trailingContent != null) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                ) {
-                    trailingContent()
-                }
-            }
+            InputAccessory(leadingContent)
+            VrcxInputFieldCore(
+                value = value,
+                onValueChange = onValueChange,
+                placeholder = placeholder,
+                enabled = enabled,
+                singleLine = singleLine,
+                textStyle = textStyle,
+                visualTransformation = visualTransformation,
+                keyboardOptions = keyboardOptions,
+                keyboardActions = keyboardActions,
+                interactionSource = interactionSource,
+            )
+            InputAccessory(trailingContent)
         }
+    }
+}
+
+@Composable
+private fun InputAccessory(content: (@Composable () -> Unit)?) {
+    content?.let {
+        Box(contentAlignment = Alignment.Center) { it() }
+    }
+}
+
+@Composable
+private fun RowScope.VrcxInputFieldCore(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    enabled: Boolean,
+    singleLine: Boolean,
+    textStyle: TextStyle,
+    visualTransformation: VisualTransformation,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions,
+    interactionSource: MutableInteractionSource,
+) {
+    val vrcxColors = MaterialTheme.vrcxColors
+    Box(
+        modifier = Modifier.weight(1f),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (value.isEmpty()) {
+            Text(text = placeholder, style = textStyle, color = vrcxColors.panelMuted)
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = singleLine,
+            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            visualTransformation = visualTransformation,
+            interactionSource = interactionSource,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        )
     }
 }

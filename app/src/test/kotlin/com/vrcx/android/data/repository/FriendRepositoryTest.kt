@@ -51,11 +51,11 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class FriendRepositoryTest {
+internal open class FriendRepositoryTestFixture {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private data class Fixture(
+    protected data class Fixture(
         val repository: FriendRepository,
         val friendApi: FriendApi,
         val accountScope: AccountScope,
@@ -65,7 +65,7 @@ class FriendRepositoryTest {
         val activityRecorder: FriendActivityRecorder,
     )
 
-    private fun buildRepository(
+    protected fun buildRepository(
         favorites: MutableStateFlow<List<Favorite>> = MutableStateFlow(emptyList()),
         friendNotifyDao: FriendNotifyDao = mock(),
         ioDispatcher: CoroutineDispatcher = DispatcherModule.provideIoDispatcher(),
@@ -79,14 +79,26 @@ class FriendRepositoryTest {
         val friendLogSynchronizer = mock<FriendLogSynchronizer>()
         val activityRecorder = mock<FriendActivityRecorder>()
 
-        val repo = FriendRepository(
+        val snapshotCoordinator = FriendSnapshotCoordinator(
             snapshotLoader = FriendSnapshotLoader(friendApi),
             userRepository = userRepository,
             favoriteRepository = favoriteRepository,
             friendNotifyDao = friendNotifyDao,
             friendLogSynchronizer = friendLogSynchronizer,
             activityRecorder = activityRecorder,
+        )
+        val eventProcessor = FriendEventProcessor(
+            userRepository = userRepository,
+            friendLogSynchronizer = friendLogSynchronizer,
+            activityRecorder = activityRecorder,
             json = json,
+        )
+        val repo = FriendRepository(
+            snapshotCoordinator = snapshotCoordinator,
+            eventProcessor = eventProcessor,
+            favoriteRepository = favoriteRepository,
+            friendNotifyDao = friendNotifyDao,
+            friendLogSynchronizer = friendLogSynchronizer,
             accountScope = accountScope,
             ioDispatcher = ioDispatcher,
         )
@@ -102,7 +114,7 @@ class FriendRepositoryTest {
         )
     }
 
-    private fun userPayload(id: String, displayName: String, location: String? = null) = buildJsonObject {
+    protected fun userPayload(id: String, displayName: String, location: String? = null) = buildJsonObject {
         put("id", id)
         put("displayName", displayName)
         put("currentAvatarImageUrl", "")
@@ -113,22 +125,24 @@ class FriendRepositoryTest {
         if (location != null) put("location", location)
     }
 
-    private fun friendOnlineEvent(userId: String) = PipelineEvent.FriendOnline(
+    protected fun friendOnlineEvent(userId: String) = PipelineEvent.FriendOnline(
         buildJsonObject {
             put("userId", userId)
             put("location", "wrld_test:1")
         },
     )
+}
 
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class FriendRepositoryTest : FriendRepositoryTestFixture() {
     @Test
     fun `resolveFriendUserId prefers camelCase and rejects missing ids`() {
-        val repo = buildRepository().repository
         val both = buildJsonObject {
             put("userId", "usr_camel")
             put("userid", "usr_lower")
         }
-        assertEquals("usr_camel", repo.resolveFriendUserId(both))
-        assertNull(repo.resolveFriendUserId(buildJsonObject { put("displayName", "no id") }))
+        assertEquals("usr_camel", resolveFriendUserId(both))
+        assertNull(resolveFriendUserId(buildJsonObject { put("displayName", "no id") }))
     }
 
     @Test
@@ -444,7 +458,10 @@ class FriendRepositoryTest {
         assertEquals(true, repo.toggleFriendNotify("usr_target"))
         assertEquals(setOf("usr_target"), repo.notifyEnabledIds.value)
     }
+}
 
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class FriendRepositorySnapshotTest : FriendRepositoryTestFixture() {
     @Test
     fun `notify toggle from the previous account cannot publish or return into the next account`() = runBlocking {
         withTimeout(10_000) {
@@ -785,44 +802,7 @@ class FriendRepositoryTest {
 
             val oldRequestsStarted = CompletableDeferred<Unit>()
             val releaseOldRequests = CompletableDeferred<Unit>()
-            val oldRequestCount = AtomicInteger()
-            val onlineCalls = AtomicInteger()
-            val offlineCalls = AtomicInteger()
-
-            whenever(fixture.friendApi.getFriends(n = any(), offset = any(), offline = any()))
-                .doSuspendableAnswer { invocation ->
-                    if (invocation.getArgument<Int>(1) > 0) {
-                        emptyList()
-                    } else if (invocation.getArgument<Boolean>(2)) {
-                        if (offlineCalls.incrementAndGet() == 1) {
-                            if (oldRequestCount.incrementAndGet() == 2) {
-                                oldRequestsStarted.complete(Unit)
-                            }
-                            releaseOldRequests.await()
-                        }
-                        emptyList()
-                    } else if (onlineCalls.incrementAndGet() == 1) {
-                        if (oldRequestCount.incrementAndGet() == 2) {
-                            oldRequestsStarted.complete(Unit)
-                        }
-                        releaseOldRequests.await()
-                        listOf(
-                            VrcUser(
-                                id = "usr_old_friend",
-                                displayName = "Old Friend",
-                                location = "wrld_old:1",
-                            ),
-                        )
-                    } else {
-                        listOf(
-                            VrcUser(
-                                id = "usr_new_friend",
-                                displayName = "New Friend",
-                                location = "wrld_new:1",
-                            ),
-                        )
-                    }
-                }
+            stubAccountScopedLoads(fixture, oldRequestsStarted, releaseOldRequests)
 
             val oldLoad = async(start = CoroutineStart.UNDISPATCHED) {
                 fixture.repository.loadFriendsList()
@@ -853,6 +833,66 @@ class FriendRepositoryTest {
         }
     }
 
+    private suspend fun stubAccountScopedLoads(
+        fixture: Fixture,
+        oldRequestsStarted: CompletableDeferred<Unit>,
+        releaseOldRequests: CompletableDeferred<Unit>,
+    ) {
+        val oldRequestCount = AtomicInteger()
+        val onlineCalls = AtomicInteger()
+        val offlineCalls = AtomicInteger()
+        whenever(fixture.friendApi.getFriends(n = any(), offset = any(), offline = any()))
+            .doSuspendableAnswer { invocation ->
+                val offset = invocation.getArgument<Int>(1)
+                val offline = invocation.getArgument<Boolean>(2)
+                when {
+                    offset > 0 -> emptyList()
+
+                    offline -> {
+                        awaitFirstOldRequest(
+                            offlineCalls,
+                            oldRequestCount,
+                            oldRequestsStarted,
+                            releaseOldRequests,
+                        )
+                        emptyList()
+                    }
+
+                    awaitFirstOldRequest(
+                        onlineCalls,
+                        oldRequestCount,
+                        oldRequestsStarted,
+                        releaseOldRequests,
+                    ) -> listOf(friend("usr_old_friend", "Old Friend", "wrld_old:1"))
+
+                    else -> listOf(friend("usr_new_friend", "New Friend", "wrld_new:1"))
+                }
+            }
+    }
+
+    private suspend fun awaitFirstOldRequest(
+        callCount: AtomicInteger,
+        oldRequestCount: AtomicInteger,
+        oldRequestsStarted: CompletableDeferred<Unit>,
+        releaseOldRequests: CompletableDeferred<Unit>,
+    ): Boolean {
+        val isFirstRequest = callCount.incrementAndGet() == 1
+        if (isFirstRequest) {
+            if (oldRequestCount.incrementAndGet() == 2) oldRequestsStarted.complete(Unit)
+            releaseOldRequests.await()
+        }
+        return isFirstRequest
+    }
+
+    private fun friend(id: String, displayName: String, location: String) = VrcUser(
+        id = id,
+        displayName = displayName,
+        location = location,
+    )
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class FriendRepositoryAccountIsolationTest : FriendRepositoryTestFixture() {
     @Test
     fun `old removal cannot delete the same friend from the next account`() = runBlocking {
         withTimeout(10_000) {

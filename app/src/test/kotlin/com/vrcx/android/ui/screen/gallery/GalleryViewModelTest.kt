@@ -49,11 +49,11 @@ class GalleryViewModelTest {
         assertTrue(viewModel.uiState.value.tabs.getValue(GalleryTab.GALLERY).isLoaded)
         assertFalse(viewModel.uiState.value.tabs.getValue(GalleryTab.ICONS).isLoaded)
 
-        viewModel.selectTab(GalleryTab.ICONS)
-        viewModel.selectTab(GalleryTab.ICONS)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
         advanceUntilIdle()
-        viewModel.selectTab(GalleryTab.GALLERY)
-        viewModel.selectTab(GalleryTab.ICONS)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.GALLERY))
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
         advanceUntilIdle()
 
         verify(galleryApi, times(1)).getFileList(100, 0, "icon")
@@ -68,13 +68,13 @@ class GalleryViewModelTest {
         val viewModel = buildViewModel(galleryApi)
         advanceUntilIdle()
 
-        viewModel.selectTab(GalleryTab.ICONS)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
         advanceUntilIdle()
 
         val iconState = viewModel.uiState.value.tabs.getValue(GalleryTab.ICONS)
         assertEquals(LoadState.Failed("icons unavailable"), iconState)
 
-        viewModel.selectTab(GalleryTab.GALLERY)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.GALLERY))
 
         assertEquals(LoadState.Loaded(Unit), viewModel.uiState.value.selectedTabState)
     }
@@ -87,9 +87,9 @@ class GalleryViewModelTest {
         val viewModel = buildViewModel(galleryApi)
         advanceUntilIdle()
 
-        viewModel.selectTab(GalleryTab.ICONS)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
         advanceUntilIdle()
-        viewModel.refresh()
+        viewModel.handle(GalleryCommand.Refresh)
         advanceUntilIdle()
 
         verify(galleryApi, times(1)).getFileList(100, 0, "gallery")
@@ -105,7 +105,7 @@ class GalleryViewModelTest {
         val viewModel = buildViewModel(galleryApi)
         advanceUntilIdle()
 
-        viewModel.deleteFile("file_1", GalleryTab.GALLERY)
+        viewModel.handle(GalleryCommand.DeleteFile("file_1", GalleryTab.GALLERY))
         advanceUntilIdle()
 
         verify(galleryApi).deleteFile("file_1")
@@ -125,7 +125,7 @@ class GalleryViewModelTest {
         val viewModel = buildViewModel(galleryApi)
         advanceUntilIdle()
 
-        viewModel.selectTab(GalleryTab.ICONS)
+        viewModel.handle(GalleryCommand.SelectTab(GalleryTab.ICONS))
         advanceUntilIdle()
 
         // Nothing was decided, so the tab is back where it started rather
@@ -136,7 +136,7 @@ class GalleryViewModelTest {
         )
 
         // The load guard keys off that state, so a retry has to get through.
-        viewModel.retry()
+        viewModel.handle(GalleryCommand.Refresh)
         advanceUntilIdle()
         verify(galleryApi, times(2)).getFileList(100, 0, "icon")
     }
@@ -152,14 +152,14 @@ class GalleryViewModelTest {
         val viewModel = buildViewModel(galleryApi, coordinator)
         advanceUntilIdle()
 
-        viewModel.uploadFile(uri, GalleryTab.GALLERY)
+        viewModel.handle(GalleryCommand.UploadFile(uri, GalleryTab.GALLERY))
         advanceUntilIdle()
 
         assertEquals("Image too large (max 10 MB)", viewModel.snackbarMessage.value)
 
         whenever(coordinator.uploadImage(uri, GalleryImageCategory.GALLERY))
             .thenReturn(GalleryUploadResult.RefreshFailed(RuntimeException("timeout")))
-        viewModel.uploadFile(uri, GalleryTab.GALLERY)
+        viewModel.handle(GalleryCommand.UploadFile(uri, GalleryTab.GALLERY))
         advanceUntilIdle()
 
         assertEquals(

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
 import com.vrcx.android.data.repository.FavoriteRepository
+import com.vrcx.android.data.util.runCatchingCancellable
+import com.vrcx.android.data.util.runIgnoringFailure
 import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.completeLoad
 import com.vrcx.android.ui.common.failLoad
@@ -13,7 +15,6 @@ import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,12 +50,16 @@ class AvatarDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _avatar.update { it.startLoad() }
             try {
-                val avatar = avatarRepository.getAvatar(avatarId, forceRefresh = true)
-                _avatar.update { it.completeLoad(avatar) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _avatar.update { it.failLoad(e.message ?: "Failed to load avatar") }
+                runCatchingCancellable {
+                    avatarRepository.getAvatar(avatarId, forceRefresh = true)
+                }.fold(
+                    onSuccess = { avatar -> _avatar.update { it.completeLoad(avatar) } },
+                    onFailure = { failure ->
+                        _avatar.update {
+                            it.failLoad(failure.message ?: "Failed to load avatar")
+                        }
+                    },
+                )
             } finally {
                 _avatar.update { it.settleLoad() }
             }
@@ -63,38 +68,32 @@ class AvatarDetailViewModel @Inject constructor(
 
     fun selectAvatar() {
         viewModelScope.launch {
-            try {
-                avatarRepository.selectAvatar(avatarId)
-                _message.value = "Avatar selected"
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
-            }
+            _message.value =
+                runCatchingCancellable {
+                    avatarRepository.selectAvatar(avatarId)
+                    "Avatar selected"
+                }.getOrElse { failure -> "Failed: ${failure.message}" }
         }
     }
 
     fun toggleFavorite() {
         viewModelScope.launch {
-            try {
-                favoriteRepository.loadFavorites(type = "avatar")
-                // Read the freshly loaded list rather than the collector's
-                // mirror, which has not resumed yet at this point.
-                val entryId = favoriteRepository.favorites.value.firstOrNull {
-                    it.type == "avatar" && it.favoriteId == avatarId
-                }?.id
-                if (entryId != null) {
-                    favoriteRepository.deleteFavorite(entryId)
-                    _message.value = "Removed from favorites"
-                } else {
-                    favoriteRepository.addFavorite("avatar", avatarId)
-                    _message.value = "Added to favorites"
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Failed: ${e.message}"
-            }
+            _message.value =
+                runCatchingCancellable {
+                    favoriteRepository.loadFavorites(type = "avatar")
+                    // The repository value is updated before its collector can resume.
+                    val entryId =
+                        favoriteRepository.favorites.value
+                            .firstOrNull { it.type == "avatar" && it.favoriteId == avatarId }
+                            ?.id
+                    if (entryId != null) {
+                        favoriteRepository.deleteFavorite(entryId)
+                        "Removed from favorites"
+                    } else {
+                        favoriteRepository.addFavorite("avatar", avatarId)
+                        "Added to favorites"
+                    }
+                }.getOrElse { failure -> "Failed: ${failure.message}" }
         }
     }
 
@@ -104,12 +103,8 @@ class AvatarDetailViewModel @Inject constructor(
 
     private fun loadFavoriteStatus() {
         viewModelScope.launch {
-            try {
+            runIgnoringFailure {
                 favoriteRepository.loadFavorites(type = "avatar")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Favorite status is ancillary to the primary avatar detail.
             }
         }
     }

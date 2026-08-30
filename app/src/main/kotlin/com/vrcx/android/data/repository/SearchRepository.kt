@@ -68,7 +68,7 @@ class SearchRepository @Inject constructor(
         includeLabs: Boolean = false,
         tag: String? = null,
     ): List<World> {
-        val normalizedTag = buildWorldTag(includeLabs = includeLabs, tag = tag)
+        val normalizedTag = buildWorldSearchTag(includeLabs = includeLabs, tag = tag)
         return when (mode) {
             "active" -> worldApi.getActiveWorlds(n = n, offset = offset, tag = normalizedTag)
 
@@ -103,7 +103,7 @@ class SearchRepository @Inject constructor(
             ?.setQueryParameter("search", query)
             ?.setQueryParameter("n", MAX_REMOTE_AVATARS.toString())
             ?.build()
-            ?: throw IllegalArgumentException("Enter a valid remote avatar provider URL.")
+            ?: invalidProviderUrl()
 
         val request = Request.Builder()
             .url(httpUrl)
@@ -113,30 +113,29 @@ class SearchRepository @Inject constructor(
         return withContext(ioDispatcher) {
             remoteAvatarClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    throw IOException(
-                        "Remote avatar provider returned HTTP ${response.code}. " +
-                            "Check the provider URL and access requirements.",
+                    providerFailure(
+                        "returned HTTP ${response.code}. Check the provider URL and access requirements.",
                     )
                 }
                 val responseBody = response.body
-                    ?: throw IOException("Remote avatar provider returned an empty response.")
+                    ?: providerFailure("returned an empty response.")
                 val contentLength = responseBody.contentLength()
                 if (contentLength > MAX_REMOTE_RESPONSE_BYTES) {
-                    throw IOException("Remote avatar provider response is too large.")
+                    providerFailure("response is too large.")
                 }
                 val source = responseBody.source()
                 val buffer = Buffer()
                 while (buffer.size <= MAX_REMOTE_RESPONSE_BYTES) {
                     val remaining = MAX_REMOTE_RESPONSE_BYTES + 1L - buffer.size
-                    if (source.read(buffer, minOf(8_192L, remaining)) == -1L) break
+                    if (source.read(buffer, minOf(READ_BUFFER_BYTES, remaining)) == -1L) break
                 }
                 val bytes = buffer.readByteArray()
                 if (bytes.size > MAX_REMOTE_RESPONSE_BYTES) {
-                    throw IOException("Remote avatar provider response is too large.")
+                    providerFailure("response is too large.")
                 }
                 val body = bytes.toString(Charsets.UTF_8)
                 if (body.isBlank()) {
-                    throw IOException("Remote avatar provider returned an empty response.")
+                    providerFailure("returned an empty response.")
                 }
                 parseRemoteAvatars(body)
             }
@@ -146,29 +145,16 @@ class SearchRepository @Inject constructor(
     suspend fun searchGroups(query: String, n: Int = 10, offset: Int = 0): List<GroupSearchResult> =
         groupApi.searchGroups(n = n, offset = offset, query = query)
 
-    private fun buildWorldTag(includeLabs: Boolean, tag: String?): String? {
-        val tags = buildList {
-            val trimmedTag = tag?.trim().orEmpty()
-            if (trimmedTag.isNotEmpty()) {
-                add(trimmedTag)
-            }
-            if (!includeLabs) {
-                add("system_approved")
-            }
-        }
-        return tags.distinct().takeIf { it.isNotEmpty() }?.joinToString(",")
-    }
-
     private fun parseRemoteAvatars(body: String): List<Avatar> {
         val parsed = runCatching { json.parseToJsonElement(body) }
-            .getOrElse { throw IOException("Remote avatar provider returned invalid JSON.") }
+            .getOrElse { providerFailure("returned invalid JSON.") }
         val items = when (parsed) {
             is JsonArray -> parsed
 
             is JsonObject -> parsed["avatars"] as? JsonArray
-                ?: throw IOException("Remote avatar provider returned an unsupported response format.")
+                ?: providerFailure("returned an unsupported response format.")
 
-            else -> throw IOException("Remote avatar provider returned an unsupported response format.")
+            else -> providerFailure("returned an unsupported response format.")
         }
         val avatarsById = linkedMapOf<String, Avatar>()
         items.take(MAX_REMOTE_AVATARS).forEach { element ->
@@ -176,10 +162,15 @@ class SearchRepository @Inject constructor(
             avatarsById.putIfAbsent(avatar.id, avatar)
         }
         if (items.isNotEmpty() && avatarsById.isEmpty()) {
-            throw IOException("Remote avatar provider returned avatars in an unsupported format.")
+            providerFailure("returned avatars in an unsupported format.")
         }
         return avatarsById.values.toList()
     }
+
+    private fun invalidProviderUrl(): Nothing =
+        throw IllegalArgumentException("Enter a valid remote avatar provider URL.")
+
+    private fun providerFailure(reason: String): Nothing = throw IOException("Remote avatar provider $reason")
 
     private fun remoteAvatarFromJson(element: JsonElement): Avatar? {
         val jsonObject = element as? JsonObject ?: return null
@@ -217,5 +208,14 @@ class SearchRepository @Inject constructor(
     private companion object {
         const val MAX_REMOTE_RESPONSE_BYTES = 5 * 1024 * 1024
         const val MAX_REMOTE_AVATARS = 1_000
+        const val READ_BUFFER_BYTES = 8_192L
     }
+}
+
+private fun buildWorldSearchTag(includeLabs: Boolean, tag: String?): String? {
+    val tags = buildList {
+        tag?.trim()?.takeIf(String::isNotEmpty)?.let(::add)
+        if (!includeLabs) add("system_approved")
+    }
+    return tags.distinct().takeIf { it.isNotEmpty() }?.joinToString(",")
 }
