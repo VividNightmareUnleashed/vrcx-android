@@ -7,6 +7,7 @@ import com.vrcx.android.data.api.model.GroupSearchResult
 import com.vrcx.android.data.api.model.UserSearchResult
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.repository.SearchRepository
+import com.vrcx.android.data.util.runCatchingCancellable
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -56,7 +57,7 @@ sealed interface SearchResult {
     data class Groups(override val items: List<GroupSearchResult>, override val hasMore: Boolean) : SearchResult
 }
 
-private const val SEARCH_PAGE_SIZE = 10
+internal const val SEARCH_PAGE_SIZE = 10
 
 data class SearchUiState(
     val query: String = "",
@@ -82,74 +83,76 @@ data class SearchUiState(
 }
 
 @HiltViewModel
-class SearchViewModel @Inject constructor(private val searchRepository: SearchRepository) : ViewModel() {
-
-    private data class WorldSearchKey(
-        val query: String,
-        val mode: WorldSearchMode,
-        val includeLabs: Boolean,
-        val tag: String,
-    )
-
-    private class FilteredWorldSession(val key: WorldSearchKey) {
-        val matches = mutableListOf<World>()
-        var sourceOffset = 0
-        var exhausted = false
-    }
-
-    private data class RemoteAvatarCache(val query: String, val providerUrl: String, val items: List<Avatar>)
-
-    private val pageSize = SEARCH_PAGE_SIZE
-    private val worldSourcePageSize = 50
-    private var remoteAvatarCache: RemoteAvatarCache? = null
-    private var filteredWorldSession: FilteredWorldSession? = null
+class SearchViewModel @Inject constructor(searchRepository: SearchRepository) : ViewModel() {
+    private val resultLoader = SearchResultLoader(searchRepository)
     private var searchJob: Job? = null
     private var searchGeneration = 0L
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    fun updateQuery(query: String) = updateCriteria(immediate = false, resetRemoteAvatars = true) {
-        it.copy(query = query)
+    internal fun handle(command: SearchCommand) {
+        when (command) {
+            is SearchCommand.Criteria -> handleCriteria(command)
+            is SearchCommand.Paging -> handlePaging(command)
+        }
     }
 
-    fun selectTab(tab: SearchTab) = updateCriteria(immediate = true) { it.copy(selectedTab = tab) }
+    private fun handleCriteria(command: SearchCommand.Criteria) {
+        when (command) {
+            is SearchCommand.UpdateQuery ->
+                updateCriteria(immediate = false, resetRemoteAvatars = true) { it.copy(query = command.query) }
 
-    fun setSearchUsersByBio(enabled: Boolean) = updateCriteria(immediate = true) {
-        it.copy(searchUsersByBio = enabled)
+            is SearchCommand.SelectTab ->
+                updateCriteria(immediate = true) { it.copy(selectedTab = command.tab) }
+
+            is SearchCommand.SearchUsersByBio ->
+                updateCriteria(immediate = true) { it.copy(searchUsersByBio = command.enabled) }
+
+            is SearchCommand.SortUsersByLastLogin ->
+                updateCriteria(immediate = true) { it.copy(sortUsersByLastLogin = command.enabled) }
+
+            is SearchCommand.SetWorldMode ->
+                updateCriteria(immediate = true) { it.copy(worldMode = command.mode) }
+
+            is SearchCommand.IncludeWorldLabs ->
+                updateCriteria(immediate = true) { it.copy(includeWorldLabs = command.enabled) }
+
+            is SearchCommand.SetWorldTag ->
+                updateCriteria(immediate = false) { it.copy(worldTag = command.tag) }
+
+            is SearchCommand.SetAvatarSource ->
+                updateCriteria(immediate = true, resetRemoteAvatars = true) {
+                    it.copy(avatarSearchSource = command.source)
+                }
+
+            is SearchCommand.SetAvatarProviderUrl ->
+                updateCriteria(immediate = false, resetRemoteAvatars = true) {
+                    it.copy(avatarProviderUrl = command.url)
+                }
+        }
     }
 
-    fun setSortUsersByLastLogin(enabled: Boolean) = updateCriteria(immediate = true) {
-        it.copy(sortUsersByLastLogin = enabled)
+    private fun handlePaging(command: SearchCommand.Paging) {
+        when (command) {
+            SearchCommand.NextPage -> if (searchJob?.isActive != true && _uiState.value.hasMore) {
+                _uiState.update { it.copy(currentOffset = it.currentOffset + SEARCH_PAGE_SIZE) }
+                scheduleSearch(immediate = true, useRemoteAvatarCache = true)
+            }
+
+            SearchCommand.PreviousPage -> if (
+                searchJob?.isActive != true &&
+                _uiState.value.currentOffset > 0
+            ) {
+                _uiState.update {
+                    it.copy(currentOffset = (it.currentOffset - SEARCH_PAGE_SIZE).coerceAtLeast(0))
+                }
+                scheduleSearch(immediate = true, useRemoteAvatarCache = true)
+            }
+
+            SearchCommand.Retry -> scheduleSearch(immediate = true, useRemoteAvatarCache = true)
+        }
     }
-
-    fun setWorldMode(mode: WorldSearchMode) = updateCriteria(immediate = true) { it.copy(worldMode = mode) }
-
-    fun setIncludeWorldLabs(enabled: Boolean) = updateCriteria(immediate = true) {
-        it.copy(includeWorldLabs = enabled)
-    }
-
-    fun setWorldTag(tag: String) = updateCriteria(immediate = false) { it.copy(worldTag = tag) }
-
-    fun setAvatarSearchSource(source: AvatarSearchSource) =
-        updateCriteria(immediate = true, resetRemoteAvatars = true) { it.copy(avatarSearchSource = source) }
-
-    fun setAvatarProviderUrl(url: String) =
-        updateCriteria(immediate = false, resetRemoteAvatars = true) { it.copy(avatarProviderUrl = url) }
-
-    fun nextPage() {
-        if (searchJob?.isActive == true || !_uiState.value.hasMore) return
-        _uiState.update { it.copy(currentOffset = it.currentOffset + pageSize) }
-        scheduleSearch(immediate = true, useRemoteAvatarCache = true)
-    }
-
-    fun previousPage() {
-        if (searchJob?.isActive == true || _uiState.value.currentOffset == 0) return
-        _uiState.update { it.copy(currentOffset = (it.currentOffset - pageSize).coerceAtLeast(0)) }
-        scheduleSearch(immediate = true, useRemoteAvatarCache = true)
-    }
-
-    fun retry() = scheduleSearch(immediate = true, useRemoteAvatarCache = true)
 
     private inline fun updateCriteria(
         immediate: Boolean,
@@ -157,8 +160,8 @@ class SearchViewModel @Inject constructor(private val searchRepository: SearchRe
         transform: (SearchUiState) -> SearchUiState,
     ) {
         _uiState.update { transform(it).copy(currentOffset = 0) }
-        filteredWorldSession = null
-        if (resetRemoteAvatars) remoteAvatarCache = null
+        resultLoader.resetWorldSession()
+        if (resetRemoteAvatars) resultLoader.resetRemoteAvatars()
         scheduleSearch(immediate = immediate)
     }
 
@@ -191,176 +194,90 @@ class SearchViewModel @Inject constructor(private val searchRepository: SearchRe
         }
     }
 
-    private fun isSearchReady(state: SearchUiState): Boolean {
-        val trimmedQuery = state.query.trim()
-        return when (state.selectedTab) {
-            SearchTab.USERS -> trimmedQuery.length >= 2
-
-            SearchTab.WORLDS ->
-                state.worldMode != WorldSearchMode.SEARCH || trimmedQuery.length >= 2 || state.worldTag.isNotBlank()
-
-            SearchTab.AVATARS -> if (state.avatarSearchSource == AvatarSearchSource.REMOTE) {
-                trimmedQuery.length >= MIN_REMOTE_AVATAR_QUERY_LENGTH && state.avatarProviderUrl.isNotBlank()
-            } else {
-                trimmedQuery.length >= 2
-            }
-
-            SearchTab.GROUPS -> trimmedQuery.length >= 2
-        }
-    }
-
-    private fun validateSearchState(state: SearchUiState): String? {
-        val isRemoteAvatarSearch =
-            state.selectedTab == SearchTab.AVATARS && state.avatarSearchSource == AvatarSearchSource.REMOTE
-        return if (
-            isRemoteAvatarSearch &&
-            state.query.trim().length >= MIN_REMOTE_AVATAR_QUERY_LENGTH &&
-            state.avatarProviderUrl.isBlank()
-        ) {
-            "Enter a remote avatar provider URL to search that source."
-        } else {
-            null
-        }
-    }
-
     private suspend fun search(generation: Long, useRemoteAvatarCache: Boolean) {
         if (!isCurrentSearch(generation)) return
         _uiState.update { it.copy(isSearching = true, error = null) }
         val request = _uiState.value
         try {
-            val query = request.query.trim()
-            val offset = request.currentOffset
-            val result = when (request.selectedTab) {
-                SearchTab.USERS -> {
-                    val items = searchRepository.searchUsers(
-                        query = query,
-                        n = pageSize + 1,
-                        offset = offset,
-                        searchByBio = request.searchUsersByBio,
-                        sortByLastLogin = request.sortUsersByLastLogin,
-                    )
-                    SearchResult.Users(items.take(pageSize), items.size > pageSize)
-                }
-
-                SearchTab.WORLDS -> loadWorldPage(request, generation)
-
-                SearchTab.AVATARS -> loadAvatarPage(request, query, offset, useRemoteAvatarCache, generation)
-
-                SearchTab.GROUPS -> {
-                    val items = searchRepository.searchGroups(query, n = pageSize + 1, offset = offset)
-                    SearchResult.Groups(items.take(pageSize), items.size > pageSize)
-                }
-            }
-            if (!isCurrentSearch(generation)) return
-            _uiState.update { current -> publishResult(current, result) }
-        } catch (e: CancellationException) {
+            runCatchingCancellable {
+                resultLoader.load(
+                    request = request,
+                    useRemoteAvatarCache = useRemoteAvatarCache,
+                    ensureCurrent = {
+                        if (!isCurrentSearch(generation)) throw CancellationException("Search replaced")
+                    },
+                )
+            }.fold(
+                onSuccess = { result ->
+                    if (isCurrentSearch(generation)) {
+                        _uiState.update { current -> publishSearchResult(current, result) }
+                    }
+                },
+                onFailure = { failure ->
+                    if (isCurrentSearch(generation)) {
+                        _uiState.update {
+                            it.copy(
+                                error = failure.message ?: "Search failed",
+                                isSearching = false,
+                                hasSearched = true,
+                            )
+                        }
+                    }
+                },
+            )
+        } catch (cancelled: CancellationException) {
             if (isCurrentSearch(generation)) _uiState.update { it.copy(isSearching = false) }
-            throw e
-        } catch (e: Exception) {
-            if (isCurrentSearch(generation)) {
-                _uiState.update {
-                    it.copy(
-                        error = e.message ?: "Search failed",
-                        isSearching = false,
-                        hasSearched = true,
-                    )
-                }
-            }
+            throw cancelled
         }
     }
-
-    private suspend fun loadAvatarPage(
-        request: SearchUiState,
-        query: String,
-        offset: Int,
-        useRemoteAvatarCache: Boolean,
-        generation: Long,
-    ): SearchResult.Avatars {
-        if (request.avatarSearchSource != AvatarSearchSource.REMOTE) {
-            val items = searchRepository.searchAvatars(query, n = pageSize + 1, offset = offset)
-            return SearchResult.Avatars(items.take(pageSize), items.size > pageSize)
-        }
-        val providerUrl = request.avatarProviderUrl.trim()
-        val cached = remoteAvatarCache?.takeIf {
-            it.query == query && it.providerUrl == providerUrl
-        }
-        val items = if (useRemoteAvatarCache && cached != null) {
-            cached.items
-        } else {
-            val fetched = searchRepository.searchRemoteAvatars(
-                query = query,
-                providerUrl = providerUrl,
-            )
-            if (!isCurrentSearch(generation)) throw CancellationException("Search replaced")
-            remoteAvatarCache = RemoteAvatarCache(query, providerUrl, fetched)
-            fetched
-        }
-        return SearchResult.Avatars(
-            items = items.drop(offset).take(pageSize),
-            hasMore = offset + pageSize < items.size,
-        )
-    }
-
-    private suspend fun loadWorldPage(request: SearchUiState, generation: Long): SearchResult.Worlds {
-        val query = request.query.trim()
-        val mode = request.worldMode.name.lowercase()
-        if (request.worldMode == WorldSearchMode.SEARCH || query.isBlank()) {
-            filteredWorldSession = null
-            val items = searchRepository.searchWorlds(
-                query = query,
-                n = pageSize + 1,
-                offset = request.currentOffset,
-                mode = mode,
-                includeLabs = request.includeWorldLabs,
-                tag = request.worldTag,
-            )
-            return SearchResult.Worlds(items.take(pageSize), items.size > pageSize)
-        }
-
-        val key = WorldSearchKey(query, request.worldMode, request.includeWorldLabs, request.worldTag)
-        val session = filteredWorldSession?.takeIf { it.key == key }
-            ?: FilteredWorldSession(key).also { filteredWorldSession = it }
-        val targetMatchCount = request.currentOffset + pageSize + 1
-        while (session.matches.size < targetMatchCount && !session.exhausted) {
-            val items = searchRepository.searchWorlds(
-                query = query,
-                n = worldSourcePageSize,
-                offset = session.sourceOffset,
-                mode = mode,
-                includeLabs = request.includeWorldLabs,
-                tag = request.worldTag,
-            )
-            if (!isCurrentSearch(generation)) throw CancellationException("Search replaced")
-            if (items.isEmpty()) {
-                session.exhausted = true
-                break
-            }
-            session.matches += items.filter { world ->
-                world.name.contains(query, ignoreCase = true) ||
-                    world.authorName.contains(query, ignoreCase = true)
-            }
-            session.sourceOffset += items.size
-            if (items.size < worldSourcePageSize) session.exhausted = true
-        }
-        return SearchResult.Worlds(
-            items = session.matches.drop(request.currentOffset).take(pageSize),
-            hasMore = session.matches.size > request.currentOffset + pageSize,
-        )
-    }
-
-    private fun publishResult(state: SearchUiState, result: SearchResult): SearchUiState = state.copy(
-        results = state.results + (state.selectedTab to result),
-        hasMore = result.hasMore,
-        isSearching = false,
-        hasSearched = true,
-        error = null,
-    )
-
-    private fun clearCurrentResults(state: SearchUiState): SearchUiState =
-        state.copy(results = state.results - state.selectedTab)
 
     private fun isCurrentSearch(generation: Long): Boolean = generation == searchGeneration
 }
+
+private fun isSearchReady(state: SearchUiState): Boolean {
+    val trimmedQuery = state.query.trim()
+    return when (state.selectedTab) {
+        SearchTab.USERS -> trimmedQuery.length >= 2
+
+        SearchTab.WORLDS ->
+            state.worldMode != WorldSearchMode.SEARCH ||
+                trimmedQuery.length >= 2 ||
+                state.worldTag.isNotBlank()
+
+        SearchTab.AVATARS -> if (state.avatarSearchSource == AvatarSearchSource.REMOTE) {
+            trimmedQuery.length >= MIN_REMOTE_AVATAR_QUERY_LENGTH && state.avatarProviderUrl.isNotBlank()
+        } else {
+            trimmedQuery.length >= 2
+        }
+
+        SearchTab.GROUPS -> trimmedQuery.length >= 2
+    }
+}
+
+private fun validateSearchState(state: SearchUiState): String? {
+    val isRemoteAvatarSearch =
+        state.selectedTab == SearchTab.AVATARS && state.avatarSearchSource == AvatarSearchSource.REMOTE
+    return if (
+        isRemoteAvatarSearch &&
+        state.query.trim().length >= MIN_REMOTE_AVATAR_QUERY_LENGTH &&
+        state.avatarProviderUrl.isBlank()
+    ) {
+        "Enter a remote avatar provider URL to search that source."
+    } else {
+        null
+    }
+}
+
+private fun publishSearchResult(state: SearchUiState, result: SearchResult): SearchUiState = state.copy(
+    results = state.results + (state.selectedTab to result),
+    hasMore = result.hasMore,
+    isSearching = false,
+    hasSearched = true,
+    error = null,
+)
+
+private fun clearCurrentResults(state: SearchUiState): SearchUiState =
+    state.copy(results = state.results - state.selectedTab)
 
 private const val REMOTE_SEARCH_DEBOUNCE_MS = 300L
 private const val MIN_REMOTE_AVATAR_QUERY_LENGTH = 3

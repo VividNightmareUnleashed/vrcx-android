@@ -28,6 +28,8 @@ import kotlinx.coroutines.withContext
 
 class BootReconnectWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
+    private enum class BootAction { SKIP, NOTIFY, START }
+
     override suspend fun doWork(): Result {
         // The worker runs in the app process, so it has to share the singletons
         // rather than build its own: a second SecureSecretsStore locks on its own
@@ -38,31 +40,36 @@ class BootReconnectWorker(appContext: Context, params: WorkerParameters) : Corou
             BootReconnectEntryPoint::class.java,
         )
         val notificationHelper = entryPoint.notificationHelper()
+        return when (resolveBootAction(entryPoint)) {
+            BootAction.SKIP -> {
+                notificationHelper.cancelBootReconnectRequired()
+                Result.success()
+            }
 
-        // Run eligibility gates BEFORE the Android-15 notification branch.
-        // Without this, logged-out users or users who disabled the background
-        // service would still get a "tap to reconnect" notification on every
-        // reboot on Android 15+.
-        val preferences = entryPoint.preferences()
-        if (!preferences.backgroundServiceEnabled.first()) {
-            notificationHelper.cancelBootReconnectRequired()
-            return Result.success()
+            BootAction.NOTIFY -> {
+                notificationHelper.notifyBootReconnectRequired()
+                Result.success()
+            }
+
+            BootAction.START -> startPipeline(notificationHelper)
         }
+    }
 
-        if (withContext(entryPoint.ioDispatcher()) { entryPoint.cookieJar().getAuthCookie() } == null) {
-            notificationHelper.cancelBootReconnectRequired()
-            return Result.success()
+    private suspend fun resolveBootAction(entryPoint: BootReconnectEntryPoint): BootAction {
+        // Evaluate eligibility before the Android-15 branch so logged-out or
+        // opted-out users never receive a reconnect notification after boot.
+        val isEnabled = entryPoint.preferences().backgroundServiceEnabled.first()
+        val hasAuthCookie = isEnabled && withContext(entryPoint.ioDispatcher()) {
+            entryPoint.cookieJar().getAuthCookie() != null
         }
-
-        // Android 15+ restricts foreground-service starts from BOOT_COMPLETED,
-        // so we surface a "tap to reconnect" notification instead of trying to
-        // start the websocket service here. This only fires once the gates
-        // above confirm the user is logged in AND hasn't opted out.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            notificationHelper.notifyBootReconnectRequired()
-            return Result.success()
+        return when {
+            !hasAuthCookie -> BootAction.SKIP
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM -> BootAction.NOTIFY
+            else -> BootAction.START
         }
+    }
 
+    private suspend fun startPipeline(notificationHelper: NotificationHelper): Result {
         notificationHelper.cancelBootReconnectRequired()
         try {
             setForeground(createForegroundInfo(notificationHelper))
@@ -96,6 +103,7 @@ class BootReconnectWorker(appContext: Context, params: WorkerParameters) : Corou
 
     companion object {
         private const val UNIQUE_WORK_NAME = "boot-reconnect-worker"
+        private const val BACKOFF_SECONDS = 15L
 
         fun enqueue(context: Context) {
             val request = OneTimeWorkRequestBuilder<BootReconnectWorker>()
@@ -105,7 +113,7 @@ class BootReconnectWorker(appContext: Context, params: WorkerParameters) : Corou
                         .build(),
                 )
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.SECONDS)
+                .setBackoffCriteria(BackoffPolicy.LINEAR, BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(

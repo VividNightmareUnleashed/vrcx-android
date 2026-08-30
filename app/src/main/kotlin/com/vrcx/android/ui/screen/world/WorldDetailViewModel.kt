@@ -15,7 +15,6 @@ import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,14 +48,11 @@ class WorldDetailViewModel @Inject constructor(
 
     fun selfInvite(instanceId: String) {
         viewModelScope.launch {
-            try {
-                worldRepository.selfInvite(worldId, instanceId)
-                _message.value = "Invite sent — check your VRChat notifications"
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _message.value = "Self invite failed: ${e.message}"
-            }
+            _message.value =
+                runCatchingCancellable {
+                    worldRepository.selfInvite(worldId, instanceId)
+                    "Invite sent — check your VRChat notifications"
+                }.getOrElse { failure -> "Self invite failed: ${failure.message}" }
         }
     }
 
@@ -78,25 +74,30 @@ class WorldDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.startLoad() }
             try {
-                val world = worldRepository.getWorld(worldId, forceRefresh = true)
-                // Publish the world before reaching for its instances: the page
-                // is worth showing without them, and a failure from here on is a
-                // message beside the world rather than instead of it.
-                _state.update { it.completeLoad(WorldDetailData(world)) }
-                val instanceIds = worldRepository.parseInstanceIds(world)
-                if (instanceIds.isNotEmpty()) {
-                    runCatchingCancellable { worldRepository.getInstances(worldId, instanceIds) }
-                        .onSuccess { instances ->
+                val worldResult =
+                    runCatchingCancellable {
+                        worldRepository.getWorld(worldId, forceRefresh = true)
+                    }
+                val world = worldResult.getOrNull()
+                if (world == null) {
+                    val failure = worldResult.exceptionOrNull()
+                    _state.update { it.failLoad(failure?.message ?: "Failed to load world") }
+                } else {
+                    // The page is useful even when its ancillary instance fetch fails.
+                    _state.update { it.completeLoad(WorldDetailData(world)) }
+                    val instanceIds = worldRepository.parseInstanceIds(world)
+                    if (instanceIds.isNotEmpty()) {
+                        runCatchingCancellable {
+                            worldRepository.getInstances(worldId, instanceIds)
+                        }.onSuccess { instances ->
                             _state.update { it.completeLoad(WorldDetailData(world, instances)) }
+                        }.onFailure { failure ->
+                            _state.update {
+                                it.failLoad(failure.message ?: "Failed to load instances")
+                            }
                         }
-                        .onFailure { failure ->
-                            _state.update { it.failLoad(failure.message ?: "Failed to load instances") }
-                        }
+                    }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.update { it.failLoad(e.message ?: "Failed to load world") }
             } finally {
                 _state.update { it.settleLoad() }
             }

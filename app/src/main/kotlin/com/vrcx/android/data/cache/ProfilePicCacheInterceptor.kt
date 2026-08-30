@@ -2,12 +2,10 @@ package com.vrcx.android.data.cache
 
 import coil3.intercept.Interceptor
 import coil3.request.ImageResult
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-class ProfilePicCacheInterceptor(
-    private val cacheManager: ProfilePicCacheManager,
-) : Interceptor {
+class ProfilePicCacheInterceptor(private val cacheManager: ProfilePicCacheManager) : Interceptor {
 
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         val data = chain.request.data
@@ -16,19 +14,14 @@ class ProfilePicCacheInterceptor(
             else -> data.toString()
         }
 
-        if (!isVrchatUrl(url)) {
-            return chain.proceed()
+        val cachedFile: File? =
+            if (isVrchatUrl(url)) cacheManager.getCachedFile(url) else null
+        return if (cachedFile == null) {
+            chain.proceed()
+        } else {
+            val newRequest = chain.request.newBuilder().data(cachedFile).build()
+            chain.withRequest(newRequest).proceed()
         }
-
-        val cachedFile: File? = cacheManager.getCachedFile(url)
-        if (cachedFile != null) {
-            val newRequest = chain.request.newBuilder()
-                .data(cachedFile)
-                .build()
-            return chain.withRequest(newRequest).proceed()
-        }
-
-        return chain.proceed()
     }
 
     internal companion object {

@@ -4,14 +4,15 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
-import androidx.work.WorkManager
 import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.junit.Assert.assertEquals
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
@@ -59,6 +60,12 @@ class BootReceiverTest {
             .get()
         assertEquals(1, workInfos.size)
         // Worker is enqueued (not yet run) since constraints are unmet in test.
-        assert(workInfos.first().state in setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.SUCCEEDED, WorkInfo.State.RUNNING))
+        assertTrue(
+            workInfos.first().state in setOf(
+                WorkInfo.State.ENQUEUED,
+                WorkInfo.State.SUCCEEDED,
+                WorkInfo.State.RUNNING,
+            ),
+        )
     }
 }

@@ -469,7 +469,7 @@ class LoginViewModelTest {
         verify(preferences).clearLegacySavedCredentials()
     }
 
-    private suspend fun TestScope.awaitCredentialSave(username: String, password: String) {
+    private fun TestScope.awaitCredentialSave(username: String, password: String) {
         advanceUntilIdle()
         verify(secureSecretsStore).saveSavedCredentialsIfCurrent(any(), eq(username), eq(password))
     }

@@ -39,108 +39,126 @@ class FeedDaoTest {
     @Test
     fun `feed queries use inserted row order instead of createdAt text order`() = runBlocking {
         val dao = db.feedDao()
-        val ownerUserId = "usr_owner"
-        val userId = "usr_friend"
-        val compactTimestamp = "2026-03-19T10:00:30Z"
-        val fractionalTimestamp = "2026-03-19T10:00:30.123Z"
-
-        dao.insertGps(
-            FeedGpsEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
-                location = "wrld_old:old",
-                createdAt = compactTimestamp,
-            )
+        val fixture = OrderingFixture(
+            ownerUserId = "usr_owner",
+            userId = "usr_friend",
+            compactTimestamp = "2026-03-19T10:00:30Z",
+            fractionalTimestamp = "2026-03-19T10:00:30.123Z",
         )
-        dao.insertGps(
+
+        dao.verifyGpsOrder(fixture)
+        dao.verifyStatusOrder(fixture)
+        dao.verifyBioOrder(fixture)
+        dao.verifyAvatarOrder(fixture)
+        dao.verifyOnlineOrder(fixture)
+    }
+
+    private suspend fun FeedDao.verifyGpsOrder(fixture: OrderingFixture) {
+        insertGps(
             FeedGpsEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
+                location = "wrld_old:old",
+                createdAt = fixture.compactTimestamp,
+            ),
+        )
+        insertGps(
+            FeedGpsEntity(
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 location = "wrld_new:new",
-                createdAt = fractionalTimestamp,
-            )
+                createdAt = fixture.fractionalTimestamp,
+            ),
         )
         assertEquals(
             listOf("wrld_new:new", "wrld_old:old"),
-            dao.getGpsFeed(ownerUserId, limit = 2).first().map { it.location },
+            getGpsFeed(fixture.ownerUserId, limit = 2).first().map { it.location },
         )
-        assertEquals("wrld_new:new", dao.getLatestGps(ownerUserId, userId)?.location)
+        assertEquals("wrld_new:new", getLatestGps(fixture.ownerUserId, fixture.userId)?.location)
+    }
 
-        dao.insertStatus(
+    private suspend fun FeedDao.verifyStatusOrder(fixture: OrderingFixture) {
+        insertStatus(
             FeedStatusEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 status = "old",
-                createdAt = compactTimestamp,
-            )
+                createdAt = fixture.compactTimestamp,
+            ),
         )
-        dao.insertStatus(
+        insertStatus(
             FeedStatusEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 status = "new",
-                createdAt = fractionalTimestamp,
-            )
+                createdAt = fixture.fractionalTimestamp,
+            ),
         )
-        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "status") { it.status })
-        assertEquals("new", dao.getLatestStatus(ownerUserId, userId)?.status)
+        assertEquals(listOf("new", "old"), merged(fixture.ownerUserId, "status") { it.status })
+        assertEquals("new", getLatestStatus(fixture.ownerUserId, fixture.userId)?.status)
+    }
 
-        dao.insertBio(
+    private suspend fun FeedDao.verifyBioOrder(fixture: OrderingFixture) {
+        insertBio(
             FeedBioEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 bio = "old",
-                createdAt = compactTimestamp,
-            )
+                createdAt = fixture.compactTimestamp,
+            ),
         )
-        dao.insertBio(
+        insertBio(
             FeedBioEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 bio = "new",
-                createdAt = fractionalTimestamp,
-            )
+                createdAt = fixture.fractionalTimestamp,
+            ),
         )
-        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "bio") { it.bio })
-        assertEquals("new", dao.getLatestBio(ownerUserId, userId)?.bio)
+        assertEquals(listOf("new", "old"), merged(fixture.ownerUserId, "bio") { it.bio })
+        assertEquals("new", getLatestBio(fixture.ownerUserId, fixture.userId)?.bio)
+    }
 
-        dao.insertAvatar(
+    private suspend fun FeedDao.verifyAvatarOrder(fixture: OrderingFixture) {
+        insertAvatar(
             FeedAvatarEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 avatarName = "old",
-                createdAt = compactTimestamp,
-            )
+                createdAt = fixture.compactTimestamp,
+            ),
         )
-        dao.insertAvatar(
+        insertAvatar(
             FeedAvatarEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 avatarName = "new",
-                createdAt = fractionalTimestamp,
-            )
+                createdAt = fixture.fractionalTimestamp,
+            ),
         )
-        assertEquals(listOf("new", "old"), dao.merged(ownerUserId, "avatar") { it.avatarName })
-        assertEquals("new", dao.getLatestAvatar(ownerUserId, userId)?.avatarName)
+        assertEquals(listOf("new", "old"), merged(fixture.ownerUserId, "avatar") { it.avatarName })
+        assertEquals("new", getLatestAvatar(fixture.ownerUserId, fixture.userId)?.avatarName)
+    }
 
-        dao.insertOnlineOffline(
+    private suspend fun FeedDao.verifyOnlineOrder(fixture: OrderingFixture) {
+        insertOnlineOffline(
             FeedOnlineOfflineEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 type = "offline",
-                createdAt = compactTimestamp,
-            )
+                createdAt = fixture.compactTimestamp,
+            ),
         )
-        dao.insertOnlineOffline(
+        insertOnlineOffline(
             FeedOnlineOfflineEntity(
-                ownerUserId = ownerUserId,
-                userId = userId,
+                ownerUserId = fixture.ownerUserId,
+                userId = fixture.userId,
                 type = "online",
-                createdAt = fractionalTimestamp,
-            )
+                createdAt = fixture.fractionalTimestamp,
+            ),
         )
-        assertEquals(listOf("online", "offline"), dao.merged(ownerUserId, "onlineOffline") { it.type })
-        assertEquals("online", dao.getLatestOnlineOffline(ownerUserId, userId)?.type)
+        assertEquals(listOf("online", "offline"), merged(fixture.ownerUserId, "onlineOffline") { it.type })
+        assertEquals("online", getLatestOnlineOffline(fixture.ownerUserId, fixture.userId)?.type)
     }
 
     @Test
@@ -224,19 +242,19 @@ class FeedDaoTest {
     private suspend fun FeedDao.insertRow(ownerUserId: String, userId: String, payload: String) {
         val createdAt = "2026-03-19T10:00:30Z"
         insertGps(
-            FeedGpsEntity(ownerUserId = ownerUserId, userId = userId, location = payload, createdAt = createdAt)
+            FeedGpsEntity(ownerUserId = ownerUserId, userId = userId, location = payload, createdAt = createdAt),
         )
         insertStatus(
-            FeedStatusEntity(ownerUserId = ownerUserId, userId = userId, status = payload, createdAt = createdAt)
+            FeedStatusEntity(ownerUserId = ownerUserId, userId = userId, status = payload, createdAt = createdAt),
         )
         insertBio(
-            FeedBioEntity(ownerUserId = ownerUserId, userId = userId, bio = payload, createdAt = createdAt)
+            FeedBioEntity(ownerUserId = ownerUserId, userId = userId, bio = payload, createdAt = createdAt),
         )
         insertAvatar(
-            FeedAvatarEntity(ownerUserId = ownerUserId, userId = userId, avatarName = payload, createdAt = createdAt)
+            FeedAvatarEntity(ownerUserId = ownerUserId, userId = userId, avatarName = payload, createdAt = createdAt),
         )
         insertOnlineOffline(
-            FeedOnlineOfflineEntity(ownerUserId = ownerUserId, userId = userId, type = payload, createdAt = createdAt)
+            FeedOnlineOfflineEntity(ownerUserId = ownerUserId, userId = userId, type = payload, createdAt = createdAt),
         )
     }
 
@@ -266,6 +284,13 @@ class FeedDaoTest {
     )
 
     private companion object {
+        data class OrderingFixture(
+            val ownerUserId: String,
+            val userId: String,
+            val compactTimestamp: String,
+            val fractionalTimestamp: String,
+        )
+
         const val OWNER_A = "usr_owner_a"
         const val OWNER_B = "usr_owner_b"
         val FEED_TABLES = listOf("gps", "status", "bio", "avatar", "onlineOffline")

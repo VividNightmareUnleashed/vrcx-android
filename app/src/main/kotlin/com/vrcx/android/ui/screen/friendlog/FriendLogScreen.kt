@@ -125,7 +125,6 @@ class FriendLogViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
     val history by viewModel.history.collectAsStateWithLifecycle()
@@ -134,83 +133,114 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friend Log", onBack = onBack)
-
-        VrcxSearchBar(
-            query = searchQuery,
-            onQueryChange = { viewModel.updateSearch(it) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        FriendLogFilters(
+            searchQuery = searchQuery,
+            selectedTypes = selectedTypes,
+            onSearchChange = viewModel::updateSearch,
+            onTypeClick = viewModel::toggleType,
         )
+        FriendLogHistory(history)
+    }
+}
 
-        FlowRow(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FriendLogEventType.entries.forEach { type ->
-                FilterChip(
-                    selected = type in selectedTypes,
-                    onClick = { viewModel.toggleType(type) },
-                    label = { Text(type.label) },
-                )
-            }
-        }
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun FriendLogFilters(
+    searchQuery: String,
+    selectedTypes: Set<FriendLogEventType>,
+    onSearchChange: (String) -> Unit,
+    onTypeClick: (FriendLogEventType) -> Unit,
+) {
+    VrcxSearchBar(
+        query = searchQuery,
+        onQueryChange = onSearchChange,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    )
 
-        if (history.isEmpty()) {
-            EmptyState(
-                message = "No friend log history",
-                icon = Icons.Outlined.History,
-                subtitle = "History will appear as friends are added/removed",
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FriendLogEventType.entries.forEach { type ->
+            FilterChip(
+                selected = type in selectedTypes,
+                onClick = { onTypeClick(type) },
+                label = { Text(type.label) },
             )
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(history, key = { it.id }) { entry ->
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            entry.type.icon(),
-                            contentDescription = null,
-                            tint = when (entry.type) {
-                                FriendLogEventType.FRIEND -> MaterialTheme.colorScheme.primary
+        }
+    }
+}
 
-                                FriendLogEventType.UNFRIEND -> MaterialTheme.colorScheme.error
-
-                                FriendLogEventType.DISPLAY_NAME,
-                                FriendLogEventType.TRUST_LEVEL,
-                                -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                        Spacer(Modifier.padding(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(entry.displayName, style = MaterialTheme.typography.bodyLarge)
-                            val detail = when (entry.type) {
-                                FriendLogEventType.DISPLAY_NAME -> if (entry.previousDisplayName.isNotEmpty()) {
-                                    "${entry.previousDisplayName} → ${entry.displayName}"
-                                } else {
-                                    ""
-                                }
-
-                                FriendLogEventType.TRUST_LEVEL -> if (entry.previousTrustLevel.isNotEmpty()) {
-                                    "${entry.previousTrustLevel} → ${entry.trustLevel}"
-                                } else {
-                                    entry.trustLevel
-                                }
-
-                                FriendLogEventType.FRIEND, FriendLogEventType.UNFRIEND -> ""
-                            }
-                            Text(
-                                "${entry.type.label}${if (detail.isNotEmpty()) " • $detail" else ""}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Text(
-                            relativeTime(entry.createdAt),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+@Composable
+private fun FriendLogHistory(history: List<FriendLogEntry>) {
+    if (history.isEmpty()) {
+        EmptyState(
+            message = "No friend log history",
+            icon = Icons.Outlined.History,
+            subtitle = "History will appear as friends are added/removed",
+        )
+    } else {
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(history, key = FriendLogEntry::id) { entry ->
+                FriendLogRow(entry)
             }
         }
     }
+}
+
+@Composable
+private fun FriendLogRow(entry: FriendLogEntry) {
+    Row(
+        Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            entry.type.icon(),
+            contentDescription = null,
+            tint = when (entry.type) {
+                FriendLogEventType.FRIEND -> MaterialTheme.colorScheme.primary
+
+                FriendLogEventType.UNFRIEND -> MaterialTheme.colorScheme.error
+
+                FriendLogEventType.DISPLAY_NAME,
+                FriendLogEventType.TRUST_LEVEL,
+                -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+        Spacer(Modifier.padding(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(entry.displayName, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                entry.summary(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            relativeTime(entry.createdAt),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun FriendLogEntry.summary(): String {
+    val detail = when (type) {
+        FriendLogEventType.DISPLAY_NAME -> if (previousDisplayName.isNotEmpty()) {
+            "$previousDisplayName → $displayName"
+        } else {
+            ""
+        }
+
+        FriendLogEventType.TRUST_LEVEL -> if (previousTrustLevel.isNotEmpty()) {
+            "$previousTrustLevel → $trustLevel"
+        } else {
+            trustLevel
+        }
+
+        FriendLogEventType.FRIEND, FriendLogEventType.UNFRIEND -> ""
+    }
+    return "${type.label}${if (detail.isNotEmpty()) " • $detail" else ""}"
 }
 
 private fun FriendLogEventType.icon(): ImageVector = when (this) {

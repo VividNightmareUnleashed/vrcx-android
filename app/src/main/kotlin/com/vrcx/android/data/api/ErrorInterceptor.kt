@@ -32,7 +32,7 @@ class ErrorInterceptor(
             return response
         }
 
-        if (response.code == 429) {
+        if (response.code == HTTP_TOO_MANY_REQUESTS) {
             val delayMs = retryDelayMillis(response.header("Retry-After"))
             // Release the body and its pooled connection before waiting, so the
             // delay doesn't also hold a connection out of the per-host pool.
@@ -55,7 +55,7 @@ class ErrorInterceptor(
     }
 
     private fun emitUnauthorizedIfNeeded(response: Response): Boolean {
-        if (response.code != 401) {
+        if (response.code != HTTP_UNAUTHORIZED) {
             return false
         }
         if (response.request.header("Authorization")?.startsWith("Basic ", ignoreCase = true) == true) {
@@ -85,6 +85,8 @@ class ErrorInterceptor(
 
     companion object {
         private const val MILLIS_PER_SECOND = 1_000L
+        private const val HTTP_UNAUTHORIZED = 401
+        private const val HTTP_TOO_MANY_REQUESTS = 429
         internal const val DEFAULT_RETRY_DELAY_MS = 1_000L
         internal const val MAX_RETRY_DELAY_MS = 2_000L
     }

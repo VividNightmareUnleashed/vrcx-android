@@ -35,20 +35,15 @@ import androidx.core.util.Consumer
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import coil3.compose.AsyncImage
-import com.vrcx.android.data.preferences.PreferenceDefaults
 import com.vrcx.android.data.preferences.ThemeMode
-import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.preferences.WallpaperScaleMode
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.service.WebSocketForegroundService
-import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.VrcxPanelSurface
 import com.vrcx.android.ui.navigation.VrcxBottomBar
 import com.vrcx.android.ui.navigation.VrcxNavGraph
@@ -57,37 +52,6 @@ import com.vrcx.android.ui.screen.login.LoginViewModel
 import com.vrcx.android.ui.theme.LocalWallpaperActive
 import com.vrcx.android.ui.theme.VrcxTheme
 import com.vrcx.android.ui.theme.vrcxColors
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-
-@HiltViewModel
-class VrcxAppViewModel @Inject constructor(private val preferences: VrcxPreferences) : ViewModel() {
-    private val sharingStarted = whileUiSubscribed
-
-    // Null means "DataStore hasn't answered yet". Guessing a value here paints a
-    // whole shell in the wrong theme on every cold start for anyone whose choice
-    // isn't the guess, then flips it.
-    val themeMode: StateFlow<ThemeMode?> = preferences.themeMode
-        .stateIn(viewModelScope, sharingStarted, null)
-    val dynamicColors: StateFlow<Boolean> = preferences.dynamicColors
-        .stateIn(viewModelScope, sharingStarted, PreferenceDefaults.DYNAMIC_COLORS)
-    val wallpaperUri: StateFlow<String?> = preferences.wallpaperUri
-        .stateIn(viewModelScope, sharingStarted, null)
-    val wallpaperScaleMode: StateFlow<WallpaperScaleMode> = preferences.wallpaperScaleMode
-        .stateIn(
-            viewModelScope,
-            sharingStarted,
-            PreferenceDefaults.WALLPAPER_SCALE_MODE,
-        )
-    val backgroundServiceEnabled: StateFlow<Boolean?> = preferences.backgroundServiceEnabled
-        .stateIn(
-            viewModelScope,
-            sharingStarted,
-            null,
-        )
-}
 
 @Composable
 fun VrcxApp(appViewModel: VrcxAppViewModel = hiltViewModel()) {

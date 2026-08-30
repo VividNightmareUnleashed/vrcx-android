@@ -388,7 +388,7 @@ class GalleryRepositoryTest {
             "application/octet-stream" to "image.png",
             "" to "image.png",
         ).forEach { (mimeType, expected) ->
-            assertEquals(expected, GalleryRepository.defaultFileNameFor(mimeType))
+            assertEquals(expected, GalleryUploadFileNames.defaultFor(mimeType))
         }
     }
 }

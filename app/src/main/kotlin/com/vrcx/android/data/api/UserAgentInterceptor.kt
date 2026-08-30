@@ -13,6 +13,8 @@ class UserAgentInterceptor : Interceptor {
     }
 
     companion object {
-        val USER_AGENT = "VRCX-Android/${BuildConfig.VERSION_NAME} https://github.com/VividNightmareUnleashed/vrcx-android"
+        val USER_AGENT =
+            "VRCX-Android/${BuildConfig.VERSION_NAME} " +
+                "https://github.com/VividNightmareUnleashed/vrcx-android"
     }
 }

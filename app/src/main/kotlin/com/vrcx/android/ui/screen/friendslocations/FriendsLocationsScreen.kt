@@ -371,7 +371,6 @@ class FriendsLocationsViewModel @Inject constructor(
 private fun List<FriendContext>.sortedByName(): List<FriendContext> =
     sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsLocationsScreen(
     viewModel: FriendsLocationsViewModel = hiltViewModel(),
@@ -385,76 +384,108 @@ fun FriendsLocationsScreen(
 
     Column(Modifier.fillMaxSize()) {
         VrcxDetailTopBar(title = "Friends Locations", onBack = onBack)
-
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LocationSegment.entries.forEach { segment ->
-                FilterChip(
-                    selected = selectedSegment == segment,
-                    onClick = { viewModel.selectSegment(segment) },
-                    label = { Text(segment.label) },
-                )
-            }
-        }
-
-        VrcxSearchBar(
-            query = searchQuery,
-            onQueryChange = viewModel::updateSearch,
-            placeholder = "Search worlds or friends",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+        FriendsLocationControls(
+            selectedSegment = selectedSegment,
+            searchQuery = searchQuery,
+            onSegmentClick = viewModel::selectSegment,
+            onSearchChange = viewModel::updateSearch,
         )
+        FriendsLocationContent(
+            groups = groups,
+            selectedSegment = selectedSegment,
+            onUserClick = onUserClick,
+            onWorldClick = onWorldClick,
+        )
+    }
+}
 
-        if (groups.isEmpty()) {
-            EmptyState(
-                message = selectedSegment.emptyMessage,
-                icon = Icons.Outlined.LocationOn,
-                subtitle = selectedSegment.emptySubtitle,
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun FriendsLocationControls(
+    selectedSegment: LocationSegment,
+    searchQuery: String,
+    onSegmentClick: (LocationSegment) -> Unit,
+    onSearchChange: (String) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LocationSegment.entries.forEach { segment ->
+            FilterChip(
+                selected = selectedSegment == segment,
+                onClick = { onSegmentClick(segment) },
+                label = { Text(segment.label) },
             )
-        } else {
-            // Group headers and friend rows are separate lazy items so the list
-            // virtualizes per friend — a bucket holding every offline friend
-            // would otherwise compose in one pass and request every avatar at once.
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 8.dp),
-            ) {
-                groups.forEach { group ->
-                    item(key = "header_${group.location}") {
-                        LocationGroupHeader(
-                            group = group,
-                            onWorldClick = { onWorldClick(group.worldId) },
-                        )
-                    }
-                    items(group.friends, key = { "${group.location}_${it.id}" }) { friend ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onUserClick(friend.id) }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            UserAvatar(
-                                imageUrl = friend.ref?.displayAvatarUrl(),
-                                status = friend.ref?.status,
-                                state = friend.state,
-                                size = 32.dp,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(friend.name, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
+        }
+    }
+
+    VrcxSearchBar(
+        query = searchQuery,
+        onQueryChange = onSearchChange,
+        placeholder = "Search worlds or friends",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun FriendsLocationContent(
+    groups: List<LocationGroup>,
+    selectedSegment: LocationSegment,
+    onUserClick: (String) -> Unit,
+    onWorldClick: (String) -> Unit,
+) {
+    if (groups.isEmpty()) {
+        EmptyState(
+            message = selectedSegment.emptyMessage,
+            icon = Icons.Outlined.LocationOn,
+            subtitle = selectedSegment.emptySubtitle,
+        )
+    } else {
+        // Headers and friend rows stay separate so large groups virtualize per friend.
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(vertical = 8.dp),
+        ) {
+            groups.forEach { group ->
+                item(key = "header_${group.location}") {
+                    LocationGroupHeader(
+                        group = group,
+                        onWorldClick = { onWorldClick(group.worldId) },
+                    )
+                }
+                items(group.friends, key = { "${group.location}_${it.id}" }) { friend ->
+                    FriendLocationRow(friend, onUserClick)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FriendLocationRow(friend: FriendContext, onUserClick: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onUserClick(friend.id) }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UserAvatar(
+            imageUrl = friend.ref?.displayAvatarUrl(),
+            status = friend.ref?.status,
+            state = friend.state,
+            size = 32.dp,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(friend.name, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

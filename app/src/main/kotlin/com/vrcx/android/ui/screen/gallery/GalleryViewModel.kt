@@ -1,6 +1,5 @@
 package com.vrcx.android.ui.screen.gallery
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.GalleryImage
@@ -13,6 +12,7 @@ import com.vrcx.android.data.gallery.GalleryUploadResult
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.GalleryRepository
+import com.vrcx.android.data.util.runCatchingCancellable
 import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.completeLoad
 import com.vrcx.android.ui.common.failLoad
@@ -22,7 +22,6 @@ import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,15 +77,98 @@ class GalleryViewModel @Inject constructor(
         loadTab(GalleryTab.GALLERY)
     }
 
-    private fun currentUserId(): String? = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
+    private val currentUserId: String?
+        get() = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
 
-    fun refresh() = loadTab(_uiState.value.selectedTab, forceRefresh = true)
+    internal fun handle(command: GalleryCommand) {
+        when (command) {
+            is GalleryCommand.State -> handleState(command)
+            is GalleryCommand.Mutation -> handleMutation(command)
+            is GalleryCommand.Upload -> handleUpload(command)
+        }
+    }
 
-    fun retry() = refresh()
+    private fun handleState(command: GalleryCommand.State) {
+        when (command) {
+            GalleryCommand.Refresh -> loadTab(_uiState.value.selectedTab, forceRefresh = true)
 
-    fun selectTab(tab: GalleryTab) {
-        loadTab(tab)
-        _uiState.update { it.copy(selectedTab = tab) }
+            is GalleryCommand.SelectTab -> {
+                loadTab(command.tab)
+                _uiState.update { it.copy(selectedTab = command.tab) }
+            }
+
+            GalleryCommand.ClearSnackbar -> _snackbarMessage.value = null
+
+            is GalleryCommand.ShowFullscreen -> _fullscreenImageUrl.value = command.imageUrl
+
+            GalleryCommand.DismissFullscreen -> _fullscreenImageUrl.value = null
+        }
+    }
+
+    private fun handleMutation(command: GalleryCommand.Mutation) {
+        when (command) {
+            is GalleryCommand.DeleteFile -> mutate(
+                successMessage = "Image deleted",
+                failurePrefix = "Delete failed",
+                action = { galleryRepository.deleteFile(command.fileId) },
+                refresh = { reloadTab(command.tab) },
+            )
+
+            is GalleryCommand.DeletePrint -> mutate(
+                successMessage = "Print deleted",
+                failurePrefix = "Delete failed",
+                action = { galleryRepository.deletePrint(command.printId) },
+                refresh = { currentUserId?.let { galleryRepository.loadPrints(it) } },
+            )
+
+            is GalleryCommand.SetProfilePicture -> setImage("Profile picture updated") {
+                galleryRepository.setProfilePicOverride(it, command.fileId)
+            }
+
+            GalleryCommand.ClearProfilePicture -> setImage("Profile picture cleared") {
+                galleryRepository.setProfilePicOverride(it, "")
+            }
+
+            is GalleryCommand.SetUserIcon -> setImage("User icon updated") {
+                galleryRepository.setUserIcon(it, command.fileId)
+            }
+
+            GalleryCommand.ClearUserIcon -> setImage("User icon cleared") {
+                galleryRepository.setUserIcon(it, "")
+            }
+
+            is GalleryCommand.ConsumeBundle -> mutate(
+                successMessage = "Bundle consumed",
+                failurePrefix = "Failed",
+                action = { galleryRepository.consumeBundle(command.itemId) },
+                refresh = { galleryRepository.loadInventory() },
+            )
+        }
+    }
+
+    private fun handleUpload(command: GalleryCommand.Upload) {
+        when (command) {
+            is GalleryCommand.UploadFile -> {
+                val category = when (command.tab) {
+                    GalleryTab.GALLERY -> GalleryImageCategory.GALLERY
+                    GalleryTab.ICONS -> GalleryImageCategory.ICON
+                    GalleryTab.EMOJIS -> GalleryImageCategory.EMOJI
+                    GalleryTab.STICKERS -> GalleryImageCategory.STICKER
+                    else -> return
+                }
+                upload(
+                    successMessage = "Image uploaded",
+                    failurePrefix = "Upload failed",
+                    action = { uploadCoordinator.uploadImage(command.uri, category) },
+                )
+            }
+
+            is GalleryCommand.UploadPrint -> upload(
+                successMessage = "Print uploaded",
+                failurePrefix = "Upload failed",
+                action = { uploadCoordinator.uploadPrint(command.uri, command.note) },
+            )
+        }
     }
 
     private fun loadTab(tab: GalleryTab, forceRefresh: Boolean = false) {
@@ -96,15 +178,17 @@ class GalleryViewModel @Inject constructor(
         updateTab(tab) { it.startLoad() }
         viewModelScope.launch {
             try {
-                reloadTab(tab)
-                updateTab(tab) { it.completeLoad(Unit) }
-            } catch (e: CancellationException) {
-                // Covers AccountChangedException, which GalleryRepository raises
-                // when the signed-in account changes mid-load: a deliberate
-                // staleness signal, not something to show the user.
-                throw e
-            } catch (e: Exception) {
-                updateTab(tab) { it.failLoad(e.message ?: "Failed to load ${tab.label.lowercase()}") }
+                runCatchingCancellable { reloadTab(tab) }
+                    .fold(
+                        onSuccess = { updateTab(tab) { state -> state.completeLoad(Unit) } },
+                        onFailure = { failure ->
+                            updateTab(tab) { state ->
+                                state.failLoad(
+                                    failure.message ?: "Failed to load ${tab.label.lowercase()}",
+                                )
+                            }
+                        },
+                    )
             } finally {
                 // Runs on cancellation too — otherwise the tab stays busy and
                 // this method's own guard blocks every later retry.
@@ -119,60 +203,6 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
-    fun showFullscreen(url: String) {
-        _fullscreenImageUrl.value = url
-    }
-
-    fun dismissFullscreen() {
-        _fullscreenImageUrl.value = null
-    }
-
-    fun clearSnackbar() {
-        _snackbarMessage.value = null
-    }
-
-    fun deleteFile(fileId: String, tab: GalleryTab) = mutate(
-        successMessage = "Image deleted",
-        failurePrefix = "Delete failed",
-        action = { galleryRepository.deleteFile(fileId) },
-        refresh = { reloadTab(tab) },
-    )
-
-    fun deletePrint(printId: String) = mutate(
-        successMessage = "Print deleted",
-        failurePrefix = "Delete failed",
-        action = { galleryRepository.deletePrint(printId) },
-        refresh = { currentUserId()?.let { galleryRepository.loadPrints(it) } },
-    )
-
-    fun uploadFile(uri: Uri, tab: GalleryTab) {
-        val category = when (tab) {
-            GalleryTab.GALLERY -> GalleryImageCategory.GALLERY
-            GalleryTab.ICONS -> GalleryImageCategory.ICON
-            GalleryTab.EMOJIS -> GalleryImageCategory.EMOJI
-            GalleryTab.STICKERS -> GalleryImageCategory.STICKER
-            else -> return
-        }
-        upload(
-            successMessage = "Image uploaded",
-            failurePrefix = "Upload failed",
-            action = { uploadCoordinator.uploadImage(uri, category) },
-        )
-    }
-
-    fun uploadPrint(uri: Uri, note: String?) = upload(
-        successMessage = "Print uploaded",
-        failurePrefix = "Upload failed",
-        action = { uploadCoordinator.uploadPrint(uri, note) },
-    )
-
-    /**
-     * Runs one gallery mutation and then reloads what it changed.
-     *
-     * The two failures are kept apart on purpose: a refresh that fails after the
-     * server already accepted the action is never announced as the action
-     * failing, or the user re-taps a delete that actually succeeded.
-     */
     private fun mutate(
         successMessage: String,
         failurePrefix: String,
@@ -180,20 +210,15 @@ class GalleryViewModel @Inject constructor(
         refresh: suspend () -> Unit,
     ) {
         viewModelScope.launch {
-            try {
-                action()
+            val actionFailure = runCatchingCancellable { action() }.exceptionOrNull()
+            if (actionFailure == null) {
                 _snackbarMessage.value = successMessage
-                try {
-                    refresh()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (error: Exception) {
-                    _snackbarMessage.value = "$successMessage, but refresh failed: ${error.message}"
+                runCatchingCancellable { refresh() }.exceptionOrNull()?.let { refreshFailure ->
+                    _snackbarMessage.value =
+                        "$successMessage, but refresh failed: ${refreshFailure.message}"
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "$failurePrefix: ${e.message}"
+            } else {
+                _snackbarMessage.value = "$failurePrefix: ${actionFailure.message}"
             }
         }
     }
@@ -202,25 +227,30 @@ class GalleryViewModel @Inject constructor(
         viewModelScope.launch {
             _isUploading.value = true
             try {
-                _snackbarMessage.value = when (val result = action()) {
-                    GalleryUploadResult.Uploaded -> successMessage
+                runCatchingCancellable { action() }
+                    .fold(
+                        onSuccess = { result ->
+                            val message = when (result) {
+                                GalleryUploadResult.Uploaded -> successMessage
 
-                    GalleryUploadResult.TooLarge -> "Image too large (max 10 MB)"
+                                GalleryUploadResult.TooLarge -> "Image too large (max 10 MB)"
 
-                    GalleryUploadResult.Unreadable -> "Unable to open or read this image"
+                                GalleryUploadResult.Unreadable -> "Unable to open or read this image"
 
-                    GalleryUploadResult.Obsolete -> return@launch
+                                GalleryUploadResult.Obsolete -> null
 
-                    GalleryUploadResult.RefreshRequiresAuthentication ->
-                        "$successMessage, but refresh requires signing in again"
+                                GalleryUploadResult.RefreshRequiresAuthentication ->
+                                    "$successMessage, but refresh requires signing in again"
 
-                    is GalleryUploadResult.RefreshFailed ->
-                        "$successMessage, but refresh failed: ${result.error.message}"
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "$failurePrefix: ${e.message}"
+                                is GalleryUploadResult.RefreshFailed ->
+                                    "$successMessage, but refresh failed: ${result.error.message}"
+                            }
+                            message?.let { _snackbarMessage.value = it }
+                        },
+                        onFailure = { failure ->
+                            _snackbarMessage.value = "$failurePrefix: ${failure.message}"
+                        },
+                    )
             } finally {
                 _isUploading.value = false
             }
@@ -229,34 +259,16 @@ class GalleryViewModel @Inject constructor(
 
     private fun setImage(successMessage: String, call: suspend (uid: String) -> Unit) {
         viewModelScope.launch {
-            try {
-                val uid = currentUserId() ?: return@launch
-                call(uid)
-                _snackbarMessage.value = successMessage
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed: ${e.message}"
-            }
+            val uid = currentUserId ?: return@launch
+            runCatchingCancellable { call(uid) }
+                .fold(
+                    onSuccess = { _snackbarMessage.value = successMessage },
+                    onFailure = { failure ->
+                        _snackbarMessage.value = "Failed: ${failure.message}"
+                    },
+                )
         }
     }
-
-    fun setProfilePic(fileId: String) = setImage("Profile picture updated") {
-        galleryRepository.setProfilePicOverride(it, fileId)
-    }
-
-    fun clearProfilePic() = setImage("Profile picture cleared") { galleryRepository.setProfilePicOverride(it, "") }
-
-    fun setUserIcon(fileId: String) = setImage("User icon updated") { galleryRepository.setUserIcon(it, fileId) }
-
-    fun clearUserIcon() = setImage("User icon cleared") { galleryRepository.setUserIcon(it, "") }
-
-    fun consumeBundle(itemId: String) = mutate(
-        successMessage = "Bundle consumed",
-        failurePrefix = "Failed",
-        action = { galleryRepository.consumeBundle(itemId) },
-        refresh = { galleryRepository.loadInventory() },
-    )
 
     private suspend fun reloadTab(tab: GalleryTab) {
         when (tab) {
@@ -269,7 +281,7 @@ class GalleryViewModel @Inject constructor(
             GalleryTab.STICKERS -> galleryRepository.loadStickers()
 
             GalleryTab.PRINTS -> {
-                val uid = currentUserId() ?: error("Not logged in")
+                val uid = currentUserId ?: error("Not logged in")
                 galleryRepository.loadPrints(uid)
             }
 

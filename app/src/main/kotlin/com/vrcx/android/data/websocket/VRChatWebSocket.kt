@@ -3,7 +3,6 @@ package com.vrcx.android.data.websocket
 import android.util.Log
 import com.vrcx.android.di.IoDispatcher
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -106,7 +105,7 @@ class VRChatWebSocket(
         // Close before replacing, as disconnect() and reconnectNow() both do.
         // The generation guard only silences the old listener; the socket itself
         // would stay attached to the pipeline holding a connection and a ping timer.
-        webSocket?.close(1000, "Reconnecting")
+        webSocket?.close(NORMAL_CLOSURE_CODE, "Reconnecting")
 
         val request = Request.Builder()
             .url("$WEBSOCKET_URL/?auth=$authToken")
@@ -128,27 +127,28 @@ class VRChatWebSocket(
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    // Reject obviously oversized text in O(1) before scanning it.
-                    // For valid text, UTF-8 bytes cannot be fewer than UTF-16 code units.
-                    if (text.length.toLong() > MAX_PIPELINE_FRAME_BYTES) {
+                    val byteCount = validatedFrameByteCount(text)
+                    if (byteCount == null) {
                         rejectConnection(webSocket, FrameRejection.OVERSIZED)
-                        return
+                    } else {
+                        acceptFrame(webSocket, text, byteCount)
                     }
-                    val byteCount = text.utf8Size()
-                    if (byteCount > MAX_PIPELINE_FRAME_BYTES) {
-                        rejectConnection(webSocket, FrameRejection.OVERSIZED)
-                        return
-                    }
+                }
 
+                private fun acceptFrame(webSocket: WebSocket, text: String, byteCount: Long) {
                     var rejection: FrameRejection? = null
                     synchronized(connectionLock) {
-                        if (!isCurrent(generation) || !acceptingFrames || frameBuffer.recoveryPending) return
-                        if (text == lastMessage) return
-
-                        if (frameBuffer.tryEnqueue(text, byteCount)) {
-                            lastMessage = text
-                        } else {
-                            rejection = rejectFramesLocked(FrameRejection.BACKLOG_OVERFLOW)
+                        val canAccept =
+                            isCurrent(generation) &&
+                                acceptingFrames &&
+                                !frameBuffer.recoveryPending &&
+                                text != lastMessage
+                        if (canAccept) {
+                            if (frameBuffer.tryEnqueue(text, byteCount)) {
+                                lastMessage = text
+                            } else {
+                                rejection = rejectFramesLocked(FrameRejection.BACKLOG_OVERFLOW)
+                            }
                         }
                     }
                     rejection?.let { abortForRecovery(webSocket, it) }
@@ -175,7 +175,7 @@ class VRChatWebSocket(
                     synchronized(connectionLock) {
                         if (!isCurrent(generation)) return
                         Log.d(TAG, "WebSocket closing: $code $reason")
-                        webSocket.close(1000, null)
+                        webSocket.close(NORMAL_CLOSURE_CODE, null)
                     }
                 }
 
@@ -219,7 +219,7 @@ class VRChatWebSocket(
         disposed = true
         shouldReconnect = false
         connectionGeneration++
-        webSocket?.close(1000, "Client disconnect")
+        webSocket?.close(NORMAL_CLOSURE_CODE, "Client disconnect")
         webSocket = null
         _state.value = WebSocketState.DISCONNECTED
         // Terminal for this instance. Late service callbacks may still hold this
@@ -245,7 +245,7 @@ class VRChatWebSocket(
         connectionGeneration++
         reconnectJob?.cancel()
         reconnectJob = null
-        webSocket?.close(1000, reason)
+        webSocket?.close(NORMAL_CLOSURE_CODE, reason)
         webSocket = null
         reconnectAttempt = 0
         connectLocked(authToken)
@@ -274,15 +274,11 @@ class VRChatWebSocket(
     private fun isCurrent(generation: Long): Boolean = generation == connectionGeneration
 
     private suspend fun processFrame(frame: IncomingItem.Frame) {
-        try {
-            parsePipelineMessage(json, frame.text)?.let { event -> _events.emit(event) }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Exception) {
-            // One malformed or unexpected frame must not terminate the
-            // only coroutine processing all later pipeline events.
+        val parsed = runCatching { parsePipelineMessage(json, frame.text) }
+        parsed.exceptionOrNull()?.let { error ->
             Log.w(TAG, "Discarding invalid pipeline frame", error)
         }
+        parsed.getOrNull()?.let { event -> _events.emit(event) }
     }
 
     private fun abortForRecovery(webSocket: WebSocket, rejection: FrameRejection) {
@@ -295,6 +291,7 @@ class VRChatWebSocket(
         const val WEBSOCKET_PING_INTERVAL_SECONDS = 30L
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403
+        const val NORMAL_CLOSURE_CODE = 1000
     }
 }
 
@@ -378,6 +375,17 @@ internal const val PIPELINE_FRAME_QUEUE_CAPACITY = 1_024
 internal const val MAX_PIPELINE_FRAME_BYTES = 256L * 1024L
 internal const val MAX_PIPELINE_BUFFER_BYTES = 16L * 1024L * 1024L
 
+private fun validatedFrameByteCount(text: String): Long? {
+    // UTF-8 bytes cannot be fewer than UTF-16 code units, so oversized text is
+    // rejected without first scanning the complete frame.
+    val couldFit = text.length.toLong() <= MAX_PIPELINE_FRAME_BYTES
+    return if (couldFit) {
+        text.utf8Size().takeIf { it <= MAX_PIPELINE_FRAME_BYTES }
+    } else {
+        null
+    }
+}
+
 internal fun isPipelineBufferFull(retainedFrames: Int, retainedBytes: Long, nextFrameBytes: Long): Boolean =
     retainedFrames >= PIPELINE_FRAME_QUEUE_CAPACITY ||
         retainedBytes + nextFrameBytes > MAX_PIPELINE_BUFFER_BYTES
@@ -418,59 +426,57 @@ internal fun shouldForceReconnect(networkWasReplaced: Boolean, state: WebSocketS
  * inline JSON object — both are supported. Extracted as a top-level pure
  * function so the parser is testable without an OkHttp session.
  */
-internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? {
-    val msg = try {
-        json.parseToJsonElement(text).jsonObject
-    } catch (_: Exception) {
-        return null
-    }
-    val typeElement = msg["type"] as? JsonPrimitive ?: return null
-    if (!typeElement.isString) return null
-    val type = typeElement.content
-    val rawContent = msg["content"]
-    val content: JsonElement? = when {
-        rawContent == null -> null
-
-        // JsonNull is a JsonPrimitive, so without this arm a literal
-        // `"content": null` is carried as a non-null element and every
-        // downstream `content?.jsonObject` throws instead of short-circuiting.
-        rawContent is JsonNull -> null
-
-        rawContent is JsonPrimitive && rawContent.isString -> {
-            try {
-                json.parseToJsonElement(rawContent.content)
-            } catch (_: Exception) {
-                null
-            }
-        }
-
-        else -> rawContent
+internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? =
+    decodePipelineEnvelope(json, text)?.let { envelope ->
+        pipelineEventFactories[envelope.type]?.invoke(envelope.content)
+            ?: PipelineEvent.Unknown(envelope.type, envelope.content)
     }
 
-    return when (type) {
-        "friend-online" -> PipelineEvent.FriendOnline(content)
-        "friend-offline" -> PipelineEvent.FriendOffline(content)
-        "friend-active" -> PipelineEvent.FriendActive(content)
-        "friend-update" -> PipelineEvent.FriendUpdate(content)
-        "friend-location" -> PipelineEvent.FriendLocation(content)
-        "friend-add" -> PipelineEvent.FriendAdd(content)
-        "friend-delete" -> PipelineEvent.FriendDelete(content)
-        "user-update" -> PipelineEvent.UserUpdate(content)
-        "user-location" -> PipelineEvent.UserLocation(content)
-        "notification" -> PipelineEvent.Notification(content)
-        "notification-v2" -> PipelineEvent.NotificationV2(content)
-        "notification-v2-delete" -> PipelineEvent.NotificationV2Delete(content)
-        "notification-v2-update" -> PipelineEvent.NotificationV2Update(content)
-        "see-notification" -> PipelineEvent.SeeNotification(content)
-        "hide-notification" -> PipelineEvent.HideNotification(content)
-        "response-notification" -> PipelineEvent.ResponseNotification(content)
-        "clear-notification" -> PipelineEvent.ClearNotification
-        "group-joined" -> PipelineEvent.GroupJoined(content)
-        "group-left" -> PipelineEvent.GroupLeft(content)
-        "group-role-updated" -> PipelineEvent.GroupRoleUpdated(content)
-        "group-member-updated" -> PipelineEvent.GroupMemberUpdated(content)
-        "content-refresh" -> PipelineEvent.ContentRefresh(content)
-        "instance-closed" -> PipelineEvent.InstanceClosed(content)
-        else -> PipelineEvent.Unknown(type, content)
-    }
+private data class PipelineEnvelope(val type: String, val content: JsonElement?)
+
+private fun decodePipelineEnvelope(json: Json, text: String): PipelineEnvelope? {
+    val message = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
+    val type =
+        (message?.get("type") as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.content
+    return type?.let { PipelineEnvelope(it, decodePipelineContent(json, message["content"])) }
 }
+
+private fun decodePipelineContent(json: Json, rawContent: JsonElement?): JsonElement? = when {
+    rawContent == null || rawContent is JsonNull -> null
+
+    rawContent is JsonPrimitive && rawContent.isString ->
+        runCatching { json.parseToJsonElement(rawContent.content) }.getOrNull()
+
+    else -> rawContent
+}
+
+private typealias PipelineEventFactory = (JsonElement?) -> PipelineEvent
+
+private val pipelineEventFactories: Map<String, PipelineEventFactory> =
+    mapOf(
+        "friend-online" to { PipelineEvent.FriendOnline(it) },
+        "friend-offline" to { PipelineEvent.FriendOffline(it) },
+        "friend-active" to { PipelineEvent.FriendActive(it) },
+        "friend-update" to { PipelineEvent.FriendUpdate(it) },
+        "friend-location" to { PipelineEvent.FriendLocation(it) },
+        "friend-add" to { PipelineEvent.FriendAdd(it) },
+        "friend-delete" to { PipelineEvent.FriendDelete(it) },
+        "user-update" to { PipelineEvent.UserUpdate(it) },
+        "user-location" to { PipelineEvent.UserLocation(it) },
+        "notification" to { PipelineEvent.Notification(it) },
+        "notification-v2" to { PipelineEvent.NotificationV2(it) },
+        "notification-v2-delete" to { PipelineEvent.NotificationV2Delete(it) },
+        "notification-v2-update" to { PipelineEvent.NotificationV2Update(it) },
+        "see-notification" to { PipelineEvent.SeeNotification(it) },
+        "hide-notification" to { PipelineEvent.HideNotification(it) },
+        "response-notification" to { PipelineEvent.ResponseNotification(it) },
+        "clear-notification" to { PipelineEvent.ClearNotification },
+        "group-joined" to { PipelineEvent.GroupJoined(it) },
+        "group-left" to { PipelineEvent.GroupLeft(it) },
+        "group-role-updated" to { PipelineEvent.GroupRoleUpdated(it) },
+        "group-member-updated" to { PipelineEvent.GroupMemberUpdated(it) },
+        "content-refresh" to { PipelineEvent.ContentRefresh(it) },
+        "instance-closed" to { PipelineEvent.InstanceClosed(it) },
+    )

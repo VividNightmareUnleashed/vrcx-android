@@ -1,18 +1,5 @@
 <?xml version="1.0" ?>
 <SmellBaseline>
   <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>DoubleMutabilityForCollection:ErrorInterceptorTest.kt$ErrorInterceptorTest$private lateinit var retryDelaysMs: MutableList&lt;Long&gt;</ID>
-    <ID>InjectDispatcher:AuthRepositoryTest.kt$AuthRepositoryTest$IO</ID>
-    <ID>InjectDispatcher:VRChatWebSocketConnectionTest.kt$VRChatWebSocketConnectionTest$IO</ID>
-    <ID>LargeClass:AuthRepositoryTest.kt$AuthRepositoryTest</ID>
-    <ID>LargeClass:FriendRepositoryTest.kt$FriendRepositoryTest</ID>
-    <ID>LongMethod:FeedDaoTest.kt$FeedDaoTest$@Test fun `feed queries use inserted row order instead of createdAt text order`()</ID>
-    <ID>LongMethod:FriendRepositoryTest.kt$FriendRepositoryTest$@Test fun `late load from previous account cannot replace current account friends`()</ID>
-    <ID>MaxLineLength:BootReceiverTest.kt$BootReceiverTest$assert(workInfos.first().state in setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.SUCCEEDED, WorkInfo.State.RUNNING))</ID>
-    <ID>RedundantSuspendModifier:AuthRepositoryTest.kt$AuthRepositoryTest$suspend</ID>
-    <ID>RedundantSuspendModifier:LoginViewModelTest.kt$LoginViewModelTest$suspend</ID>
-    <ID>TooGenericExceptionThrown:GroupRepositoryTest.kt$GroupRepositoryTest$throw RuntimeException("timeout")</ID>
-    <ID>UnnecessaryAbstractClass:VRChatWebSocketConnectionTest.kt$VRChatWebSocketConnectionTest.ClosingServerListener$ClosingServerListener</ID>
-  </CurrentIssues>
+  <CurrentIssues/>
 </SmellBaseline>
