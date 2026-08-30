@@ -13,7 +13,14 @@ import com.vrcx.android.data.db.entity.NotificationEntity
 import com.vrcx.android.data.db.entity.NotificationV2Entity
 import com.vrcx.android.data.websocket.PipelineEvent
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -21,17 +28,23 @@ import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mockito.timeout
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.robolectric.RobolectricTestRunner
 
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class NotificationRepositoryTest {
     private val notificationApi = mock<NotificationApi>()
     private val authRepository = mock<AuthRepository>()
@@ -43,6 +56,7 @@ class NotificationRepositoryTest {
         notificationDao = notificationDao,
         json = Json { ignoreUnknownKeys = true },
         accountScope = accountScope,
+        ioDispatcher = UnconfinedTestDispatcher(),
     )
 
     init {
@@ -165,6 +179,11 @@ class NotificationRepositoryTest {
         repository.loadNotifications()
 
         assertEquals(listOf("arrived_during_fetch"), repository.unifiedNotifications.value.map { it.id })
+        val persisted = argumentCaptor<List<NotificationEntity>>()
+        val writes = inOrder(notificationDao)
+        writes.verify(notificationDao).upsertNotifications(eq("usr_me"), any(), eq(5000))
+        writes.verify(notificationDao).synchronizeNotifications(eq("usr_me"), persisted.capture(), eq(5000))
+        assertEquals(listOf("arrived_during_fetch"), persisted.firstValue.map { it.id })
     }
 
     @Test
@@ -220,11 +239,48 @@ class NotificationRepositoryTest {
         }
         whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
 
-        repository.loadNotifications()
+        assertThrows(AccountChangedException::class.java) {
+            runBlocking { repository.loadNotifications() }
+        }
 
         assertEquals(emptyList<UnifiedNotification>(), repository.unifiedNotifications.value)
         verify(notificationDao, never()).upsertNotifications(any(), any(), any())
         verify(notificationDao, never()).upsertNotificationsV2(any(), any(), any())
+    }
+
+    @Test
+    fun `old account persistence cannot mark the new inbox fully resynced`() = runTest {
+        val oldPersistenceStarted = CompletableDeferred<Unit>()
+        val releaseOldPersistence = CompletableDeferred<Unit>()
+        stubCurrentUser("usr_old")
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any()))
+            .thenReturn(listOf(v1("old_remote", 1)), listOf(v1("new_remote", 3)))
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+        whenever(notificationDao.synchronizeNotifications(eq("usr_old"), any(), eq(5000)))
+            .doSuspendableAnswer {
+                oldPersistenceStarted.complete(Unit)
+                releaseOldPersistence.await()
+            }
+
+        val oldRefresh = async(start = CoroutineStart.UNDISPATCHED) {
+            repository.loadNotifications()
+        }
+        oldPersistenceStarted.await()
+
+        accountScope.invalidate()
+        stubCurrentUser("usr_new")
+        whenever(notificationDao.getNotifications("usr_new", 5000)).thenReturn(
+            listOf(NotificationEntity(id = "new_cached", ownerUserId = "usr_new", createdAt = timestamp(2))),
+        )
+        whenever(notificationDao.getNotificationsV2("usr_new", 5000)).thenReturn(emptyList())
+        repository.restoreNotifications()
+
+        releaseOldPersistence.complete(Unit)
+        oldRefresh.await()
+        repository.loadNotifications()
+
+        verify(notificationDao).synchronizeNotifications(eq("usr_new"), any(), eq(5000))
+        verify(notificationDao, never()).upsertNotifications(eq("usr_new"), any(), eq(5000))
     }
 
     @Test
@@ -244,7 +300,8 @@ class NotificationRepositoryTest {
         )
 
         assertEquals(listOf("shared_id"), repository.unifiedNotifications.value.map { it.id })
-        verify(notificationDao, timeout(1_000)).deleteNotification("usr_old", "shared_id")
+        verify(notificationDao, never()).deleteNotification(any(), eq("shared_id"))
+        verify(notificationDao, never()).deleteNotificationV2(any(), eq("shared_id"))
     }
 
     @Test
@@ -255,6 +312,9 @@ class NotificationRepositoryTest {
         repository.handleEvent(PipelineEvent.SeeNotification(buildJsonObject { put("id", "noty_1") }))
         repository.handleEvent(PipelineEvent.HideNotification(buildJsonObject { put("id", "noty_1") }))
         repository.handleEvent(PipelineEvent.ResponseNotification(JsonPrimitive("noty_1")))
+        repository.handleEvent(PipelineEvent.Notification(JsonPrimitive("noty_2")))
+        repository.handleEvent(PipelineEvent.NotificationV2(JsonPrimitive("noty_3")))
+        repository.handleEvent(PipelineEvent.NotificationV2Delete(JsonPrimitive("noty_1")))
         repository.handleEvent(PipelineEvent.NotificationV2Update(JsonPrimitive("noty_1")))
 
         assertEquals(listOf("noty_1"), repository.unifiedNotifications.value.map { it.id })
@@ -292,7 +352,32 @@ class NotificationRepositoryTest {
         repository.restoreNotifications()
 
         assertEquals(listOf("v2", "v1"), repository.unifiedNotifications.value.map { it.id })
-        assertEquals(listOf(NotificationSource.V2, NotificationSource.V1), repository.unifiedNotifications.value.map { it.source })
+        assertEquals(
+            listOf(NotificationSource.V2, NotificationSource.V1),
+            repository.unifiedNotifications.value.map {
+                it.source
+            },
+        )
+    }
+
+    @Test
+    fun `a pipeline mutation that lands during restore is not overwritten by the cached snapshot`() = runTest {
+        val cacheReadStarted = CompletableDeferred<Unit>()
+        val releaseCacheRead = CompletableDeferred<Unit>()
+        whenever(notificationDao.getNotifications("usr_me", 5000)).doSuspendableAnswer {
+            cacheReadStarted.complete(Unit)
+            releaseCacheRead.await()
+            listOf(NotificationEntity(id = "cached", ownerUserId = "usr_me", createdAt = timestamp(1)))
+        }
+        whenever(notificationDao.getNotificationsV2("usr_me", 5000)).thenReturn(emptyList())
+
+        val restore = async(start = CoroutineStart.UNDISPATCHED) { repository.restoreNotifications() }
+        cacheReadStarted.await()
+        repository.handleEvent(notificationEvent("live", 2))
+        releaseCacheRead.complete(Unit)
+        restore.await()
+
+        assertEquals(listOf("live"), repository.unifiedNotifications.value.map { it.id })
     }
 
     @Test
@@ -306,6 +391,119 @@ class NotificationRepositoryTest {
         assertEquals(emptyList<UnifiedNotification>(), repository.unifiedNotifications.value)
         verify(notificationDao, timeout(1_000)).deleteNotificationsForUser("usr_me")
         verify(notificationDao, timeout(1_000)).deleteNotificationsV2ForUser("usr_me")
+    }
+
+    @Test
+    fun `new notification frames return the same typed domain values stored in the inbox`() {
+        val v1Result = repository.handleEvent(
+            PipelineEvent.Notification(
+                buildJsonObject {
+                    put("id", "noty_v1")
+                    put("type", "friendRequest")
+                    put("senderUserId", "usr_sender")
+                    put("senderUsername", "Sender")
+                    put("created_at", timestamp(1))
+                },
+            ),
+        )
+        val v2Result = repository.handleEvent(
+            PipelineEvent.NotificationV2(
+                buildJsonObject {
+                    put("id", "noty_v2")
+                    put("type", "event.announcement")
+                    put("title", "Announcement")
+                    put("message", "Message")
+                    put("createdAt", timestamp(2))
+                    put("updatedAt", timestamp(2))
+                },
+            ),
+        )
+        val localResult = repository.handleEvent(instanceClosedEvent())
+
+        assertEquals(accountScope.current(), v1Result?.origin)
+        assertEquals(NotificationSource.V1, v1Result?.value?.source)
+        assertEquals(NotificationKind.FRIEND_REQUEST, v1Result?.value?.kind)
+        assertEquals(NotificationSource.V2, v2Result?.value?.source)
+        assertEquals("Announcement", v2Result?.value?.title)
+        assertEquals(NotificationSource.LOCAL, localResult?.value?.source)
+        assertEquals("wrld_123:inst_456", localResult?.value?.message)
+        assertEquals(
+            setOf(v1Result?.value, v2Result?.value, localResult?.value),
+            repository.unifiedNotifications.value.toSet(),
+        )
+    }
+
+    @Test
+    fun `v2 update merges its patch into the current notification`() {
+        repository.handleEvent(
+            PipelineEvent.NotificationV2(
+                buildJsonObject {
+                    put("id", "noty_v2")
+                    put("type", "event.announcement")
+                    put("title", "Original")
+                    put("message", "Kept message")
+                    put("createdAt", timestamp(1))
+                    put("updatedAt", timestamp(1))
+                },
+            ),
+        )
+
+        repository.handleEvent(
+            PipelineEvent.NotificationV2Update(
+                buildJsonObject {
+                    put("id", "noty_v2")
+                    put("updates", buildJsonObject { put("title", "Updated") })
+                },
+            ),
+        )
+
+        val updated = repository.unifiedNotifications.value.single()
+        assertEquals("Updated", updated.title)
+        assertEquals("Kept message", updated.message)
+    }
+
+    @Test
+    fun `a queued notification from the previous account is ignored`() = runBlocking {
+        val oldSocketOrigin = accountScope.current()
+        accountScope.invalidate()
+        stubCurrentUser("usr_new")
+
+        val result = repository.handleEvent(notificationEvent("noty_old", 1), oldSocketOrigin)
+
+        assertEquals(null, result)
+        assertEquals(emptyList<UnifiedNotification>(), repository.unifiedNotifications.value)
+        verify(notificationDao, never()).upsertNotifications(any(), any(), any())
+    }
+
+    @Test
+    fun `storage overflow preserves accepted order then repairs from an authoritative resync`() = runTest {
+        whenever(notificationApi.getNotifications(any(), any(), anyOrNull(), any())).thenReturn(
+            listOf(v1("second", 2), v1("first", 1)),
+        )
+        whenever(notificationApi.getNotificationsV2(any(), any(), anyOrNull())).thenReturn(emptyList())
+        val boundedRepository = NotificationRepository(
+            notificationApi = notificationApi,
+            authRepository = authRepository,
+            notificationDao = notificationDao,
+            json = Json { ignoreUnknownKeys = true },
+            accountScope = accountScope,
+            storageConfig = NotificationStorageWorker.Config(
+                scope = backgroundScope,
+                capacity = 1,
+            ),
+        )
+
+        boundedRepository.handleEvent(notificationEvent("first", 1))
+        boundedRepository.handleEvent(notificationEvent("second", 2))
+        runCurrent()
+
+        val writes = inOrder(notificationDao)
+        writes.verify(notificationDao).upsertNotifications(eq("usr_me"), any(), eq(5000))
+        writes.verify(notificationDao).synchronizeNotifications(eq("usr_me"), any(), eq(5000))
+        verify(notificationDao, times(1)).upsertNotifications(eq("usr_me"), any(), eq(5000))
+        val snapshot = argumentCaptor<List<NotificationEntity>>()
+        verify(notificationDao).synchronizeNotifications(eq("usr_me"), snapshot.capture(), eq(5000))
+        assertEquals(setOf("first", "second"), snapshot.firstValue.map { it.id }.toSet())
     }
 
     @Test
@@ -342,11 +540,7 @@ class NotificationRepositoryTest {
         },
     )
 
-    private fun unified(
-        id: String,
-        source: NotificationSource,
-        type: String = "message",
-    ) = UnifiedNotification(
+    private fun unified(id: String, source: NotificationSource, type: String = "message") = UnifiedNotification(
         id = id,
         type = type,
         senderUserId = "usr_sender",

@@ -7,11 +7,14 @@ import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.api.model.Group
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.api.model.World
+import com.vrcx.android.data.repository.FavoriteRepository
 import com.vrcx.android.data.repository.FavoriteWorldLoadResult
 import com.vrcx.android.data.repository.FavoriteWorldSection
+import com.vrcx.android.data.repository.ProfilePreferenceActions
 import com.vrcx.android.data.repository.UserActionPerformer
 import com.vrcx.android.data.repository.UserDetailRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 enum class UserDetailTab(val label: String) {
     INFO("Info"),
@@ -58,8 +60,10 @@ class UserDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val userDetailRepository: UserDetailRepository,
     private val actionPerformer: UserActionPerformer,
+    private val profilePreferenceActions: ProfilePreferenceActions,
+    private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
-    val userId: String = savedStateHandle.get<String>("userId") ?: ""
+    val userId: String = savedStateHandle.get<String>("userId").orEmpty()
 
     private val _uiState = MutableStateFlow(UserDetailUiState())
     val uiState: StateFlow<UserDetailUiState> = _uiState.asStateFlow()
@@ -116,30 +120,35 @@ class UserDetailViewModel @Inject constructor(
     fun selectTab(tab: UserDetailTab) {
         when (tab) {
             UserDetailTab.INFO -> Unit
+
             UserDetailTab.MUTUALS -> loadTab(
                 tab = tab,
                 failureMessage = "Failed to load mutual friends",
                 load = { userDetailRepository.loadMutualFriends(userId) },
                 apply = { state, users -> state.copy(mutualFriends = users) },
             )
+
             UserDetailTab.GROUPS -> loadTab(
                 tab = tab,
                 failureMessage = "Failed to load groups",
                 load = { userDetailRepository.loadGroups(userId) },
                 apply = { state, groups -> state.copy(userGroups = groups) },
             )
+
             UserDetailTab.WORLDS -> loadTab(
                 tab = tab,
                 failureMessage = "Failed to load worlds",
                 load = { userDetailRepository.loadWorlds(userId) },
                 apply = { state, worlds -> state.copy(userWorlds = worlds) },
             )
+
             UserDetailTab.AVATARS -> loadTab(
                 tab = tab,
                 failureMessage = "Failed to load avatars",
                 load = { userDetailRepository.loadAvatars(userId) },
                 apply = { state, avatars -> state.copy(userAvatars = avatars) },
             )
+
             UserDetailTab.FAVORITE_WORLDS -> loadTab(
                 tab = tab,
                 failureMessage = "Failed to load favorite worlds",
@@ -182,10 +191,7 @@ class UserDetailViewModel @Inject constructor(
         }
     }
 
-    private fun applyFavoriteWorlds(
-        state: UserDetailUiState,
-        result: FavoriteWorldLoadResult,
-    ): UserDetailUiState {
+    private fun applyFavoriteWorlds(state: UserDetailUiState, result: FavoriteWorldLoadResult): UserDetailUiState {
         val selectedTag = state.selectedFavoriteWorldTag?.takeIf { selected ->
             result.sections.any { it.tag == selected }
         } ?: result.sections.firstOrNull()?.tag
@@ -203,15 +209,15 @@ class UserDetailViewModel @Inject constructor(
     fun toggleFavorite() {
         val entryId = _uiState.value.favoriteEntryId
         if (entryId != null) {
-            runAction("Removed from favorites") { userDetailRepository.deleteFavorite(entryId) }
+            runAction("Removed from favorites") { profilePreferenceActions.deleteFavorite(entryId) }
         } else {
-            runAction("Added to favorites") { userDetailRepository.addFriendFavorite(userId) }
+            runAction("Added to favorites") { profilePreferenceActions.addFriendFavorite(userId) }
         }
     }
 
     private fun observeFavoriteStatus() {
         viewModelScope.launch {
-            userDetailRepository.favorites.collect { favorites ->
+            favoriteRepository.favorites.collect { favorites ->
                 val favorite = favorites.firstOrNull {
                     it.type == "friend" && it.favoriteId == userId
                 }
@@ -231,7 +237,7 @@ class UserDetailViewModel @Inject constructor(
     private fun loadFavoriteStatus() {
         viewModelScope.launch {
             try {
-                userDetailRepository.loadFavoriteStatus()
+                favoriteRepository.loadFavorites(type = "friend")
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -244,7 +250,7 @@ class UserDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val user = _uiState.value.user
-                if (!userDetailRepository.saveNote(userId, user?.displayName.orEmpty(), text)) return@launch
+                if (!profilePreferenceActions.saveNote(userId, user?.displayName.orEmpty(), text)) return@launch
                 _uiState.update {
                     it.copy(
                         note = text,
@@ -263,7 +269,7 @@ class UserDetailViewModel @Inject constructor(
     fun saveMemo(text: String) {
         viewModelScope.launch {
             try {
-                if (!userDetailRepository.saveMemo(userId, text)) return@launch
+                if (!profilePreferenceActions.saveMemo(userId, text)) return@launch
                 _uiState.update { it.copy(memo = text, message = "Memo saved") }
             } catch (e: CancellationException) {
                 throw e
@@ -276,7 +282,7 @@ class UserDetailViewModel @Inject constructor(
     fun toggleNotify() {
         viewModelScope.launch {
             try {
-                val enabled = userDetailRepository.toggleNotify(userId)
+                val enabled = profilePreferenceActions.toggleNotify(userId)
                 _uiState.update {
                     it.copy(
                         notifyEnabled = enabled,
@@ -322,11 +328,7 @@ class UserDetailViewModel @Inject constructor(
      * are plain buttons with no confirm dialog, and a double tap would otherwise
      * send the request twice.
      */
-    private fun runAction(
-        successMessage: String,
-        refreshProfile: Boolean = false,
-        perform: suspend () -> Unit,
-    ) {
+    private fun runAction(successMessage: String, refreshProfile: Boolean = false, perform: suspend () -> Unit) {
         if (actionJob?.isActive == true) return
         actionJob = viewModelScope.launch {
             try {

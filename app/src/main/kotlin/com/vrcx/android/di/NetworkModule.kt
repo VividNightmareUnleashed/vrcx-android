@@ -1,11 +1,11 @@
 package com.vrcx.android.di
 
 import com.vrcx.android.BuildConfig
+import com.vrcx.android.data.api.AccountBoundCookieInterceptor
 import com.vrcx.android.data.api.AuthApi
 import com.vrcx.android.data.api.AuthEventBus
-import com.vrcx.android.data.api.AuthInterceptor
-import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.AvatarApi
+import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.DedupInterceptor
 import com.vrcx.android.data.api.ErrorInterceptor
 import com.vrcx.android.data.api.FavoriteApi
@@ -18,6 +18,8 @@ import com.vrcx.android.data.api.InviteMessageApi
 import com.vrcx.android.data.api.NotificationApi
 import com.vrcx.android.data.api.PlayerModerationApi
 import com.vrcx.android.data.api.RequestDeduplicator
+import com.vrcx.android.data.api.SessionCookieRequestInterceptor
+import com.vrcx.android.data.api.SessionCookieResponseInterceptor
 import com.vrcx.android.data.api.UserAgentInterceptor
 import com.vrcx.android.data.api.UserApi
 import com.vrcx.android.data.api.WorldApi
@@ -26,6 +28,9 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.util.concurrent.TimeUnit
+import javax.inject.Named
+import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
@@ -33,9 +38,6 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.concurrent.TimeUnit
-import javax.inject.Named
-import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -66,27 +68,33 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         cookieJar: CookieJarImpl,
-        authInterceptor: AuthInterceptor,
         authEventBus: AuthEventBus,
         deduplicator: RequestDeduplicator,
+        accountBoundCookieInterceptor: AccountBoundCookieInterceptor,
     ): OkHttpClient {
+        val sessionCookieRequestInterceptor = SessionCookieRequestInterceptor(cookieJar)
+        val sessionCookieResponseInterceptor = SessionCookieResponseInterceptor(cookieJar)
         val builder = OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .connectionPool(sharedConnectionPool)
+            .addInterceptor(sessionCookieRequestInterceptor)
             .addInterceptor(UserAgentInterceptor())
-            .addInterceptor(authInterceptor)
             .addInterceptor(ErrorInterceptor(authEventBus))
             // Remember missing resources globally so every repository benefits
             // from the failure cache without having to opt in.
             .addInterceptor(DedupInterceptor(deduplicator))
+            .addNetworkInterceptor(sessionCookieResponseInterceptor)
+            .addNetworkInterceptor(accountBoundCookieInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
 
         if (BuildConfig.DEBUG) {
-            builder.addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                },
+            )
         }
 
         return builder.build()
@@ -95,43 +103,38 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("imageOkHttpClient")
-    fun provideImageOkHttpClient(cookieJar: CookieJarImpl): OkHttpClient {
-        return OkHttpClient.Builder()
-            .cookieJar(cookieJar)
+    fun provideImageOkHttpClient(cookieJar: CookieJarImpl): OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
+        .connectionPool(sharedConnectionPool)
+        .addInterceptor(SessionCookieRequestInterceptor(cookieJar))
+        .addInterceptor(UserAgentInterceptor())
+        .addNetworkInterceptor(SessionCookieResponseInterceptor(cookieJar))
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideWebSocketOkHttpClient(): PipelineOkHttpClient = PipelineOkHttpClient(
+        OkHttpClient.Builder()
             .connectionPool(sharedConnectionPool)
             .addInterceptor(UserAgentInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    }
+            .build(),
+    )
 
     @Provides
     @Singleton
-    fun provideWebSocketOkHttpClient(): PipelineOkHttpClient {
-        return PipelineOkHttpClient(
-            OkHttpClient.Builder()
-                .connectionPool(sharedConnectionPool)
-                .addInterceptor(UserAgentInterceptor())
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(0, TimeUnit.MILLISECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .build()
+    fun provideRetrofit(okHttpClient: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .client(okHttpClient)
+        .addConverterFactory(
+            json.asConverterFactory("application/json; charset=utf-8".toMediaType()),
         )
-    }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(
-        okHttpClient: OkHttpClient,
-        json: Json,
-    ): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(json.asConverterFactory("application/json; charset=utf-8".toMediaType()))
-            .build()
-    }
+        .build()
 
     @Provides
     @Singleton
@@ -171,7 +174,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun providePlayerModerationApi(retrofit: Retrofit): PlayerModerationApi = retrofit.create(PlayerModerationApi::class.java)
+    fun providePlayerModerationApi(retrofit: Retrofit): PlayerModerationApi =
+        retrofit.create(PlayerModerationApi::class.java)
 
     @Provides
     @Singleton
@@ -184,5 +188,4 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideInviteMessageApi(retrofit: Retrofit): InviteMessageApi = retrofit.create(InviteMessageApi::class.java)
-
 }

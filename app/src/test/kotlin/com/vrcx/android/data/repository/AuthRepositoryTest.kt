@@ -1,29 +1,44 @@
 package com.vrcx.android.data.repository
 
 import com.vrcx.android.data.api.AuthApi
-import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
+import com.vrcx.android.data.api.CookieStorageStatus
 import com.vrcx.android.data.api.RequestDeduplicator
+import com.vrcx.android.data.api.basicAuthorization
 import com.vrcx.android.data.api.model.AuthToken
 import com.vrcx.android.data.api.model.TwoFactorAuthRequest
 import com.vrcx.android.data.api.model.TwoFactorAuthResponse
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.security.SecureSecretsStore
 import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.directTestDispatcher
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.ResponseBody.Companion.toResponseBody
-import retrofit2.HttpException
-import retrofit2.Response
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -32,20 +47,32 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.clearInvocations
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import retrofit2.HttpException
+import retrofit2.Response
 
 class AuthRepositoryTest {
     private val authApi = mock<AuthApi>()
-    private val authInterceptor = mock<AuthInterceptor>()
-    private val cookieJar = mock<CookieJarImpl>()
+    private val cookieStorageStatus = MutableStateFlow(CookieStorageStatus.READY)
+    private val cookieJar = mock<CookieJarImpl>().also {
+        whenever(it.storageStatus).thenReturn(cookieStorageStatus)
+        whenever(it.clearAll()).thenReturn(true)
+        whenever(it.commitAuthenticatedSession()).thenReturn(true)
+        whenever(it.completeLogoutAfterSecretsDeleted()).thenReturn(true)
+        whenever(it.restore(any())).thenReturn(true)
+    }
     private val preferences = mock<VrcxPreferences>()
-    private val secureSecretsStore = mock<SecureSecretsStore>()
+    private val secureSecretsStore = mock<SecureSecretsStore>().also {
+        whenever(it.clearAll()).thenReturn(true)
+    }
     private val dedup = mock<RequestDeduplicator>()
     private val favoriteRepository = mock<FavoriteRepository>()
 
@@ -59,16 +86,23 @@ class AuthRepositoryTest {
     private val worldRepository = mock<WorldRepository>()
 
     private val accountScope = AccountScope()
+    private val explicitLogoutSignal = ExplicitLogoutSignal()
+    private val sessionRuntime = AuthSessionRuntime(
+        accountScope = accountScope,
+        authenticatedSessionGate = AuthenticatedSessionGate(accountScope),
+        requestDeduplicator = dedup,
+        explicitLogoutSignal = explicitLogoutSignal,
+    )
 
     private val repository = AuthRepository(
         authApi = authApi,
-        authInterceptor = authInterceptor,
         cookieJar = cookieJar,
         preferences = preferences,
         secureSecretsStore = secureSecretsStore,
         json = Json { ignoreUnknownKeys = true },
-        dedup = dedup,
-        accountScope = accountScope,
+        sessionRuntime = sessionRuntime,
+        defaultDispatcher = directTestDispatcher,
+        ioDispatcher = Dispatchers.IO,
     )
 
     init {
@@ -144,6 +178,21 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun `a completed two factor login commits its authenticated cookies before publication`() {
+        runBlocking {
+            enterTwoFactorState()
+            whenever(authApi.verifyTotp(any())).thenReturn(TwoFactorAuthResponse(verified = true))
+            whenever(authApi.getCurrentUser()).thenReturn(currentUserJson("usr_test", "Test User"))
+            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+
+            repository.verifyTotp("123456")
+
+            verify(cookieJar).commitAuthenticatedSession()
+            assertTrue(repository.authState.value is AuthState.LoggedIn)
+        }
+    }
+
+    @Test
     fun `email only accounts verify through the email otp endpoint`() {
         runBlocking {
             enterTwoFactorState("emailOtp")
@@ -191,20 +240,20 @@ class AuthRepositoryTest {
     @Test
     fun `partial user update preserves omitted authenticated user fields`() {
         runBlocking {
-            whenever(authApi.getCurrentUser()).thenReturn(
+            whenever(authApi.loginWithBasicAuth(any())).thenReturn(
                 buildJsonObject {
                     put("id", "usr_test")
                     put("displayName", "Before")
                     put("location", "wrld_keep:instance")
                     put("travelingToLocation", "wrld_destination:instance")
-                }
+                },
             )
             whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
             repository.login("test-user", "test-password")
             repository.handleEvent(
                 PipelineEvent.UserUpdate(
-                    buildJsonObject { put("user", buildJsonObject { put("displayName", "After") }) }
-                )
+                    buildJsonObject { put("user", buildJsonObject { put("displayName", "After") }) },
+                ),
             )
             val user = (repository.authState.value as AuthState.LoggedIn).user
             assertEquals("After", user.displayName)
@@ -226,8 +275,8 @@ class AuthRepositoryTest {
                     buildJsonObject {
                         put("userid", "usr_test")
                         put("location", "wrld_moved:instance")
-                    }
-                )
+                    },
+                ),
             )
 
             assertEquals("wrld_moved:instance", repository.currentUser?.location)
@@ -235,32 +284,241 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun `successful password login clears temporary basic auth`() {
+    fun `wrong-shaped user pipeline fields are ignored without changing the session user`() = runBlocking {
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            buildJsonObject {
+                put("id", "usr_test")
+                put("displayName", "Before")
+                put("location", "wrld_keep:instance")
+            },
+        )
+        whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+        repository.login("test-user", "test-password")
+        val before = repository.currentUser
+
+        listOf(
+            PipelineEvent.UserUpdate(buildJsonArray { add(JsonPrimitive("not-an-object")) }),
+            PipelineEvent.UserUpdate(
+                buildJsonObject { put("user", buildJsonArray { add(JsonPrimitive("not-an-object")) }) },
+            ),
+            PipelineEvent.UserUpdate(
+                buildJsonObject {
+                    put("user", buildJsonObject { put("displayName", buildJsonArray {}) })
+                },
+            ),
+            PipelineEvent.UserLocation(buildJsonArray { add(JsonPrimitive("not-an-object")) }),
+            PipelineEvent.UserLocation(
+                buildJsonObject {
+                    put("userId", buildJsonObject {})
+                    put("location", "wrld_replace:instance")
+                },
+            ),
+            PipelineEvent.UserLocation(
+                buildJsonObject {
+                    put("userId", "usr_test")
+                    put("location", buildJsonArray {})
+                },
+            ),
+            PipelineEvent.UserLocation(
+                buildJsonObject {
+                    put("userId", "usr_test")
+                    put("location", 42)
+                },
+            ),
+        ).forEach { event -> repository.handleEvent(event) }
+
+        assertEquals(before, repository.currentUser)
+        assertEquals(before, (repository.authState.value as AuthState.LoggedIn).user)
+    }
+
+    @Test
+    fun `a malformed optional user-location field does not discard the valid location`() = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+
+        repository.handleEvent(
+            PipelineEvent.UserLocation(
+                buildJsonObject {
+                    put("userId", "usr_test")
+                    put("location", "wrld_moved:instance")
+                    put("travelingToLocation", buildJsonObject {})
+                },
+            ),
+        )
+
+        assertEquals("wrld_moved:instance", repository.currentUser?.location)
+        assertNull(repository.currentUser?.travelingToLocation)
+    }
+
+    @Test
+    fun `password login passes basic auth only to its own request`() {
         runBlocking {
             stubLoginFollowUp()
 
             repository.login("test-user", "test-password")
 
-            // The header has to be set before auth/user and dropped after it —
-            // clearing early would send the request unauthenticated.
-            val order = inOrder(authInterceptor, authApi)
-            order.verify(authInterceptor).setBasicAuth("test-user", "test-password")
-            order.verify(authApi).getCurrentUser()
-            order.verify(authInterceptor).clearBasicAuth()
+            val header = argumentCaptor<String>()
+            verify(authApi).loginWithBasicAuth(header.capture())
+            assertEquals(basicAuthorization("test-user", "test-password"), header.firstValue)
+            verify(cookieJar).commitAuthenticatedSession()
             assertTrue(repository.authState.value is AuthState.LoggedIn)
         }
     }
 
     @Test
+    fun `pipeline session keeps the websocket credential and account origin together`(): Unit = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+        val oldAccount = accountScope.current()
+
+        assertEquals(
+            PipelineSession(authToken = "token", account = oldAccount),
+            repository.pipelineSession(),
+        )
+
+        accountScope.invalidate()
+        accountScope.bind("usr_new")
+        clearInvocations(authApi)
+
+        assertEquals(null, repository.pipelineSession())
+        assertEquals(null, repository.refreshPipelineSession(oldAccount))
+        verify(authApi, never()).getAuthToken()
+    }
+
+    @Test
+    fun `pipeline reconciliation preserves a renewed two-factor challenge`(): Unit = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+        val origin = accountScope.current()
+        clearInvocations(cookieJar)
+        whenever(authApi.getCurrentUser()).thenReturn(
+            buildJsonObject {
+                put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("emailOtp")) })
+            },
+        )
+
+        repository.resynchronizePipelineState(origin)
+
+        val state = repository.authState.value as AuthState.RequiresTwoFactor
+        assertEquals(listOf("emailOtp"), state.methods)
+        assertEquals(null, repository.pipelineSession())
+        verify(cookieJar, never()).clearAll()
+    }
+
+    @Test
+    fun `active pipeline reconciliation updates the user without resetting account state`() = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+        val origin = accountScope.current()
+        clearInvocations(friendRepository, notificationRepository, groupRepository, galleryRepository)
+        whenever(authApi.getCurrentUser()).thenReturn(currentUserJson("usr_test", "Updated User"))
+
+        repository.resynchronizePipelineState(origin)
+
+        assertEquals("Updated User", repository.currentUser?.displayName)
+        assertEquals(origin, repository.pipelineSession()?.account)
+        verify(friendRepository, never()).clearRuntimeState()
+        verify(notificationRepository, never()).clearRuntimeState()
+        verify(groupRepository, never()).clearRuntimeState()
+        verify(galleryRepository, never()).clearRuntimeState()
+    }
+
+    @Test
+    fun `an authenticated login is not published when its cookies cannot be committed`() {
+        runBlocking {
+            stubLoginFollowUp()
+            whenever(cookieJar.commitAuthenticatedSession()).thenReturn(false)
+
+            repository.login("test-user", "test-password")
+
+            assertTrue(repository.authState.value is AuthState.Error)
+            assertEquals(null, repository.currentUser)
+            assertNotNull(repository.storageError.value)
+            verify(authApi, never()).getAuthToken()
+            // One clear starts the replacement attempt; the second prevents its
+            // uncommitted in-memory cookies from masquerading as a live session.
+            verify(cookieJar, times(2)).clearAll()
+        }
+    }
+
+    @Test
+    fun `every non-ready cookie store status is explicit before any resume attempt`() {
+        CookieStorageStatus.values()
+            .filterNot { it == CookieStorageStatus.READY }
+            .forEach { status ->
+                val unhealthyCookieJar = mock<CookieJarImpl>()
+                whenever(unhealthyCookieJar.storageStatus).thenReturn(MutableStateFlow(status))
+                val unhealthyAccountScope = AccountScope()
+
+                val unhealthyRepository = AuthRepository(
+                    authApi = authApi,
+                    cookieJar = unhealthyCookieJar,
+                    preferences = preferences,
+                    secureSecretsStore = secureSecretsStore,
+                    json = Json { ignoreUnknownKeys = true },
+                    sessionRuntime = AuthSessionRuntime(
+                        accountScope = unhealthyAccountScope,
+                        authenticatedSessionGate = AuthenticatedSessionGate(unhealthyAccountScope),
+                        requestDeduplicator = dedup,
+                        explicitLogoutSignal = ExplicitLogoutSignal(),
+                    ),
+                    defaultDispatcher = directTestDispatcher,
+                    ioDispatcher = Dispatchers.IO,
+                )
+
+                assertNotNull("$status must be surfaced", unhealthyRepository.storageError.value)
+                assertSame(AuthState.NotLoggedIn, unhealthyRepository.authState.value)
+            }
+    }
+
+    @Test
+    fun `cookie persistence failures after startup are surfaced globally`() = runBlocking {
+        val expectedErrors = mapOf(
+            CookieStorageStatus.WRITE_FAILED to
+                "Saved session data couldn't be moved to secure storage.",
+            CookieStorageStatus.LEGACY_CLEANUP_FAILED to
+                "The new session is secure, but an older saved session copy couldn't be removed.",
+        )
+
+        expectedErrors.forEach { (status, expectedError) ->
+            repository.dismissStorageError()
+            cookieStorageStatus.value = status
+
+            val observed = withTimeout(1_000) {
+                repository.storageError.first { it == expectedError }
+            }
+            assertEquals(expectedError, observed)
+            cookieStorageStatus.value = CookieStorageStatus.READY
+        }
+    }
+
+    @Test
     fun `password login propagates cancellation without publishing an error`(): Unit = runBlocking {
-        whenever(authApi.getCurrentUser()).thenThrow(CancellationException("cancelled"))
+        whenever(authApi.loginWithBasicAuth(any())).thenThrow(CancellationException("cancelled"))
 
         assertThrows(CancellationException::class.java) {
             runBlocking { repository.login("test-user", "test-password") }
         }
 
-        verify(authInterceptor).clearBasicAuth()
         assertTrue(repository.authState.value !is AuthState.Error)
+    }
+
+    @Test
+    fun `token fetch cancellation does not restore cookies after login committed`(): Unit = runBlocking {
+        val storedCookies = mapOf("api.vrchat.cloud" to "auth=previous")
+        whenever(cookieJar.snapshot()).thenReturn(storedCookies)
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            currentUserJson("usr_new", "New User"),
+        )
+        whenever(authApi.getAuthToken()).thenThrow(CancellationException("cancelled"))
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.login("new-user", "new-password") }
+        }
+
+        verify(cookieJar, never()).restore(any())
+        assertEquals("usr_new", (repository.authState.value as AuthState.LoggedIn).user.id)
+        assertEquals(null, repository.authToken)
     }
 
     @Test
@@ -287,8 +545,56 @@ class AuthRepositoryTest {
             // still in the jar, and VRChat may honour it over the Basic header.
             val order = inOrder(cookieJar, authApi)
             order.verify(cookieJar).clearAll()
-            order.verify(authApi).getCurrentUser()
+            order.verify(authApi).loginWithBasicAuth(any())
         }
+    }
+
+    @Test
+    fun `sign-in cookie cleanup runs off the caller without holding the session monitor`() = runBlocking {
+        val callerThread = Thread.currentThread()
+        val snapshotThread = AtomicReference<Thread>()
+        val cleanupThread = AtomicReference<Thread>()
+        val sessionMonitorWasAvailable = AtomicBoolean(false)
+        val reader = Executors.newSingleThreadExecutor()
+        try {
+            whenever(cookieJar.snapshot()).thenAnswer {
+                snapshotThread.set(Thread.currentThread())
+                emptyMap<String, String>()
+            }
+            whenever(cookieJar.clearAll()).thenAnswer {
+                cleanupThread.set(Thread.currentThread())
+                val read = reader.submit<Boolean> { repository.currentUser == null }
+                sessionMonitorWasAvailable.set(read.get(1, TimeUnit.SECONDS))
+                true
+            }
+            whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+                buildJsonObject {
+                    put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
+                },
+            )
+
+            repository.login("test-user", "test-password")
+
+            assertNotSame(callerThread, snapshotThread.get())
+            assertNotSame(callerThread, cleanupThread.get())
+            assertTrue(sessionMonitorWasAvailable.get())
+        } finally {
+            reader.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `resumable-session cookie probe runs off the caller`() {
+        val callerThread = Thread.currentThread()
+        val probeThread = AtomicReference<Thread>()
+        whenever(cookieJar.getAuthCookie()).thenAnswer {
+            probeThread.set(Thread.currentThread())
+            null
+        }
+
+        runBlocking { repository.hasResumableSession() }
+
+        assertNotSame(callerThread, probeThread.get())
     }
 
     @Test
@@ -296,7 +602,7 @@ class AuthRepositoryTest {
         runBlocking {
             val stored = mapOf("api.vrchat.cloud" to "auth=stored")
             whenever(cookieJar.snapshot()).thenReturn(stored)
-            whenever(authApi.getCurrentUser()).thenThrow(RuntimeException("Unable to resolve host"))
+            whenever(authApi.loginWithBasicAuth(any())).thenThrow(RuntimeException("Unable to resolve host"))
 
             repository.login("test-user", "test-password")
 
@@ -308,7 +614,7 @@ class AuthRepositoryTest {
     fun `a rejected sign-in does not put the previous account's cookies back`() {
         runBlocking {
             whenever(cookieJar.snapshot()).thenReturn(mapOf("api.vrchat.cloud" to "auth=stored"))
-            whenever(authApi.getCurrentUser()).thenThrow(httpException(401))
+            whenever(authApi.loginWithBasicAuth(any())).thenThrow(httpException(401))
 
             repository.login("test-user", "test-password")
 
@@ -364,15 +670,8 @@ class AuthRepositoryTest {
     @Test
     fun `unauthorized signal clears session when the server rejects the credentials`() {
         runBlocking {
-            whenever(authApi.getCurrentUser())
-                .thenReturn(
-                    buildJsonObject {
-                        put("id", "usr_test")
-                        put("displayName", "Test User")
-                    }
-                )
-                .thenThrow(httpException(401))
-            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            stubLoginFollowUp()
+            whenever(authApi.getCurrentUser()).thenThrow(httpException(401))
             signInAndForgetSetup()
 
             repository.handleUnauthorizedSignal()
@@ -386,15 +685,8 @@ class AuthRepositoryTest {
     @Test
     fun `unauthorized signal keeps the session when the recheck cannot reach the server`() {
         runBlocking {
-            whenever(authApi.getCurrentUser())
-                .thenReturn(
-                    buildJsonObject {
-                        put("id", "usr_test")
-                        put("displayName", "Test User")
-                    }
-                )
-                .thenThrow(RuntimeException("Unable to resolve host"))
-            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            stubLoginFollowUp()
+            whenever(authApi.getCurrentUser()).thenThrow(RuntimeException("Unable to resolve host"))
             signInAndForgetSetup()
 
             repository.handleUnauthorizedSignal()
@@ -409,19 +701,12 @@ class AuthRepositoryTest {
     @Test
     fun `unauthorized signal keeps cookies when only the second factor lapsed`() {
         runBlocking {
-            whenever(authApi.getCurrentUser())
-                .thenReturn(
-                    buildJsonObject {
-                        put("id", "usr_test")
-                        put("displayName", "Test User")
-                    }
-                )
-                .thenReturn(
-                    buildJsonObject {
-                        put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
-                    }
-                )
-            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            stubLoginFollowUp()
+            whenever(authApi.getCurrentUser()).thenReturn(
+                buildJsonObject {
+                    put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
+                },
+            )
             signInAndForgetSetup()
 
             repository.handleUnauthorizedSignal()
@@ -434,6 +719,191 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun `a successful unauthorized recheck cannot resurrect a logged out session`() = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+        val checkStarted = CompletableDeferred<Unit>()
+        val releaseCheck = CompletableDeferred<Unit>()
+        whenever(authApi.getCurrentUser()).doSuspendableAnswer {
+            checkStarted.complete(Unit)
+            releaseCheck.await()
+            currentUserJson("usr_test", "Old User")
+        }
+
+        coroutineScope {
+            val recheck = async(Dispatchers.IO) { repository.handleUnauthorizedSignal() }
+            checkStarted.await()
+            val logout = async(
+                context = Dispatchers.IO,
+                start = CoroutineStart.UNDISPATCHED,
+            ) { repository.logout() }
+            try {
+                assertFalse(logout.isCompleted)
+                verify(authApi, never()).logout()
+            } finally {
+                releaseCheck.complete(Unit)
+            }
+            recheck.await()
+            logout.await()
+        }
+
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
+        assertEquals(null, repository.currentUser)
+    }
+
+    @Test
+    fun `cancelled logout still clears locally while waiting for a session recheck`() = runBlocking {
+        stubLoginFollowUp()
+        repository.login("test-user", "test-password")
+        val checkStarted = CompletableDeferred<Unit>()
+        val releaseCheck = CompletableDeferred<Unit>()
+        whenever(authApi.getCurrentUser()).doSuspendableAnswer {
+            checkStarted.complete(Unit)
+            releaseCheck.await()
+            currentUserJson("usr_test", "Test User")
+        }
+
+        coroutineScope {
+            val recheck = async(Dispatchers.IO) { repository.handleUnauthorizedSignal() }
+            checkStarted.await()
+            val logout = async(
+                context = Dispatchers.IO,
+                start = CoroutineStart.UNDISPATCHED,
+            ) { repository.logout() }
+            logout.cancel(CancellationException("cancelled"))
+            releaseCheck.complete(Unit)
+            recheck.await()
+            logout.join()
+        }
+
+        verify(authApi, never()).logout()
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
+    }
+
+    @Test
+    fun `a successful unauthorized recheck cannot replace a newer account`() = runBlocking {
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            currentUserJson("usr_old", "Old User"),
+            currentUserJson("usr_new", "New User"),
+        )
+        whenever(authApi.getAuthToken()).thenReturn(
+            AuthToken(token = "old-token"),
+            AuthToken(token = "new-token"),
+        )
+        repository.login("old-user", "old-password")
+        val checkStarted = CompletableDeferred<Unit>()
+        val releaseCheck = CompletableDeferred<Unit>()
+        whenever(authApi.getCurrentUser()).doSuspendableAnswer {
+            checkStarted.complete(Unit)
+            releaseCheck.await()
+            currentUserJson("usr_old", "Old User")
+        }
+
+        coroutineScope {
+            val recheck = async(Dispatchers.IO) { repository.handleUnauthorizedSignal() }
+            checkStarted.await()
+            val newLogin = async(
+                context = Dispatchers.IO,
+                start = CoroutineStart.UNDISPATCHED,
+            ) { repository.login("new-user", "new-password") }
+            try {
+                assertFalse(newLogin.isCompleted)
+                verify(authApi, times(1)).loginWithBasicAuth(any())
+            } finally {
+                releaseCheck.complete(Unit)
+            }
+            recheck.await()
+            newLogin.await()
+        }
+
+        assertEquals("usr_new", (repository.authState.value as AuthState.LoggedIn).user.id)
+        assertEquals("new-token", repository.authToken)
+    }
+
+    @Test
+    fun `a rejected unauthorized recheck cannot clear a newer account`() = runBlocking {
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            currentUserJson("usr_old", "Old User"),
+            currentUserJson("usr_new", "New User"),
+        )
+        whenever(authApi.getAuthToken()).thenReturn(
+            AuthToken(token = "old-token"),
+            AuthToken(token = "new-token"),
+        )
+        repository.login("old-user", "old-password")
+        clearInvocations(cookieJar, dedup)
+        val checkStarted = CompletableDeferred<Unit>()
+        val releaseCheck = CompletableDeferred<Unit>()
+        whenever(authApi.getCurrentUser()).doSuspendableAnswer {
+            checkStarted.complete(Unit)
+            releaseCheck.await()
+            throw httpException(401)
+        }
+
+        coroutineScope {
+            val recheck = async(Dispatchers.IO) { repository.handleUnauthorizedSignal() }
+            checkStarted.await()
+            val newLogin = async(
+                context = Dispatchers.IO,
+                start = CoroutineStart.UNDISPATCHED,
+            ) { repository.login("new-user", "new-password") }
+            try {
+                assertFalse(newLogin.isCompleted)
+                verify(authApi, times(1)).loginWithBasicAuth(any())
+            } finally {
+                releaseCheck.complete(Unit)
+            }
+            recheck.await()
+            newLogin.await()
+        }
+
+        assertEquals("usr_new", (repository.authState.value as AuthState.LoggedIn).user.id)
+        verify(cookieJar, times(2)).clearAll()
+        verify(dedup, times(1)).clearCache()
+    }
+
+    @Test
+    fun `a late two factor recheck cannot replace a newer account`() = runBlocking {
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            currentUserJson("usr_old", "Old User"),
+            currentUserJson("usr_new", "New User"),
+        )
+        whenever(authApi.getAuthToken()).thenReturn(
+            AuthToken(token = "old-token"),
+            AuthToken(token = "new-token"),
+        )
+        repository.login("old-user", "old-password")
+        val checkStarted = CompletableDeferred<Unit>()
+        val releaseCheck = CompletableDeferred<Unit>()
+        whenever(authApi.getCurrentUser()).doSuspendableAnswer {
+            checkStarted.complete(Unit)
+            releaseCheck.await()
+            buildJsonObject {
+                put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("totp")) })
+            }
+        }
+
+        coroutineScope {
+            val recheck = async(Dispatchers.IO) { repository.handleUnauthorizedSignal() }
+            checkStarted.await()
+            val newLogin = async(
+                context = Dispatchers.IO,
+                start = CoroutineStart.UNDISPATCHED,
+            ) { repository.login("new-user", "new-password") }
+            try {
+                assertFalse(newLogin.isCompleted)
+                verify(authApi, times(1)).loginWithBasicAuth(any())
+            } finally {
+                releaseCheck.complete(Unit)
+            }
+            recheck.await()
+            newLogin.await()
+        }
+
+        assertEquals("usr_new", (repository.authState.value as AuthState.LoggedIn).user.id)
+    }
+
+    @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun `resume retries a transient failure before giving up on the stored session`() = runTest {
         whenever(cookieJar.getAuthCookie()).thenReturn("authcookie_test")
@@ -443,13 +913,14 @@ class AuthRepositoryTest {
                 buildJsonObject {
                     put("id", "usr_test")
                     put("displayName", "Test User")
-                }
+                },
             )
         whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
 
         repository.tryResumeSession()
 
         verify(cookieJar, never()).clearAll()
+        verify(cookieJar, never()).commitAuthenticatedSession()
         assertTrue(repository.authState.value is AuthState.LoggedIn)
         // The second attempt waits out the first backoff step rather than
         // hammering a radio that is still coming up.
@@ -497,7 +968,6 @@ class AuthRepositoryTest {
             val order = inOrder(authApi, cookieJar)
             order.verify(authApi).logout()
             order.verify(cookieJar).clearAll()
-            verify(authInterceptor).clearBasicAuth()
             verify(dedup).clearCache()
             verify(favoriteRepository).clearRuntimeState()
             assertSame(AuthState.NotLoggedIn, repository.authState.value)
@@ -507,11 +977,69 @@ class AuthRepositoryTest {
     @Test
     fun `signing out forgets the remembered password`() {
         runBlocking {
+            val logoutSignaled = AtomicBoolean()
+            explicitLogoutSignal.subscribe { logoutSignaled.set(true) }
+
             repository.logout()
 
             // The cookies are revoked server-side, but the password is reusable —
             // leaving it on the device hands the account to whoever picks it up.
             verify(secureSecretsStore).clearAll()
+            verify(cookieJar).completeLogoutAfterSecretsDeleted()
+            verify(preferences).clearLegacySavedCredentials()
+            assertTrue(logoutSignaled.get())
+        }
+    }
+
+    @Test
+    fun `logout clears process credentials before publishing the logged-out state`() {
+        runBlocking {
+            stubLoginFollowUp()
+            repository.login("test-user", "test-password")
+            val stateAtSignal = AtomicReference<AuthState>()
+            explicitLogoutSignal.subscribe { stateAtSignal.set(repository.authState.value) }
+
+            repository.logout()
+
+            assertTrue(stateAtSignal.get() is AuthState.LoggedIn)
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
+        }
+    }
+
+    @Test
+    fun `a failing logout observer cannot veto secret and session cleanup`() = runBlocking {
+        explicitLogoutSignal.subscribe { error("observer failed") }
+
+        repository.logout()
+
+        verify(secureSecretsStore).clearAll()
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
+    }
+
+    @Test
+    fun `logout secret deletion runs off the caller`() {
+        val callerThread = Thread.currentThread()
+        val deletionThread = AtomicReference<Thread>()
+        whenever(secureSecretsStore.clearAll()).thenAnswer {
+            deletionThread.set(Thread.currentThread())
+            true
+        }
+
+        runBlocking { repository.logout() }
+
+        assertNotSame(callerThread, deletionThread.get())
+    }
+
+    @Test
+    fun `durable logout cleanup failure is surfaced after in-memory logout completes`() {
+        runBlocking {
+            whenever(secureSecretsStore.clearAll()).thenReturn(false)
+
+            repository.logout()
+
+            assertSame(AuthState.NotLoggedIn, repository.authState.value)
+            assertNotNull(repository.storageError.value)
+            verify(cookieJar, never()).completeLogoutAfterSecretsDeleted()
             verify(preferences).clearLegacySavedCredentials()
         }
     }
@@ -519,21 +1047,17 @@ class AuthRepositoryTest {
     @Test
     fun `an involuntary session end keeps the remembered password`() {
         runBlocking {
-            whenever(authApi.getCurrentUser())
-                .thenReturn(
-                    buildJsonObject {
-                        put("id", "usr_test")
-                        put("displayName", "Test User")
-                    }
-                )
-                .thenThrow(httpException(401))
-            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            val logoutSignaled = AtomicBoolean()
+            explicitLogoutSignal.subscribe { logoutSignaled.set(true) }
+            stubLoginFollowUp()
+            whenever(authApi.getCurrentUser()).thenThrow(httpException(401))
             repository.login("test-user", "test-password")
 
             repository.handleUnauthorizedSignal()
 
             // Remember-me has to survive a session VRChat ended on its own.
             verify(secureSecretsStore, never()).clearAll()
+            assertFalse(logoutSignaled.get())
         }
     }
 
@@ -562,15 +1086,8 @@ class AuthRepositoryTest {
     @Test
     fun `a rejected session recheck resets every account-scoped repository`() {
         runBlocking {
-            whenever(authApi.getCurrentUser())
-                .thenReturn(
-                    buildJsonObject {
-                        put("id", "usr_test")
-                        put("displayName", "Test User")
-                    }
-                )
-                .thenThrow(httpException(401))
-            whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
+            stubLoginFollowUp()
+            whenever(authApi.getCurrentUser()).thenThrow(httpException(401))
             repository.login("test-user", "test-password")
 
             repository.handleUnauthorizedSignal()
@@ -582,10 +1099,10 @@ class AuthRepositoryTest {
     @Test
     fun `resending the email code resets every account-scoped repository`() {
         runBlocking {
-            whenever(authApi.getCurrentUser()).thenReturn(
+            whenever(authApi.loginWithBasicAuth(any())).thenReturn(
                 buildJsonObject {
                     put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive("emailOtp")) })
-                }
+                },
             )
 
             repository.resendEmailOtp("test-user", "test-password")
@@ -608,7 +1125,6 @@ class AuthRepositoryTest {
 
             verify(authApi).logout()
             verify(cookieJar).clearAll()
-            verify(authInterceptor).clearBasicAuth()
             verify(dedup).clearCache()
             verify(favoriteRepository).clearRuntimeState()
             assertSame(AuthState.NotLoggedIn, repository.authState.value)
@@ -631,6 +1147,21 @@ class AuthRepositoryTest {
         assertSame(AuthState.NotLoggedIn, repository.authState.value)
     }
 
+    @Test
+    fun `legacy credential cleanup propagates cancellation after local logout`(): Unit = runBlocking {
+        preferences.stub {
+            onBlocking { clearLegacySavedCredentials() } doThrow CancellationException("cancelled")
+        }
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.logout() }
+        }
+
+        verify(secureSecretsStore).clearAll()
+        verify(cookieJar).completeLogoutAfterSecretsDeleted()
+        assertSame(AuthState.NotLoggedIn, repository.authState.value)
+    }
+
     /**
      * Signing in clears the jar by design, so the cases below drop the setup
      * interactions first and assert only what the path under test did to it.
@@ -641,20 +1172,22 @@ class AuthRepositoryTest {
     }
 
     private suspend fun stubLoginFollowUp() {
-        whenever(authApi.getCurrentUser()).thenReturn(
-            buildJsonObject {
-                put("id", "usr_test")
-                put("displayName", "Test User")
-            }
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
+            currentUserJson("usr_test", "Test User"),
         )
         whenever(authApi.getAuthToken()).thenReturn(AuthToken(token = "token"))
     }
 
+    private fun currentUserJson(id: String, displayName: String) = buildJsonObject {
+        put("id", id)
+        put("displayName", displayName)
+    }
+
     private suspend fun enterTwoFactorState(method: String = "totp") {
-        whenever(authApi.getCurrentUser()).thenReturn(
+        whenever(authApi.loginWithBasicAuth(any())).thenReturn(
             buildJsonObject {
                 put("requiresTwoFactorAuth", buildJsonArray { add(JsonPrimitive(method)) })
-            }
+            },
         )
         repository.login("test-user", "test-password")
         assertTrue(repository.authState.value is AuthState.RequiresTwoFactor)

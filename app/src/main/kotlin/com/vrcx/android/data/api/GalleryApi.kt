@@ -12,6 +12,7 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Tag
 
 interface GalleryApi {
     @GET("files")
@@ -37,6 +38,7 @@ interface GalleryApi {
     @Multipart
     @POST("file/image")
     suspend fun uploadFile(
+        @Tag accountCookies: AccountBoundCookies,
         @Part("tag") tag: RequestBody,
         @Part file: MultipartBody.Part,
     ): GalleryImage
@@ -44,6 +46,7 @@ interface GalleryApi {
     @Multipart
     @POST("prints")
     suspend fun uploadPrint(
+        @Tag accountCookies: AccountBoundCookies,
         @Part image: MultipartBody.Part,
         @Part("note") note: RequestBody? = null,
     ): VrcPrint

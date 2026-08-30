@@ -1,13 +1,16 @@
 package com.vrcx.android.data.websocket
 
 import android.util.Log
+import com.vrcx.android.di.IoDispatcher
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,16 +23,16 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.TimeUnit
+import okio.utf8Size
 
 enum class WebSocketState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
+
+private const val TAG = "VRChatWebSocket"
 
 /**
  * The one OkHttp client the pipeline socket may be built on.
@@ -48,6 +51,7 @@ class PipelineOkHttpClient(val client: OkHttpClient)
 class VRChatWebSocket(
     private val json: Json,
     baseClient: PipelineOkHttpClient,
+    @IoDispatcher ioDispatcher: CoroutineDispatcher,
     /**
      * Called when VRChat rejects the handshake itself rather than the transport
      * failing. The auth token sits in the connection URL and is captured once,
@@ -56,26 +60,29 @@ class VRChatWebSocket(
      */
     private val onHandshakeRejected: (() -> Unit)? = null,
 ) {
-    private val TAG = "VRChatWebSocket"
-    private val WEBSOCKET_URL = "wss://pipeline.vrchat.cloud"
-    @Volatile private var reconnectAttempt = 0
-    private val connectionGeneration = AtomicLong(0)
+    private val connectionLock = Any()
+    private var disposed = false
+    private var reconnectAttempt = 0
+    private var connectionGeneration = 0L
 
-    private val _events = MutableSharedFlow<PipelineEvent>(extraBufferCapacity = 64)
+    // The channel below is the one buffer between OkHttp and event consumers.
+    // Keeping another backlog here would retain stale events after recovery.
+    private val _events = MutableSharedFlow<PipelineEvent>()
     val events: SharedFlow<PipelineEvent> = _events.asSharedFlow()
 
     private val _state = MutableStateFlow(WebSocketState.DISCONNECTED)
     val state: StateFlow<WebSocketState> = _state.asStateFlow()
 
-    @Volatile private var webSocket: WebSocket? = null
-    @Volatile private var shouldReconnect = false
-    @Volatile private var reconnectJob: Job? = null
-    // Written on the OkHttp reader thread, reset from whichever thread calls
-    // connect(). Without the barrier the reset can be invisible to the new
-    // connection's reader and its first frame gets filtered as a duplicate.
-    @Volatile private var lastMessage: String? = null
-    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var frameQueue = newFrameQueue()
+    private var webSocket: WebSocket? = null
+    private var shouldReconnect = false
+    private var reconnectJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    private val frameBuffer = PipelineFrameBuffer(
+        scope = scope,
+        connectionLock = connectionLock,
+        onFrame = ::processFrame,
+        onRecovery = { _events.emit(PipelineEvent.StreamGap) },
+    )
 
     // WebSocket auth is carried in the URL, so this client intentionally avoids
     // API interceptors that could log, retry, or emit global auth events.
@@ -84,14 +91,17 @@ class VRChatWebSocket(
         .pingInterval(WEBSOCKET_PING_INTERVAL_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    init {
-        launchFramePump()
+    fun connect(authToken: String) = synchronized(connectionLock) {
+        if (disposed || frameBuffer.recoveryPending) return@synchronized
+        connectLocked(authToken)
     }
 
-    fun connect(authToken: String) {
-        val generation = connectionGeneration.incrementAndGet()
+    private fun connectLocked(authToken: String) {
+        reconnectJob?.cancel()
+        reconnectJob = null
+        connectionGeneration++
+        val generation = connectionGeneration
         shouldReconnect = true
-        lastMessage = null
         _state.value = WebSocketState.CONNECTING
         // Close before replacing, as disconnect() and reconnectNow() both do.
         // The generation guard only silences the old listener; the socket itself
@@ -102,135 +112,283 @@ class VRChatWebSocket(
             .url("$WEBSOCKET_URL/?auth=$authToken")
             .build()
 
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (!isCurrent(generation)) return
-                Log.d(TAG, "WebSocket connected")
-                reconnectAttempt = 0
-                _state.value = WebSocketState.CONNECTED
-            }
+        webSocket = client.newWebSocket(
+            request,
+            object : WebSocketListener() {
+                private var acceptingFrames = true
+                private var lastMessage: String? = null
 
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                if (!isCurrent(generation)) return
-                // Duplicate filtering
-                if (text == lastMessage) return
-                lastMessage = text
-                frameQueue.trySend(text)
-            }
-
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                if (!isCurrent(generation)) return
-                Log.d(TAG, "WebSocket closing: $code $reason")
-                webSocket.close(1000, null)
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (!isCurrent(generation)) return
-                Log.d(TAG, "WebSocket closed: $code $reason")
-                _state.value = WebSocketState.DISCONNECTED
-                attemptReconnect(authToken, generation)
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (!isCurrent(generation)) return
-                Log.e(TAG, "WebSocket failure: ${t.message}")
-                _state.value = WebSocketState.DISCONNECTED
-                // A rejected handshake is not a transport failure. Spinning the
-                // backoff on a token VRChat has already refused reports
-                // RECONNECTING forever while every realtime event stops.
-                if (response?.code == HTTP_UNAUTHORIZED || response?.code == HTTP_FORBIDDEN) {
-                    Log.w(TAG, "Pipeline rejected the auth token")
-                    shouldReconnect = false
-                    onHandshakeRejected?.invoke()
-                    return
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    synchronized(connectionLock) {
+                        if (!isCurrent(generation)) return
+                        Log.d(TAG, "WebSocket connected")
+                        reconnectAttempt = 0
+                        _state.value = WebSocketState.CONNECTED
+                    }
                 }
-                attemptReconnect(authToken, generation)
-            }
-        })
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    // Reject obviously oversized text in O(1) before scanning it.
+                    // For valid text, UTF-8 bytes cannot be fewer than UTF-16 code units.
+                    if (text.length.toLong() > MAX_PIPELINE_FRAME_BYTES) {
+                        rejectConnection(webSocket, FrameRejection.OVERSIZED)
+                        return
+                    }
+                    val byteCount = text.utf8Size()
+                    if (byteCount > MAX_PIPELINE_FRAME_BYTES) {
+                        rejectConnection(webSocket, FrameRejection.OVERSIZED)
+                        return
+                    }
+
+                    var rejection: FrameRejection? = null
+                    synchronized(connectionLock) {
+                        if (!isCurrent(generation) || !acceptingFrames || frameBuffer.recoveryPending) return
+                        if (text == lastMessage) return
+
+                        if (frameBuffer.tryEnqueue(text, byteCount)) {
+                            lastMessage = text
+                        } else {
+                            rejection = rejectFramesLocked(FrameRejection.BACKLOG_OVERFLOW)
+                        }
+                    }
+                    rejection?.let { abortForRecovery(webSocket, it) }
+                }
+
+                private fun rejectFramesLocked(rejection: FrameRejection): FrameRejection? {
+                    if (!acceptingFrames || frameBuffer.recoveryPending) return null
+                    frameBuffer.beginRecovery()
+                    acceptingFrames = false
+                    shouldReconnect = false
+                    _state.value = WebSocketState.RECONNECTING
+                    return rejection
+                }
+
+                private fun rejectConnection(webSocket: WebSocket, rejection: FrameRejection) {
+                    val accepted = synchronized(connectionLock) {
+                        if (!isCurrent(generation)) return@synchronized null
+                        rejectFramesLocked(rejection)
+                    }
+                    accepted?.let { abortForRecovery(webSocket, it) }
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    synchronized(connectionLock) {
+                        if (!isCurrent(generation)) return
+                        Log.d(TAG, "WebSocket closing: $code $reason")
+                        webSocket.close(1000, null)
+                    }
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    synchronized(connectionLock) {
+                        if (!isCurrent(generation)) return
+                        Log.d(TAG, "WebSocket closed: $code $reason")
+                        _state.value = WebSocketState.DISCONNECTED
+                    }
+                    attemptReconnect(authToken, generation)
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    val handshakeRejected = synchronized(connectionLock) {
+                        if (!isCurrent(generation)) return
+                        Log.e(TAG, "WebSocket failure: ${t.message}")
+                        _state.value = WebSocketState.DISCONNECTED
+                        val rejected = response?.code == HTTP_UNAUTHORIZED ||
+                            response?.code == HTTP_FORBIDDEN
+                        if (rejected) {
+                            Log.w(TAG, "Pipeline rejected the auth token")
+                            shouldReconnect = false
+                        }
+                        rejected
+                    }
+                    // A rejected handshake is not a transport failure. Spinning the
+                    // backoff on a token VRChat has already refused reports
+                    // RECONNECTING forever while every realtime event stops.
+                    if (handshakeRejected) {
+                        onHandshakeRejected?.invoke()
+                        return
+                    }
+                    attemptReconnect(authToken, generation)
+                }
+            },
+        )
     }
 
-    fun disconnect() {
+    fun disconnect() = synchronized(connectionLock) {
+        if (disposed) return@synchronized
+        disposed = true
         shouldReconnect = false
-        connectionGeneration.incrementAndGet()
+        connectionGeneration++
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
         _state.value = WebSocketState.DISCONNECTED
-        // Terminal for this instance — both callers drop it on the next line.
-        // Re-arming the frame pump here would park a coroutine on a channel
-        // nothing will ever write to; only reconnectNow() needs a fresh one.
+        // Terminal for this instance. Late service callbacks may still hold this
+        // object, so disposed also prevents them from reviving the connection.
         scope.cancel()
+        frameBuffer.cancel()
         reconnectJob = null
     }
 
-    fun reconnectNow(authToken: String) {
+    fun reconnectNow(authToken: String) = synchronized(connectionLock) {
+        if (disposed || frameBuffer.recoveryPending) return@synchronized
+        reconnectLocked(authToken, "Reconnecting")
+    }
+
+    fun reconnectAfterRecovery(authToken: String) = synchronized(connectionLock) {
+        if (disposed || !frameBuffer.recoveryPending) return@synchronized
+        frameBuffer.completeRecovery()
+        reconnectLocked(authToken, "State recovered")
+    }
+
+    private fun reconnectLocked(authToken: String, reason: String) {
         shouldReconnect = false
-        connectionGeneration.incrementAndGet()
-        webSocket?.close(1000, "Reconnecting")
+        connectionGeneration++
+        reconnectJob?.cancel()
+        reconnectJob = null
+        webSocket?.close(1000, reason)
         webSocket = null
-        resetProcessingScope()
         reconnectAttempt = 0
-        connect(authToken)
+        connectLocked(authToken)
     }
 
     private fun attemptReconnect(authToken: String, generation: Long) {
-        if (!shouldReconnect || !isCurrent(generation)) return
-        if (reconnectJob?.isActive == true) return
-        if (reconnectAttempt < Int.MAX_VALUE) reconnectAttempt++
-        _state.value = WebSocketState.RECONNECTING
-        val delayMs = calculateReconnectDelayMs(reconnectAttempt)
-        Log.d(TAG, "Reconnect attempt $reconnectAttempt in ${delayMs}ms")
-        reconnectJob = scope.launch {
-            delay(delayMs)
-            if (shouldReconnect && isCurrent(generation)) {
-                reconnectJob = null
-                connect(authToken)
+        synchronized(connectionLock) {
+            if (disposed || !shouldReconnect || !isCurrent(generation)) return
+            if (reconnectJob?.isActive == true) return
+            if (reconnectAttempt < Int.MAX_VALUE) reconnectAttempt++
+            _state.value = WebSocketState.RECONNECTING
+            val delayMs = calculateReconnectDelayMs(reconnectAttempt)
+            Log.d(TAG, "Reconnect attempt $reconnectAttempt in ${delayMs}ms")
+            reconnectJob = scope.launch {
+                delay(delayMs)
+                synchronized(connectionLock) {
+                    if (!disposed && shouldReconnect && isCurrent(generation)) {
+                        reconnectJob = null
+                        connectLocked(authToken)
+                    }
+                }
             }
         }
     }
 
-    private fun isCurrent(generation: Long): Boolean = generation == connectionGeneration.get()
+    private fun isCurrent(generation: Long): Boolean = generation == connectionGeneration
 
-    // Unbounded on purpose. A bounded queue can only shed load by discarding
-    // frames, and a discarded frame is a friend transition or an invite the app
-    // never learns about — the pipeline has no replay to recover it. Blocking
-    // the producer instead is not an option either: trySend runs on the OkHttp
-    // reader thread, which also answers pings, so stalling it would fail the
-    // 30s ping timeout and drop the very connection this protects. Frames are
-    // small and the backlog only builds during the post-connect burst.
-    private fun newFrameQueue(): Channel<String> = Channel(capacity = Channel.UNLIMITED)
-
-    private fun launchFramePump() {
-        scope.launch {
-            for (text in frameQueue) {
-                parsePipelineMessage(json, text)?.let { event -> _events.emit(event) }
-            }
+    private suspend fun processFrame(frame: IncomingItem.Frame) {
+        try {
+            parsePipelineMessage(json, frame.text)?.let { event -> _events.emit(event) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            // One malformed or unexpected frame must not terminate the
+            // only coroutine processing all later pipeline events.
+            Log.w(TAG, "Discarding invalid pipeline frame", error)
         }
     }
 
-    private fun resetProcessingScope() {
-        scope.cancel()
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        reconnectJob = null
-        frameQueue = newFrameQueue()
-        launchFramePump()
+    private fun abortForRecovery(webSocket: WebSocket, rejection: FrameRejection) {
+        Log.w(TAG, "Aborting pipeline after ${rejection.reason}")
+        webSocket.cancel()
     }
 
     private companion object {
+        const val WEBSOCKET_URL = "wss://pipeline.vrchat.cloud"
         const val WEBSOCKET_PING_INTERVAL_SECONDS = 30L
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403
     }
 }
 
+private sealed interface IncomingItem {
+    data class Frame(val text: String, val byteCount: Long) : IncomingItem
+    data object RecoveryBarrier : IncomingItem
+}
+
+/**
+ * The one bounded handoff between OkHttp's reader and pipeline event consumers.
+ * Its extra channel slot is reserved for a recovery barrier, which follows the
+ * complete accepted FIFO prefix when admission reaches either bound. Admission
+ * and recovery methods run while [connectionLock] is held, keeping queue accounting
+ * atomic with the owning connection's recovery state.
+ */
+private class PipelineFrameBuffer(
+    scope: CoroutineScope,
+    private val connectionLock: Any,
+    private val onFrame: suspend (IncomingItem.Frame) -> Unit,
+    private val onRecovery: suspend () -> Unit,
+) {
+    private val channel = Channel<IncomingItem>(capacity = PIPELINE_FRAME_QUEUE_CAPACITY + 1)
+    private var retainedFrames = 0
+    private var retainedBytes = 0L
+
+    var recoveryPending = false
+        private set
+
+    init {
+        scope.launch {
+            for (item in channel) {
+                when (item) {
+                    is IncomingItem.Frame -> deliverFrame(item)
+                    IncomingItem.RecoveryBarrier -> onRecovery()
+                }
+            }
+        }
+    }
+
+    fun tryEnqueue(text: String, byteCount: Long): Boolean {
+        if (isPipelineBufferFull(retainedFrames, retainedBytes, byteCount)) return false
+        if (channel.trySend(IncomingItem.Frame(text, byteCount)).isFailure) return false
+        retainedFrames++
+        retainedBytes += byteCount
+        return true
+    }
+
+    fun beginRecovery() {
+        check(channel.trySend(IncomingItem.RecoveryBarrier).isSuccess) {
+            "The reserved pipeline recovery slot was unavailable"
+        }
+        recoveryPending = true
+    }
+
+    fun completeRecovery() {
+        recoveryPending = false
+    }
+
+    fun cancel() {
+        channel.cancel()
+    }
+
+    private suspend fun deliverFrame(frame: IncomingItem.Frame) {
+        try {
+            onFrame(frame)
+        } finally {
+            synchronized(connectionLock) {
+                retainedFrames--
+                retainedBytes -= frame.byteCount
+            }
+        }
+    }
+}
+
+private enum class FrameRejection(val reason: String) {
+    OVERSIZED("Pipeline frame too large"),
+    BACKLOG_OVERFLOW("Pipeline consumer overloaded"),
+}
+
+internal const val PIPELINE_FRAME_QUEUE_CAPACITY = 1_024
+internal const val MAX_PIPELINE_FRAME_BYTES = 256L * 1024L
+internal const val MAX_PIPELINE_BUFFER_BYTES = 16L * 1024L * 1024L
+
+internal fun isPipelineBufferFull(retainedFrames: Int, retainedBytes: Long, nextFrameBytes: Long): Boolean =
+    retainedFrames >= PIPELINE_FRAME_QUEUE_CAPACITY ||
+        retainedBytes + nextFrameBytes > MAX_PIPELINE_BUFFER_BYTES
+
 private const val BASE_RECONNECT_DELAY_MS = 5_000L
 private const val MAX_RECONNECT_DELAY_MS = 300_000L
 private const val MAX_RECONNECT_JITTER_MS = 2_000L
+private const val MAX_RECONNECT_EXPONENT = 6
 
-internal fun calculateReconnectDelayMs(
-    attempt: Int,
-    jitterMs: Long = (0L..MAX_RECONNECT_JITTER_MS).random(),
-): Long {
-    val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(17)
+internal fun calculateReconnectDelayMs(attempt: Int, jitterMs: Long = (0L..MAX_RECONNECT_JITTER_MS).random()): Long {
+    val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(MAX_RECONNECT_EXPONENT)
     val baseDelay = minOf(
         BASE_RECONNECT_DELAY_MS * (1L shl exponent),
         MAX_RECONNECT_DELAY_MS,
@@ -266,17 +424,26 @@ internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? {
     } catch (_: Exception) {
         return null
     }
-    val type = msg["type"]?.jsonPrimitive?.content ?: return null
+    val typeElement = msg["type"] as? JsonPrimitive ?: return null
+    if (!typeElement.isString) return null
+    val type = typeElement.content
     val rawContent = msg["content"]
     val content: JsonElement? = when {
         rawContent == null -> null
+
         // JsonNull is a JsonPrimitive, so without this arm a literal
         // `"content": null` is carried as a non-null element and every
         // downstream `content?.jsonObject` throws instead of short-circuiting.
         rawContent is JsonNull -> null
+
         rawContent is JsonPrimitive && rawContent.isString -> {
-            try { json.parseToJsonElement(rawContent.content) } catch (_: Exception) { null }
+            try {
+                json.parseToJsonElement(rawContent.content)
+            } catch (_: Exception) {
+                null
+            }
         }
+
         else -> rawContent
     }
 

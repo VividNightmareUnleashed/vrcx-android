@@ -10,26 +10,27 @@ import android.net.Uri
 import com.vrcx.android.MainActivity
 import com.vrcx.android.R
 import com.vrcx.android.ui.navigation.DeepLinkSection
-import java.util.concurrent.atomic.AtomicBoolean
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.atomic.AtomicInteger
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /** The screen a notification should open, or null to just bring the app up. */
 data class NotificationTarget(val section: DeepLinkSection, val id: String)
 
-class NotificationHelper(private val context: Context) {
+@Singleton
+class NotificationHelper @Inject constructor(@ApplicationContext private val context: Context) {
 
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
     private val notificationId = AtomicInteger(ROLLING_ID_BASE)
 
     init {
-        if (channelsCreated.compareAndSet(false, true)) {
-            createNotificationChannels()
-        }
+        createNotificationChannels()
     }
 
     fun notifyFriendOnline(displayName: String, userId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_FRIEND_ONLINE,
+            channel = CHANNEL_FRIEND_ONLINE,
             title = displayName,
             text = "is online",
             target = userTarget(userId),
@@ -38,7 +39,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyFriendOffline(displayName: String, userId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_FRIEND_OFFLINE,
+            channel = CHANNEL_FRIEND_OFFLINE,
             title = displayName,
             text = "went offline",
             target = userTarget(userId),
@@ -47,7 +48,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyInvite(senderName: String, senderUserId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_INVITES,
+            channel = CHANNEL_INVITES,
             title = senderName,
             text = "sent you an invite",
             target = userTarget(senderUserId),
@@ -56,7 +57,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyFriendRequest(senderName: String, senderUserId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_FRIEND_REQUEST,
+            channel = CHANNEL_FRIEND_REQUEST,
             title = senderName,
             text = "sent you a friend request",
             target = userTarget(senderUserId),
@@ -65,7 +66,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyFriendLocation(displayName: String, worldName: String, userId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            channel = CHANNEL_GENERAL,
             title = displayName,
             text = if (worldName.isNotEmpty()) "joined $worldName" else "changed location",
             target = userTarget(userId),
@@ -74,7 +75,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyFriendStatusChange(displayName: String, newStatus: String, userId: String? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            channel = CHANNEL_GENERAL,
             title = displayName,
             text = "changed status to $newStatus",
             target = userTarget(userId),
@@ -83,7 +84,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyGeneral(title: String, text: String, target: NotificationTarget? = null) {
         post(
-            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            channel = CHANNEL_GENERAL,
             title = title,
             text = text,
             target = target,
@@ -92,7 +93,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyBootReconnectRequired() {
         post(
-            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            channel = CHANNEL_GENERAL,
             title = "Open VRCX to reconnect",
             text = "Android 15 requires reopening the app after reboot before the background connection can resume.",
             notificationId = BOOT_RECONNECT_NOTIFICATION_ID,
@@ -105,7 +106,7 @@ class NotificationHelper(private val context: Context) {
 
     fun notifyServiceReconnectRequired() {
         post(
-            channel = WebSocketForegroundService.CHANNEL_GENERAL,
+            channel = CHANNEL_GENERAL,
             title = "Open VRCX to reconnect",
             text = "Android paused the background connection after its service time limit.",
             notificationId = SERVICE_RECONNECT_NOTIFICATION_ID,
@@ -116,8 +117,13 @@ class NotificationHelper(private val context: Context) {
         notificationManager.cancel(SERVICE_RECONNECT_NOTIFICATION_ID)
     }
 
-    private fun userTarget(userId: String?): NotificationTarget? =
-        userId?.takeIf { it.isNotEmpty() }?.let { NotificationTarget(DeepLinkSection.USER, it) }
+    fun createWebSocketServiceNotification(): Notification = createOngoingNotification("Connected to VRChat")
+
+    fun createBootWorkerNotification(): Notification = createOngoingNotification("Restoring background connection")
+
+    private fun userTarget(userId: String?): NotificationTarget? = userId?.takeIf {
+        it.isNotEmpty()
+    }?.let { NotificationTarget(DeepLinkSection.USER, it) }
 
     private fun post(
         channel: String,
@@ -141,6 +147,14 @@ class NotificationHelper(private val context: Context) {
             notification,
         )
     }
+
+    private fun createOngoingNotification(text: String): Notification = Notification.Builder(context, CHANNEL_SERVICE)
+        .setContentTitle("VRCX")
+        .setContentText(text)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentIntent(contentIntent(target = null))
+        .setOngoing(true)
+        .build()
 
     /**
      * A notification whose text names a person or a place should open that
@@ -169,16 +183,25 @@ class NotificationHelper(private val context: Context) {
 
     private fun createNotificationChannels() {
         listOf(
-            NotificationChannel(WebSocketForegroundService.CHANNEL_SERVICE, "Background Service", NotificationManager.IMPORTANCE_LOW),
-            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_ONLINE, "Friend Online", NotificationManager.IMPORTANCE_DEFAULT),
-            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_OFFLINE, "Friend Offline", NotificationManager.IMPORTANCE_LOW),
-            NotificationChannel(WebSocketForegroundService.CHANNEL_INVITES, "Invites", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(WebSocketForegroundService.CHANNEL_FRIEND_REQUEST, "Friend Requests", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(WebSocketForegroundService.CHANNEL_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL_SERVICE, "Background Service", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_FRIEND_ONLINE, "Friend Online", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL_FRIEND_OFFLINE, "Friend Offline", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_INVITES, "Invites", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CHANNEL_FRIEND_REQUEST, "Friend Requests", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CHANNEL_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
         ).forEach { notificationManager.createNotificationChannel(it) }
     }
 
     companion object {
+        const val CHANNEL_SERVICE = "vrcx_service"
+        const val CHANNEL_FRIEND_ONLINE = "vrcx_friend_online"
+        const val CHANNEL_FRIEND_OFFLINE = "vrcx_friend_offline"
+        const val CHANNEL_INVITES = "vrcx_invites"
+        const val CHANNEL_FRIEND_REQUEST = "vrcx_friend_request"
+        const val CHANNEL_GENERAL = "vrcx_general"
+
+        const val SERVICE_NOTIFICATION_ID = 1
+        const val BOOT_WORKER_NOTIFICATION_ID = 1001
         private const val BOOT_RECONNECT_NOTIFICATION_ID = 99
         private const val SERVICE_RECONNECT_NOTIFICATION_ID = 98
 
@@ -190,10 +213,5 @@ class NotificationHelper(private val context: Context) {
          */
         private const val ROLLING_ID_BASE = 1100
         private const val ROLLING_ID_COUNT = 10_000
-
-        // Four components construct a helper, each construction re-issuing six
-        // binder calls to create channels that already exist. Once per process
-        // is enough; the system keeps them beyond that.
-        private val channelsCreated = AtomicBoolean(false)
     }
 }

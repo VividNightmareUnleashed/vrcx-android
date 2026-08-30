@@ -10,25 +10,29 @@ import coil3.gif.GifDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.vrcx.android.data.cache.ProfilePicCacheInterceptor
 import com.vrcx.android.data.cache.ProfilePicCacheManager
+import com.vrcx.android.di.IoDispatcher
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.Dispatchers
-import okhttp3.OkHttpClient
 import javax.inject.Named
+import kotlinx.coroutines.CoroutineDispatcher
+import okhttp3.OkHttpClient
 
 @HiltAndroidApp
-class VrcxApplication : Application(), SingletonImageLoader.Factory {
+class VrcxApplication :
+    Application(),
+    SingletonImageLoader.Factory {
     override fun newImageLoader(context: Context): ImageLoader {
         val entryPoint = EntryPointAccessors.fromApplication(
-            context, ImageLoaderEntryPoint::class.java
+            context,
+            ImageLoaderEntryPoint::class.java,
         )
         return ImageLoader.Builder(context)
             // Coil runs the interceptor chain in the caller's context, which for
             // AsyncImage is the main thread; the profile-pic probe hits the disk.
-            .interceptorCoroutineContext(Dispatchers.IO)
+            .interceptorCoroutineContext(entryPoint.ioDispatcher())
             .components {
                 add(ProfilePicCacheInterceptor(entryPoint.profilePicCacheManager()))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -47,5 +51,9 @@ class VrcxApplication : Application(), SingletonImageLoader.Factory {
 interface ImageLoaderEntryPoint {
     @Named("imageOkHttpClient")
     fun imageOkHttpClient(): OkHttpClient
+
     fun profilePicCacheManager(): ProfilePicCacheManager
+
+    @IoDispatcher
+    fun ioDispatcher(): CoroutineDispatcher
 }

@@ -66,7 +66,7 @@ class ErrorInterceptorTest {
             Request.Builder()
                 .url(server.url("/auth/user"))
                 .header("Authorization", "Basic dXNlcjpwYXNz")
-                .build()
+                .build(),
         ).execute()
 
         assertEquals(401, response.code)
@@ -86,7 +86,7 @@ class ErrorInterceptorTest {
                 Request.Builder()
                     .url(server.url("/auth/twofactorauth/verify"))
                     .tag(Invocation::class.java, invocationFor(methodName))
-                    .build()
+                    .build(),
             ).execute()
 
             assertEquals(401, response.code)
@@ -106,7 +106,7 @@ class ErrorInterceptorTest {
             Request.Builder()
                 .url(server.url("/auth"))
                 .tag(Invocation::class.java, invocationFor("getAuthToken"))
-                .build()
+                .build(),
         ).execute()
 
         assertEquals(401, response.code)
@@ -187,6 +187,38 @@ class ErrorInterceptorTest {
 
         assertEquals(200, response.code)
         assertEquals(listOf(ErrorInterceptor.MAX_RETRY_DELAY_MS), retryDelaysMs)
+        response.close()
+    }
+
+    @Test
+    fun `Retry-After Long max is clamped without overflowing`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(429)
+                .setHeader("Retry-After", Long.MAX_VALUE.toString()),
+        )
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
+
+        assertEquals(200, response.code)
+        assertEquals(listOf(ErrorInterceptor.MAX_RETRY_DELAY_MS), retryDelaysMs)
+        response.close()
+    }
+
+    @Test
+    fun `Retry-After outside Long range uses the default delay`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(429)
+                .setHeader("Retry-After", "999999999999999999999999999999"),
+        )
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val response = client.newCall(Request.Builder().url(server.url("/")).build()).execute()
+
+        assertEquals(200, response.code)
+        assertEquals(listOf(ErrorInterceptor.DEFAULT_RETRY_DELAY_MS), retryDelaysMs)
         response.close()
     }
 

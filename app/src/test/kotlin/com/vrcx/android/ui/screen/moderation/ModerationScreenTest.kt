@@ -51,48 +51,46 @@ class ModerationScreenTest {
     }
 
     @Test
-    fun `a failed removal reaches the snackbar over the rows it left on screen`() =
-        runTest(testDispatcher) {
-            val api = mock<PlayerModerationApi>()
-            whenever(api.getPlayerModerations()).thenReturn(emptyList())
-            whenever(api.unmoderatePlayer(any()))
-                .thenThrow(RuntimeException("removal rejected"))
+    fun `a failed removal reaches the snackbar over the rows it left on screen`() = runTest(testDispatcher) {
+        val api = mock<PlayerModerationApi>()
+        whenever(api.getPlayerModerations()).thenReturn(emptyList())
+        whenever(api.unmoderatePlayer(any()))
+            .thenThrow(RuntimeException("removal rejected"))
 
-            val viewModel = buildViewModel(api)
-            advanceUntilIdle()
+        val viewModel = buildViewModel(api)
+        advanceUntilIdle()
 
-            viewModel.remove(PlayerModeration(id = "mod_1", targetUserId = "usr_1", type = "block"))
-            advanceUntilIdle()
+        viewModel.remove(PlayerModeration(id = "mod_1", targetUserId = "usr_1", type = "block"))
+        advanceUntilIdle()
 
-            assertEquals("removal rejected", viewModel.screenState.value.staleError)
+        assertEquals("removal rejected", viewModel.screenState.value.staleError)
 
-            viewModel.consumeError()
-            assertEquals(null, viewModel.screenState.value.staleError)
-        }
+        viewModel.consumeError()
+        assertEquals(null, viewModel.screenState.value.staleError)
+    }
 
     @Test
-    fun `the visible rows and the tab counts are derived from one snapshot`() =
-        runTest(testDispatcher) {
-            val api = mock<PlayerModerationApi>()
-            whenever(api.getPlayerModerations()).thenReturn(
-                listOf(
-                    PlayerModeration(id = "m1", targetDisplayName = "Alice", type = "block"),
-                    PlayerModeration(id = "m2", targetDisplayName = "Bob", type = "block"),
-                    PlayerModeration(id = "m3", targetDisplayName = "Cara", type = "mute"),
-                ),
-            )
-            val viewModel = buildViewModel(api)
-            advanceUntilIdle()
+    fun `the visible rows and the tab counts are derived from one snapshot`() = runTest(testDispatcher) {
+        val api = mock<PlayerModerationApi>()
+        whenever(api.getPlayerModerations()).thenReturn(
+            listOf(
+                PlayerModeration(id = "m1", targetDisplayName = "Alice", type = "block"),
+                PlayerModeration(id = "m2", targetDisplayName = "Bob", type = "block"),
+                PlayerModeration(id = "m3", targetDisplayName = "Cara", type = "mute"),
+            ),
+        )
+        val viewModel = buildViewModel(api)
+        advanceUntilIdle()
 
-            // Two rapid criteria changes: whatever settles has to be self-consistent.
-            viewModel.selectTab(MODERATION_TABS.first { it.type == "mute" })
-            viewModel.updateSearch("car")
+        // Two rapid criteria changes: whatever settles has to be self-consistent.
+        viewModel.selectTab(MODERATION_TABS.first { it.type == "mute" })
+        viewModel.updateSearch("car")
 
-            val settled = viewModel.moderations.first { it.visible.size == 1 }
-            assertEquals(listOf("Cara"), settled.visible.map { it.targetDisplayName })
-            assertEquals(mapOf("block" to 2, "mute" to 1), settled.countsByType)
-        }
+        val settled = viewModel.moderations.first { it.visible.size == 1 }
+        assertEquals(listOf("Cara"), settled.visible.map { it.targetDisplayName })
+        assertEquals(mapOf("block" to 2, "mute" to 1), settled.countsByType)
+    }
 
     private fun buildViewModel(api: PlayerModerationApi) =
-        ModerationViewModel(ModerationRepository(api, AccountScope()))
+        ModerationViewModel(ModerationRepository(api, AccountScope()), testDispatcher)
 }

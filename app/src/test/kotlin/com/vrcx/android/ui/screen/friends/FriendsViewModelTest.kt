@@ -27,16 +27,17 @@ class FriendsViewModelTest {
     fun `a failed refresh publishes an error so the retry path exists`() = runTest(testDispatcher) {
         val friendRepository = buildRepository()
         whenever(friendRepository.loadFriendsList()).thenThrow(RuntimeException("no network"))
-        val viewModel = FriendsViewModel(friendRepository)
+        val viewModel = FriendsViewModel(friendRepository, testDispatcher)
 
         viewModel.refresh()
         advanceUntilIdle()
 
-        assertEquals("no network", viewModel.error.value)
-        assertEquals(false, viewModel.isRefreshing.value)
+        val failedState = viewModel.state.first { it.error != null }
+        assertEquals("no network", failedState.error)
+        assertEquals(false, failedState.isRefreshing)
 
         viewModel.consumeError()
-        assertNull(viewModel.error.value)
+        assertNull(viewModel.state.first { it.error == null }.error)
     }
 
     @Test
@@ -46,9 +47,9 @@ class FriendsViewModelTest {
                 "a" to FriendContext("a", "Alice", FriendState.ONLINE),
                 "b" to FriendContext("b", "Bob", FriendState.OFFLINE),
                 "c" to FriendContext("c", "Carol", FriendState.OFFLINE),
-            )
+            ),
         )
-        val viewModel = FriendsViewModel(buildRepository(friends))
+        val viewModel = FriendsViewModel(buildRepository(friends), testDispatcher)
 
         val state = viewModel.state.first { it.counts.isNotEmpty() }
         assertEquals(mapOf(FriendState.ONLINE to 1, FriendState.OFFLINE to 2), state.counts)
@@ -60,13 +61,22 @@ class FriendsViewModelTest {
             mapOf(
                 "a" to FriendContext("a", "Alice", FriendState.ONLINE),
                 "b" to FriendContext("b", "Bob", FriendState.OFFLINE),
-            )
+            ),
         )
-        val viewModel = FriendsViewModel(buildRepository(friends))
+        val viewModel = FriendsViewModel(buildRepository(friends), testDispatcher)
 
         viewModel.selectTab(FriendState.OFFLINE)
+        viewModel.updateSearch("B")
+        viewModel.updateSearch("Bob")
+        assertEquals(FriendState.OFFLINE, viewModel.controls.value.selectedTab)
+        assertEquals("Bob", viewModel.controls.value.searchQuery)
 
-        assertEquals(listOf("Bob"), viewModel.state.first { it.friends.isNotEmpty() }.friends.map { it.name })
+        val state = viewModel.state.first {
+            it.selectedTab == FriendState.OFFLINE &&
+                it.friends.isNotEmpty()
+        }
+        assertEquals(FriendState.OFFLINE, state.selectedTab)
+        assertEquals(listOf("Bob"), state.friends.map { it.name })
     }
 
     @Test
@@ -75,13 +85,14 @@ class FriendsViewModelTest {
             mapOf(
                 "a" to FriendContext("a", "Alice", FriendState.ONLINE),
                 "b" to FriendContext("b", "Bob", FriendState.ONLINE),
-            )
+            ),
         )
-        val viewModel = FriendsViewModel(buildRepository(friends, favorites = setOf("b")))
+        val viewModel = FriendsViewModel(buildRepository(friends, favorites = setOf("b")), testDispatcher)
 
         viewModel.toggleVipOnly()
 
-        assertEquals(listOf("Bob"), viewModel.state.first { it.friends.isNotEmpty() }.friends.map { it.name })
+        val state = viewModel.state.first { it.vipOnly && it.friends.isNotEmpty() }
+        assertEquals(listOf("Bob"), state.friends.map { it.name })
     }
 
     private fun buildRepository(

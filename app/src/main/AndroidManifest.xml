@@ -42,10 +42,12 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/user/" />
-                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/world/" />
-                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/avatar/" />
-                <data android:scheme="https" android:host="vrchat.com" android:pathPrefix="/home/group/" />
+                <data android:scheme="https" />
+                <data android:host="vrchat.com" />
+                <data android:pathPrefix="/home/user/" />
+                <data android:pathPrefix="/home/world/" />
+                <data android:pathPrefix="/home/avatar/" />
+                <data android:pathPrefix="/home/group/" />
             </intent-filter>
         </activity>
 

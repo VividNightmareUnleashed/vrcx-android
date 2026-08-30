@@ -8,13 +8,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -44,7 +44,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.GalleryImage
 import com.vrcx.android.data.api.model.InventoryItem
@@ -73,19 +73,167 @@ import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxScrollableTabRow
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun GalleryScreen(
-    viewModel: GalleryViewModel = hiltViewModel(),
-    onBack: () -> Unit = {},
+private data class GalleryContentState(
+    val uiState: GalleryUiState,
+    val isUploading: Boolean,
+    val isOverflowMenuExpanded: Boolean,
+    val galleryImages: List<GalleryImage>,
+    val iconImages: List<GalleryImage>,
+    val emojiImages: List<GalleryImage>,
+    val stickerImages: List<GalleryImage>,
+    val prints: List<VrcPrint>,
+    val inventoryItems: List<InventoryItem>,
+    val inventoryTemplates: List<InventoryTemplate>,
 ) {
+    val selectedTab: GalleryTab get() = uiState.selectedTab
+    val selectedTabState: LoadState<Unit> get() = uiState.selectedTabState
+
+    fun itemCount(tab: GalleryTab): Int = when (tab) {
+        GalleryTab.GALLERY -> galleryImages.size
+        GalleryTab.ICONS -> iconImages.size
+        GalleryTab.EMOJIS -> emojiImages.size
+        GalleryTab.STICKERS -> stickerImages.size
+        GalleryTab.PRINTS -> prints.size
+        GalleryTab.INVENTORY -> inventoryItems.size
+    }
+}
+
+private data class GalleryRouteState(
+    val content: GalleryContentState,
+    val snackbarMessage: String?,
+    val fullscreenImageUrl: String?,
+)
+
+private sealed interface GalleryConfirmation {
+    data class DeleteFile(val fileId: String, val tab: GalleryTab) : GalleryConfirmation
+    data class DeletePrint(val printId: String) : GalleryConfirmation
+    data class ConsumeBundle(val itemId: String) : GalleryConfirmation
+}
+
+private data class GalleryDialogsState(val fullscreenImageUrl: String?, val confirmation: GalleryConfirmation?)
+
+private sealed interface GalleryAction {
+    data object NavigateBack : GalleryAction
+    data object OpenOverflowMenu : GalleryAction
+    data object DismissOverflowMenu : GalleryAction
+    data object ClearProfilePicture : GalleryAction
+    data object ClearUserIcon : GalleryAction
+    data object Retry : GalleryAction
+    data object Refresh : GalleryAction
+    data object UploadRequested : GalleryAction
+    data object DismissFullscreen : GalleryAction
+    data object DismissConfirmation : GalleryAction
+    data object ConfirmRequested : GalleryAction
+    data class SelectTab(val tab: GalleryTab) : GalleryAction
+    data class ShowFullscreen(val imageUrl: String) : GalleryAction
+    data class DeleteFileRequested(val fileId: String, val tab: GalleryTab) : GalleryAction
+    data class DeletePrintRequested(val printId: String) : GalleryAction
+    data class ConsumeBundleRequested(val itemId: String) : GalleryAction
+    data class SetProfilePicture(val fileId: String) : GalleryAction
+    data class SetUserIcon(val fileId: String) : GalleryAction
+}
+
+@Composable
+fun GalleryScreen(viewModel: GalleryViewModel = hiltViewModel(), onBack: () -> Unit = {}) {
+    var confirmation by remember { mutableStateOf<GalleryConfirmation?>(null) }
+    var isOverflowMenuExpanded by remember { mutableStateOf(false) }
+    val state = galleryRouteState(viewModel, isOverflowMenuExpanded)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        if (state.content.selectedTab == GalleryTab.PRINTS) {
+            viewModel.uploadPrint(uri, null)
+        } else {
+            viewModel.uploadFile(uri, state.content.selectedTab)
+        }
+    }
+
+    LaunchedEffect(state.snackbarMessage) {
+        state.snackbarMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearSnackbar()
+        }
+    }
+
+    val onAction: (GalleryAction) -> Unit = { action ->
+        when (action) {
+            GalleryAction.NavigateBack -> onBack()
+
+            GalleryAction.OpenOverflowMenu -> isOverflowMenuExpanded = true
+
+            GalleryAction.DismissOverflowMenu -> isOverflowMenuExpanded = false
+
+            GalleryAction.ClearProfilePicture -> {
+                isOverflowMenuExpanded = false
+                viewModel.clearProfilePic()
+            }
+
+            GalleryAction.ClearUserIcon -> {
+                isOverflowMenuExpanded = false
+                viewModel.clearUserIcon()
+            }
+
+            GalleryAction.Retry -> viewModel.retry()
+
+            GalleryAction.Refresh -> viewModel.refresh()
+
+            GalleryAction.UploadRequested -> {
+                if (!state.content.isUploading) imagePicker.launch("image/*")
+            }
+
+            GalleryAction.DismissFullscreen -> viewModel.dismissFullscreen()
+
+            GalleryAction.DismissConfirmation -> confirmation = null
+
+            GalleryAction.ConfirmRequested -> {
+                when (val target = confirmation) {
+                    is GalleryConfirmation.DeleteFile -> viewModel.deleteFile(target.fileId, target.tab)
+                    is GalleryConfirmation.DeletePrint -> viewModel.deletePrint(target.printId)
+                    is GalleryConfirmation.ConsumeBundle -> viewModel.consumeBundle(target.itemId)
+                    null -> Unit
+                }
+                confirmation = null
+            }
+
+            is GalleryAction.SelectTab -> viewModel.selectTab(action.tab)
+
+            is GalleryAction.ShowFullscreen -> viewModel.showFullscreen(action.imageUrl)
+
+            is GalleryAction.DeleteFileRequested -> {
+                confirmation = GalleryConfirmation.DeleteFile(action.fileId, action.tab)
+            }
+
+            is GalleryAction.DeletePrintRequested -> {
+                confirmation = GalleryConfirmation.DeletePrint(action.printId)
+            }
+
+            is GalleryAction.ConsumeBundleRequested -> {
+                confirmation = GalleryConfirmation.ConsumeBundle(action.itemId)
+            }
+
+            is GalleryAction.SetProfilePicture -> viewModel.setProfilePic(action.fileId)
+
+            is GalleryAction.SetUserIcon -> viewModel.setUserIcon(action.fileId)
+        }
+    }
+
+    GalleryContent(
+        state = state.content,
+        snackbarHostState = snackbarHostState,
+        onAction = onAction,
+    )
+    GalleryDialogs(
+        state = GalleryDialogsState(state.fullscreenImageUrl, confirmation),
+        onAction = onAction,
+    )
+}
+
+@Composable
+private fun galleryRouteState(viewModel: GalleryViewModel, isOverflowMenuExpanded: Boolean): GalleryRouteState {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val selectedTab = uiState.selectedTab
-    val selectedTabState = uiState.selectedTabState
     val isUploading by viewModel.isUploading.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
     val fullscreenImageUrl by viewModel.fullscreenImageUrl.collectAsStateWithLifecycle()
-
     val galleryImages by viewModel.galleryImages.collectAsStateWithLifecycle()
     val iconImages by viewModel.iconImages.collectAsStateWithLifecycle()
     val emojiImages by viewModel.emojiImages.collectAsStateWithLifecycle()
@@ -94,168 +242,46 @@ fun GalleryScreen(
     val inventoryItems by viewModel.inventoryItems.collectAsStateWithLifecycle()
     val inventoryTemplates by viewModel.inventoryTemplates.collectAsStateWithLifecycle()
 
-    val snackbarHostState = remember { SnackbarHostState() }
+    return GalleryRouteState(
+        content = GalleryContentState(
+            uiState = uiState,
+            isUploading = isUploading,
+            isOverflowMenuExpanded = isOverflowMenuExpanded,
+            galleryImages = galleryImages,
+            iconImages = iconImages,
+            emojiImages = emojiImages,
+            stickerImages = stickerImages,
+            prints = prints,
+            inventoryItems = inventoryItems,
+            inventoryTemplates = inventoryTemplates,
+        ),
+        snackbarMessage = snackbarMessage,
+        fullscreenImageUrl = fullscreenImageUrl,
+    )
+}
 
-    var deleteFileTarget by remember { mutableStateOf<Pair<String, GalleryTab>?>(null) }
-    var deletePrintTarget by remember { mutableStateOf<String?>(null) }
-    var consumeTarget by remember { mutableStateOf<String?>(null) }
-    var showOverflowMenu by remember { mutableStateOf(false) }
-
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
-        if (selectedTab == GalleryTab.PRINTS) {
-            viewModel.uploadPrint(uri, null)
-        } else {
-            viewModel.uploadFile(uri, selectedTab)
+@Composable
+private fun GalleryContent(
+    state: GalleryContentState,
+    snackbarHostState: SnackbarHostState,
+    onAction: (GalleryAction) -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            GalleryTopBar(state = state, onAction = onAction)
+            GalleryTabs(state = state, onAction = onAction)
+            GalleryLoadContent(state = state, onAction = onAction)
         }
-    }
-
-    LaunchedEffect(snackbarMessage) {
-        snackbarMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearSnackbar()
-        }
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            VrcxDetailTopBar(
-                title = "Gallery",
-                onBack = onBack,
-                actions = {
-                    if (selectedTab == GalleryTab.GALLERY || selectedTab == GalleryTab.ICONS) {
-                        IconButton(onClick = { showOverflowMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
-                        }
-                        DropdownMenu(
-                            expanded = showOverflowMenu,
-                            onDismissRequest = { showOverflowMenu = false },
-                        ) {
-                            if (selectedTab == GalleryTab.GALLERY) {
-                                DropdownMenuItem(
-                                    text = { Text("Clear Profile Picture") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.clearProfilePic()
-                                    },
-                                )
-                            }
-                            if (selectedTab == GalleryTab.ICONS) {
-                                DropdownMenuItem(
-                                    text = { Text("Clear User Icon") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.clearUserIcon()
-                                    },
-                                )
-                            }
-                        }
-                    }
-                },
-            )
-
-            val tabCounts = mapOf(
-                GalleryTab.GALLERY to galleryImages.size,
-                GalleryTab.ICONS to iconImages.size,
-                GalleryTab.EMOJIS to emojiImages.size,
-                GalleryTab.STICKERS to stickerImages.size,
-                GalleryTab.PRINTS to prints.size,
-                GalleryTab.INVENTORY to inventoryItems.size,
-            )
-
-            VrcxScrollableTabRow(
-                selectedTabIndex = selectedTab.ordinal,
-                edgePadding = 16.dp,
-            ) {
-                GalleryTab.entries.forEach { tab ->
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { viewModel.selectTab(tab) },
-                        text = {
-                            val count = tabCounts[tab] ?: 0
-                            Text(if (count > 0) "${tab.label} ($count)" else tab.label)
-                        },
-                    )
-                }
-            }
-
-            (selectedTabState as? LoadState.Loaded)?.staleError?.let { staleError ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = staleError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = viewModel::retry) { Text("Retry") }
-                }
-            }
-
-            UiStateContainer(
-                isLoading = selectedTabState is LoadState.Loading,
-                error = (selectedTabState as? LoadState.Failed)?.message,
-                isEmpty = false,
-                onRetry = viewModel::retry,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                    PullToRefreshBox(
-                        isRefreshing = (selectedTabState as? LoadState.Loaded)?.isRefreshing == true,
-                        onRefresh = viewModel::refresh,
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        when (selectedTab) {
-                            GalleryTab.GALLERY -> ImageGridContent(
-                                images = galleryImages,
-                                emptyMessage = "No gallery images",
-                                onImageClick = { viewModel.showFullscreen(it) },
-                                onDeleteClick = { deleteFileTarget = it to GalleryTab.GALLERY },
-                                onSetClick = { viewModel.setProfilePic(it) },
-                                setLabel = "Set as Profile Pic",
-                            )
-                            GalleryTab.ICONS -> ImageGridContent(
-                                images = iconImages,
-                                emptyMessage = "No icons",
-                                onImageClick = { viewModel.showFullscreen(it) },
-                                onDeleteClick = { deleteFileTarget = it to GalleryTab.ICONS },
-                                onSetClick = { viewModel.setUserIcon(it) },
-                                setLabel = "Set as User Icon",
-                            )
-                            GalleryTab.EMOJIS -> ImageGridContent(
-                                images = emojiImages,
-                                emptyMessage = "No emojis",
-                                onImageClick = { viewModel.showFullscreen(it) },
-                                onDeleteClick = { deleteFileTarget = it to GalleryTab.EMOJIS },
-                            )
-                            GalleryTab.STICKERS -> ImageGridContent(
-                                images = stickerImages,
-                                emptyMessage = "No stickers",
-                                onImageClick = { viewModel.showFullscreen(it) },
-                                onDeleteClick = { deleteFileTarget = it to GalleryTab.STICKERS },
-                            )
-                            GalleryTab.PRINTS -> PrintGridContent(
-                                prints = prints,
-                                onPrintClick = { viewModel.showFullscreen(it) },
-                                onDeleteClick = { deletePrintTarget = it },
-                            )
-                            GalleryTab.INVENTORY -> InventoryGridContent(
-                                items = inventoryItems,
-                                templates = inventoryTemplates,
-                                onConsume = { consumeTarget = it },
-                            )
-                        }
-                    }
-                }
-        }
-        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter))
-        if (selectedTab != GalleryTab.INVENTORY && selectedTabState !is LoadState.Loading) {
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+        if (state.selectedTab != GalleryTab.INVENTORY && state.selectedTabState !is LoadState.Loading) {
             FloatingActionButton(
-                onClick = { if (!isUploading) imagePicker.launch("image/*") },
+                onClick = { onAction(GalleryAction.UploadRequested) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             ) {
-                if (isUploading) {
+                if (state.isUploading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
                     Icon(Icons.Default.Add, contentDescription = "Upload")
@@ -263,52 +289,175 @@ fun GalleryScreen(
             }
         }
     }
+}
 
-    // Fullscreen image dialog
-    fullscreenImageUrl?.let { url ->
+@Composable
+private fun GalleryTopBar(state: GalleryContentState, onAction: (GalleryAction) -> Unit) {
+    VrcxDetailTopBar(
+        title = "Gallery",
+        onBack = { onAction(GalleryAction.NavigateBack) },
+        actions = {
+            if (state.selectedTab == GalleryTab.GALLERY || state.selectedTab == GalleryTab.ICONS) {
+                IconButton(onClick = { onAction(GalleryAction.OpenOverflowMenu) }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More")
+                }
+                DropdownMenu(
+                    expanded = state.isOverflowMenuExpanded,
+                    onDismissRequest = { onAction(GalleryAction.DismissOverflowMenu) },
+                ) {
+                    if (state.selectedTab == GalleryTab.GALLERY) {
+                        DropdownMenuItem(
+                            text = { Text("Clear Profile Picture") },
+                            onClick = { onAction(GalleryAction.ClearProfilePicture) },
+                        )
+                    }
+                    if (state.selectedTab == GalleryTab.ICONS) {
+                        DropdownMenuItem(
+                            text = { Text("Clear User Icon") },
+                            onClick = { onAction(GalleryAction.ClearUserIcon) },
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun GalleryTabs(state: GalleryContentState, onAction: (GalleryAction) -> Unit) {
+    VrcxScrollableTabRow(
+        selectedTabIndex = state.selectedTab.ordinal,
+        edgePadding = 16.dp,
+    ) {
+        GalleryTab.entries.forEach { tab ->
+            Tab(
+                selected = state.selectedTab == tab,
+                onClick = { onAction(GalleryAction.SelectTab(tab)) },
+                text = {
+                    val count = state.itemCount(tab)
+                    Text(if (count > 0) "${tab.label} ($count)" else tab.label)
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GalleryLoadContent(state: GalleryContentState, onAction: (GalleryAction) -> Unit) {
+    (state.selectedTabState as? LoadState.Loaded)?.staleError?.let { staleError ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = staleError,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { onAction(GalleryAction.Retry) }) { Text("Retry") }
+        }
+    }
+
+    UiStateContainer(
+        isLoading = state.selectedTabState is LoadState.Loading,
+        error = (state.selectedTabState as? LoadState.Failed)?.message,
+        isEmpty = false,
+        onRetry = { onAction(GalleryAction.Retry) },
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        PullToRefreshBox(
+            isRefreshing = (state.selectedTabState as? LoadState.Loaded)?.isRefreshing == true,
+            onRefresh = { onAction(GalleryAction.Refresh) },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            GalleryTabContent(state = state, onAction = onAction)
+        }
+    }
+}
+
+@Composable
+private fun GalleryTabContent(state: GalleryContentState, onAction: (GalleryAction) -> Unit) {
+    when (state.selectedTab) {
+        GalleryTab.GALLERY -> ImageGridContent(
+            images = state.galleryImages,
+            emptyMessage = "No gallery images",
+            onImageClick = { onAction(GalleryAction.ShowFullscreen(it)) },
+            onDeleteClick = { onAction(GalleryAction.DeleteFileRequested(it, GalleryTab.GALLERY)) },
+            onSetClick = { onAction(GalleryAction.SetProfilePicture(it)) },
+            setLabel = "Set as Profile Pic",
+        )
+
+        GalleryTab.ICONS -> ImageGridContent(
+            images = state.iconImages,
+            emptyMessage = "No icons",
+            onImageClick = { onAction(GalleryAction.ShowFullscreen(it)) },
+            onDeleteClick = { onAction(GalleryAction.DeleteFileRequested(it, GalleryTab.ICONS)) },
+            onSetClick = { onAction(GalleryAction.SetUserIcon(it)) },
+            setLabel = "Set as User Icon",
+        )
+
+        GalleryTab.EMOJIS -> ImageGridContent(
+            images = state.emojiImages,
+            emptyMessage = "No emojis",
+            onImageClick = { onAction(GalleryAction.ShowFullscreen(it)) },
+            onDeleteClick = { onAction(GalleryAction.DeleteFileRequested(it, GalleryTab.EMOJIS)) },
+        )
+
+        GalleryTab.STICKERS -> ImageGridContent(
+            images = state.stickerImages,
+            emptyMessage = "No stickers",
+            onImageClick = { onAction(GalleryAction.ShowFullscreen(it)) },
+            onDeleteClick = { onAction(GalleryAction.DeleteFileRequested(it, GalleryTab.STICKERS)) },
+        )
+
+        GalleryTab.PRINTS -> PrintGridContent(
+            prints = state.prints,
+            onPrintClick = { onAction(GalleryAction.ShowFullscreen(it)) },
+            onDeleteClick = { onAction(GalleryAction.DeletePrintRequested(it)) },
+        )
+
+        GalleryTab.INVENTORY -> InventoryGridContent(
+            items = state.inventoryItems,
+            templates = state.inventoryTemplates,
+            onConsume = { onAction(GalleryAction.ConsumeBundleRequested(it)) },
+        )
+    }
+}
+
+@Composable
+private fun GalleryDialogs(state: GalleryDialogsState, onAction: (GalleryAction) -> Unit) {
+    state.fullscreenImageUrl?.let { imageUrl ->
         FullscreenImageDialog(
-            imageUrl = url,
-            onDismiss = { viewModel.dismissFullscreen() },
+            imageUrl = imageUrl,
+            onDismiss = { onAction(GalleryAction.DismissFullscreen) },
         )
     }
 
-    // Confirm delete file dialog
-    deleteFileTarget?.let { (fileId, tab) ->
-        ConfirmDialog(
+    when (val confirmation = state.confirmation) {
+        is GalleryConfirmation.DeleteFile -> ConfirmDialog(
             title = "Delete Image",
             message = "Are you sure you want to delete this image?",
-            onConfirm = {
-                viewModel.deleteFile(fileId, tab)
-                deleteFileTarget = null
-            },
-            onDismiss = { deleteFileTarget = null },
+            onConfirm = { onAction(GalleryAction.ConfirmRequested) },
+            onDismiss = { onAction(GalleryAction.DismissConfirmation) },
         )
-    }
 
-    // Confirm delete print dialog
-    deletePrintTarget?.let { printId ->
-        ConfirmDialog(
+        is GalleryConfirmation.DeletePrint -> ConfirmDialog(
             title = "Delete Print",
             message = "Are you sure you want to delete this print?",
-            onConfirm = {
-                viewModel.deletePrint(printId)
-                deletePrintTarget = null
-            },
-            onDismiss = { deletePrintTarget = null },
+            onConfirm = { onAction(GalleryAction.ConfirmRequested) },
+            onDismiss = { onAction(GalleryAction.DismissConfirmation) },
         )
-    }
 
-    // Confirm consume bundle dialog
-    consumeTarget?.let { itemId ->
-        ConfirmDialog(
+        is GalleryConfirmation.ConsumeBundle -> ConfirmDialog(
             title = "Consume Bundle",
             message = "Consume this bundle? This cannot be undone.",
-            onConfirm = {
-                viewModel.consumeBundle(itemId)
-                consumeTarget = null
-            },
-            onDismiss = { consumeTarget = null },
+            onConfirm = { onAction(GalleryAction.ConfirmRequested) },
+            onDismiss = { onAction(GalleryAction.DismissConfirmation) },
         )
+
+        null -> Unit
     }
 }
 
@@ -399,11 +548,7 @@ private fun ImageGridCell(
 }
 
 @Composable
-private fun PrintGridContent(
-    prints: List<VrcPrint>,
-    onPrintClick: (String) -> Unit,
-    onDeleteClick: (String) -> Unit,
-) {
+private fun PrintGridContent(prints: List<VrcPrint>, onPrintClick: (String) -> Unit, onDeleteClick: (String) -> Unit) {
     if (prints.isEmpty()) {
         EmptyState(message = "No prints", icon = Icons.Outlined.Image)
     } else {
@@ -459,7 +604,11 @@ private fun PrintGridContent(
                             onClick = { onPrintClick(print.files.image) },
                             modifier = Modifier.size(32.dp),
                         ) {
-                            Icon(Icons.Default.Fullscreen, contentDescription = "View full size", modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.Fullscreen,
+                                contentDescription = "View full size",
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                         IconButton(
                             onClick = { onDeleteClick(print.id) },
@@ -499,9 +648,9 @@ private fun InventoryGridContent(
         ) {
             items(items, key = { it.id }) { item ->
                 val template = templateMap[item.templateId]
-                val displayImageUrl = item.imageUrl.ifBlank { template?.imageUrl ?: "" }
+                val displayImageUrl = item.imageUrl.ifBlank { template?.imageUrl.orEmpty() }
                 val displayName = item.name.ifBlank { template?.name ?: item.templateId }
-                val displayDescription = item.description.ifBlank { template?.description ?: "" }
+                val displayDescription = item.description.ifBlank { template?.description.orEmpty() }
 
                 Column {
                     if (displayImageUrl.isNotBlank()) {
@@ -576,10 +725,7 @@ private fun itemTypeLabel(type: String): String = when (type) {
 }
 
 @Composable
-private fun FullscreenImageDialog(
-    imageUrl: String,
-    onDismiss: () -> Unit,
-) {
+private fun FullscreenImageDialog(imageUrl: String, onDismiss: () -> Unit) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),

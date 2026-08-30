@@ -6,12 +6,14 @@ import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.completeLoad
 import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.failLoad
 import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
+import com.vrcx.android.ui.common.whileUiSubscribed
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -19,9 +21,8 @@ import java.time.format.TextStyle
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -31,11 +32,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class ChartsSummary(
-    val totalVisits: Int = 0,
-    val distinctWorlds: Int = 0,
-    val activeDays: Int = 0,
-)
+data class ChartsSummary(val totalVisits: Int = 0, val distinctWorlds: Int = 0, val activeDays: Int = 0)
 
 /**
  * Every series the Charts screen renders, derived from one snapshot and one
@@ -69,9 +66,10 @@ private data class GpsPoint(
 class ChartsViewModel @Inject constructor(
     private val feedRepository: FeedRepository,
     private val authRepository: AuthRepository,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
-    private val _history = MutableStateFlow<LoadState<List<GpsPoint>>>(LoadState.NotLoaded)
+    private val historyState = MutableStateFlow<LoadState<List<GpsPoint>>>(LoadState.NotLoaded)
 
     private val _selectedRangeDays = MutableStateFlow<Int?>(30)
     val selectedRangeDays: StateFlow<Int?> = _selectedRangeDays.asStateFlow()
@@ -82,13 +80,16 @@ class ChartsViewModel @Inject constructor(
      * the range picker stays reachable.
      */
     val state: StateFlow<LoadState<ChartsData>> = combine(
-        _history,
+        historyState,
         _selectedRangeDays,
     ) { history, rangeDays ->
         when (history) {
             LoadState.NotLoaded -> LoadState.NotLoaded
+
             LoadState.Loading -> LoadState.Loading
+
             is LoadState.Failed -> history
+
             is LoadState.Loaded -> LoadState.Loaded(
                 value = buildCharts(history.value, rangeDays),
                 isRefreshing = history.isRefreshing,
@@ -96,9 +97,11 @@ class ChartsViewModel @Inject constructor(
             )
         }
     }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), LoadState.NotLoaded)
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, LoadState.NotLoaded)
 
-    init { loadData() }
+    init {
+        loadData()
+    }
 
     fun refresh() = loadData()
 
@@ -108,24 +111,24 @@ class ChartsViewModel @Inject constructor(
 
     private fun loadData() {
         viewModelScope.launch {
-            _history.update { it.startLoad() }
+            historyState.update { it.startLoad() }
             try {
                 val userId = (authRepository.authState.value as? AuthState.LoggedIn)?.user?.id
                 if (userId == null) {
-                    _history.update { it.failLoad("Not signed in") }
+                    historyState.update { it.failLoad("Not signed in") }
                     return@launch
                 }
                 val zone = ZoneId.systemDefault()
-                val points = withContext(Dispatchers.Default) {
+                val points = withContext(defaultDispatcher) {
                     feedRepository.getAllGpsFeed(userId).first().map { it.toGpsPoint(zone) }
                 }
-                _history.update { it.completeLoad(points) }
+                historyState.update { it.completeLoad(points) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _history.update { it.failLoad(e.message ?: "Failed to load chart data") }
+                historyState.update { it.failLoad(e.message ?: "Failed to load chart data") }
             } finally {
-                _history.update { it.settleLoad() }
+                historyState.update { it.settleLoad() }
             }
         }
     }
@@ -181,9 +184,6 @@ class ChartsViewModel @Inject constructor(
         )
     }
 
-    private fun weekdayLabel(dayValue: Int): String {
-        return java.time.DayOfWeek.of(dayValue)
-            .getDisplayName(TextStyle.SHORT, Locale.getDefault())
-    }
-
+    private fun weekdayLabel(dayValue: Int): String = java.time.DayOfWeek.of(dayValue)
+        .getDisplayName(TextStyle.SHORT, Locale.getDefault())
 }

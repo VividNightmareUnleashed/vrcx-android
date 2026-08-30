@@ -3,19 +3,8 @@ package com.vrcx.android.data.model
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.VrcUser
 
-/**
- * The VRChat location-string grammar in one place. A location looks like
- * `wrld_xxx:instanceId~region(...)`, with the sentinels `offline`, `private`,
- * and `traveling` standing in for a presence that can't be joined directly.
- *
- * These helpers were previously copy-pasted as private functions across the
- * friends-locations, game-log, player-list and profile screens; keeping the
- * grammar here lets repositories reuse it and stops the copies from drifting.
- */
-
-/** The world id (`wrld_…`) in [location], or null when there is none. */
-fun worldIdOrNull(location: String?): String? =
-    location?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
+/** The `wrld_…` prefix in a VRChat [location], or null for a sentinel/non-world value. */
+fun worldIdOrNull(location: String?): String? = location?.substringBefore(":")?.takeIf { it.startsWith("wrld_") }
 
 /** The world id in [location], or "" when there is none. */
 fun parseWorldId(location: String): String = worldIdOrNull(location).orEmpty()
@@ -26,6 +15,7 @@ fun resolvePresenceLocation(user: CurrentUser?): String = when (user?.location) 
     else -> user?.location.orEmpty()
 }
 
+/** Follows a `traveling` presence to the destination it points at. */
 fun resolvePresenceLocation(friend: VrcUser?): String = when (friend?.location) {
     "traveling" -> friend.travelingToLocation.orEmpty()
     else -> friend?.location.orEmpty()
@@ -34,9 +24,7 @@ fun resolvePresenceLocation(friend: VrcUser?): String = when (friend?.location) 
 /**
  * The presence a [location] implies: the `offline` sentinel and a missing
  * location both mean offline, `private` means present but not joinable, and
- * anything else is a world the user is in. This is the app-wide rule — a screen
- * rendering a presence dot and the pipeline handlers must agree, or the same
- * payload reads differently in two lists.
+ * anything else is a world the user is in.
  *
  * The `offline = false` friends sweep deliberately maps a blank location to
  * [FriendState.ACTIVE] instead, because that endpoint has already said the user
@@ -49,13 +37,12 @@ fun friendStateOf(location: String?): FriendState = when {
 }
 
 /** True when [location] points at a real, joinable instance. */
-fun isTrackableLocation(location: String): Boolean =
-    location.isNotBlank() &&
-        location != "offline" &&
-        location != "private" &&
-        location != "traveling"
+fun isTrackableLocation(location: String): Boolean = location.isNotBlank() &&
+    location != "offline" &&
+    location != "private" &&
+    location != "traveling"
 
-/** A `instance 12345` hint, or "" when [location] has no instance segment. */
+/** An `instance 12345` hint, or "" when [location] has no instance segment. */
 fun formatInstanceHint(location: String): String {
     val instanceLabel = location.substringAfter(":", "").substringBefore("~")
     return if (instanceLabel.isBlank()) "" else "instance $instanceLabel"
@@ -65,5 +52,10 @@ fun formatInstanceHint(location: String): String {
  * The world id a user is in — following a `traveling` presence to its
  * destination — or null when the resolved location is a sentinel/non-world.
  */
-fun resolvedWorldId(location: String?, travelingToLocation: String?): String? =
-    worldIdOrNull(if (location == "traveling") travelingToLocation else location)
+fun resolvedWorldId(location: String?, travelingToLocation: String?): String? = worldIdOrNull(
+    if (location == "traveling") {
+        travelingToLocation
+    } else {
+        location
+    },
+)

@@ -39,6 +39,11 @@ sealed class PipelineEvent {
     // Instance events
     data class InstanceClosed(override val content: JsonElement?) : PipelineEvent()
 
+    /** A local marker: accepted events are complete, but later stream state was lost. */
+    data object StreamGap : PipelineEvent() {
+        override val content: JsonElement? = null
+    }
+
     // Other events
     data class ContentRefresh(override val content: JsonElement?) : PipelineEvent()
     data class Unknown(val type: String, override val content: JsonElement?) : PipelineEvent()

@@ -20,7 +20,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vrcx.android.data.model.isTrackableLocation
 import com.vrcx.android.data.model.parseWorldId
 import com.vrcx.android.data.model.resolvePresenceLocation
@@ -37,22 +37,24 @@ import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.FeedFilter
 import com.vrcx.android.ui.common.applyFeedFilter
+import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.detailText
 import com.vrcx.android.ui.common.headline
-import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.previousDetailText
 import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -103,6 +105,7 @@ class GameLogViewModel @Inject constructor(
     authRepository: AuthRepository,
     feedRepository: FeedRepository,
     friendRepository: FriendRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -119,7 +122,7 @@ class GameLogViewModel @Inject constructor(
     private val _scope = MutableStateFlow(GameLogScope.ALL_ACTIVITY)
     val scope: StateFlow<GameLogScope> = _scope.asStateFlow()
 
-    private val _visibleCount = MutableStateFlow(PAGE_SIZE)
+    private val visibleCount = MutableStateFlow(PAGE_SIZE)
 
     private val currentLocation = authRepository.authState
         .map { state -> resolvePresenceLocation((state as? AuthState.LoggedIn)?.user) }
@@ -150,7 +153,7 @@ class GameLogViewModel @Inject constructor(
         allEntries,
         filter,
         locationCriteria,
-        _visibleCount,
+        visibleCount,
     ) { all, filter, location, visibleCount ->
         val cutoffMs = location.range.days?.let {
             System.currentTimeMillis() - it.toLong() * 24L * 60L * 60L * 1000L
@@ -174,7 +177,7 @@ class GameLogViewModel @Inject constructor(
                 !isTrackableLocation(location.currentLocation),
         )
     }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), GameLogPage())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, GameLogPage())
 
     fun updateSearch(query: String) {
         _searchQuery.value = query
@@ -195,7 +198,7 @@ class GameLogViewModel @Inject constructor(
     }
 
     fun loadMore() {
-        _visibleCount.value += PAGE_SIZE
+        visibleCount.value += PAGE_SIZE
     }
 
     fun selectRange(range: ActivityRange) {
@@ -315,7 +318,9 @@ fun GameLogScreen(
                 },
                 icon = Icons.Outlined.History,
                 subtitle = when (scope) {
-                    GameLogScope.ALL_ACTIVITY -> "Friend movement, status changes, and avatar updates from the selected range appear here."
+                    GameLogScope.ALL_ACTIVITY ->
+                        "Friend movement, status changes, and avatar updates from the selected range appear here."
+
                     else -> "Scoped views only show entries that include location context."
                 },
             )
@@ -387,18 +392,18 @@ private fun matchesScope(
     scope: GameLogScope,
     currentLocation: String,
     currentWorldId: String,
-): Boolean {
-    return when (scope) {
-        GameLogScope.ALL_ACTIVITY -> true
-        GameLogScope.CURRENT_INSTANCE -> {
-            isTrackableLocation(currentLocation) &&
-                entry.location.isNotBlank() &&
-                entry.location == currentLocation
-        }
-        GameLogScope.CURRENT_WORLD -> {
-            currentWorldId.isNotBlank() &&
-                entry.worldId.isNotBlank() &&
-                entry.worldId == currentWorldId
-        }
+): Boolean = when (scope) {
+    GameLogScope.ALL_ACTIVITY -> true
+
+    GameLogScope.CURRENT_INSTANCE -> {
+        isTrackableLocation(currentLocation) &&
+            entry.location.isNotBlank() &&
+            entry.location == currentLocation
+    }
+
+    GameLogScope.CURRENT_WORLD -> {
+        currentWorldId.isNotBlank() &&
+            entry.worldId.isNotBlank() &&
+            entry.worldId == currentWorldId
     }
 }

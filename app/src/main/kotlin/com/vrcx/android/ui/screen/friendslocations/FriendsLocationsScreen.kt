@@ -23,7 +23,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,24 +31,27 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
-import com.vrcx.android.data.model.formatInstanceHint
-import com.vrcx.android.data.model.isTrackableLocation
-import com.vrcx.android.data.model.parseWorldId
-import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.api.model.World
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
 import com.vrcx.android.data.model.FriendState
+import com.vrcx.android.data.model.formatInstanceHint
+import com.vrcx.android.data.model.isTrackableLocation
+import com.vrcx.android.data.model.parseWorldId
+import com.vrcx.android.data.model.resolvePresenceLocation
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.WorldRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
@@ -58,10 +60,10 @@ import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -72,11 +74,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class LocationSegment(
-    val label: String,
-    val emptyMessage: String,
-    val emptySubtitle: String? = null,
-) {
+enum class LocationSegment(val label: String, val emptyMessage: String, val emptySubtitle: String? = null) {
     ONLINE("Online", "No friends in public instances"),
     FAVORITE("Favorites", "No favorite friends in public instances"),
     SAME_INSTANCE(
@@ -89,17 +87,24 @@ enum class LocationSegment(
         "Offline",
         "No offline friends match those filters",
         "Offline groups use recent public world history when the app has it.",
-    );
+    ),
+    ;
 
     /** Whether [friend] belongs in this segment, given the signed-in user's [activeLocation]. */
     fun matches(friend: FriendContext, activeLocation: String, favoriteIds: Set<String>): Boolean = when (this) {
-        ONLINE -> friend.state == FriendState.ONLINE &&
-            isTrackableLocation(resolvePresenceLocation(friend.ref))
+        ONLINE ->
+            friend.state == FriendState.ONLINE &&
+                isTrackableLocation(resolvePresenceLocation(friend.ref))
+
         FAVORITE -> friend.id in favoriteIds && ONLINE.matches(friend, activeLocation, favoriteIds)
-        SAME_INSTANCE -> friend.state == FriendState.ONLINE &&
-            isTrackableLocation(activeLocation) &&
-            resolvePresenceLocation(friend.ref) == activeLocation
+
+        SAME_INSTANCE ->
+            friend.state == FriendState.ONLINE &&
+                isTrackableLocation(activeLocation) &&
+                resolvePresenceLocation(friend.ref) == activeLocation
+
         ACTIVE -> friend.state == FriendState.ACTIVE
+
         OFFLINE -> friend.state == FriendState.OFFLINE
     }
 }
@@ -118,8 +123,7 @@ private sealed interface WorldLookup {
     data class Loaded(val world: World) : WorldLookup
 }
 
-private fun Map<String, WorldLookup>.world(worldId: String): World? =
-    (this[worldId] as? WorldLookup.Loaded)?.world
+private fun Map<String, WorldLookup>.world(worldId: String): World? = (this[worldId] as? WorldLookup.Loaded)?.world
 
 private data class LastKnownFriendLocation(
     val location: String,
@@ -154,6 +158,7 @@ class FriendsLocationsViewModel @Inject constructor(
     private val friendRepository: FriendRepository,
     private val worldRepository: WorldRepository,
     private val feedRepository: FeedRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _selectedSegment = MutableStateFlow(LocationSegment.ONLINE)
     val selectedSegment: StateFlow<LocationSegment> = _selectedSegment.asStateFlow()
@@ -161,19 +166,19 @@ class FriendsLocationsViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _worldLookups = MutableStateFlow<Map<String, WorldLookup>>(emptyMap())
+    private val worldLookups = MutableStateFlow<Map<String, WorldLookup>>(emptyMap())
     private val worldLookupQueue = Channel<String>(WORLD_LOOKUP_QUEUE_CAPACITY)
 
     private val ownerUserId = authRepository.authState
         .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), "")
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, "")
 
     private val currentLocation = authRepository.authState
         .map { state ->
             val user = (state as? AuthState.LoggedIn)?.user
             resolvePresenceLocation(user)
         }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), "")
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, "")
 
     private val recentGpsEntries = ownerUserId
         .flatMapLatest { userId ->
@@ -183,16 +188,16 @@ class FriendsLocationsViewModel @Inject constructor(
                 feedRepository.getGpsFeed(userId, OFFLINE_CONTEXT_LIMIT)
             }
         }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, emptyList())
 
     private val lastKnownLocations = recentGpsEntries
         .map { entries -> buildLastKnownLocations(entries) }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, emptyMap())
 
     private val locationCriteria = combine(
         _selectedSegment,
         _searchQuery,
-        _worldLookups,
+        worldLookups,
         currentLocation,
         lastKnownLocations,
     ) { segment, query, worlds, activeLocation, lastKnown ->
@@ -223,10 +228,12 @@ class FriendsLocationsViewModel @Inject constructor(
                         worldName = "Active on Website",
                         friends = filtered.sortedByName(),
                         locationHint = "Website presence",
-                    )
+                    ),
                 )
             }
+
             LocationSegment.OFFLINE -> buildOfflineGroups(filtered, criteria.lastKnown, criteria.worlds)
+
             else -> buildWorldGroups(
                 friends = filtered,
                 worlds = criteria.worlds,
@@ -244,7 +251,7 @@ class FriendsLocationsViewModel @Inject constructor(
             }
         }
     }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, emptyList())
 
     init {
         repeat(WORLD_LOOKUP_WORKER_COUNT) {
@@ -257,7 +264,7 @@ class FriendsLocationsViewModel @Inject constructor(
                     } catch (_: Exception) {
                         WorldLookup.Failed
                     }
-                    _worldLookups.update { it + (worldId to result) }
+                    worldLookups.update { it + (worldId to result) }
                 }
             }
         }
@@ -275,8 +282,8 @@ class FriendsLocationsViewModel @Inject constructor(
                 }.filter { it.isNotBlank() }
             }.collect { worldIds ->
                 for (worldId in worldIds) {
-                    if (worldId in _worldLookups.value) continue
-                    _worldLookups.update { it + (worldId to WorldLookup.Pending) }
+                    if (worldId in worldLookups.value) continue
+                    worldLookups.update { it + (worldId to WorldLookup.Pending) }
                     worldLookupQueue.send(worldId)
                 }
             }
@@ -295,73 +302,70 @@ class FriendsLocationsViewModel @Inject constructor(
         friends: List<FriendContext>,
         lastKnown: Map<String, LastKnownFriendLocation>,
         worlds: Map<String, WorldLookup>,
-    ): List<LocationGroup> {
-        return friends
-            .groupBy { friend -> lastKnown[friend.id]?.location ?: UNKNOWN_LOCATION_KEY }
-            .map { (locationKey, groupedFriends) ->
-                val orderedFriends = groupedFriends.sortedByName()
-                val lastSeen = orderedFriends.firstNotNullOfOrNull { lastKnown[it.id] }
-                val worldId = lastSeen?.worldId.orEmpty()
-                val world = worlds.world(worldId)
-                when {
-                    lastSeen == null -> LocationGroup(
-                        location = locationKey,
-                        worldId = "",
-                        worldName = "Last location unknown",
-                        friends = orderedFriends,
-                        locationHint = "No recent public world location recorded",
-                    )
+    ): List<LocationGroup> = friends
+        .groupBy { friend -> lastKnown[friend.id]?.location ?: UNKNOWN_LOCATION_KEY }
+        .map { (locationKey, groupedFriends) ->
+            val orderedFriends = groupedFriends.sortedByName()
+            val lastSeen = orderedFriends.firstNotNullOfOrNull { lastKnown[it.id] }
+            val worldId = lastSeen?.worldId.orEmpty()
+            val world = worlds.world(worldId)
+            when {
+                lastSeen == null -> LocationGroup(
+                    location = locationKey,
+                    worldId = "",
+                    worldName = "Last location unknown",
+                    friends = orderedFriends,
+                    locationHint = "No recent public world location recorded",
+                )
 
-                    else -> LocationGroup(
-                        location = lastSeen.location,
-                        worldId = worldId,
-                        worldName = world?.name ?: lastSeen.worldName.ifBlank { worldId.ifBlank { "Last seen location" } },
-                        worldThumbnailUrl = world?.thumbnailImageUrl.orEmpty(),
-                        worldCapacity = world?.capacity ?: 0,
-                        friends = orderedFriends,
-                        updatedAt = lastSeen.createdAt,
-                        locationHint = formatInstanceHint(lastSeen.location),
-                    )
-                }
+                else -> LocationGroup(
+                    location = lastSeen.location,
+                    worldId = worldId,
+                    worldName =
+                        world?.name ?: lastSeen.worldName.ifBlank { worldId.ifBlank { "Last seen location" } },
+                    worldThumbnailUrl = world?.thumbnailImageUrl.orEmpty(),
+                    worldCapacity = world?.capacity ?: 0,
+                    friends = orderedFriends,
+                    updatedAt = lastSeen.createdAt,
+                    locationHint = formatInstanceHint(lastSeen.location),
+                )
             }
-            .sortedWith(
-                compareByDescending<LocationGroup> { it.updatedAt }
-                    .thenByDescending { it.friends.size }
-                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.worldName }
-            )
-    }
+        }
+        .sortedWith(
+            compareByDescending<LocationGroup> { it.updatedAt }
+                .thenByDescending { it.friends.size }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.worldName },
+        )
 
     private fun buildWorldGroups(
         friends: List<FriendContext>,
         worlds: Map<String, WorldLookup>,
         currentLocation: String,
-    ): List<LocationGroup> {
-        return friends
-            .groupBy { resolvePresenceLocation(it.ref) }
-            .filterKeys(::isTrackableLocation)
-            .map { (location, groupedFriends) ->
-                val orderedFriends = groupedFriends.sortedByName()
-                val worldId = parseWorldId(location)
-                val world = worlds.world(worldId)
-                LocationGroup(
-                    location = location,
-                    worldId = worldId,
-                    worldName = world?.name ?: worldId.ifBlank { "Unknown world" },
-                    worldThumbnailUrl = world?.thumbnailImageUrl.orEmpty(),
-                    worldCapacity = world?.capacity ?: 0,
-                    friends = orderedFriends,
-                    locationHint = when {
-                        currentLocation.isNotBlank() && location == currentLocation -> "Your current instance"
-                        else -> formatInstanceHint(location)
-                    },
-                )
-            }
-            .sortedWith(
-                compareByDescending<LocationGroup> { it.location == currentLocation }
-                    .thenByDescending { it.friends.size }
-                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.worldName }
+    ): List<LocationGroup> = friends
+        .groupBy { resolvePresenceLocation(it.ref) }
+        .filterKeys(::isTrackableLocation)
+        .map { (location, groupedFriends) ->
+            val orderedFriends = groupedFriends.sortedByName()
+            val worldId = parseWorldId(location)
+            val world = worlds.world(worldId)
+            LocationGroup(
+                location = location,
+                worldId = worldId,
+                worldName = world?.name ?: worldId.ifBlank { "Unknown world" },
+                worldThumbnailUrl = world?.thumbnailImageUrl.orEmpty(),
+                worldCapacity = world?.capacity ?: 0,
+                friends = orderedFriends,
+                locationHint = when {
+                    currentLocation.isNotBlank() && location == currentLocation -> "Your current instance"
+                    else -> formatInstanceHint(location)
+                },
             )
-    }
+        }
+        .sortedWith(
+            compareByDescending<LocationGroup> { it.location == currentLocation }
+                .thenByDescending { it.friends.size }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.worldName },
+        )
 }
 
 private fun List<FriendContext>.sortedByName(): List<FriendContext> =

@@ -1,7 +1,9 @@
 package com.vrcx.android.data.api
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BulkPaginatorTest {
@@ -47,6 +49,33 @@ class BulkPaginatorTest {
 
         assertEquals(3, pages)
         assertEquals(6, items.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `does not delay after the final allowed page`() = runTest {
+        BulkPaginator.fetchAll(pageSize = 1, maxPages = 2, delayBetweenPagesMs = 150) { offset, _ ->
+            page(offset, size = 1)
+        }
+
+        assertEquals(150L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `rejects invalid pagination limits before fetching`() = runTest {
+        val invalidPageSize = runCatching {
+            BulkPaginator.fetchAll<String>(pageSize = 0) { _, _ -> error("must not fetch") }
+        }.exceptionOrNull()
+        val invalidMaxPages = runCatching {
+            BulkPaginator.fetchAll<String>(maxPages = 0) { _, _ -> error("must not fetch") }
+        }.exceptionOrNull()
+        val invalidDelay = runCatching {
+            BulkPaginator.fetchAll<String>(delayBetweenPagesMs = -1) { _, _ -> error("must not fetch") }
+        }.exceptionOrNull()
+
+        assertTrue(invalidPageSize is IllegalArgumentException)
+        assertTrue(invalidMaxPages is IllegalArgumentException)
+        assertTrue(invalidDelay is IllegalArgumentException)
     }
 
     private fun page(offset: Int, size: Int): List<String> = (offset until offset + size).map { "item_$it" }

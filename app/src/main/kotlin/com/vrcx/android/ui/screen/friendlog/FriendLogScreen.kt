@@ -23,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,19 +30,24 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vrcx.android.data.db.entity.FriendLogHistoryEntity
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FriendLogEventType
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -51,8 +55,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import javax.inject.Inject
 
 private const val HISTORY_LIMIT = 200
 
@@ -72,6 +74,7 @@ data class FriendLogEntry(
 class FriendLogViewModel @Inject constructor(
     authRepository: AuthRepository,
     friendRepository: FriendRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -80,7 +83,7 @@ class FriendLogViewModel @Inject constructor(
     val selectedTypes: StateFlow<Set<FriendLogEventType>> = _selectedTypes.asStateFlow()
 
     private val rawHistory = authRepository.authState
-        .map { (it as? AuthState.LoggedIn)?.user?.id ?: "" }
+        .map { (it as? AuthState.LoggedIn)?.user?.id.orEmpty() }
         .flatMapLatest { uid ->
             if (uid.isEmpty()) flowOf(emptyList()) else friendRepository.friendLogHistory(uid, HISTORY_LIMIT)
         }
@@ -95,9 +98,11 @@ class FriendLogViewModel @Inject constructor(
             .filter { it.type in types }
             .filter { query.isBlank() || it.displayName.contains(query, ignoreCase = true) }
     }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, emptyList())
 
-    fun updateSearch(query: String) { _searchQuery.value = query }
+    fun updateSearch(query: String) {
+        _searchQuery.value = query
+    }
 
     fun toggleType(type: FriendLogEventType) {
         val current = _selectedTypes.value
@@ -150,7 +155,11 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
         }
 
         if (history.isEmpty()) {
-            EmptyState(message = "No friend log history", icon = Icons.Outlined.History, subtitle = "History will appear as friends are added/removed")
+            EmptyState(
+                message = "No friend log history",
+                icon = Icons.Outlined.History,
+                subtitle = "History will appear as friends are added/removed",
+            )
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(history, key = { it.id }) { entry ->
@@ -160,7 +169,9 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
                             contentDescription = null,
                             tint = when (entry.type) {
                                 FriendLogEventType.FRIEND -> MaterialTheme.colorScheme.primary
+
                                 FriendLogEventType.UNFRIEND -> MaterialTheme.colorScheme.error
+
                                 FriendLogEventType.DISPLAY_NAME,
                                 FriendLogEventType.TRUST_LEVEL,
                                 -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -170,10 +181,18 @@ fun FriendLogScreen(viewModel: FriendLogViewModel = hiltViewModel(), onBack: () 
                         Column(Modifier.weight(1f)) {
                             Text(entry.displayName, style = MaterialTheme.typography.bodyLarge)
                             val detail = when (entry.type) {
-                                FriendLogEventType.DISPLAY_NAME ->
-                                    if (entry.previousDisplayName.isNotEmpty()) "${entry.previousDisplayName} → ${entry.displayName}" else ""
-                                FriendLogEventType.TRUST_LEVEL ->
-                                    if (entry.previousTrustLevel.isNotEmpty()) "${entry.previousTrustLevel} → ${entry.trustLevel}" else entry.trustLevel
+                                FriendLogEventType.DISPLAY_NAME -> if (entry.previousDisplayName.isNotEmpty()) {
+                                    "${entry.previousDisplayName} → ${entry.displayName}"
+                                } else {
+                                    ""
+                                }
+
+                                FriendLogEventType.TRUST_LEVEL -> if (entry.previousTrustLevel.isNotEmpty()) {
+                                    "${entry.previousTrustLevel} → ${entry.trustLevel}"
+                                } else {
+                                    entry.trustLevel
+                                }
+
                                 FriendLogEventType.FRIEND, FriendLogEventType.UNFRIEND -> ""
                             }
                             Text(

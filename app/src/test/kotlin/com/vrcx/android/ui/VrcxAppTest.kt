@@ -34,10 +34,11 @@ class VrcxAppTest {
     }
 
     @Test
-    fun `the theme is unresolved until DataStore answers, rather than guessing dark`() {
+    fun `startup decisions stay unresolved until DataStore answers`() {
         // Guessing paints the whole shell in the wrong theme for the length of a
         // disk read, then flips it. Null lets the shell follow the system, which
-        // is what the window background behind it is already doing.
+        // is what the window background behind it is already doing. The service
+        // likewise cannot guess "enabled" without briefly overriding an opt-out.
         val preferences = mock<VrcxPreferences>()
         whenever(preferences.themeMode).thenReturn(flowOf(ThemeMode.LIGHT))
         whenever(preferences.dynamicColors).thenReturn(emptyFlow())
@@ -45,7 +46,10 @@ class VrcxAppTest {
         whenever(preferences.wallpaperScaleMode).thenReturn(emptyFlow())
         whenever(preferences.backgroundServiceEnabled).thenReturn(emptyFlow())
 
-        assertNull(VrcxAppViewModel(preferences).themeMode.value)
+        val viewModel = VrcxAppViewModel(preferences)
+
+        assertNull(viewModel.themeMode.value)
+        assertNull(viewModel.backgroundServiceEnabled.value)
     }
 
     @Test
@@ -58,6 +62,14 @@ class VrcxAppTest {
 
         assertNull(shadowOf(application).nextStartedService)
         assertNull("the service owns its own teardown", shadowOf(application).nextStoppedService)
+    }
+
+    @Test
+    fun `a session waits for the background preference before declaring a service mode`() {
+        declareSocketState(application, isLoggedIn = true, backgroundServiceEnabled = null)
+
+        assertNull(shadowOf(application).nextStartedService)
+        assertNull(shadowOf(application).nextStoppedService)
     }
 
     @Test

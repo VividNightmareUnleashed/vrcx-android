@@ -5,9 +5,7 @@
 
 package com.vrcx.android.ui.screen.tools
 
-import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -43,19 +40,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
+import com.vrcx.android.data.content.ContentImageService
+import com.vrcx.android.data.gallery.GalleryImageCategory
+import com.vrcx.android.data.gallery.GalleryUploadCoordinator
+import com.vrcx.android.data.gallery.GalleryUploadResult
+import com.vrcx.android.data.repository.AuthRepository
+import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.screenshot.ScreenshotMetadata
-import com.vrcx.android.data.screenshot.ScreenshotMetadataReader
 import com.vrcx.android.data.screenshot.ScreenshotPlayer
 import com.vrcx.android.data.screenshot.ScreenshotPosition
 import com.vrcx.android.data.screenshot.ScreenshotReadResult
-import com.vrcx.android.data.repository.AuthRepository
-import com.vrcx.android.data.repository.AuthState
-import com.vrcx.android.data.repository.GalleryRepository
 import com.vrcx.android.ui.common.formatByteCount
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
-import com.vrcx.android.ui.screen.gallery.UploadReadResult
-import com.vrcx.android.ui.screen.gallery.prepareGalleryUpload
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -63,18 +61,15 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class ScreenshotMetadataUiState(
     val selectedUri: Uri? = null,
@@ -88,38 +83,35 @@ data class ScreenshotMetadataUiState(
 
 @HiltViewModel
 class ScreenshotMetadataViewModel @Inject constructor(
-    private val galleryRepository: GalleryRepository,
+    private val contentImageService: ContentImageService,
+    private val uploadCoordinator: GalleryUploadCoordinator,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ScreenshotMetadataUiState())
     val uiState: StateFlow<ScreenshotMetadataUiState> = _uiState.asStateFlow()
     val isVrcPlusSupporter: StateFlow<Boolean> = authRepository.authState
         .map { state -> (state as? AuthState.LoggedIn)?.user?.tags?.contains("system_supporter") == true }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, whileUiSubscribed, false)
 
     private var selectionGeneration = 0L
+    private var uploadGeneration = 0L
     private var loadJob: Job? = null
     private var uploadJob: Job? = null
 
-    fun loadScreenshot(context: Context, uri: Uri) {
+    fun loadScreenshot(uri: Uri) {
+        uploadGeneration++
         loadJob?.cancel()
         uploadJob?.cancel()
         val generation = ++selectionGeneration
         _uiState.value = ScreenshotMetadataUiState(selectedUri = uri, isLoading = true)
         loadJob = viewModelScope.launch {
-            val appContext = context.applicationContext
             try {
-                val details = withContext(Dispatchers.IO) { appContext.queryOpenableFile(uri) }
-                val result = withContext(Dispatchers.IO) {
-                    appContext.contentResolver.openInputStream(uri)?.use { input ->
-                        ScreenshotMetadataReader.read(input, details.fileName)
-                    } ?: ScreenshotReadResult.Failed("Unable to open the selected image.")
-                }
+                val inspected = contentImageService.inspectScreenshot(uri)
                 updateIfCurrent(uri, generation) { current ->
                     current.copy(
-                        fileName = details.fileName,
-                        fileSizeBytes = details.fileSizeBytes,
-                        result = result,
+                        fileName = inspected.details.fileName,
+                        fileSizeBytes = inspected.details.fileSizeBytes,
+                        result = inspected.result,
                         isLoading = false,
                     )
                 }
@@ -136,53 +128,57 @@ class ScreenshotMetadataViewModel @Inject constructor(
         }
     }
 
-    fun uploadSelectedScreenshotToGallery(context: Context) {
-        val state = _uiState.value
-        val uri = state.selectedUri ?: return
+    fun uploadSelectedScreenshotToGallery() {
+        val uri = _uiState.value.selectedUri ?: return
         val generation = selectionGeneration
+        val uploadAttempt = ++uploadGeneration
+        uploadJob?.cancel()
         if (!isVrcPlusSupporter.value) {
-            _uiState.value = state.copy(uploadMessage = "VRC+ is required to upload gallery images.")
+            updateIfCurrent(uri, generation) {
+                it.copy(
+                    isUploading = false,
+                    uploadMessage = "VRC+ is required to upload gallery images.",
+                )
+            }
             return
         }
 
-        uploadJob?.cancel()
         updateIfCurrent(uri, generation) { it.copy(isUploading = true, uploadMessage = null) }
         uploadJob = viewModelScope.launch {
-            val appContext = context.applicationContext
             try {
-                // Same preparation the Gallery screen uses, so an oversized
-                // VRChat screenshot is downsampled here rather than rejected.
-                val upload = when (val prepared = prepareGalleryUpload(appContext, uri)) {
-                    UploadReadResult.Unreadable -> {
-                        updateIfCurrent(uri, generation) {
-                            it.copy(isUploading = false, uploadMessage = "Unable to open the selected image.")
-                        }
-                        return@launch
+                val message = when (
+                    val result = uploadCoordinator.uploadImage(uri, GalleryImageCategory.GALLERY) {
+                        isCurrentUpload(uri, generation, uploadAttempt)
                     }
-                    UploadReadResult.TooLarge -> {
-                        updateIfCurrent(uri, generation) {
-                            it.copy(isUploading = false, uploadMessage = "Image too large (max 10 MB).")
-                        }
-                        return@launch
-                    }
-                    is UploadReadResult.Success -> prepared.upload
+                ) {
+                    GalleryUploadResult.Uploaded -> "Image uploaded to gallery."
+
+                    GalleryUploadResult.TooLarge -> "Image too large (max 10 MB)."
+
+                    GalleryUploadResult.Unreadable -> "Unable to open the selected image."
+
+                    GalleryUploadResult.Obsolete -> return@launch
+
+                    GalleryUploadResult.RefreshRequiresAuthentication ->
+                        "Image uploaded to gallery, but refresh requires signing in again."
+
+                    is GalleryUploadResult.RefreshFailed ->
+                        "Image uploaded to gallery, but refresh failed: ${result.error.message ?: "Unknown error"}"
                 }
-                if (!isCurrent(uri, generation)) return@launch
-                withContext(Dispatchers.IO) {
-                    galleryRepository.uploadFile("gallery", upload.bytes, upload.mimeType, upload.fileName)
-                    galleryRepository.loadGallery()
-                }
-                updateIfCurrent(uri, generation) {
-                    it.copy(isUploading = false, uploadMessage = "Image uploaded to gallery.")
+                updateIfCurrentUpload(uri, generation, uploadAttempt) {
+                    it.copy(uploadMessage = message)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateIfCurrent(uri, generation) {
+                updateIfCurrentUpload(uri, generation, uploadAttempt) {
                     it.copy(
-                        isUploading = false,
                         uploadMessage = "Upload failed: ${e.message ?: "Unknown error"}",
                     )
+                }
+            } finally {
+                updateIfCurrentUpload(uri, generation, uploadAttempt) {
+                    it.copy(isUploading = false)
                 }
             }
         }
@@ -190,6 +186,19 @@ class ScreenshotMetadataViewModel @Inject constructor(
 
     private fun isCurrent(uri: Uri, generation: Long): Boolean =
         generation == selectionGeneration && _uiState.value.selectedUri == uri
+
+    private fun isCurrentUpload(uri: Uri, generation: Long, uploadAttempt: Long): Boolean =
+        uploadAttempt == uploadGeneration && isCurrent(uri, generation)
+
+    private fun updateIfCurrentUpload(
+        uri: Uri,
+        generation: Long,
+        uploadAttempt: Long,
+        transform: (ScreenshotMetadataUiState) -> ScreenshotMetadataUiState,
+    ) {
+        if (uploadAttempt != uploadGeneration) return
+        updateIfCurrent(uri, generation, transform)
+    }
 
     private fun updateIfCurrent(
         uri: Uri,
@@ -210,12 +219,11 @@ fun ScreenshotMetadataScreen(
     onUserClick: (String) -> Unit = {},
     onWorldClick: (String) -> Unit = {},
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isVrcPlusSupporter by viewModel.isVrcPlusSupporter.collectAsStateWithLifecycle()
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        viewModel.loadScreenshot(context, uri)
+        viewModel.loadScreenshot(uri)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -249,22 +257,26 @@ fun ScreenshotMetadataScreen(
             val result = uiState.result
             when {
                 uiState.isLoading -> LoadingMetadataCard()
+
                 result is ScreenshotReadResult.Parsed -> MetadataDetails(
                     state = uiState,
                     parsed = result,
                     isVrcPlusSupporter = isVrcPlusSupporter,
-                    onUpload = { viewModel.uploadSelectedScreenshotToGallery(context) },
+                    onUpload = viewModel::uploadSelectedScreenshotToGallery,
                     onUserClick = onUserClick,
                     onWorldClick = onWorldClick,
                 )
+
                 result is ScreenshotReadResult.NoMetadata -> ErrorMetadataCard(
                     message = "Image has no valid VRChat or VRCX metadata.",
                     onBrowse = { imagePicker.launch("image/png") },
                 )
+
                 result is ScreenshotReadResult.Failed -> ErrorMetadataCard(
                     message = result.message,
                     onBrowse = { imagePicker.launch("image/png") },
                 )
+
                 else -> EmptyMetadataCard()
             }
         }
@@ -300,10 +312,7 @@ private fun LoadingMetadataCard() {
 }
 
 @Composable
-private fun ErrorMetadataCard(
-    message: String,
-    onBrowse: () -> Unit,
-) {
+private fun ErrorMetadataCard(message: String, onBrowse: () -> Unit) {
     VrcxCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Metadata unavailable", style = MaterialTheme.typography.titleMedium)
@@ -350,7 +359,10 @@ private fun MetadataDetails(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 parsed.resolution?.let { MetadataChip(it) }
                 state.fileSizeBytes?.let { MetadataChip(formatByteCount(it)) }
                 metadata.application?.let { MetadataChip(it) }
@@ -388,10 +400,7 @@ private fun MetadataDetails(
 }
 
 @Composable
-private fun WorldCard(
-    metadata: ScreenshotMetadata,
-    onWorldClick: (String) -> Unit,
-) {
+private fun WorldCard(metadata: ScreenshotMetadata, onWorldClick: (String) -> Unit) {
     VrcxCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("World", style = MaterialTheme.typography.titleMedium)
@@ -412,10 +421,7 @@ private fun WorldCard(
 }
 
 @Composable
-private fun AuthorCard(
-    metadata: ScreenshotMetadata,
-    onUserClick: (String) -> Unit,
-) {
+private fun AuthorCard(metadata: ScreenshotMetadata, onUserClick: (String) -> Unit) {
     VrcxCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Author", style = MaterialTheme.typography.titleMedium)
@@ -434,10 +440,7 @@ private fun AuthorCard(
 }
 
 @Composable
-private fun PlayersCard(
-    players: List<ScreenshotPlayer>,
-    onUserClick: (String) -> Unit,
-) {
+private fun PlayersCard(players: List<ScreenshotPlayer>, onUserClick: (String) -> Unit) {
     VrcxCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Players (${players.size})", style = MaterialTheme.typography.titleMedium)
@@ -500,12 +503,7 @@ private fun MetadataTextRow(label: String, value: String) {
 }
 
 @Composable
-private fun ClickableValue(
-    label: String,
-    value: String,
-    onClick: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
+private fun ClickableValue(label: String, value: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (onClick != null) {
             TextButton(
@@ -529,34 +527,8 @@ private fun ClickableValue(
     }
 }
 
-private data class OpenableFileDetails(
-    val fileName: String?,
-    val fileSizeBytes: Long?,
-)
+private fun ScreenshotPosition.format(): String = String.format(Locale.US, "(%.2f, %.2f, %.2f)", x, y, z)
 
-private fun Context.queryOpenableFile(uri: Uri): OpenableFileDetails {
-    var name: String? = null
-    var sizeBytes: Long? = null
-    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-        if (cursor.moveToFirst()) {
-            if (nameIndex >= 0) name = cursor.getString(nameIndex)
-            if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                sizeBytes = cursor.getLong(sizeIndex).takeIf { it >= 0 }
-            }
-        }
-    }
-    return OpenableFileDetails(fileName = name, fileSizeBytes = sizeBytes)
-}
-
-private fun ScreenshotPosition.format(): String {
-    return String.format(Locale.US, "(%.2f, %.2f, %.2f)", x, y, z)
-}
-
-private fun formatCapturedAt(epochMillis: Long): String {
-    return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
-        .format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
-}
-
+private fun formatCapturedAt(epochMillis: Long): String = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+    .withLocale(Locale.getDefault())
+    .format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))

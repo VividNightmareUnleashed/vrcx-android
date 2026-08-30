@@ -10,7 +10,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class ScreenshotMetadataReaderTest {
     @Test
     fun `read parses VRCX description metadata`() {
@@ -51,7 +54,10 @@ class ScreenshotMetadataReaderTest {
         assertEquals("Alice", result.metadata.author.displayName)
         assertEquals("wrld_world:12345", result.metadata.world.instanceId)
         assertEquals("Bob", result.metadata.players.single().displayName)
-        assertEquals(Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(), result.capturedAtEpochMillis)
+        assertEquals(
+            Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(),
+            result.capturedAtEpochMillis,
+        )
     }
 
     @Test
@@ -94,7 +100,10 @@ class ScreenshotMetadataReaderTest {
         assertEquals("Alice", result.metadata.author.displayName)
         assertEquals("Test World", result.metadata.world.name)
         assertEquals("hello from a screenshot", result.metadata.note)
-        assertEquals(Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(), result.capturedAtEpochMillis)
+        assertEquals(
+            Instant.parse("2026-05-12T08:00:00Z").toEpochMilli(),
+            result.capturedAtEpochMillis,
+        )
     }
 
     @Test
@@ -158,11 +167,84 @@ class ScreenshotMetadataReaderTest {
     }
 
     @Test
+    fun `read rejects XMP with an external entity declaration`() {
+        val xmp = """
+            <!DOCTYPE x:xmpmeta [
+              <!ENTITY xxe SYSTEM "file:///data/data/com.vrcx.android/files/secrets">
+            ]>
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+                  <xmp:Author>&xxe;</xmp:Author>
+                </rdf:Description>
+              </rdf:RDF>
+            </x:xmpmeta>
+        """.trimIndent()
+
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 1200, height = 900),
+                "iTXt" to iTxt(keyword = "XML:com.adobe.xmp", text = xmp),
+                "IDAT" to byteArrayOf(),
+            ).inputStream(),
+        )
+
+        assertEquals(ScreenshotReadResult.NoMetadata("1200x900"), result)
+    }
+
+    @Test
+    fun `read rejects XMP with an undeclared entity reference`() {
+        val xmp = """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+                  <xmp:Author>&xxe;</xmp:Author>
+                </rdf:Description>
+              </rdf:RDF>
+            </x:xmpmeta>
+        """.trimIndent()
+
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 1200, height = 900),
+                "iTXt" to iTxt(keyword = "XML:com.adobe.xmp", text = xmp),
+                "IDAT" to byteArrayOf(),
+            ).inputStream(),
+        )
+
+        assertEquals(ScreenshotReadResult.NoMetadata("1200x900"), result)
+    }
+
+    @Test
+    fun `read rejects malformed XMP`() {
+        val xmp = """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+                  <xmp:Author>Alice</xmp:Author>
+              </rdf:RDF>
+            </x:xmpmeta>
+        """.trimIndent()
+
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 1200, height = 900),
+                "iTXt" to iTxt(keyword = "XML:com.adobe.xmp", text = xmp),
+                "IDAT" to byteArrayOf(),
+            ).inputStream(),
+        )
+
+        assertEquals(ScreenshotReadResult.NoMetadata("1200x900"), result)
+    }
+
+    @Test
     fun `read reports invalid PNG`() {
         val result = ScreenshotMetadataReader.read("not a png".toByteArray().inputStream())
 
         assertEquals(
-            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            ScreenshotReadResult.Failed(
+                "Invalid file selected. Please select a valid PNG screenshot.",
+            ),
             result,
         )
     }
@@ -196,6 +278,47 @@ class ScreenshotMetadataReaderTest {
     }
 
     @Test
+    fun `legacy parser preserves ScreenshotManager fields`() {
+        val metadata = requireNotNull(
+            LegacyScreenshotMetadataParser.parse(
+                "screenshotmanager|2|author:usr_author,Alice|wrld_world,12345,Test World",
+            ),
+        )
+
+        assertEquals("screenshotmanager", metadata.application)
+        assertEquals(2, metadata.version)
+        assertEquals(ScreenshotAuthor("usr_author", "Alice"), metadata.author)
+        assertEquals(
+            ScreenshotWorld("wrld_world", "Test World", "wrld_world:12345"),
+            metadata.world,
+        )
+    }
+
+    @Test
+    fun `legacy parser preserves CVR display labels and positions`() {
+        val metadata = requireNotNull(
+            LegacyScreenshotMetadataParser.parse(
+                "lfs|cvr|2|author:usr_author,Alice|world:wrld_world,12345,Test World|" +
+                    "pos:1,2,3|players:usr_bob,4,5,6,Bob",
+            ),
+        )
+
+        assertEquals("cvr", metadata.application)
+        assertEquals(ScreenshotAuthor(displayName = "Alice (usr_author)"), metadata.author)
+        assertEquals(ScreenshotWorld(name = "Test World (wrld_world)"), metadata.world)
+        assertEquals(ScreenshotPosition(1f, 2f, 3f), metadata.pos)
+        assertEquals(
+            listOf(
+                ScreenshotPlayer(
+                    displayName = "Bob (usr_bob)",
+                    pos = ScreenshotPosition(4f, 5f, 6f),
+                ),
+            ),
+            metadata.players,
+        )
+    }
+
+    @Test
     fun `read rejects an IHDR chunk declaring a huge length`() {
         val result = ScreenshotMetadataReader.read(
             pngWithDeclaredLength(
@@ -206,7 +329,9 @@ class ScreenshotMetadataReaderTest {
         )
 
         assertEquals(
-            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            ScreenshotReadResult.Failed(
+                "Invalid file selected. Please select a valid PNG screenshot.",
+            ),
             result,
         )
     }
@@ -233,7 +358,9 @@ class ScreenshotMetadataReaderTest {
         val result = ScreenshotMetadataReader.read(signature.inputStream())
 
         assertEquals(
-            ScreenshotReadResult.Failed("Invalid file selected. Please select a valid PNG screenshot."),
+            ScreenshotReadResult.Failed(
+                "Invalid file selected. Please select a valid PNG screenshot.",
+            ),
             result,
         )
     }
@@ -251,6 +378,26 @@ class ScreenshotMetadataReaderTest {
 
         // The Description chunk sits past the limit, so it is never reached.
         assertEquals(ScreenshotReadResult.NoMetadata("8x8"), result)
+    }
+
+    @Test
+    fun `read rejects text chunks whose aggregate size exceeds the retained metadata limit`() {
+        val largeTextChunk = iTxt(keyword = "Description", text = "x".repeat(900_000))
+        val result = ScreenshotMetadataReader.read(
+            png(
+                "IHDR" to ihdr(width = 8, height = 8),
+                "iTXt" to largeTextChunk,
+                "iTXt" to largeTextChunk,
+                "iTXt" to largeTextChunk,
+                "iTXt" to largeTextChunk,
+                "iTXt" to largeTextChunk,
+            ).inputStream(),
+        )
+
+        assertEquals(
+            ScreenshotReadResult.Failed(ScreenshotMetadataReader.UNPARSEABLE_MESSAGE),
+            result,
+        )
     }
 
     /** Asserts the read produced metadata, and hands back the parsed result. */

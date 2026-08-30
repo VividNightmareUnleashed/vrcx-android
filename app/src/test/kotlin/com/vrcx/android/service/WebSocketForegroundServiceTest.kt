@@ -6,17 +6,23 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.model.FriendTransition
 import com.vrcx.android.data.repository.AccountChangedException
+import com.vrcx.android.data.repository.AccountScope
+import com.vrcx.android.data.repository.AccountScopedEvent
 import com.vrcx.android.data.repository.AuthState
-import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.data.repository.NotificationSource
+import com.vrcx.android.data.repository.PipelineSession
+import com.vrcx.android.data.repository.UnifiedNotification
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -29,6 +35,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class WebSocketForegroundServiceTest {
 
     private lateinit var application: Application
@@ -172,6 +179,70 @@ class WebSocketForegroundServiceTest {
     }
 
     @Test
+    fun `a frame queued by the previous account is rejected after an account switch`() {
+        val accountScope = AccountScope()
+        accountScope.bind("usr_old")
+        val oldSocketOrigin = accountScope.current()
+
+        accountScope.invalidate()
+        accountScope.bind("usr_new")
+
+        assertFalse(isCurrentPipelineOrigin(accountScope, oldSocketOrigin))
+        assertTrue(shouldRestartPipelineStartup(accountScope, null))
+        assertTrue(
+            shouldRestartPipelineStartup(
+                accountScope,
+                PipelineSession(authToken = "old-token", account = oldSocketOrigin),
+            ),
+        )
+        var consumed = false
+        val queuedTransition = AccountScopedEvent(
+            origin = oldSocketOrigin,
+            value = FriendTransition.CameOnline("usr_friend", "Old Friend"),
+        )
+        assertFalse(
+            consumeAccountScopedPipelineEvent(accountScope, oldSocketOrigin, queuedTransition) {
+                consumed = true
+            },
+        )
+        assertFalse(consumed)
+
+        val currentOrigin = accountScope.current()
+        assertTrue(isCurrentPipelineOrigin(accountScope, currentOrigin))
+        assertTrue(
+            consumeAccountScopedPipelineEvent(
+                accountScope,
+                currentOrigin,
+                AccountScopedEvent(
+                    origin = currentOrigin,
+                    value = FriendTransition.CameOnline("usr_friend", "New Friend"),
+                ),
+            ) {
+                consumed = true
+            },
+        )
+        assertTrue(consumed)
+    }
+
+    @Test
+    fun `an immediate handshake transition is received after the startup subscription barrier`() = runTest {
+        val transitions = MutableSharedFlow<AccountScopedEvent<FriendTransition>>(extraBufferCapacity = 1)
+        val transition = AccountScopedEvent(
+            origin = AccountScope.Token("usr_me", 1),
+            value = FriendTransition.CameOnline("usr_friend", "Friend"),
+        )
+        val received = CompletableDeferred<AccountScopedEvent<FriendTransition>>()
+
+        val collector = launchSubscribedCollector(this, transitions) { received.complete(it) }
+        assertTrue(transitions.tryEmit(transition))
+        runCurrent()
+
+        assertTrue(received.isCompleted)
+        assertEquals(transition, received.await())
+        collector.cancel()
+    }
+
+    @Test
     fun `a friend notification points at the friend it names`() {
         val helper = NotificationHelper(application)
         val transitions = listOf(
@@ -199,12 +270,11 @@ class WebSocketForegroundServiceTest {
 
         dispatchNotification(
             helper = helper,
-            event = PipelineEvent.NotificationV2(
-                buildJsonObject {
-                    put("type", JsonPrimitive("invite"))
-                    put("senderUsername", JsonPrimitive("Bob"))
-                    put("senderUserId", JsonPrimitive("usr_bob"))
-                }
+            notification = unifiedNotification(
+                type = "invite",
+                source = NotificationSource.V2,
+                senderUsername = "Bob",
+                senderUserId = "usr_bob",
             ),
             notifyInvite = true,
             notifyFriendRequest = true,
@@ -222,9 +292,7 @@ class WebSocketForegroundServiceTest {
         for (type in listOf("invite", "requestInvite", "friendRequest")) {
             dispatchNotification(
                 helper = helper,
-                event = PipelineEvent.Notification(
-                    buildJsonObject { put("type", JsonPrimitive(type)) }
-                ),
+                notification = unifiedNotification(type, NotificationSource.V1),
                 notifyInvite = false,
                 notifyFriendRequest = false,
                 notifyGeneral = false,
@@ -237,44 +305,114 @@ class WebSocketForegroundServiceTest {
     @Test
     fun `a notification type the app cannot classify is gated and capped`() {
         val helper = NotificationHelper(application)
-        val unknownType = PipelineEvent.NotificationV2(
-            buildJsonObject {
-                put("type", JsonPrimitive("somethingNewVRChatShipped"))
-                put("title", JsonPrimitive("T".repeat(500)))
-                put("message", JsonPrimitive("M".repeat(500)))
-            }
+        val unknownType = unifiedNotification(
+            type = "somethingNewVRChatShipped",
+            source = NotificationSource.V2,
+            title = "T".repeat(500),
+            message = "M".repeat(500),
         )
         notificationManager.cancelAll()
 
         // The text is whoever sent it's to choose, so the user gets a switch for
         // the whole category rather than only for the kinds the app models.
-        dispatchNotification(helper, unknownType, notifyInvite = true, notifyFriendRequest = true, notifyGeneral = false)
+        dispatchNotification(
+            helper,
+            unknownType,
+            notifyInvite = true,
+            notifyFriendRequest = true,
+            notifyGeneral = false,
+        )
         assertEquals(0, notificationManager.activeNotifications.size)
 
-        dispatchNotification(helper, unknownType, notifyInvite = false, notifyFriendRequest = false, notifyGeneral = true)
+        dispatchNotification(
+            helper,
+            unknownType,
+            notifyInvite = false,
+            notifyFriendRequest = false,
+            notifyGeneral = true,
+        )
         val posted = notificationManager.activeNotifications.single().notification.extras
         assertEquals(120, posted.getCharSequence("android.title")!!.length)
         assertEquals(120, posted.getCharSequence("android.text")!!.length)
     }
 
     @Test
-    fun `the service stops itself when the session ends, and not before`() = runTest {
-        val authState = MutableStateFlow<AuthState>(AuthState.LoggingIn)
+    fun `a local instance closure is rendered when remote general notifications are disabled`() {
+        val helper = NotificationHelper(application)
+        notificationManager.cancelAll()
+
+        dispatchNotification(
+            helper,
+            unifiedNotification(
+                type = "instance.closed",
+                source = NotificationSource.LOCAL,
+                title = "Instance Closed",
+                message = "wrld_1:instance_1",
+            ),
+            notifyInvite = false,
+            notifyFriendRequest = false,
+            notifyGeneral = false,
+        )
+
+        val posted = notificationManager.activeNotifications.single().notification.extras
+        assertEquals("Instance Closed", posted.getCharSequence("android.title"))
+        assertEquals("wrld_1:instance_1", posted.getCharSequence("android.text"))
+    }
+
+    @Test
+    fun `the pipeline survives an error, restarts for a new account, and stops at logout`() = runTest {
+        val authState = MutableStateFlow<AuthState>(AuthState.LoggedIn(CurrentUser(id = "usr_old")))
         var stops = 0
-        val observer = launch { stopWhenSessionEnds(authState) { stops++ } }
+        var restarts = 0
+        val observer = launch {
+            watchPipelineSession(
+                authState = authState,
+                expectedUserId = "usr_old",
+                stop = { stops++ },
+                restart = { restarts++ },
+            )
+        }
         runCurrent()
 
         // A session still coming up must not take the socket down with it.
         authState.value = AuthState.Error("Couldn't reach VRChat")
         runCurrent()
         assertEquals(0, stops)
+        assertEquals(0, restarts)
+
+        authState.value = AuthState.LoggedIn(CurrentUser(id = "usr_new"))
+        runCurrent()
+        assertEquals(0, stops)
+        assertEquals(1, restarts)
 
         // Sign-out and a confirmed 401 both land here, and the ongoing
         // notification must not outlive either.
         authState.value = AuthState.NotLoggedIn
         runCurrent()
         assertEquals(1, stops)
+        assertEquals(1, restarts)
 
+        observer.cancel()
+    }
+
+    @Test
+    fun `the pipeline stops when an established session requires two-factor authentication`() = runTest {
+        val authState = MutableStateFlow<AuthState>(AuthState.LoggedIn(CurrentUser(id = "usr_me")))
+        var stops = 0
+        val observer = launch {
+            watchPipelineSession(
+                authState = authState,
+                expectedUserId = "usr_me",
+                stop = { stops++ },
+                restart = {},
+            )
+        }
+        runCurrent()
+
+        authState.value = AuthState.RequiresTwoFactor(listOf("totp"))
+        runCurrent()
+
+        assertEquals(1, stops)
         observer.cancel()
     }
 
@@ -282,6 +420,26 @@ class WebSocketForegroundServiceTest {
         val posted = notificationManager.activeNotifications.single().notification
         return shadowOf(posted.contentIntent).savedIntent
     }
+
+    private fun unifiedNotification(
+        type: String,
+        source: NotificationSource,
+        senderUsername: String = "Sender",
+        senderUserId: String = "usr_sender",
+        title: String = "",
+        message: String = "",
+    ) = UnifiedNotification(
+        id = "noty_test",
+        type = type,
+        senderUserId = senderUserId,
+        senderUsername = senderUsername,
+        message = message,
+        title = title,
+        createdAt = "2026-08-29T00:00:00Z",
+        seen = false,
+        source = source,
+        responses = emptyList(),
+    )
 
     private companion object {
         const val SERVICE_STATE_PREFERENCES = "websocket_service_state"

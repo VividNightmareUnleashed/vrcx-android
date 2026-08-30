@@ -17,12 +17,15 @@ import com.vrcx.android.service.WebSocketForegroundService
 import com.vrcx.android.ui.VrcxApp
 import com.vrcx.android.ui.navigation.DeepLinkSection
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject lateinit var notificationHelper: NotificationHelper
+
     private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission(),
     ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +42,7 @@ class MainActivity : ComponentActivity() {
         // notification that are usually not even there. Nothing in the first
         // composition depends on either, so they come after it.
         BootReconnectWorker.cancel(this)
-        NotificationHelper(this).cancelBootReconnectRequired()
+        notificationHelper.cancelBootReconnectRequired()
     }
 
     /**
@@ -64,7 +67,9 @@ class MainActivity : ComponentActivity() {
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }

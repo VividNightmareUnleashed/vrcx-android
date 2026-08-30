@@ -1,7 +1,5 @@
 package com.vrcx.android.data.repository
 
-import com.vrcx.android.data.api.BulkPaginator
-import com.vrcx.android.data.api.FriendApi
 import com.vrcx.android.data.api.model.VrcUser
 import com.vrcx.android.data.db.dao.FriendNotifyDao
 import com.vrcx.android.data.db.dao.disable
@@ -16,16 +14,21 @@ import com.vrcx.android.data.model.isTrackableLocation
 import com.vrcx.android.data.model.worldIdOrNull
 import com.vrcx.android.data.util.runIgnoringFailure
 import com.vrcx.android.data.websocket.PipelineEvent
-import kotlinx.coroutines.CancellationException
+import com.vrcx.android.di.IoDispatcher
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,14 +48,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
 class FriendRepository @Inject internal constructor(
-    private val friendApi: FriendApi,
+    private val snapshotLoader: FriendSnapshotLoader,
     private val userRepository: UserRepository,
     private val favoriteRepository: FavoriteRepository,
     private val friendNotifyDao: FriendNotifyDao,
@@ -59,19 +59,19 @@ class FriendRepository @Inject internal constructor(
     private val activityRecorder: FriendActivityRecorder,
     private val json: Json,
     accountScope: AccountScope,
+    @IoDispatcher ioDispatcher: CoroutineDispatcher,
 ) : AccountScoped {
-    private data class ActiveFriendsLoad(
-        val token: AccountScope.Token,
-        val deferred: Deferred<Unit>,
-    )
+    private data class ActiveFriendsLoad(val token: AccountScope.Token, val deferred: Deferred<Unit>)
 
     private val account = accountScope.bindTo(this)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val friendsRevision = AtomicLong(0)
+
     // Revision each friend was last mutated at, so a full-list load can tell
     // which entries a pipeline frame overtook while the sweeps were running.
     private val friendRevisions = ConcurrentHashMap<String, Long>()
     private val pendingOfflineJobs = ConcurrentHashMap<String, Job>()
+
     /**
      * Friends whose offline frame is still inside its confirmation window. Kept
      * here rather than on [FriendContext]: nothing outside this class reads it,
@@ -79,14 +79,17 @@ class FriendRepository @Inject internal constructor(
      * above without anything noticing.
      */
     internal val pendingOfflineIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     /** Confirmation window before a friend-offline frame is committed; overridable in tests. */
-    internal var offlineDelayMs = 5000L
+    internal var offlineDelayMs = DEFAULT_OFFLINE_DELAY_MS
 
     private val _favoriteFriendIds = MutableStateFlow<Set<String>>(emptySet())
+
     /** Ids of the friends the account has favourited, for the screens that badge them. */
     val favoriteFriendIds: StateFlow<Set<String>> = _favoriteFriendIds.asStateFlow()
 
     private val _notifyEnabledIds = MutableStateFlow<Set<String>>(emptySet())
+
     /** Ids of the friends whose presence notifications are switched on. */
     val notifyEnabledIds: StateFlow<Set<String>> = _notifyEnabledIds.asStateFlow()
 
@@ -99,9 +102,11 @@ class FriendRepository @Inject internal constructor(
     // Domain transitions the foreground service maps to system notifications.
     // Emitting them here (where userId/displayName and the location/status
     // comparisons are already computed) means the service never re-parses the
-    // raw pipeline payload.
-    private val _friendTransitions = MutableSharedFlow<FriendTransition>(extraBufferCapacity = 64)
-    val friendTransitions: SharedFlow<FriendTransition> = _friendTransitions.asSharedFlow()
+    // raw pipeline payload. Pending emitters are canceled with their account so
+    // backpressure cannot release an old transition into a newer session.
+    private val _friendTransitions = MutableSharedFlow<AccountScopedEvent<FriendTransition>>(extraBufferCapacity = 64)
+    val friendTransitions: SharedFlow<AccountScopedEvent<FriendTransition>> = _friendTransitions.asSharedFlow()
+    private val pendingTransitionEmitters: MutableSet<Job> = ConcurrentHashMap.newKeySet()
 
     init {
         scope.launch {
@@ -123,22 +128,26 @@ class FriendRepository @Inject internal constructor(
         friendsRevision.incrementAndGet()
         pendingOfflineJobs.values.forEach(Job::cancel)
         pendingOfflineJobs.clear()
+        pendingTransitionEmitters.forEach(Job::cancel)
+        pendingTransitionEmitters.clear()
         friendRevisions.clear()
         pendingOfflineIds.clear()
-        activityRecorder.reset()
         _favoriteFriendIds.value = emptySet()
         _notifyEnabledIds.value = emptySet()
         _friends.value = emptyMap()
     }
 
     suspend fun loadFriendsList() {
-        val token = account.current()
-        if (token.ownerUserId.isEmpty()) return
+        loadFriendsList(account.current())
+    }
+
+    suspend fun loadFriendsList(token: AccountScope.Token) {
+        if (token.ownerUserId.isEmpty() || !account.isCurrent(token)) return
         val deferred = friendsLoadMutex.withLock {
             activeFriendsLoad
                 ?.takeIf { it.token == token && it.deferred.isActive }
                 ?.deferred
-                ?: scope.async { loadFriendsList(token) }.also {
+                ?: scope.async { loadFriendsSnapshot(token) }.also {
                     activeFriendsLoad = ActiveFriendsLoad(token, it)
                 }
         }
@@ -157,61 +166,43 @@ class FriendRepository @Inject internal constructor(
         }
     }
 
-    private suspend fun loadFriendsList(token: AccountScope.Token) {
+    /** Replaces any pre-gap snapshot with one whose first request starts after the gap. */
+    internal suspend fun resynchronize(token: AccountScope.Token) {
+        if (token.ownerUserId.isEmpty() || !account.isCurrent(token)) return
+        val preGapLoad = friendsLoadMutex.withLock {
+            activeFriendsLoad
+                ?.takeIf { it.token == token && it.deferred.isActive }
+                ?.deferred
+                ?.also { activeFriendsLoad = null }
+        }
+        preGapLoad?.cancelAndJoin()
+        account.ensureCurrent(token)
+        loadFriendsList(token)
+    }
+
+    private suspend fun loadFriendsSnapshot(token: AccountScope.Token) {
         val ownerId = token.ownerUserId
         val revision = friendsRevision.get()
-        activityRecorder.reset()
-        // Fetch online and offline friends concurrently — each sweep also
-        // sleeps between pages, so serial fetches roughly double login latency.
-        // stopOnShortPage is off: the friends endpoints hand back partial pages
-        // while more data remains, and a snapshot that ends early looks exactly
-        // like a mass unfriend to the friend-log reconciliation below.
-        val (onlineFriends, offlineFriends) = coroutineScope {
-            val online = async {
-                BulkPaginator.fetchAll(pageSize = 100, stopOnShortPage = false) { offset, count ->
-                    friendApi.getFriends(n = count, offset = offset, offline = false)
-                }
-            }
-            val offline = async {
-                BulkPaginator.fetchAll(pageSize = 100, stopOnShortPage = false) { offset, count ->
-                    friendApi.getFriends(n = count, offset = offset, offline = true)
-                }
-            }
-            online.await() to offline.await()
-        }
-
-        val friendMap = mutableMapOf<String, FriendContext>()
-        for (user in onlineFriends) {
-            friendMap[user.id] = FriendContext(
-                id = user.id,
-                name = user.displayName,
-                state = if (user.location.isNullOrEmpty() || user.location == "offline") FriendState.ACTIVE else FriendState.ONLINE,
-                ref = user,
-            )
-        }
-        for (user in offlineFriends) {
-            if (!friendMap.containsKey(user.id)) {
-                friendMap[user.id] = FriendContext(
-                    id = user.id,
-                    name = user.displayName,
-                    state = FriendState.OFFLINE,
-                    ref = user,
-                )
-            }
-        }
+        activityRecorder.resetDedupe(token)
+        val friendMap = snapshotLoader.load { account.ensureCurrent(token) }
         val committed = friendsMutex.withLock {
             val merged = mergeWithLiveFriends(friendMap, revision)
             val published = account.publishIfCurrent(token) {
+                cancelOfflineConfirmationsSupersededBy(friendMap, revision)
                 _friends.value = merged
                 friendsRevision.incrementAndGet()
             }
             if (!published) return
             merged
         }
-        userRepository.cacheUsers(committed.values.mapNotNull { it.ref })
+        val cached = account.publishIfCurrent(token) {
+            userRepository.cacheUsers(committed.values.mapNotNull { it.ref })
+        }
+        if (!cached) return
+        account.ensureCurrent(token)
         friendLogSynchronizer.synchronize(ownerId, committed)
+        account.ensureCurrent(token)
 
-        if (!account.isCurrent(token)) return
         runIgnoringFailure { favoriteRepository.loadFavorites(type = "friend") }
 
         if (!account.isCurrent(token)) return
@@ -227,10 +218,7 @@ class FriendRepository @Inject internal constructor(
      * than the fetch that started before it, so it wins for that friend — but
      * only for that friend, and the rest of the fetched list still lands.
      */
-    private fun mergeWithLiveFriends(
-        fetched: Map<String, FriendContext>,
-        revision: Long,
-    ): Map<String, FriendContext> {
+    private fun mergeWithLiveFriends(fetched: Map<String, FriendContext>, revision: Long): Map<String, FriendContext> {
         val live = _friends.value
         val merged = LinkedHashMap<String, FriendContext>(fetched.size)
         for ((userId, context) in fetched) {
@@ -248,63 +236,78 @@ class FriendRepository @Inject internal constructor(
         return merged
     }
 
-    private fun changedSince(userId: String, revision: Long): Boolean =
-        (friendRevisions[userId] ?: 0L) > revision
+    private fun changedSince(userId: String, revision: Long): Boolean = (friendRevisions[userId] ?: 0L) > revision
+
+    private fun cancelOfflineConfirmationsSupersededBy(fetched: Map<String, FriendContext>, revision: Long) {
+        pendingOfflineIds.toList().forEach { userId ->
+            val authoritativeState = fetched[userId]?.state
+            if (!changedSince(userId, revision) && authoritativeState != FriendState.OFFLINE) {
+                cancelPendingOffline(userId)
+            }
+        }
+    }
 
     suspend fun toggleFriendNotify(friendUserId: String): Boolean {
-        val ownerId = account.ownerUserId
-        if (ownerId.isEmpty()) return false
+        val token = account.current()
+        val ownerId = token.ownerUserId
+        if (ownerId.isEmpty() || !account.isCurrent(token)) return false
         val newEnabled = !friendNotifyDao.isEnabled(ownerId, friendUserId)
+        account.ensureCurrent(token)
         if (newEnabled) {
             friendNotifyDao.enable(ownerId, friendUserId)
         } else {
             friendNotifyDao.disable(ownerId, friendUserId)
         }
-        _notifyEnabledIds.value = if (newEnabled) {
-            _notifyEnabledIds.value + friendUserId
-        } else {
-            _notifyEnabledIds.value - friendUserId
+        account.publishOrAbort(token) {
+            _notifyEnabledIds.value = if (newEnabled) {
+                _notifyEnabledIds.value + friendUserId
+            } else {
+                _notifyEnabledIds.value - friendUserId
+            }
         }
         return newEnabled
     }
 
-    fun observeNotifyEnabledIds(ownerUserId: String): Flow<Set<String>> {
-        return friendNotifyDao.getEnabledFriendIds(ownerUserId).map { it.toSet() }
-    }
+    fun observeNotifyEnabledIds(ownerUserId: String): Flow<Set<String>> =
+        friendNotifyDao.getEnabledFriendIds(ownerUserId).map {
+            it.toSet()
+        }
 
     /** The friend-log rows this repository's synchronizer writes, newest first. */
     fun friendLogHistory(ownerUserId: String, limit: Int): Flow<List<FriendLogHistoryEntity>> =
         friendLogSynchronizer.history(ownerUserId, limit)
 
-    suspend fun handleEvent(event: PipelineEvent) {
-        // Resolve the account once per frame and thread it through, so no
-        // handler has to decide for itself which account a frame belongs to.
-        val ownerId = account.ownerUserId
+    suspend fun handleEvent(event: PipelineEvent, token: AccountScope.Token) {
+        if (token.ownerUserId.isEmpty() || !account.isCurrent(token)) return
         when (event) {
-            is PipelineEvent.FriendOnline -> handleFriendOnline(ownerId, event)
-            is PipelineEvent.FriendOffline -> handleFriendOffline(ownerId, event)
-            is PipelineEvent.FriendActive -> handleFriendActive(event)
-            is PipelineEvent.FriendUpdate -> handleFriendUpdate(ownerId, event)
-            is PipelineEvent.FriendLocation -> handleFriendLocation(ownerId, event)
-            is PipelineEvent.FriendAdd -> handleFriendAdd(ownerId, event)
-            is PipelineEvent.FriendDelete -> handleFriendDelete(ownerId, event)
+            is PipelineEvent.FriendOnline -> handleFriendOnline(token, event)
+            is PipelineEvent.FriendOffline -> handleFriendOffline(token, event)
+            is PipelineEvent.FriendActive -> handleFriendActive(token, event)
+            is PipelineEvent.FriendUpdate -> handleFriendUpdate(token, event)
+            is PipelineEvent.FriendLocation -> handleFriendLocation(token, event)
+            is PipelineEvent.FriendAdd -> handleFriendAdd(token, event)
+            is PipelineEvent.FriendDelete -> handleFriendDelete(token, event)
             else -> {}
         }
     }
 
-    private suspend fun handleFriendOnline(ownerId: String, event: PipelineEvent.FriendOnline) {
+    internal suspend fun handleEvent(event: PipelineEvent) {
+        handleEvent(event, account.current())
+    }
+
+    private suspend fun handleFriendOnline(token: AccountScope.Token, event: PipelineEvent.FriendOnline) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
-        cancelPendingOffline(userId)
+        if (!account.publishIfCurrent(token) { cancelPendingOffline(userId) }) return
         val user = tryDecodeUser(content["user"])
         val displayName = user?.displayName ?: _friends.value[userId]?.name ?: userId
-        val location = content.string("location") ?: ""
+        val location = content.string("location").orEmpty()
         val travelingToLocation = content.string("travelingToLocation")
         val platform = content.string("platform")
         val instanceId = parseInstanceId(location)
         val travelingToWorld = worldIdOrNull(travelingToLocation)
         val travelingToInstance = parseInstanceId(travelingToLocation)
-        updateFriend(userId) { ctx ->
+        updateFriend(userId, token) { ctx ->
             ctx.copy(
                 state = FriendState.ONLINE,
                 ref = (user ?: ctx.ref)?.copy(
@@ -318,76 +321,62 @@ class FriendRepository @Inject internal constructor(
                 ),
                 name = user?.displayName ?: ctx.name,
             )
-        }
-        if (user != null) userRepository.cacheUser(user)
-        activityRecorder.recordOnlineOffline(ownerId, userId, displayName, "online", location)
-        _friendTransitions.tryEmit(FriendTransition.CameOnline(userId, displayName))
+        } ?: return
+        if (user != null && !account.publishIfCurrent(token) { userRepository.cacheUser(user) }) return
+        activityRecorder.recordOnlineOffline(token, userId, displayName, "online", location)
+        emitTransition(token, FriendTransition.CameOnline(userId, displayName))
     }
 
-    private suspend fun handleFriendOffline(ownerId: String, event: PipelineEvent.FriendOffline) {
+    private suspend fun handleFriendOffline(token: AccountScope.Token, event: PipelineEvent.FriendOffline) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
         val payloadUser = tryDecodeUser(content["user"])
-        if (payloadUser != null) userRepository.cacheUser(payloadUser)
         val displayName = payloadUser?.displayName ?: _friends.value[userId]?.name ?: userId
-        val token = account.current()
-        // Confirmation delay before marking offline
-        pendingOfflineIds.add(userId)
-        updateFriend(userId) { ctx ->
+        updateFriend(
+            userId = userId,
+            token = token,
+            onPublish = { pendingOfflineIds.add(userId) },
+        ) { ctx ->
             ctx.copy(
                 ref = (payloadUser ?: ctx.ref),
                 name = payloadUser?.displayName ?: ctx.name,
             )
-        }
+        } ?: return
+        if (payloadUser != null && !account.publishIfCurrent(token) { userRepository.cacheUser(payloadUser) }) return
         val job = scope.launch(start = CoroutineStart.LAZY) {
             delay(offlineDelayMs)
-            if (!account.isCurrent(token)) return@launch
-            // Test-and-clear under the friend map lock: an online / active /
-            // location frame that arrived during the window drops the id first
-            // and then republishes its own state, so whichever order the two
-            // land in, the surviving entry is the later frame's.
-            var confirmed = false
-            updateFriend(userId, token) { ctx ->
-                confirmed = pendingOfflineIds.remove(userId)
-                if (!confirmed) return@updateFriend ctx
-                ctx.copy(
-                    state = FriendState.OFFLINE,
-                    ref = ctx.ref?.copy(
-                        location = "offline",
-                        travelingToLocation = "offline",
-                        travelingToWorld = "offline",
-                        travelingToInstance = "offline",
-                        instanceId = "offline",
-                    ),
-                )
-            }
-            if (confirmed) {
+            if (confirmOffline(userId, token)) {
                 // Confirmed offline: mark a filtered hop so a later return to
                 // the same world isn't mistaken for a re-emit. Stamp here
                 // rather than at event arrival so transient flickers that
                 // get rescinded during the confirmation delay don't produce phantom
                 // hops.
-                activityRecorder.markFilteredTransition(userId)
-                activityRecorder.recordOnlineOffline(ownerId, userId, displayName, "offline", "")
-                _friendTransitions.emit(FriendTransition.CameOffline(userId, displayName))
+                activityRecorder.markFilteredTransition(token, userId)
+                activityRecorder.recordOnlineOffline(token, userId, displayName, "offline", "")
+                emitTransition(token, FriendTransition.CameOffline(userId, displayName))
             }
             // Two-arg remove: a second friend-offline frame may already have
             // registered its own job for this user, and that one is still live.
             pendingOfflineJobs.remove(userId, coroutineContext[Job])
         }
-        pendingOfflineJobs.put(userId, job)?.cancel()
-        job.start()
+        var registered = false
+        val current = account.publishIfCurrent(token) {
+            if (userId in pendingOfflineIds) {
+                pendingOfflineJobs.put(userId, job)?.cancel()
+                registered = true
+                job.start()
+            }
+        }
+        if (!current || !registered) job.cancel()
     }
 
-    // No ownerId parameter: friend-active writes no owner-scoped row, and the
-    // recorder's filtered-transition marker is keyed by friend alone.
-    private suspend fun handleFriendActive(event: PipelineEvent.FriendActive) {
+    private suspend fun handleFriendActive(token: AccountScope.Token, event: PipelineEvent.FriendActive) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
-        cancelPendingOffline(userId)
+        if (!account.publishIfCurrent(token) { cancelPendingOffline(userId) }) return
         val user = tryDecodeUser(content["user"])
         val platform = content.string("platform")
-        updateFriend(userId) { ctx ->
+        updateFriend(userId, token) { ctx ->
             ctx.copy(
                 state = FriendState.ACTIVE,
                 ref = (user ?: ctx.ref)?.copy(
@@ -400,16 +389,16 @@ class FriendRepository @Inject internal constructor(
                 ),
                 name = user?.displayName ?: ctx.name,
             )
-        }
-        if (user != null) userRepository.cacheUser(user)
+        } ?: return
+        if (user != null && !account.publishIfCurrent(token) { userRepository.cacheUser(user) }) return
         // FriendActive = friend present but not in a world (VRChat web,
         // menu, Quest social, etc.). Record as a filtered hop so a later
         // return to a previously-visited world is treated as a real
         // revisit rather than a pipeline re-emit.
-        activityRecorder.markFilteredTransition(userId)
+        activityRecorder.markFilteredTransition(token, userId)
     }
 
-    private suspend fun handleFriendUpdate(ownerId: String, event: PipelineEvent.FriendUpdate) {
+    private suspend fun handleFriendUpdate(token: AccountScope.Token, event: PipelineEvent.FriendUpdate) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"]) ?: return
@@ -419,74 +408,58 @@ class FriendRepository @Inject internal constructor(
         // "offline" for location. Presence stays with whatever the online /
         // active / location handlers last computed, so this event can't drop a
         // friend out of their world group.
-        val previous = updateFriend(userId) { ctx ->
+        val previous = updateFriend(userId, token) { ctx ->
             ctx.copy(ref = ctx.ref?.let { user.withPresenceOf(it) } ?: user, name = user.displayName)
         } ?: return
-        userRepository.cacheUser(user)
-        if (ownerId.isNotEmpty()) {
-            friendLogSynchronizer.synchronizeUpdatedFriend(
-                ownerId = ownerId,
-                previous = previous,
-                userId = userId,
-                displayName = user.displayName,
-                tags = user.tags,
-            )
-        }
+        if (!account.publishIfCurrent(token) { userRepository.cacheUser(user) }) return
+        account.ensureCurrent(token)
+        friendLogSynchronizer.synchronizeUpdatedFriend(
+            ownerId = token.ownerUserId,
+            previous = previous,
+            userId = userId,
+            displayName = user.displayName,
+            tags = user.tags,
+        )
+        account.ensureCurrent(token)
 
         val prevRef = previous.ref ?: return
+        val profileChange = FriendProfileChange(userId = userId, current = user, previous = prevRef)
         // Notify on any online-status change (join-me / ask-me / busy). This is a
         // looser rule than the feed-status write below, matching the service's
         // previous status-change notification behavior.
         if (user.status != prevRef.status) {
-            _friendTransitions.tryEmit(FriendTransition.ChangedStatus(userId, user.displayName, user.status))
+            emitTransition(token, FriendTransition.ChangedStatus(userId, user.displayName, user.status))
         }
         // Status change (skip offline transitions — handled by online/offline events)
-        if ((user.status != prevRef.status || user.statusDescription != prevRef.statusDescription)
-            && user.status != "offline" && prevRef.status != "offline") {
-            activityRecorder.recordStatus(
-                ownerId = ownerId,
-                userId = userId,
-                displayName = user.displayName,
-                status = user.status,
-                statusDescription = user.statusDescription,
-                previousStatus = prevRef.status,
-                previousStatusDescription = prevRef.statusDescription,
-            )
+        if (profileChange.hasRecordableStatusChange()) {
+            activityRecorder.recordStatus(token, profileChange)
         }
         // Bio change (skip if either is empty — initial load artifact)
         if (user.bio != prevRef.bio && user.bio.isNotEmpty() && prevRef.bio.isNotEmpty()) {
-            activityRecorder.recordBio(ownerId, userId, user.displayName, user.bio, prevRef.bio)
+            activityRecorder.recordBio(token, profileChange)
         }
         // Avatar change
-        if (user.currentAvatarThumbnailImageUrl != prevRef.currentAvatarThumbnailImageUrl
-            && user.currentAvatarThumbnailImageUrl.isNotEmpty()) {
-            activityRecorder.recordAvatar(
-                ownerId = ownerId,
-                userId = userId,
-                displayName = user.displayName,
-                imageUrl = user.currentAvatarImageUrl,
-                thumbnailUrl = user.currentAvatarThumbnailImageUrl,
-                previousImageUrl = prevRef.currentAvatarImageUrl,
-                previousThumbnailUrl = prevRef.currentAvatarThumbnailImageUrl,
-            )
+        if (user.currentAvatarThumbnailImageUrl != prevRef.currentAvatarThumbnailImageUrl &&
+            user.currentAvatarThumbnailImageUrl.isNotEmpty()
+        ) {
+            activityRecorder.recordAvatar(token, profileChange)
         }
     }
 
-    private suspend fun handleFriendLocation(ownerId: String, event: PipelineEvent.FriendLocation) {
+    private suspend fun handleFriendLocation(token: AccountScope.Token, event: PipelineEvent.FriendLocation) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
-        cancelPendingOffline(userId)
+        if (!account.publishIfCurrent(token) { cancelPendingOffline(userId) }) return
         val location = content.string("location")
         val user = tryDecodeUser(content["user"])
         val worldName = content.obj("world")?.string("name")
-            ?: content.string("worldName")
-            ?: ""
+            ?: content.string("worldName").orEmpty()
         val travelingToLocation = content.string("travelingToLocation")
         val instanceId = parseInstanceId(location)
         val travelingToWorld = worldIdOrNull(travelingToLocation)
         val travelingToInstance = parseInstanceId(travelingToLocation)
 
-        val previous = updateFriend(userId) { ctx ->
+        val previous = updateFriend(userId, token) { ctx ->
             ctx.copy(
                 state = friendStateOf(location),
                 ref = (user ?: ctx.ref)?.copy(
@@ -500,50 +473,54 @@ class FriendRepository @Inject internal constructor(
                 name = user?.displayName ?: ctx.name,
             )
         } ?: return
-        if (user != null) userRepository.cacheUser(user)
+        if (user != null && !account.publishIfCurrent(token) { userRepository.cacheUser(user) }) return
 
-        val previousLocation = previous.ref?.location ?: ""
+        val previousLocation = previous.ref?.location.orEmpty()
         val displayName = user?.displayName ?: previous.name
 
         // "traveling" is a transit state, not a destination: a feed row and a
         // notification for it would be followed by a second pair when the
         // friend actually lands, and the locations screen filters it out.
-        val isFilteredDestination = !isTrackableLocation(location.orEmpty())
-        if (isFilteredDestination && location != previousLocation) {
+        val destination = location?.takeIf(::isTrackableLocation)
+        if (destination == null && location != previousLocation) {
             // Remember that this friend briefly passed through an
             // un-persisted state; the activity recorder uses this to tell an honest
             // revisit apart from a pipeline re-emit.
-            activityRecorder.markFilteredTransition(userId)
+            activityRecorder.markFilteredTransition(token, userId)
         }
 
         // Only write GPS feed for actual world locations
-        if (!isFilteredDestination && location != previousLocation) {
-            activityRecorder.recordGps(ownerId, userId, displayName, location!!, worldName, previousLocation)
-            _friendTransitions.tryEmit(FriendTransition.ChangedLocation(userId, displayName, worldName))
+        if (destination != null && destination != previousLocation) {
+            val transition = FriendTransition.ChangedLocation(userId, displayName, worldName)
+            activityRecorder.recordGps(token, transition, destination, previousLocation)
+            emitTransition(token, transition)
         }
     }
 
-    private suspend fun handleFriendAdd(ownerId: String, event: PipelineEvent.FriendAdd) {
+    private suspend fun handleFriendAdd(token: AccountScope.Token, event: PipelineEvent.FriendAdd) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
         val user = tryDecodeUser(content["user"])
-        updateFriend(userId) {
+        updateFriend(userId, token) {
             FriendContext(
                 id = userId,
                 name = user?.displayName ?: userId,
                 state = FriendState.OFFLINE,
                 ref = user,
             )
-        }
-        if (ownerId.isNotEmpty()) friendLogSynchronizer.recordAdded(ownerId, userId, user)
+        } ?: return
+        account.ensureCurrent(token)
+        friendLogSynchronizer.recordAdded(token.ownerUserId, userId, user)
+        account.ensureCurrent(token)
     }
 
-    private suspend fun handleFriendDelete(ownerId: String, event: PipelineEvent.FriendDelete) {
+    private suspend fun handleFriendDelete(token: AccountScope.Token, event: PipelineEvent.FriendDelete) {
         val content = event.content as? JsonObject ?: return
         val userId = resolveFriendUserId(content) ?: return
-        cancelPendingOffline(userId)
-        if (ownerId.isNotEmpty()) friendLogSynchronizer.recordRemoved(ownerId, userId)
-        val token = account.current()
+        if (!account.publishIfCurrent(token) { cancelPendingOffline(userId) }) return
+        account.ensureCurrent(token)
+        friendLogSynchronizer.recordRemoved(token.ownerUserId, userId)
+        account.ensureCurrent(token)
         friendsMutex.withLock {
             val current = _friends.value.toMutableMap()
             current.remove(userId)
@@ -556,13 +533,14 @@ class FriendRepository @Inject internal constructor(
 
     /**
      * Applies [update] to a friend under the map lock and returns the entry as
-     * it was before, or null if the account moved on. [token] defaults to the
-     * account at call time, so an update that was waiting on the lock when the
-     * account changed is dropped instead of republishing the outgoing map.
+     * it was before, or null if the account moved on. The frame's captured
+     * [token] prevents an update waiting on the lock from publishing into the
+     * next account.
      */
     private suspend fun updateFriend(
         userId: String,
-        token: AccountScope.Token = account.current(),
+        token: AccountScope.Token,
+        onPublish: () -> Unit = {},
         update: (FriendContext) -> FriendContext,
     ): FriendContext? = friendsMutex.withLock {
         val current = _friends.value.toMutableMap()
@@ -570,10 +548,49 @@ class FriendRepository @Inject internal constructor(
             ?: FriendContext(id = userId, name = userId, state = FriendState.OFFLINE)
         current[userId] = update(existing)
         val published = account.publishIfCurrent(token) {
+            onPublish()
             _friends.value = current
             friendRevisions[userId] = friendsRevision.incrementAndGet()
         }
         if (published) existing else null
+    }
+
+    private suspend fun confirmOffline(userId: String, token: AccountScope.Token): Boolean = friendsMutex.withLock {
+        var confirmed = false
+        account.publishIfCurrent(token) {
+            if (!pendingOfflineIds.remove(userId)) return@publishIfCurrent
+            val current = _friends.value.toMutableMap()
+            val existing = current[userId]
+                ?: FriendContext(id = userId, name = userId, state = FriendState.OFFLINE)
+            current[userId] = existing.copy(
+                state = FriendState.OFFLINE,
+                ref = existing.ref?.copy(
+                    location = "offline",
+                    travelingToLocation = "offline",
+                    travelingToWorld = "offline",
+                    travelingToInstance = "offline",
+                    instanceId = "offline",
+                ),
+            )
+            _friends.value = current
+            friendRevisions[userId] = friendsRevision.incrementAndGet()
+            confirmed = true
+        }
+        confirmed
+    }
+
+    private suspend fun emitTransition(token: AccountScope.Token, transition: FriendTransition) {
+        val emitter = currentCoroutineContext().job
+        val registered = account.publishIfCurrent(token) {
+            pendingTransitionEmitters.add(emitter)
+        }
+        if (!registered) return
+        try {
+            account.ensureCurrent(token)
+            _friendTransitions.emit(AccountScopedEvent(origin = token, value = transition))
+        } finally {
+            pendingTransitionEmitters.remove(emitter)
+        }
     }
 
     private fun cancelPendingOffline(userId: String) {
@@ -581,12 +598,10 @@ class FriendRepository @Inject internal constructor(
         pendingOfflineJobs.remove(userId)?.cancel()
     }
 
-    private fun tryDecodeUser(element: JsonElement?): VrcUser? {
-        return try {
-            element?.let { json.decodeFromJsonElement(VrcUser.serializer(), it) }
-        } catch (_: Exception) {
-            null
-        }
+    private fun tryDecodeUser(element: JsonElement?): VrcUser? = try {
+        element?.let { json.decodeFromJsonElement(VrcUser.serializer(), it) }
+    } catch (_: Exception) {
+        null
     }
 
     /**
@@ -594,9 +609,8 @@ class FriendRepository @Inject internal constructor(
      * lowercase key "userid" rather than "userId". Accept both so events aren't silently
      * dropped if VRChat changes which variant a given event carries.
      */
-    internal fun resolveFriendUserId(content: JsonObject): String? {
-        return content.string("userId") ?: content.string("userid")
-    }
+    internal fun resolveFriendUserId(content: JsonObject): String? =
+        content.string("userId") ?: content.string("userid")
 
     /**
      * VRChat sends several of these fields as whichever shape it feels like —
@@ -607,6 +621,11 @@ class FriendRepository @Inject internal constructor(
     private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+
+    private fun FriendProfileChange.hasRecordableStatusChange(): Boolean {
+        if (current.status == "offline" || previous.status == "offline") return false
+        return current.status != previous.status || current.statusDescription != previous.statusDescription
+    }
 
     /** Carries the presence [other] already resolved onto a fresh profile payload. */
     private fun VrcUser.withPresenceOf(other: VrcUser): VrcUser = copy(
@@ -626,4 +645,7 @@ class FriendRepository @Inject internal constructor(
         return if (colonIndex >= 0) location.substring(colonIndex + 1) else null
     }
 
+    private companion object {
+        const val DEFAULT_OFFLINE_DELAY_MS = 5_000L
+    }
 }

@@ -24,7 +24,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,15 +33,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.api.model.PlayerModeration
 import com.vrcx.android.data.repository.ModerationRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.LoadState
 import com.vrcx.android.ui.common.completeLoad
 import com.vrcx.android.ui.common.failLoad
 import com.vrcx.android.ui.common.isBusy
 import com.vrcx.android.ui.common.settleLoad
 import com.vrcx.android.ui.common.startLoad
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.ConfirmDialog
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.ErrorState
@@ -51,18 +53,17 @@ import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxScrollableTabRow
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
-import javax.inject.Inject
 
 data class ModerationTab(val type: String, val label: String)
 
@@ -78,15 +79,13 @@ val MODERATION_TABS = listOf(
 @HiltViewModel
 class ModerationViewModel @Inject constructor(
     private val moderationRepository: ModerationRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     /**
      * [isMutating] is deliberately outside [load]: removing a moderation is an
      * action over data already on screen, not a load of it.
      */
-    data class ScreenState(
-        val load: LoadState<Unit> = LoadState.NotLoaded,
-        val isMutating: Boolean = false,
-    ) {
+    data class ScreenState(val load: LoadState<Unit> = LoadState.NotLoaded, val isMutating: Boolean = false) {
         /** The one home for a message the screen shows in its snackbar. */
         val staleError: String? get() = (load as? LoadState.Loaded)?.staleError
     }
@@ -118,13 +117,19 @@ class ModerationViewModel @Inject constructor(
             countsByType = mods.groupingBy { it.type }.eachCount(),
         )
     }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModerationList())
+        .flowOn(defaultDispatcher)
+        .stateIn(viewModelScope, whileUiSubscribed, ModerationList())
 
-    init { refresh() }
+    init {
+        refresh()
+    }
 
-    fun selectTab(tab: ModerationTab) { _selectedTab.value = tab }
-    fun updateSearch(query: String) { _searchQuery.value = query }
+    fun selectTab(tab: ModerationTab) {
+        _selectedTab.value = tab
+    }
+    fun updateSearch(query: String) {
+        _searchQuery.value = query
+    }
 
     fun remove(moderation: PlayerModeration) {
         viewModelScope.launch {
@@ -195,63 +200,75 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
     }
 
     Box(Modifier.fillMaxSize()) {
-      Column(Modifier.fillMaxSize()) {
-        VrcxDetailTopBar(
-            title = "Moderation",
-            onBack = onBack,
-            actions = {
-                IconButton(onClick = { viewModel.refresh() }, enabled = !screenState.load.isBusy) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+        Column(Modifier.fillMaxSize()) {
+            VrcxDetailTopBar(
+                title = "Moderation",
+                onBack = onBack,
+                actions = {
+                    IconButton(onClick = { viewModel.refresh() }, enabled = !screenState.load.isBusy) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    }
+                },
+            )
+
+            VrcxScrollableTabRow(selectedTabIndex = MODERATION_TABS.indexOf(selectedTab)) {
+                MODERATION_TABS.forEach { tab ->
+                    val count = moderations.countsByType[tab.type] ?: 0
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { viewModel.selectTab(tab) },
+                        text = {
+                            Text(if (count > 0) "${tab.label} ($count)" else tab.label)
+                        },
+                    )
                 }
-            },
-        )
-
-        VrcxScrollableTabRow(selectedTabIndex = MODERATION_TABS.indexOf(selectedTab)) {
-            MODERATION_TABS.forEach { tab ->
-                val count = moderations.countsByType[tab.type] ?: 0
-                Tab(
-                    selected = selectedTab == tab,
-                    onClick = { viewModel.selectTab(tab) },
-                    text = {
-                        Text(if (count > 0) "${tab.label} ($count)" else tab.label)
-                    },
-                )
             }
-        }
 
-        VrcxSearchBar(
-            query = searchQuery,
-            onQueryChange = { viewModel.updateSearch(it) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        )
+            VrcxSearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.updateSearch(it) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
 
-        when (val load = screenState.load) {
-            LoadState.NotLoaded, LoadState.Loading -> LoadingState()
-            is LoadState.Failed -> ErrorState(message = load.message, onRetry = viewModel::refresh)
-            else -> if (moderations.visible.isEmpty()) {
-                EmptyState(message = "No ${selectedTab.label.lowercase()} users", icon = Icons.Outlined.Block)
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(moderations.visible, key = { it.id }) { mod ->
-                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(mod.targetDisplayName, style = MaterialTheme.typography.bodyLarge)
-                                Text(mod.created.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedButton(
-                                onClick = { pendingRemove = mod },
-                                enabled = !screenState.isMutating,
+            when (val load = screenState.load) {
+                LoadState.NotLoaded, LoadState.Loading -> LoadingState()
+
+                is LoadState.Failed -> ErrorState(message = load.message, onRetry = viewModel::refresh)
+
+                else -> if (moderations.visible.isEmpty()) {
+                    EmptyState(message = "No ${selectedTab.label.lowercase()} users", icon = Icons.Outlined.Block)
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(moderations.visible, key = { it.id }) { mod ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("Remove")
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        mod.targetDisplayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    Text(
+                                        mod.created.take(10),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(
+                                    onClick = { pendingRemove = mod },
+                                    enabled = !screenState.isMutating,
+                                ) {
+                                    Text("Remove")
+                                }
                             }
                         }
                     }
                 }
             }
         }
-      }
-      SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     // Confirmation dialog
@@ -260,7 +277,10 @@ fun ModerationScreen(viewModel: ModerationViewModel = hiltViewModel(), onBack: (
             title = "Remove Moderation",
             message = "Remove ${selectedTab.label.lowercase()} moderation for ${moderation.targetDisplayName}?",
             confirmLabel = "Remove",
-            onConfirm = { viewModel.remove(moderation); pendingRemove = null },
+            onConfirm = {
+                viewModel.remove(moderation)
+                pendingRemove = null
+            },
             onDismiss = { pendingRemove = null },
         )
     }

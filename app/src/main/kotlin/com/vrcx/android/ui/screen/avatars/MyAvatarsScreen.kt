@@ -19,7 +19,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,31 +27,34 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.vrcx.android.data.api.model.Avatar
 import com.vrcx.android.data.repository.AvatarRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.UiStateContainer
 import com.vrcx.android.ui.common.platformLabel
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxSearchBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class AvatarsViewModel @Inject constructor(
     private val avatarRepository: AvatarRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -82,10 +84,12 @@ class AvatarsViewModel @Inject constructor(
     }
         // stateIn collects on viewModelScope, i.e. the main thread; the filters
         // run over the whole avatar list on every keystroke.
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .flowOn(defaultDispatcher)
+        .stateIn(viewModelScope, whileUiSubscribed, emptyList())
 
-    init { loadAvatars() }
+    init {
+        loadAvatars()
+    }
 
     fun loadAvatars() {
         viewModelScope.launch {
@@ -103,14 +107,24 @@ class AvatarsViewModel @Inject constructor(
         }
     }
 
-    fun updateSearch(query: String) { _searchQuery.value = query }
-    fun toggleVisibility(v: String) { _selectedVisibility.value = if (_selectedVisibility.value == v) null else v }
-    fun togglePlatform(p: String) { _selectedPlatform.value = if (_selectedPlatform.value == p) null else p }
+    fun updateSearch(query: String) {
+        _searchQuery.value = query
+    }
+    fun toggleVisibility(v: String) {
+        _selectedVisibility.value = if (_selectedVisibility.value == v) null else v
+    }
+    fun togglePlatform(p: String) {
+        _selectedPlatform.value = if (_selectedPlatform.value == p) null else p
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () -> Unit = {}, onAvatarClick: (String) -> Unit = {}) {
+fun MyAvatarsScreen(
+    viewModel: AvatarsViewModel = hiltViewModel(),
+    onBack: () -> Unit = {},
+    onAvatarClick: (String) -> Unit = {},
+) {
     val avatars by viewModel.filteredAvatars.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedVisibility by viewModel.selectedVisibility.collectAsStateWithLifecycle()
@@ -131,8 +145,12 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilterChip(selected = selectedVisibility == "public", onClick = { viewModel.toggleVisibility("public") }, label = { Text("Public") })
-            FilterChip(selected = selectedVisibility == "private", onClick = { viewModel.toggleVisibility("private") }, label = { Text("Private") })
+            FilterChip(selected = selectedVisibility == "public", onClick = {
+                viewModel.toggleVisibility("public")
+            }, label = { Text("Public") })
+            FilterChip(selected = selectedVisibility == "private", onClick = {
+                viewModel.toggleVisibility("private")
+            }, label = { Text("Private") })
             PLATFORM_FILTERS.forEach { platform ->
                 FilterChip(
                     selected = selectedPlatform == platform,
@@ -164,10 +182,18 @@ fun MyAvatarsScreen(viewModel: AvatarsViewModel = hiltViewModel(), onBack: () ->
                             AsyncImage(
                                 model = avatar.thumbnailImageUrl,
                                 contentDescription = null,
-                                modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                                modifier = Modifier.fillMaxWidth().aspectRatio(
+                                    1f,
+                                ).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                                 contentScale = ContentScale.Crop,
                             )
-                            Text(avatar.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                avatar.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(8.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }

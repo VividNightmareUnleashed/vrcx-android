@@ -9,6 +9,13 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.repository.GroupPage
 import com.vrcx.android.data.repository.GroupRepository
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.isBusy
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
+import com.vrcx.android.ui.common.valueOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -32,11 +39,12 @@ enum class GroupMembership {
     UNKNOWN,
 }
 
-sealed interface GroupResourceState<out T> {
-    data object NotLoaded : GroupResourceState<Nothing>
-    data object Loading : GroupResourceState<Nothing>
-    data class Ready<T>(val value: T) : GroupResourceState<T>
-    data class Error(val message: String) : GroupResourceState<Nothing>
+enum class GroupDetailMessageSource {
+    ACTION,
+    GROUP,
+    MEMBERS,
+    INSTANCES,
+    POSTS,
 }
 
 sealed interface GroupAppendState {
@@ -54,56 +62,73 @@ data class GroupPagedData<T>(
 )
 
 data class GroupDetailState(
-    val group: GroupResourceState<Group> = GroupResourceState.NotLoaded,
-    val members: GroupResourceState<GroupPagedData<GroupMember>> = GroupResourceState.NotLoaded,
-    val instances: GroupResourceState<List<GroupInstance>> = GroupResourceState.NotLoaded,
-    val posts: GroupResourceState<GroupPagedData<GroupPost>> = GroupResourceState.NotLoaded,
+    val group: LoadState<Group> = LoadState.NotLoaded,
+    val members: LoadState<GroupPagedData<GroupMember>> = LoadState.NotLoaded,
+    val instances: LoadState<List<GroupInstance>> = LoadState.NotLoaded,
+    val posts: LoadState<GroupPagedData<GroupPost>> = LoadState.NotLoaded,
+    val selectedTab: GroupTab = GroupTab.MEMBERS,
+    val isActionLoading: Boolean = false,
+    val removingMemberUserId: String? = null,
+    val message: String? = null,
 )
 
 @HiltViewModel
 class GroupDetailViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val groupRepository: GroupRepository,
 ) : ViewModel() {
-    private val groupId: String = savedStateHandle.get<String>("groupId") ?: ""
+    private val groupId: String = savedStateHandle.get<String>("groupId").orEmpty()
 
-    private val _state = MutableStateFlow(GroupDetailState())
+    private val _state = MutableStateFlow(
+        GroupDetailState(
+            selectedTab = savedStateHandle.get<String>(SELECTED_TAB_KEY)
+                ?.let { saved -> GroupTab.entries.firstOrNull { it.name == saved } }
+                ?: GroupTab.MEMBERS,
+        ),
+    )
     val state: StateFlow<GroupDetailState> = _state.asStateFlow()
-
-    private val _isActionLoading = MutableStateFlow(false)
-    val isActionLoading: StateFlow<Boolean> = _isActionLoading.asStateFlow()
-
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
 
     init {
         loadGroup()
         loadMembers(reset = true)
+        when (_state.value.selectedTab) {
+            GroupTab.MEMBERS -> Unit
+            GroupTab.INSTANCES -> loadInstances()
+            GroupTab.POSTS -> loadPosts(reset = true)
+        }
     }
 
     fun retryGroup() = loadGroup()
 
-    fun retryMembers() = loadMembers(reset = true)
+    fun retryMembers() {
+        if (_state.value.isActionLoading) return
+        loadMembers(reset = true)
+    }
 
     fun retryInstances() = loadInstances()
 
     fun retryPosts() = loadPosts(reset = true)
 
-    fun loadMoreMembers() = loadMembers(reset = false)
+    fun loadMoreMembers() {
+        if (_state.value.isActionLoading) return
+        loadMembers(reset = false)
+    }
 
     fun loadMorePosts() = loadPosts(reset = false)
 
     fun onTabSelected(tab: GroupTab) {
+        savedStateHandle[SELECTED_TAB_KEY] = tab.name
+        _state.update { it.copy(selectedTab = tab) }
         when (tab) {
             GroupTab.MEMBERS -> Unit
-            GroupTab.INSTANCES -> if (_state.value.instances == GroupResourceState.NotLoaded) loadInstances()
-            GroupTab.POSTS -> if (_state.value.posts == GroupResourceState.NotLoaded) loadPosts(reset = true)
+            GroupTab.INSTANCES -> if (_state.value.instances == LoadState.NotLoaded) loadInstances()
+            GroupTab.POSTS -> if (_state.value.posts == LoadState.NotLoaded) loadPosts(reset = true)
         }
     }
 
     private fun loadGroup() {
         loadResource(
-            current = _state.value.group,
+            current = { _state.value.group },
             update = { group -> _state.update { it.copy(group = group) } },
             fallbackError = "Failed to load group",
             fetch = { groupRepository.getGroup(groupId) },
@@ -113,7 +138,7 @@ class GroupDetailViewModel @Inject constructor(
 
     private fun loadInstances() {
         loadResource(
-            current = _state.value.instances,
+            current = { _state.value.instances },
             update = { instances -> _state.update { it.copy(instances = instances) } },
             fallbackError = "Failed to load instances",
             fetch = { groupRepository.getGroupInstances(groupId) },
@@ -149,31 +174,34 @@ class GroupDetailViewModel @Inject constructor(
     )
 
     private fun <T> loadResource(
-        current: GroupResourceState<T>,
-        update: (GroupResourceState<T>) -> Unit,
+        current: () -> LoadState<T>,
+        update: (LoadState<T>) -> Unit,
         fallbackError: String,
         fetch: suspend () -> T,
-        onLoaded: (T) -> Unit = {},
+        onLoaded: (T) -> Unit = {
+        },
     ) {
-        if (current == GroupResourceState.Loading) return
-        update(GroupResourceState.Loading)
+        if (current().isBusy) return
+        update(current().startLoad())
         viewModelScope.launch {
             try {
                 val value = fetch()
-                update(GroupResourceState.Ready(value))
+                update(current().completeLoad(value))
                 onLoaded(value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                update(GroupResourceState.Error(e.message ?: fallbackError))
+                update(current().failLoad(e.message ?: fallbackError))
+            } finally {
+                update(current().settleLoad())
             }
         }
     }
 
     /** Everything `loadFirstPage` and `appendNextPage` need to drive one paged field of the state. */
     private class PagedResource<T>(
-        val current: () -> GroupResourceState<GroupPagedData<T>>,
-        val update: (GroupResourceState<GroupPagedData<T>>) -> Unit,
+        val current: () -> LoadState<GroupPagedData<T>>,
+        val update: (LoadState<GroupPagedData<T>>) -> Unit,
         val fallbackError: String,
         val fetch: suspend (offset: Int) -> GroupPage<T>,
         val total: (page: GroupPage<T>, itemCount: Int) -> Int?,
@@ -181,44 +209,40 @@ class GroupDetailViewModel @Inject constructor(
     )
 
     private fun <T> loadFirstPage(resource: PagedResource<T>) {
-        if (resource.current() == GroupResourceState.Loading) return
-        resource.update(GroupResourceState.Loading)
+        if (resource.current().isBusy) return
+        resource.update(resource.current().startLoad())
 
         viewModelScope.launch {
             try {
                 val page = resource.fetch(0)
                 val items = page.items.distinctBy(resource.key)
                 resource.update(
-                    GroupResourceState.Ready(
+                    resource.current().completeLoad(
                         pagedData(page, items, resource.total(page, items.size), page.nextOffset),
                     ),
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                resource.update(GroupResourceState.Error(e.message ?: resource.fallbackError))
+                resource.update(resource.current().failLoad(e.message ?: resource.fallbackError))
+            } finally {
+                resource.update(resource.current().settleLoad())
             }
         }
     }
 
     private fun <T> appendNextPage(resource: PagedResource<T>) {
         val initial = resource.current()
-        val previous = (initial as? GroupResourceState.Ready)?.value
-        if (initial == GroupResourceState.Loading ||
-            previous == null ||
-            !previous.hasMore ||
-            previous.appendState == GroupAppendState.Loading
-        ) {
-            return
-        }
+        val previous = initial.valueOrNull
+        if (initial.isBusy || previous == null) return
+        if (!previous.hasMore || previous.appendState == GroupAppendState.Loading) return
 
-        resource.update(GroupResourceState.Ready(previous.copy(appendState = GroupAppendState.Loading)))
+        resource.update(initial.completeLoad(previous.copy(appendState = GroupAppendState.Loading)))
 
         viewModelScope.launch {
-            // A concurrent mutation (a kick, a reset) can move the page under us,
+            // A concurrent refresh can move the page under us,
             // so read the live value back before merging and carry the offset shift.
-            fun latest(): GroupPagedData<T> =
-                (resource.current() as? GroupResourceState.Ready)?.value ?: previous
+            fun latest(): GroupPagedData<T> = resource.current().valueOrNull ?: previous
             try {
                 val page = resource.fetch(previous.nextOffset)
                 val latest = latest()
@@ -227,7 +251,7 @@ class GroupDetailViewModel @Inject constructor(
                 val nextOffset = (page.nextOffset + (latest.nextOffset - previous.nextOffset))
                     .coerceAtLeast(0)
                 resource.update(
-                    GroupResourceState.Ready(
+                    resource.current().completeLoad(
                         pagedData(page, items, authoritativeTotal, nextOffset),
                     ),
                 )
@@ -236,29 +260,27 @@ class GroupDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 val message = e.message ?: resource.fallbackError
                 resource.update(
-                    GroupResourceState.Ready(latest().copy(appendState = GroupAppendState.Error(message))),
+                    resource.current().completeLoad(
+                        latest().copy(appendState = GroupAppendState.Error(message)),
+                    ),
                 )
             }
         }
     }
 
-    private fun <T> pagedData(
-        page: GroupPage<T>,
-        items: List<T>,
-        authoritativeTotal: Int?,
-        nextOffset: Int,
-    ) = GroupPagedData(
-        items = items,
-        nextOffset = nextOffset,
-        totalCount = authoritativeTotal,
-        hasMore = page.items.isNotEmpty() &&
-            (authoritativeTotal?.let { nextOffset < it } ?: page.hasMore),
-    )
+    private fun <T> pagedData(page: GroupPage<T>, items: List<T>, authoritativeTotal: Int?, nextOffset: Int) =
+        GroupPagedData(
+            items = items,
+            nextOffset = nextOffset,
+            totalCount = authoritativeTotal,
+            hasMore = page.items.isNotEmpty() &&
+                (authoritativeTotal?.let { nextOffset < it } ?: page.hasMore),
+        )
 
     private fun applyAuthoritativeMemberCount(count: Int) {
         _state.update { state ->
             state.copy(
-                members = state.members.mapReady { members ->
+                members = state.members.mapLoaded { members ->
                     if (count < members.items.size) {
                         members
                     } else {
@@ -280,23 +302,30 @@ class GroupDetailViewModel @Inject constructor(
     }
 
     fun kickMember(userId: String) {
-        if (_isActionLoading.value) return
-        _isActionLoading.value = true
+        val currentState = _state.value
+        if (currentState.isActionLoading || currentState.members.isBusy ||
+            currentState.members.valueOrNull?.appendState == GroupAppendState.Loading
+        ) {
+            return
+        }
+        _state.update { it.copy(isActionLoading = true, removingMemberUserId = userId) }
         viewModelScope.launch {
             try {
                 if (groupRepository.kickGroupMember(groupId, userId)) {
                     removeMemberFromState(userId)
                     updateGroup { it.copy(memberCount = (it.memberCount - 1).coerceAtLeast(0)) }
-                    _message.value = "Member removed"
+                    _state.update { it.copy(message = "Member removed") }
                 } else {
-                    _message.value = "Failed to remove member (insufficient permissions?)"
+                    _state.update {
+                        it.copy(message = "Failed to remove member (insufficient permissions?)")
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = e.message ?: "Failed to remove member"
+                _state.update { it.copy(message = e.message ?: "Failed to remove member") }
             } finally {
-                _isActionLoading.value = false
+                _state.update { it.copy(isActionLoading = false, removingMemberUserId = null) }
             }
         }
     }
@@ -307,8 +336,8 @@ class GroupDetailViewModel @Inject constructor(
 
     fun joinOrLeaveGroup() {
         val currentGroup = currentGroup() ?: return
-        if (_isActionLoading.value) return
-        _isActionLoading.value = true
+        if (_state.value.isActionLoading) return
+        _state.update { it.copy(isActionLoading = true, removingMemberUserId = null) }
         viewModelScope.launch {
             try {
                 val wasMember = isMember(currentGroup)
@@ -317,24 +346,40 @@ class GroupDetailViewModel @Inject constructor(
                 } else {
                     groupRepository.joinGroup(currentGroup.id)
                 }
-                _state.update { it.copy(group = GroupResourceState.Ready(updated)) }
-                _message.value = when {
-                    wasMember -> "Left group"
-                    membershipStatus(updated) == GroupMembership.REQUESTED -> "Join request sent"
-                    else -> "Joined group"
+                _state.update {
+                    it.copy(
+                        group = it.group.completeLoad(updated),
+                        message = when {
+                            wasMember -> "Left group"
+
+                            membershipStatus(
+                                updated,
+                            ) == GroupMembership.REQUESTED -> "Join request sent"
+
+                            else -> "Joined group"
+                        },
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _message.value = e.message ?: "Group action failed"
+                _state.update { it.copy(message = e.message ?: "Group action failed") }
             } finally {
-                _isActionLoading.value = false
+                _state.update { it.copy(isActionLoading = false) }
             }
         }
     }
 
-    fun clearMessage() {
-        _message.value = null
+    fun clearMessage(source: GroupDetailMessageSource) {
+        _state.update { state ->
+            when (source) {
+                GroupDetailMessageSource.ACTION -> state.copy(message = null)
+                GroupDetailMessageSource.GROUP -> state.copy(group = state.group.clearStaleError())
+                GroupDetailMessageSource.MEMBERS -> state.copy(members = state.members.clearStaleError())
+                GroupDetailMessageSource.INSTANCES -> state.copy(instances = state.instances.clearStaleError())
+                GroupDetailMessageSource.POSTS -> state.copy(posts = state.posts.clearStaleError())
+            }
+        }
     }
 
     fun membershipStatus(group: Group?): GroupMembership {
@@ -352,23 +397,24 @@ class GroupDetailViewModel @Inject constructor(
 
     fun isMember(group: Group?): Boolean = membershipStatus(group) == GroupMembership.MEMBER
 
-    private fun currentGroup(): Group? =
-        (_state.value.group as? GroupResourceState.Ready)?.value
+    private fun currentGroup(): Group? = _state.value.group.valueOrNull
 
     private fun updateGroup(transform: (Group) -> Group) {
-        _state.update { it.copy(group = it.group.mapReady(transform)) }
+        _state.update { it.copy(group = it.group.mapLoaded(transform)) }
     }
 
     private fun removeMemberFromState(userId: String) {
-        val current = (_state.value.members as? GroupResourceState.Ready)?.value ?: return
+        val current = _state.value.members.valueOrNull ?: return
         if (current.items.none { it.userId == userId }) return
         _state.update { state ->
             state.copy(
-                members = state.members.mapReady { members ->
+                members = state.members.mapLoaded { members ->
                     members.copy(
                         items = members.items.filterNot { it.userId == userId },
                         nextOffset = (members.nextOffset - 1).coerceAtLeast(0),
-                        totalCount = members.totalCount?.let { total -> (total - 1).coerceAtLeast(0) },
+                        totalCount = members.totalCount?.let { total ->
+                            (total - 1).coerceAtLeast(0)
+                        },
                     )
                 },
             )
@@ -376,6 +422,10 @@ class GroupDetailViewModel @Inject constructor(
     }
 }
 
-/** Transforms the value inside a Ready resource, leaving every other case untouched. */
-private fun <T> GroupResourceState<T>.mapReady(transform: (T) -> T): GroupResourceState<T> =
-    if (this is GroupResourceState.Ready) GroupResourceState.Ready(transform(value)) else this
+private fun <T> LoadState<T>.mapLoaded(transform: (T) -> T): LoadState<T> =
+    if (this is LoadState.Loaded) copy(value = transform(value)) else this
+
+private fun <T> LoadState<T>.clearStaleError(): LoadState<T> =
+    if (this is LoadState.Loaded) copy(staleError = null) else this
+
+private const val SELECTED_TAB_KEY = "selectedGroupTab"

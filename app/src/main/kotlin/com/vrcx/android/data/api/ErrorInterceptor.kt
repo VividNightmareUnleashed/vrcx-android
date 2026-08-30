@@ -21,11 +21,7 @@ import retrofit2.Invocation
  */
 class ErrorInterceptor(
     private val authEventBus: AuthEventBus,
-    /**
-     * How the retry waits. Overridable so the backoff can be asserted by the
-     * delay actually asked for rather than by elapsed wall-clock, which makes
-     * the assertion exact and stops the suite sleeping through it.
-     */
+    /** Blocking wait strategy used before the single rate-limit retry. */
     private val waitBeforeRetry: (Long) -> Unit = { millis -> Thread.sleep(millis) },
 ) : Interceptor {
 
@@ -37,12 +33,7 @@ class ErrorInterceptor(
         }
 
         if (response.code == 429) {
-            val retryAfterHeader = response.header("Retry-After")?.toLongOrNull()
-            val delayMs = if (retryAfterHeader != null && retryAfterHeader > 0) {
-                minOf(retryAfterHeader * 1000, MAX_RETRY_DELAY_MS)
-            } else {
-                DEFAULT_RETRY_DELAY_MS
-            }
+            val delayMs = retryDelayMillis(response.header("Retry-After"))
             // Release the body and its pooled connection before waiting, so the
             // delay doesn't also hold a connection out of the per-host pool.
             response.close()
@@ -52,6 +43,15 @@ class ErrorInterceptor(
 
         emitUnauthorizedIfNeeded(response)
         return response
+    }
+
+    private fun retryDelayMillis(retryAfterHeader: String?): Long {
+        val seconds = retryAfterHeader?.toLongOrNull()?.takeIf { it > 0 }
+            ?: return DEFAULT_RETRY_DELAY_MS
+        if (seconds > MAX_RETRY_DELAY_MS / MILLIS_PER_SECOND) {
+            return MAX_RETRY_DELAY_MS
+        }
+        return minOf(seconds * MILLIS_PER_SECOND, MAX_RETRY_DELAY_MS)
     }
 
     private fun emitUnauthorizedIfNeeded(response: Response): Boolean {
@@ -84,6 +84,7 @@ class ErrorInterceptor(
     }
 
     companion object {
+        private const val MILLIS_PER_SECOND = 1_000L
         internal const val DEFAULT_RETRY_DELAY_MS = 1_000L
         internal const val MAX_RETRY_DELAY_MS = 2_000L
     }

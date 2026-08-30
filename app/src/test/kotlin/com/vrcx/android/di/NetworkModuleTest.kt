@@ -1,19 +1,23 @@
 package com.vrcx.android.di
 
+import com.vrcx.android.data.api.AccountBoundCookieInterceptor
 import com.vrcx.android.data.api.AuthEventBus
-import com.vrcx.android.data.api.AuthInterceptor
 import com.vrcx.android.data.api.CookieJarImpl
 import com.vrcx.android.data.api.DedupInterceptor
 import com.vrcx.android.data.api.ErrorInterceptor
 import com.vrcx.android.data.api.RequestDeduplicator
+import com.vrcx.android.data.api.SessionCookieRequestInterceptor
+import com.vrcx.android.data.api.SessionCookieResponseInterceptor
 import com.vrcx.android.data.websocket.PipelineOkHttpClient
 import com.vrcx.android.data.websocket.VRChatWebSocket
+import com.vrcx.android.directTestDispatcher
 import kotlinx.serialization.json.Json
 import okhttp3.CookieJar
 import okhttp3.logging.HttpLoggingInterceptor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.mock
 
@@ -22,9 +26,11 @@ class NetworkModuleTest {
     fun `image client keeps auth cookies without API error handling`() {
         val cookieJar = mock<CookieJarImpl>()
 
-        val client = NetworkModule.provideImageOkHttpClient(cookieJar)
+        val client = imageClient(cookieJar)
 
         assertSame(cookieJar, client.cookieJar)
+        assertTrue(client.interceptors.any { it is SessionCookieRequestInterceptor })
+        assertTrue(client.networkInterceptors.any { it is SessionCookieResponseInterceptor })
         assertFalse(client.interceptors.any { it is ErrorInterceptor })
         assertFalse(client.interceptors.any { it is DedupInterceptor })
     }
@@ -48,15 +54,23 @@ class NetworkModuleTest {
 
         val api = NetworkModule.provideOkHttpClient(
             cookieJar,
-            AuthInterceptor(),
             AuthEventBus(),
-            RequestDeduplicator(),
+            RequestDeduplicator(directTestDispatcher),
+            AccountBoundCookieInterceptor(),
         )
+        assertTrue(api.interceptors.any { it is SessionCookieRequestInterceptor })
+        assertTrue(api.networkInterceptors.any { it is SessionCookieResponseInterceptor })
 
         // User images come from the API host, so they should ride the API
         // client's warm TLS connections rather than handshake again.
-        assertSame(api.connectionPool, NetworkModule.provideImageOkHttpClient(cookieJar).connectionPool)
-        assertSame(api.connectionPool, NetworkModule.provideWebSocketOkHttpClient().client.connectionPool)
+        assertSame(
+            api.connectionPool,
+            imageClient(cookieJar).connectionPool,
+        )
+        assertSame(
+            api.connectionPool,
+            NetworkModule.provideWebSocketOkHttpClient().client.connectionPool,
+        )
     }
 
     @Test
@@ -67,6 +81,8 @@ class NetworkModuleTest {
         // wrong client is a compile error rather than a token in logcat.
         val provided: PipelineOkHttpClient = NetworkModule.provideWebSocketOkHttpClient()
 
-        VRChatWebSocket(Json, provided).disconnect()
+        VRChatWebSocket(Json, provided, directTestDispatcher).disconnect()
     }
+
+    private fun imageClient(cookieJar: CookieJarImpl) = NetworkModule.provideImageOkHttpClient(cookieJar)
 }

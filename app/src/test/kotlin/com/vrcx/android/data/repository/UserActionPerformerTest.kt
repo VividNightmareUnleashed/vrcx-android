@@ -69,19 +69,18 @@ class UserActionPerformerTest {
     }
 
     @Test
-    fun `moderation actions publish through the repository so the list stays fresh`() =
-        runBlocking {
-            val created = PlayerModeration(
-                id = "pmod_1",
-                targetUserId = "usr_target",
-                type = "block",
-            )
-            whenever(playerModerationApi.sendPlayerModeration(any())).thenReturn(created)
+    fun `moderation actions publish through the repository so the list stays fresh`() = runBlocking {
+        val created = PlayerModeration(
+            id = "pmod_1",
+            targetUserId = "usr_target",
+            type = "block",
+        )
+        whenever(playerModerationApi.sendPlayerModeration(any())).thenReturn(created)
 
-            performer.block("usr_target")
+        performer.block("usr_target")
 
-            assertEquals(listOf(created), moderationRepository.moderations.value)
-        }
+        assertEquals(listOf(created), moderationRepository.moderations.value)
+    }
 
     @Test
     fun `friend actions go straight to the friend api`() {

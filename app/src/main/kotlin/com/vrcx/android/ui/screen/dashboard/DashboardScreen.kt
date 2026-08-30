@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vrcx.android.data.api.model.CurrentUser
 import com.vrcx.android.data.api.model.displayAvatarUrl
 import com.vrcx.android.data.model.FriendContext
@@ -33,17 +33,19 @@ import com.vrcx.android.data.repository.FeedEntry
 import com.vrcx.android.data.repository.FeedEntryType
 import com.vrcx.android.data.repository.FeedRepository
 import com.vrcx.android.data.repository.FriendRepository
+import com.vrcx.android.di.DefaultDispatcher
 import com.vrcx.android.ui.common.activityLabel
 import com.vrcx.android.ui.common.derivationScope
 import com.vrcx.android.ui.common.relativeTime
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.EmptyState
 import com.vrcx.android.ui.components.UserAvatar
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -53,11 +55,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 
-data class DashboardActivityBreakdown(
-    val moves: Int = 0,
-    val statusChanges: Int = 0,
-    val avatarChanges: Int = 0,
-)
+data class DashboardActivityBreakdown(val moves: Int = 0, val statusChanges: Int = 0, val avatarChanges: Int = 0)
 
 /**
  * Everything the dashboard renders, derived from one snapshot of the friend map
@@ -78,6 +76,7 @@ class DashboardViewModel @Inject constructor(
     authRepository: AuthRepository,
     friendRepository: FriendRepository,
     feedRepository: FeedRepository,
+    @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val recentActivityLimit = 6
     private val favoriteFriendLimit = 5
@@ -121,7 +120,7 @@ class DashboardViewModel @Inject constructor(
             ),
         )
     }
-        .stateIn(derivationScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+        .stateIn(derivationScope(defaultDispatcher), whileUiSubscribed, DashboardUiState())
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -144,153 +143,166 @@ fun DashboardScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-        item {
-            VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    UserAvatar(
-                        imageUrl = currentUser?.displayAvatarUrl(),
-                        size = 56.dp,
-                        showStatusDot = false,
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Column {
-                        Text(currentUser?.displayName ?: "Not signed in", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            currentUser?.statusDescription?.ifBlank { currentUser?.status ?: "No status" } ?: "No status",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FriendState.entries.forEach { state ->
-                    DashboardMetric(state.label, friendCounts[state] ?: 0, Modifier.weight(1f))
-                }
-            }
-        }
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DashboardMetric("Moves", activityBreakdown.moves, Modifier.weight(1f))
-                DashboardMetric("Status", activityBreakdown.statusChanges, Modifier.weight(1f))
-                DashboardMetric("Avatars", activityBreakdown.avatarChanges, Modifier.weight(1f))
-            }
-        }
-        item {
-            Text(
-                "Favorite Friends Online",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        }
-        if (favoriteOnlineFriends.isEmpty()) {
             item {
                 VrcxCard(Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        "No favorite friends are online right now.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        } else {
-            items(favoriteOnlineFriends, key = { "vip_${it.id}" }) { friend ->
-                VrcxCard(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .clickable { onUserClick(friend.id) },
-                ) {
                     Row(
-                        Modifier
+                        modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         UserAvatar(
-                            imageUrl = friend.ref?.displayAvatarUrl(),
-                            status = friend.ref?.status,
-                            state = friend.state,
-                            size = 40.dp,
+                            imageUrl = currentUser?.displayAvatarUrl(),
+                            size = 56.dp,
+                            showStatusDot = false,
                         )
                         Spacer(Modifier.size(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(friend.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Column {
                             Text(
-                                friend.ref?.statusDescription?.ifBlank { friend.state.label } ?: "",
+                                currentUser?.displayName ?: "Not signed in",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                currentUser?.statusDescription
+                                    ?.ifBlank { currentUser.status }
+                                    ?: "No status",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Text(
-                            friend.state.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
                     }
                 }
             }
-        }
-        item {
-            Text(
-                "Recent Activity",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        }
-        if (recentEntries.isEmpty()) {
             item {
-                EmptyState(
-                    message = "No recent activity yet",
-                    subtitle = "Feed entries will show up here once your friends start moving around.",
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FriendState.entries.forEach { state ->
+                        DashboardMetric(state.label, friendCounts[state] ?: 0, Modifier.weight(1f))
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DashboardMetric("Moves", activityBreakdown.moves, Modifier.weight(1f))
+                    DashboardMetric("Status", activityBreakdown.statusChanges, Modifier.weight(1f))
+                    DashboardMetric("Avatars", activityBreakdown.avatarChanges, Modifier.weight(1f))
+                }
+            }
+            item {
+                Text(
+                    "Favorite Friends Online",
+                    style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
-        } else {
-            items(recentEntries, key = { it.key }) { entry ->
-                VrcxCard(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .clickable { onUserClick(entry.userId) },
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(entry.displayName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                relativeTime(entry.createdAt),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+            if (favoriteOnlineFriends.isEmpty()) {
+                item {
+                    VrcxCard(Modifier.padding(horizontal = 16.dp)) {
                         Text(
-                            entry.activityLabel(),
+                            "No favorite friends are online right now.",
+                            modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
+            } else {
+                items(favoriteOnlineFriends, key = { "vip_${it.id}" }) { friend ->
+                    VrcxCard(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .clickable { onUserClick(friend.id) },
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            UserAvatar(
+                                imageUrl = friend.ref?.displayAvatarUrl(),
+                                status = friend.ref?.status,
+                                state = friend.state,
+                                size = 40.dp,
+                            )
+                            Spacer(Modifier.size(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    friend.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    friend.ref?.statusDescription?.ifBlank { friend.state.label }.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Text(
+                                friend.state.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
             }
-        }
+            item {
+                Text(
+                    "Recent Activity",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            if (recentEntries.isEmpty()) {
+                item {
+                    EmptyState(
+                        message = "No recent activity yet",
+                        subtitle = "Feed entries will show up here once your friends start moving around.",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            } else {
+                items(recentEntries, key = { it.key }) { entry ->
+                    VrcxCard(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .clickable { onUserClick(entry.userId) },
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    entry.displayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    relativeTime(entry.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                entry.activityLabel(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

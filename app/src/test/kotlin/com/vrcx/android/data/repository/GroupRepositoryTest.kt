@@ -7,6 +7,7 @@ import com.vrcx.android.data.api.model.GroupMember
 import com.vrcx.android.data.api.model.GroupPost
 import com.vrcx.android.data.api.model.GroupPostsResponse
 import com.vrcx.android.data.websocket.PipelineEvent
+import com.vrcx.android.directTestDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -16,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -37,7 +39,7 @@ class GroupRepositoryTest {
     private val accountScope = AccountScope()
     private val repository = GroupRepository(
         groupApi = groupApi,
-        dedup = RequestDeduplicator(),
+        dedup = RequestDeduplicator(directTestDispatcher),
         accountScope = accountScope,
         scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScope.testScheduler)),
     )
@@ -248,6 +250,98 @@ class GroupRepositoryTest {
     }
 
     @Test
+    fun `an older joined refresh cannot undo a later group-left event`() = repositoryTest {
+        val refreshStarted = CompletableDeferred<Unit>()
+        val releaseRefresh = CompletableDeferred<Unit>()
+        whenever(groupApi.getUserGroups("usr_1", 100, 0)).doSuspendableAnswer {
+            refreshStarted.complete(Unit)
+            releaseRefresh.await()
+            listOf(Group(id = "gmem_1", groupId = "grp_1"))
+        }
+        accountScope.bind("usr_1")
+
+        repository.handleEvent(
+            PipelineEvent.GroupJoined(buildJsonObject { put("groupId", "grp_1") }),
+        )
+        advanceUntilIdle()
+        refreshStarted.await()
+        repository.handleEvent(
+            PipelineEvent.GroupLeft(buildJsonObject { put("groupId", "grp_1") }),
+        )
+        releaseRefresh.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Group>(), repository.userGroups.value)
+    }
+
+    @Test
+    fun `updates for different groups complete independently`() = repositoryTest {
+        whenever(groupApi.getUserGroups("usr_1", 100, 0)).thenReturn(
+            listOf(
+                Group(id = "grp_a", name = "A before"),
+                Group(id = "grp_b", name = "B before"),
+            ),
+        )
+        val firstUpdateStarted = CompletableDeferred<Unit>()
+        val releaseFirstUpdate = CompletableDeferred<Unit>()
+        whenever(groupApi.getGroup("grp_a")).doSuspendableAnswer {
+            firstUpdateStarted.complete(Unit)
+            releaseFirstUpdate.await()
+            Group(id = "grp_a", name = "A after")
+        }
+        whenever(groupApi.getGroup("grp_b")).thenReturn(Group(id = "grp_b", name = "B after"))
+        accountScope.bind("usr_1")
+        repository.loadMyGroups()
+
+        repository.handleEvent(groupRoleUpdated("grp_a"))
+        runCurrent()
+        firstUpdateStarted.await()
+        repository.handleEvent(groupRoleUpdated("grp_b"))
+        runCurrent()
+
+        releaseFirstUpdate.complete(Unit)
+        advanceUntilIdle()
+
+        val groupsById = repository.userGroups.value.associateBy { it.canonicalGroupId() }
+        assertEquals("A after", groupsById.getValue("grp_a").name)
+        assertEquals("B after", groupsById.getValue("grp_b").name)
+    }
+
+    @Test
+    fun `a later update for the same group uses its own response`() = repositoryTest {
+        whenever(groupApi.getUserGroups("usr_1", 100, 0)).thenReturn(
+            listOf(Group(id = "grp_a", name = "Before")),
+        )
+        val firstUpdateStarted = CompletableDeferred<Unit>()
+        val releaseFirstUpdate = CompletableDeferred<Unit>()
+        var requestCount = 0
+        whenever(groupApi.getGroup("grp_a")).doSuspendableAnswer {
+            if (++requestCount == 1) {
+                firstUpdateStarted.complete(Unit)
+                releaseFirstUpdate.await()
+                Group(id = "grp_a", name = "After first update")
+            } else {
+                Group(id = "grp_a", name = "After second update")
+            }
+        }
+        accountScope.bind("usr_1")
+        repository.loadMyGroups()
+
+        repository.handleEvent(groupRoleUpdated("grp_a"))
+        runCurrent()
+        firstUpdateStarted.await()
+        repository.handleEvent(groupRoleUpdated("grp_a"))
+        runCurrent()
+
+        assertEquals("After second update", repository.userGroups.value.single().name)
+
+        releaseFirstUpdate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("After second update", repository.userGroups.value.single().name)
+    }
+
+    @Test
     fun `my groups follow the signed-in account, not a caller-supplied id`() = repositoryTest {
         whenever(groupApi.getUserGroups("usr_me", 100, 0)).thenReturn(
             listOf(Group(id = "gmem_mine", groupId = "grp_mine")),
@@ -266,4 +360,13 @@ class GroupRepositoryTest {
         assertEquals("grp_x", Group(id = "gmem_x", groupId = "grp_x").canonicalGroupId())
         assertEquals("grp_y", Group(id = "grp_y").canonicalGroupId())
     }
+
+    private fun groupRoleUpdated(groupId: String) = PipelineEvent.GroupRoleUpdated(
+        buildJsonObject {
+            put(
+                "role",
+                buildJsonObject { put("groupId", groupId) },
+            )
+        },
+    )
 }

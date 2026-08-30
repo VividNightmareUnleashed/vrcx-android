@@ -1,3 +1,19 @@
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.variant.BuiltArtifactsLoader
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +21,40 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.kover)
+}
+
+abstract class CopyVersionedApk : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val input: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @get:Internal
+    abstract val builtArtifactsLoader: Property<BuiltArtifactsLoader>
+
+    @TaskAction
+    fun copyApk() {
+        val artifacts = builtArtifactsLoader.get().load(input.get())
+            ?: error("Unable to read APK metadata from ${input.get().asFile}")
+        val artifact = artifacts.elements.singleOrNull()
+            ?: error("Expected one APK for ${artifacts.variantName}, found ${artifacts.elements.size}")
+        val versionName = artifact.versionName?.takeIf(String::isNotBlank)
+            ?: error("Missing version name for ${artifacts.variantName}")
+        val outputDirectory = output.get().asFile
+        outputDirectory.deleteRecursively()
+        check(outputDirectory.mkdirs() || outputDirectory.isDirectory) {
+            "Unable to create $outputDirectory"
+        }
+        Files.copy(
+            Path.of(artifact.outputFile),
+            outputDirectory.resolve("vrcx-android-$versionName.apk").toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
 }
 
 android {
@@ -49,10 +99,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -62,18 +108,58 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 
+    lint {
+        warningsAsErrors = true
+        disable += setOf(
+            "AndroidGradlePluginVersion",
+            "GradleDependency",
+            "OldTargetApi",
+        )
+    }
+
     sourceSets {
         // MigrationTestHelper reads the exported schemas as assets and Robolectric
         // serves the variant's merged assets, so they ride along in debug only —
         // which is why DatabaseMigrationTest lives in src/testDebug.
         getByName("debug").assets.srcDir("$projectDir/schemas")
     }
+}
 
-    applicationVariants.all {
-        val variant = this
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "vrcx-android-${variant.versionName}.apk"
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val variantTaskName = variant.name.replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase() else it.toString()
+        }
+        val copyTask = tasks.register<CopyVersionedApk>("copy${variantTaskName}VersionedApk") {
+            output.set(layout.buildDirectory.dir("outputs/versioned-apk/${variant.name}"))
+            builtArtifactsLoader.set(variant.artifacts.getBuiltArtifactsLoader())
+        }
+        variant.artifacts.use(copyTask)
+            .wiredWith(CopyVersionedApk::input)
+            .toListenTo(SingleArtifact.APK)
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    parallel = true
+}
+
+kover {
+    reports {
+        variant("debug") {
+            verify {
+                rule {
+                    minBound(56)
+                }
+            }
         }
     }
 }

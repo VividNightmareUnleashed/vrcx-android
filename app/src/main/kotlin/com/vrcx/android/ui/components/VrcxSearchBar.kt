@@ -15,8 +15,8 @@ import com.vrcx.android.ui.theme.vrcxColors
 fun VrcxSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    placeholder: String = "Search",
     modifier: Modifier = Modifier,
+    placeholder: String = "Search",
 ) {
     VrcxInputField(
         value = query,

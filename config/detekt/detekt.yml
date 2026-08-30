@@ -1,0 +1,55 @@
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - Composable
+      - Test
+
+complexity:
+  LongParameterList:
+    ignoreDefaultParameters: true
+    ignoreAnnotated:
+      - Composable
+    ignoreAnnotatedParameter:
+      - com.vrcx.android.di.DefaultDispatcher
+      - com.vrcx.android.di.IoDispatcher
+      - retrofit2.http.Query
+  TooManyFunctions:
+    excludes:
+      - '**/data/db/dao/**'
+      - '**/di/**'
+      - '**/test/**'
+      - '**/testDebug/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+
+style:
+  ReturnCount:
+    excludeGuardClauses: true
+  MagicNumber:
+    ignoreEnums: true
+    ignoreRanges: true
+    excludes:
+      - '**/test/**'
+      - '**/testDebug/**'
+      - '**/androidTest/**'
+      - '**/commonTest/**'
+      - '**/jvmTest/**'
+      - '**/androidUnitTest/**'
+      - '**/androidInstrumentedTest/**'
+      - '**/jsTest/**'
+      - '**/iosTest/**'
+      - '**/*.kts'
+      - '**/data/db/dao/**'
+      - '**/data/db/DatabaseMigrations.kt'
+      - '**/ui/theme/Color.kt'
+      - '**/ui/theme/Theme.kt'
+  MaxLineLength:
+    excludes:
+      - '**/data/db/dao/**'
+      - '**/data/db/DatabaseMigrations.kt'
+      - '**/data/db/DatabaseMigrationTest.kt'

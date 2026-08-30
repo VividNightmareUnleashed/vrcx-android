@@ -20,7 +20,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,12 +27,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.vrcx.android.data.preferences.VrcxPreferences
 import com.vrcx.android.data.repository.AuthRepository
 import com.vrcx.android.data.repository.AuthState
 import com.vrcx.android.data.repository.FriendRepository
 import com.vrcx.android.data.repository.UserDetailRepository
+import com.vrcx.android.di.IoDispatcher
+import com.vrcx.android.ui.common.whileUiSubscribed
 import com.vrcx.android.ui.components.VrcxCard
 import com.vrcx.android.ui.components.VrcxDetailTopBar
 import com.vrcx.android.ui.components.VrcxInputField
@@ -43,9 +45,8 @@ import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -60,12 +61,13 @@ class ToolsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val friendRepository: FriendRepository,
     private val userDetailRepository: UserDetailRepository,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     private val _targetId = MutableStateFlow("")
     val targetId: StateFlow<String> = _targetId.asStateFlow()
 
     val backgroundServiceEnabled = preferences.backgroundServiceEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        .stateIn(viewModelScope, whileUiSubscribed, true)
 
     private val _isExporting = MutableStateFlow(false)
     val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
@@ -99,7 +101,7 @@ class ToolsViewModel @Inject constructor(
                     FriendExportFormat.CSV -> FriendListExport.toCsv(rows)
                     FriendExportFormat.JSON -> FriendListExport.toJson(rows)
                 }
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     val stream = context.applicationContext.contentResolver.openOutputStream(uri, "wt")
                         ?: error("Unable to open the selected destination")
                     OutputStreamWriter(stream, StandardCharsets.UTF_8).use { it.write(content) }
@@ -131,14 +133,16 @@ fun ToolsScreen(
     val csvExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         uri?.let { viewModel.exportFriends(context, it, FriendExportFormat.CSV) }
     }
-    val jsonExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri?.let { viewModel.exportFriends(context, it, FriendExportFormat.JSON) }
-    }
+    val jsonExporter =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            uri?.let { viewModel.exportFriends(context, it, FriendExportFormat.JSON) }
+        }
 
     val resolvedRoute = resolveOpenByIdRoute(targetId)
 
     val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
     } else {
         true
     }
@@ -180,12 +184,17 @@ fun ToolsScreen(
             VrcxCard {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Quick Links", style = MaterialTheme.typography.titleMedium)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.DASHBOARD) }) { Text("Dashboard") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GAME_LOG) }) { Text("Activity History") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.PLAYER_LIST) }) { Text("Friends Roster") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.GALLERY) }) { Text("Gallery") }
-                        FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.SCREENSHOT_METADATA) }) { Text("Screenshot Info") }
+                        FilledTonalButton(onClick = {
+                            onOpenRoute(VrcxRoutes.SCREENSHOT_METADATA)
+                        }) { Text("Screenshot Info") }
                         FilledTonalButton(onClick = { onOpenRoute(VrcxRoutes.SETTINGS) }) { Text("Settings") }
                     }
                 }

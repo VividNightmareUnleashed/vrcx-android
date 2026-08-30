@@ -82,21 +82,32 @@ $env:ANDROID_HOME = "C:\path\to\Android\Sdk"
 .\gradlew.bat assembleDebug
 ```
 
+The settings script permits one Gradle build at a time per checkout, including
+wrapper, IDE, and Tooling API builds. Wait for the active build to finish if a
+second invocation reports that another build is running.
+
 The debug APK is written to:
 
 ```text
-app/build/outputs/apk/debug/vrcx-android-<version>.apk
+app/build/outputs/versioned-apk/debug/vrcx-android-<version>.apk
 ```
 
-### Tests and lint
+### Quality checks
 
 ```bash
-./gradlew test
+./gradlew spotlessCheck :app:detektDebug :app:detektDebugUnitTest test :app:koverVerifyDebug :app:lint :app:assembleDebug
 ./gradlew :app:testDebugUnitTest --tests "com.vrcx.android.data.repository.AuthRepositoryTest"
-./gradlew lint
+./gradlew spotlessApply
+./gradlew :app:koverHtmlReportDebug
 ```
 
-There is no ktlint, detekt, spotless, or `.editorconfig` in this project. Android lint is the configured quality gate.
+Spotless with ktlint enforces formatting, detekt performs Kotlin static analysis,
+Kover enforces a 56% debug line-coverage floor, and Android lint treats
+deterministic warnings as errors. Dependency and target-SDK availability checks
+remain advisory because they change independently of the source tree.
+The checked-in Detekt baselines are a ledger of existing debt; CI rejects new
+findings and baseline-ID additions while allowing debt entries to be removed.
+Regenerate them only after every unbaselined finding has been resolved.
 
 ### Release builds
 
@@ -138,7 +149,7 @@ The script signs the APK, verifies it with `apksigner`, computes SHA-256, querie
 - Retrofit, OkHttp, and Kotlinx Serialization for VRChat REST APIs
 - Dedicated OkHttp WebSocket client for the VRChat pipeline
 - Room for account-scoped local data, with committed migration schemas
-- DataStore and AndroidX Security Crypto for preferences and session storage
+- DataStore for preferences and platform Keystore/JCA with atomic files for session storage; AndroidX Security Crypto remains read-only for legacy-data migration
 - Coil 3 for authenticated image loading
 - WorkManager and a foreground service for background reconnect and notifications
 - JUnit, Robolectric, Mockito, MockWebServer, and Room migration tests

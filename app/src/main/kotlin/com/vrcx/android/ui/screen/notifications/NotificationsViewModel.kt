@@ -12,116 +12,160 @@ import com.vrcx.android.data.repository.NotificationRepository
 import com.vrcx.android.data.repository.UnifiedNotification
 import com.vrcx.android.data.repository.matchesCategory
 import com.vrcx.android.data.repository.notificationTypeLabel
+import com.vrcx.android.ui.common.LoadState
+import com.vrcx.android.ui.common.completeLoad
+import com.vrcx.android.ui.common.failLoad
+import com.vrcx.android.ui.common.isBusy
+import com.vrcx.android.ui.common.settleLoad
+import com.vrcx.android.ui.common.startLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+data class InviteResponseDialogState(
+    val requestId: Long,
+    val notification: UnifiedNotification,
+    val title: String,
+    val messageType: InviteMessageType,
+    val templates: List<InviteMessageTemplate> = emptyList(),
+    val isLoading: Boolean = false,
+    val isSending: Boolean = false,
+)
+
+data class NotificationsActionState(
+    val error: String? = null,
+    val errorId: Long = 0,
+    val inviteResponseDialog: InviteResponseDialogState? = null,
+)
+
+private fun NotificationsActionState.withError(message: String): NotificationsActionState =
+    copy(error = message, errorId = errorId + 1)
+
+data class NotificationsUiState(
+    val notifications: List<UnifiedNotification> = emptyList(),
+    val categoryCounts: List<NotificationCategoryCount> = emptyList(),
+    val visibleTypes: List<String> = emptyList(),
+    val selectedCategory: NotificationCategoryFilter = NotificationCategoryFilter.ALL,
+    val selectedTypes: Set<String> = emptySet(),
+    val loadState: LoadState<Unit> = LoadState.NotLoaded,
+    val loadErrorId: Long = 0,
+    val action: NotificationsActionState = NotificationsActionState(),
+)
+
+private data class NotificationCriteria(
+    val category: NotificationCategoryFilter = NotificationCategoryFilter.ALL,
+    val types: Set<String> = emptySet(),
+)
+
+private data class NotificationLoad(val state: LoadState<Unit> = LoadState.NotLoaded, val errorId: Long = 0)
+
+private fun LoadState<Unit>.withNotificationData(hasData: Boolean): LoadState<Unit> = when {
+    !hasData -> this
+    this is LoadState.Loading -> LoadState.Loaded(Unit, isRefreshing = true)
+    this is LoadState.Failed -> LoadState.Loaded(Unit, staleError = message)
+    this is LoadState.NotLoaded -> LoadState.Loaded(Unit)
+    else -> this
+}
 
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val inviteMessageRepository: InviteMessageRepository,
 ) : ViewModel() {
+    private val criteria = MutableStateFlow(NotificationCriteria())
+    private val load = MutableStateFlow(NotificationLoad())
+    private val action = MutableStateFlow(NotificationsActionState())
 
-    data class InviteResponseDialogState(
-        val notification: UnifiedNotification,
-        val title: String,
-        val messageType: InviteMessageType,
-        val templates: List<InviteMessageTemplate> = emptyList(),
-        val isLoading: Boolean = false,
-    )
-
-    private val _selectedCategory = MutableStateFlow(NotificationCategoryFilter.ALL)
-    val selectedCategory: StateFlow<NotificationCategoryFilter> = _selectedCategory.asStateFlow()
-
-    private val _selectedTypes = MutableStateFlow<Set<String>>(emptySet())
-    val selectedTypes: StateFlow<Set<String>> = _selectedTypes.asStateFlow()
-
-    val categoryCounts: StateFlow<List<NotificationCategoryCount>> = notificationRepository.unifiedNotifications
-        .map { notifs ->
-            NotificationCategoryFilter.entries.map { filter ->
+    val state: StateFlow<NotificationsUiState> = combine(
+        notificationRepository.unifiedNotifications,
+        criteria,
+        load,
+        action,
+    ) { notifications, criteria, load, action ->
+        val categoryNotifications = notifications.filter { it.matchesCategory(criteria.category) }
+        val visibleTypes = (categoryNotifications.map { it.type } + criteria.types)
+            .distinct()
+            .sortedBy(::notificationTypeLabel)
+        NotificationsUiState(
+            notifications = if (criteria.types.isEmpty()) {
+                categoryNotifications
+            } else {
+                categoryNotifications.filter { it.type in criteria.types }
+            },
+            categoryCounts = NotificationCategoryFilter.entries.map { filter ->
                 NotificationCategoryCount(
                     filter = filter,
                     count = if (filter == NotificationCategoryFilter.ALL) {
-                        notifs.size
+                        notifications.size
                     } else {
-                        notifs.count { it.matchesCategory(filter) }
+                        notifications.count { it.matchesCategory(filter) }
                     },
                 )
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            },
+            visibleTypes = visibleTypes,
+            selectedCategory = criteria.category,
+            selectedTypes = criteria.types,
+            loadState = load.state.withNotificationData(notifications.isNotEmpty()),
+            loadErrorId = load.errorId,
+            action = action,
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, NotificationsUiState())
 
-    val visibleTypes: StateFlow<List<String>> = combine(
-        notificationRepository.unifiedNotifications,
-        _selectedCategory,
-    ) { notifs, category ->
-        notifs
-            .filter { it.matchesCategory(category) }
-            .map { it.type }
-            .distinct()
-            .sortedBy(::notificationTypeLabel)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val notifications: StateFlow<List<UnifiedNotification>> = combine(
-        notificationRepository.unifiedNotifications,
-        _selectedCategory,
-        _selectedTypes,
-    ) { notifs, category, types ->
-        val categoryFiltered = notifs.filter { it.matchesCategory(category) }
-        if (types.isEmpty()) {
-            categoryFiltered
-        } else {
-            categoryFiltered.filter { it.type in types }
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
-
-    private val _inviteResponseDialog = MutableStateFlow<InviteResponseDialogState?>(null)
-    val inviteResponseDialog: StateFlow<InviteResponseDialogState?> = _inviteResponseDialog.asStateFlow()
     private var inviteDialogJob: Job? = null
-    private var inviteDialogGeneration = 0L
+    private var inviteTemplateGeneration = 0L
+    private var nextInviteRequestId = 0L
+    private val inviteResponseMutex = Mutex()
 
     init {
         viewModelScope.launch {
-            // Hydrate from Room first so the inbox isn't empty after a cold start.
+            load.update { it.copy(state = it.state.startLoad()) }
             try {
                 notificationRepository.restoreNotifications()
+                if (notificationRepository.unifiedNotifications.value.isNotEmpty()) {
+                    load.update { it.copy(state = it.state.completeLoad(Unit)) }
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to restore notifications"
+                load.update {
+                    it.copy(
+                        state = it.state.failLoad(e.message ?: "Failed to restore notifications"),
+                        errorId = it.errorId + 1,
+                    )
+                }
             } finally {
-                _isLoading.value = false
+                load.update { it.copy(state = it.state.settleLoad()) }
             }
             refresh()
         }
     }
 
     fun selectCategory(category: NotificationCategoryFilter) {
-        _selectedCategory.value = category
-        _selectedTypes.value = emptySet()
+        criteria.value = NotificationCriteria(category = category)
     }
 
     fun toggleTypeFilter(type: String) {
-        val current = _selectedTypes.value
-        _selectedTypes.value = if (type in current) current - type else current + type
+        criteria.update { current ->
+            current.copy(
+                types = if (type in
+                    current.types
+                ) {
+                    current.types - type
+                } else {
+                    current.types + type
+                },
+            )
+        }
     }
 
     fun performPrimaryAction(notification: UnifiedNotification) {
@@ -140,43 +184,79 @@ class NotificationsViewModel @Inject constructor(
         val messageType = inviteMessageTypeFor(notification) ?: return
         loadInviteResponseDialog(
             InviteResponseDialogState(
+                requestId = ++nextInviteRequestId,
                 notification = notification,
                 title = inviteDialogTitleFor(notification),
                 messageType = messageType,
                 isLoading = true,
-            )
+            ),
         )
     }
 
     fun refreshInviteResponseDialog() {
-        val state = _inviteResponseDialog.value ?: return
+        val state = action.value.inviteResponseDialog ?: return
+        if (state.isSending) return
         loadInviteResponseDialog(state.copy(isLoading = true))
     }
 
     fun dismissInviteResponseDialog() = closeInviteResponseDialog()
 
-    /** The one way the dialog closes, so an in-flight template load is always stale afterwards. */
-    private fun closeInviteResponseDialog() {
-        inviteDialogGeneration++
+    private fun closeInviteResponseDialog(expectedRequestId: Long? = null) {
+        val current = action.value.inviteResponseDialog
+        if (expectedRequestId != null && current?.requestId != expectedRequestId) return
+        inviteTemplateGeneration++
         inviteDialogJob?.cancel()
         inviteDialogJob = null
-        _inviteResponseDialog.value = null
+        action.update { currentAction ->
+            if (expectedRequestId == null ||
+                currentAction.inviteResponseDialog?.requestId == expectedRequestId
+            ) {
+                currentAction.copy(inviteResponseDialog = null)
+            } else {
+                currentAction
+            }
+        }
     }
 
-    fun sendInviteResponse(template: InviteMessageTemplate) {
-        val state = _inviteResponseDialog.value ?: return
+    fun sendInviteResponse(requestId: Long, template: InviteMessageTemplate) {
+        val dialog = markInviteResponseSending(requestId, template) ?: return
         viewModelScope.launch {
-            try {
-                notificationRepository.sendInviteResponse(
-                    notification = state.notification,
-                    responseSlot = template.slot,
-                )
-                closeInviteResponseDialog()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (error: Exception) {
-                _error.value = error.message ?: "Failed to send invite response"
+            inviteResponseMutex.withLock {
+                try {
+                    notificationRepository.sendInviteResponse(
+                        notification = dialog.notification,
+                        responseSlot = template.slot,
+                    )
+                    closeInviteResponseDialog(requestId)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Exception) {
+                    action.update { current ->
+                        val currentDialog = current.inviteResponseDialog
+                        if (currentDialog?.requestId == requestId) {
+                            current.copy(
+                                inviteResponseDialog = currentDialog.copy(isSending = false),
+                            ).withError(error.message ?: "Failed to send invite response")
+                        } else {
+                            current
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    private fun markInviteResponseSending(
+        requestId: Long,
+        template: InviteMessageTemplate,
+    ): InviteResponseDialogState? {
+        while (true) {
+            val current = action.value
+            val dialog = current.inviteResponseDialog
+                ?.takeIf { it.requestId == requestId && !it.isSending && template in it.templates }
+                ?: return null
+            val sending = current.copy(inviteResponseDialog = dialog.copy(isSending = true))
+            if (action.compareAndSet(current, sending)) return dialog
         }
     }
 
@@ -200,25 +280,40 @@ class NotificationsViewModel @Inject constructor(
 
     private fun loadInviteResponseDialog(state: InviteResponseDialogState) {
         inviteDialogJob?.cancel()
-        val generation = ++inviteDialogGeneration
-        _inviteResponseDialog.value = state
+        val generation = ++inviteTemplateGeneration
+        action.update { it.copy(inviteResponseDialog = state) }
         inviteDialogJob = viewModelScope.launch {
             try {
                 val templates = inviteMessageRepository.getMessages(state.messageType)
-                if (generation != inviteDialogGeneration) return@launch
-                _inviteResponseDialog.value = state.copy(
-                    templates = templates,
-                    isLoading = false,
-                )
+                if (generation != inviteTemplateGeneration) return@launch
+                action.update {
+                    if (it.inviteResponseDialog?.requestId == state.requestId) {
+                        it.copy(
+                            inviteResponseDialog = state.copy(
+                                templates = templates,
+                                isLoading = false,
+                            ),
+                        )
+                    } else {
+                        it
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (error: Exception) {
-                if (generation != inviteDialogGeneration) return@launch
-                _inviteResponseDialog.value = state.copy(
-                    templates = emptyList(),
-                    isLoading = false,
-                )
-                _error.value = error.message ?: "Failed to load saved invite responses"
+                if (generation != inviteTemplateGeneration) return@launch
+                action.update {
+                    if (it.inviteResponseDialog?.requestId == state.requestId) {
+                        it.copy(
+                            inviteResponseDialog = state.copy(
+                                templates = emptyList(),
+                                isLoading = false,
+                            ),
+                        ).withError(error.message ?: "Failed to load saved invite responses")
+                    } else {
+                        it
+                    }
+                }
             }
         }
     }
@@ -233,18 +328,23 @@ class NotificationsViewModel @Inject constructor(
     }
 
     fun refresh() {
-        if (_isRefreshing.value) return
-        _isRefreshing.value = true
+        if (load.value.state.isBusy) return
+        load.update { it.copy(state = it.state.startLoad()) }
         viewModelScope.launch {
-            _error.value = null
             try {
                 notificationRepository.loadNotifications()
+                load.update { it.copy(state = it.state.completeLoad(Unit)) }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to load notifications"
+                load.update {
+                    it.copy(
+                        state = it.state.failLoad(e.message ?: "Failed to load notifications"),
+                        errorId = it.errorId + 1,
+                    )
+                }
             } finally {
-                _isRefreshing.value = false
+                load.update { it.copy(state = it.state.settleLoad()) }
             }
         }
     }
@@ -256,10 +356,33 @@ class NotificationsViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                _error.value = error.message ?: fallbackMessage
+                publishActionError(error.message ?: fallbackMessage)
             }
         }
     }
 
-    fun consumeError() { _error.value = null }
+    private fun publishActionError(message: String) {
+        action.update { it.withError(message) }
+    }
+
+    fun consumeActionError(errorId: Long) {
+        action.update { current ->
+            if (current.errorId == errorId) current.copy(error = null) else current
+        }
+    }
+
+    fun consumeLoadError(errorId: Long) {
+        load.update { current ->
+            if (current.errorId != errorId) return@update current
+            val consumedState = when {
+                current.state is LoadState.Loaded -> current.state.copy(staleError = null)
+
+                current.state is LoadState.Failed && notificationRepository.unifiedNotifications.value.isNotEmpty() ->
+                    LoadState.Loaded(Unit)
+
+                else -> current.state
+            }
+            current.copy(state = consumedState)
+        }
+    }
 }

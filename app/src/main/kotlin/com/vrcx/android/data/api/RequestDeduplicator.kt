@@ -1,15 +1,16 @@
 package com.vrcx.android.data.api
 
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
+import com.vrcx.android.di.IoDispatcher
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 
 /**
  * Merges identical in-flight GET requests so concurrent callers share one
@@ -24,22 +25,16 @@ import javax.inject.Singleton
  * layer, so a resource has exactly one entry however it was fetched.
  */
 @Singleton
-class RequestDeduplicator @Inject constructor() {
+class RequestDeduplicator @Inject constructor(@IoDispatcher ioDispatcher: CoroutineDispatcher) {
 
-    private data class FailureEntry(
-        val statusCode: Int,
-        val timestamp: Long,
-    )
+    private data class FailureEntry(val statusCode: Int, val timestamp: Long)
 
-    private data class PendingRequest(
-        val generation: Long,
-        val deferred: Deferred<Any?>,
-    )
+    private data class PendingRequest(val generation: Long, val deferred: Deferred<Any?>)
 
     private val stateLock = Any()
     private val failureCache = ConcurrentHashMap<String, FailureEntry>()
     private val pendingRequests = ConcurrentHashMap<String, PendingRequest>()
-    private val requestScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val requestScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private var generation = 0L
 
     /**

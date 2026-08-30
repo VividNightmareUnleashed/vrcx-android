@@ -26,10 +26,10 @@ import com.vrcx.android.ui.theme.vrcxColors
 fun WorldListItem(
     thumbnailUrl: String?,
     name: String,
+    modifier: Modifier = Modifier,
     authorName: String = "",
     occupants: Int = 0,
     onClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val vrcxColors = MaterialTheme.vrcxColors
 

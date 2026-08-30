@@ -1,5 +1,6 @@
 package com.vrcx.android.data.api
 
+import com.vrcx.android.directTestDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -19,7 +20,7 @@ class RequestDeduplicatorTest {
     @Test
     fun `dedupGet shares the same in-flight request result`() {
         runBlocking {
-            val deduplicator = RequestDeduplicator()
+            val deduplicator = RequestDeduplicator(directTestDispatcher)
             var calls = 0
 
             coroutineScope {
@@ -48,7 +49,7 @@ class RequestDeduplicatorTest {
     @Test
     fun `clearCache cancels pending request waiters`() {
         runBlocking {
-            val deduplicator = RequestDeduplicator()
+            val deduplicator = RequestDeduplicator(directTestDispatcher)
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
 
@@ -88,7 +89,7 @@ class RequestDeduplicatorTest {
     @Test
     fun `clearCache cancels the request owner mid-flight`() {
         runBlocking {
-            val deduplicator = RequestDeduplicator()
+            val deduplicator = RequestDeduplicator(directTestDispatcher)
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             val owner = async {
@@ -115,7 +116,7 @@ class RequestDeduplicatorTest {
     @Test
     fun `dedupGet leaves failure caching to the HTTP layer`() {
         runBlocking {
-            val deduplicator = RequestDeduplicator()
+            val deduplicator = RequestDeduplicator(directTestDispatcher)
             var calls = 0
 
             repeat(2) {
@@ -138,7 +139,7 @@ class RequestDeduplicatorTest {
 
     @Test
     fun `stale generation cannot cache a failure`() {
-        val deduplicator = RequestDeduplicator()
+        val deduplicator = RequestDeduplicator(directTestDispatcher)
         val oldGeneration = deduplicator.currentGeneration()
 
         deduplicator.clearCache()
