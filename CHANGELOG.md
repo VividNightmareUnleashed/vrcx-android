@@ -1,5 +1,108 @@
 # Changelog
 
+## [1.7.0] - 2026-08-30
+
+A reliability and maintainability release. There are no new screens or major
+workflows this time; the focus is making login, account switching, background
+sync, uploads, and saved sessions stay correct when several things happen at
+once. The large internal owners behind those flows were also split into smaller,
+testable pieces, and the checked-in Detekt baseline debt was cleared.
+
+### Fixed
+
+- **Old account work could land in a new session** — A session recheck, cookie
+  response, friend event, notification write, or gallery upload that started
+  before logout or an account switch could finish afterwards and publish into
+  the new account. Session generations and account tokens now cover each whole
+  operation, so stale work is cancelled or discarded before it can change
+  cookies, lists, activity history, or system notifications.
+- **Overlapping sign-ins could share the wrong credentials** — The temporary
+  Basic-auth header used for password login lived on the shared API client. A
+  concurrent request or a second login attempt could therefore borrow or
+  replace it. Credentials now belong only to the individual login request, and
+  auth transitions are serialized so an older result cannot overwrite a newer
+  login, logout, or two-factor challenge.
+- **Saved-login failures could crash startup or erase the recovery path** —
+  Keystore, encrypted-file, and credential-migration failures could escape the
+  login flow, while unreadable data risked being replaced before the app knew
+  whether it was safe. Storage failures are now explicit UI outcomes,
+  authenticated replacements are committed atomically, and logout verifies
+  that every durable copy was removed.
+- **Real-time bursts could consume memory or stop all further updates** — The
+  WebSocket accepted an unlimited frame backlog, and a wrong-shaped event type
+  could terminate its only frame processor outside the existing malformed-JSON
+  guard. Frames are now bounded by both count and bytes; malformed frames are
+  contained, and an oversized or saturated stream requests an ordered state
+  recovery instead of silently losing synchronization.
+- **Friend state could move backwards during refresh and recovery** — A live
+  location, offline, or removal event could race an older friend snapshot and
+  then be undone, or continue writing activity after its account was gone.
+  Snapshots and live transitions now share one ordering policy, and all related
+  cache, history, and notification side effects stop together when their
+  account becomes stale.
+- **Notification repair could restore another account's inbox** — Delayed
+  persistence and resynchronization work could outlive the account that
+  scheduled it. Notification mutations, storage retries, and authoritative
+  repairs are now account-bound; a dropped or failed background mutation write
+  schedules an authoritative repair without displacing newer inbox state.
+- **Refreshes could undo newer group membership events** — An older group
+  request could finish after a live join or leave event and put the previous
+  membership state back. Group updates are now ordered per group while
+  unrelated groups can still update independently.
+- **Screenshot metadata parsing could fail open** — If the platform refused an
+  XML hardening option, parsing continued anyway, and crafted XMP could attempt
+  entity or document-type processing. The reader now uses a hardened pull
+  parser, rejects declarations and entity references, and caps retained PNG
+  metadata before parsing it.
+- **Extreme rate-limit headers could overflow** — An out-of-range
+  `Retry-After` value could wrap while being converted to milliseconds. Invalid
+  values now use the normal fallback and valid delays are capped at the app's
+  two-second retry ceiling.
+- **Background startup could act on placeholder settings** — Service startup
+  could decide whether to reconnect before DataStore had answered, briefly
+  treating defaults as the user's real notification and background-service
+  choices. Startup now remains undecided until the persisted policy is known
+  and fails closed if it cannot be read.
+
+### Improved
+
+- **Safer uploads and protected media** — Upload buffering is bounded even when
+  a content provider reports a false size, decoded content determines the
+  actual upload type, and a file selection or account change invalidates
+  preparation before bytes are sent. A successful upload also remains
+  successful when only its follow-up refresh fails.
+- **More coherent screen state during overlapping work** — Notifications,
+  Group Detail, Search, Friends Roster, and profile actions now publish related
+  filters, rows, counts, dialogs, progress, and errors from cohesive snapshots.
+  A late completion can no longer close a newer dialog, clear a newer error, or
+  leave loading stuck after cancellation.
+- **More predictable real-time recovery** — A detected stream gap checks that
+  the same session still owns the connection, then reconciles independent data
+  owners concurrently with capped backoff. One failed owner no longer prevents
+  the others from becoming current.
+
+### Under the hood
+
+- **Secure storage now uses platform Keystore and AES-GCM.** The deprecated
+  AndroidX encrypted-file format remains as read-only migration support, and
+  successful reads migrate atomically. Backup and device-transfer rules now
+  exclude the legacy keyset plus every primary, backup, and pending secrets
+  file because those keys cannot be restored on another device.
+- **Large owners were split by responsibility.** Authentication, cookies,
+  preferences, friend events, notifications, Gallery, groups, the WebSocket
+  service, screenshot parsing, and the largest Compose routes now delegate to
+  focused state, storage, loading, mutation, and presentation collaborators.
+  Shared decisions have one owner instead of being repeated across screens or
+  repositories.
+- **Detekt baseline debt is now zero.** Both production and test baselines are
+  empty. Spotless, Detekt, baseline-growth protection, Android lint with
+  deterministic warnings as errors, and a 56% Kover coverage floor run in CI
+  so new baseline debt cannot quietly replace the old ledger.
+- **The debug unit suite grew from 398 to 589 tests**, with deterministic race
+  coverage for auth transitions, cookie generations, account-scoped friend and
+  notification work, secure-storage recovery, bounded WebSocket input, uploads,
+  refresh/action overlap, and cancellation.
+
 ## [1.6.1] - 2026-08-13
 
 ### New
