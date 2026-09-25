@@ -40,7 +40,8 @@ class DocResolver(
     fun resolve(path: String?): Doc? {
         if (path.isNullOrEmpty()) return null
         if (path.startsWith("content://")) return platform.contentDoc(path)
-        val file = platform.fileFor(path) ?: File(path).takeIf { it.isAbsolute && path.startsWith("/") } ?: return null
+        // Windows paths from PC logs ("C:\...") are not absolute on Android and end up as missing files.
+        val file = platform.fileFor(path) ?: File(path).takeIf { it.isAbsolute } ?: return null
         mirrorSourceOf(file)?.let { source -> sourceDoc(source)?.let { return it } }
         return LocalFileDoc(file)
     }
