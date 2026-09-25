@@ -68,6 +68,11 @@ Example: `index.html?theme=dark&companion=none&insets=32,0,24,0`.
 - `window.electron` (preload contract) and `window.__vrcxAndroid` (`on`, `emit`, `setInsets`, `handleBack`).
 - The VRChat pipeline WebSocket is replaced by a silent socket; every image is a locally generated SVG.
 
+Mocks for a group of views or dialogs go in `mocks/<name>.js` instead of editing `mockBridge.js` or `fixtures.json`: each module may export
+`fixtures` (merged into `fixtures.json`, arrays concatenated), `webApi(path, query, method, options, data)`,
+`sqlite(sql, args, data)` and `sqliteNonQuery(sql, args, data)`. Return `undefined` from a hook to fall through to
+the defaults.
+
 `fixtures.json` holds the made-up current user, friends, worlds and feed entries. Add to it when a view needs more
 data to preview; keep the ids in the `usr_00000000-...` / `wrld_00000000-...` ranges so they can never match a real
 account.

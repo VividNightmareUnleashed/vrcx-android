@@ -5,7 +5,44 @@
 // window.__vrcxAndroid, plus the inset CSS variables. The fake WebApi answers the calls the app makes at start-up from
 // fixtures.json, so the app auto-logs in as a made-up user. Nothing is sent to VRChat: WebApi never touches the network,
 // the pipeline WebSocket is replaced by a silent stand-in, and every image is a locally generated SVG.
-import fixtures from './fixtures.json';
+import baseFixtures from './fixtures.json';
+
+// Extensions: every ./mocks/*.js module may export
+//   fixtures: object merged into fixtures.json (arrays are concatenated, objects shallow-merged),
+//   webApi(path, query, method, options, data): response body for /api/1/<path>, or undefined to fall through,
+//   sqlite(sql, args, data): row arrays for SQLite.Execute/ExecuteJson, or undefined to fall through,
+//   sqliteNonQuery(sql, args, data): number for SQLite.ExecuteNonQuery, or undefined to fall through.
+const mockPlugins = Object.values(import.meta.glob('./mocks/*.js', { eager: true }));
+
+function mergeFixtures(base, extras) {
+    const merged = structuredClone(base);
+    for (const extra of extras) {
+        for (const [key, value] of Object.entries(extra ?? {})) {
+            if (Array.isArray(value)) {
+                merged[key] = [...(Array.isArray(merged[key]) ? merged[key] : []), ...value];
+            } else if (value && typeof value === 'object') {
+                merged[key] = { ...(merged[key] ?? {}), ...value };
+            } else {
+                merged[key] = value;
+            }
+        }
+    }
+    return merged;
+}
+
+const fixtures = mergeFixtures(
+    baseFixtures,
+    mockPlugins.map((plugin) => plugin.fixtures).filter(Boolean)
+);
+
+function fromPlugins(hook, ...params) {
+    for (const plugin of mockPlugins) {
+        if (typeof plugin[hook] !== 'function') continue;
+        const result = plugin[hook](...params);
+        if (result !== undefined) return result;
+    }
+    return undefined;
+}
 
 const MINUTE = 60 * 1000;
 
@@ -220,6 +257,10 @@ function createSqlite(configs, data) {
                 const key = args.get('@key');
                 return JSON.stringify(configs.has(key) ? [[configs.get(key)]] : []);
             }
+            const pluginRows = fromPlugins('sqlite', sql, args, data);
+            if (pluginRows !== undefined) {
+                return JSON.stringify(pluginRows);
+            }
             if (/_feed_gps/.test(sql) && /UNION ALL/.test(sql) && !/LIKE/i.test(sql)) {
                 const wanted = [
                     ['GPS', '_feed_gps'],
@@ -249,7 +290,7 @@ function createSqlite(configs, data) {
             if (/^DELETE FROM configs WHERE key = @key/i.test(sql)) {
                 return configs.delete(args.get('@key')) ? 1 : 0;
             }
-            return 0;
+            return fromPlugins('sqliteNonQuery', sql, args, data) ?? 0;
         }
     };
 }
@@ -282,7 +323,9 @@ function createWebApi(data) {
         }
     };
 
-    function handleApi(path, query, method) {
+    function handleApi(path, query, method, options) {
+        const pluginBody = fromPlugins('webApi', path, query, method, options, data);
+        if (pluginBody !== undefined) return pluginBody;
         if (path === 'config') return apiConfig;
         if (path === 'auth') return { ok: true, token: 'preview-token' };
         if (path === 'auth/user' || path === 'auth/user/') return data.currentUser;
@@ -358,7 +401,7 @@ function createWebApi(data) {
             const method = (options.method ?? 'GET').toUpperCase();
             if (url.hostname.endsWith('vrchat.cloud') && url.pathname.startsWith('/api/1/')) {
                 const path = url.pathname.slice('/api/1/'.length).replace(/\/$/, '');
-                const body = handleApi(path, url.searchParams, method);
+                const body = handleApi(path, url.searchParams, method, options);
                 if (body === null) {
                     return jsonResponse(404, { error: { message: 'Not found (preview)', status_code: 404 } });
                 }
