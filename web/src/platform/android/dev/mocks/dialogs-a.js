@@ -602,7 +602,9 @@ export function sqlite(sql, args) {
         ],
         [16, `${PREVIEW_GARDEN}:30303~region(eu)`, 'Preview Garden', '']
     ];
-    if (/FROM gamelog_join_leave/.test(sql) && /WHERE user_id = @userId/.test(sql) && args.get('@userId') === AURORA) {
+    // Only the Previous instances queries (database.getPreviousInstancesByUserId / ...ByWorldId); the stats queries
+    // (join count, visit count) read the same tables with other column lists and stay empty.
+    if (/grouped_locations/.test(sql) && /WHERE user_id = @userId/.test(sql) && args.get('@userId') === AURORA) {
         return visits.map(([days, location, worldName, groupName], index) => {
             const iso = daysAgo(days);
             return [
@@ -618,7 +620,7 @@ export function sqlite(sql, args) {
         });
     }
     if (
-        /FROM gamelog_location/.test(sql) &&
+        /SELECT created_at, location, time, world_name, group_name\s+FROM gamelog_location/.test(sql) &&
         /WHERE world_id = @worldId/.test(sql) &&
         args.get('@worldId') === LANTERN_HARBOR
     ) {
