@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { ANDROID_DEFAULT_UGC_FOLDER, describeUgcFolder } from '../androidPaths';
+import { ANDROID_DEFAULT_UGC_FOLDER, describeUgcFolder, normalizeAndroidUgcFolder } from '../androidPaths';
 
 describe('describeUgcFolder', () => {
     test('uses the MediaStore default when no folder is set', () => {
@@ -29,11 +29,29 @@ describe('describeUgcFolder', () => {
         );
     });
 
-    test('returns other values unchanged', () => {
-        expect(describeUgcFolder('C:\\Users\\me\\Pictures')).toBe('C:\\Users\\me\\Pictures');
+    test('shows the default folder for a PC path from an imported database', () => {
+        expect(describeUgcFolder('D:\\VRChat')).toBe(ANDROID_DEFAULT_UGC_FOLDER);
+        expect(describeUgcFolder('/home/me/Pictures/VRChat')).toBe(ANDROID_DEFAULT_UGC_FOLDER);
     });
 
     test('shows the storage root for a root tree', () => {
         expect(describeUgcFolder('content://com.android.externalstorage.documents/tree/primary%3A')).toBe('/');
+    });
+});
+
+describe('normalizeAndroidUgcFolder', () => {
+    test('keeps SAF tree URIs', () => {
+        const uri = 'content://com.android.externalstorage.documents/tree/primary%3APictures%2FVRChat';
+        expect(normalizeAndroidUgcFolder(uri)).toBe(uri);
+        expect(normalizeAndroidUgcFolder(` ${uri} `)).toBe(uri);
+    });
+
+    test('treats Windows, Linux and non-tree values as unset', () => {
+        expect(normalizeAndroidUgcFolder('D:\\VRChat')).toBe('');
+        expect(normalizeAndroidUgcFolder('C:\\Users\\me\\Pictures\\VRChat')).toBe('');
+        expect(normalizeAndroidUgcFolder('/home/me/Pictures/VRChat')).toBe('');
+        expect(normalizeAndroidUgcFolder('content://media/external/images/media/12')).toBe('');
+        expect(normalizeAndroidUgcFolder(null)).toBe('');
+        expect(normalizeAndroidUgcFolder(undefined)).toBe('');
     });
 });

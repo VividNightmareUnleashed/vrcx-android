@@ -7,6 +7,7 @@ import { logWebRequest } from '../../services/appConfig';
 import { database } from '../../services/database';
 import { languageCodes } from '../../localization';
 import { hasLocalGame, hasLocalVrchatFiles, isAndroid } from '../../shared/utils/platform';
+import { normalizeAndroidUgcFolder } from '../../shared/utils/androidPaths';
 import { useGameStore } from '../game';
 import { useModalStore } from '../modal';
 import { useUpdateLoopStore } from '../updateLoop';
@@ -191,7 +192,8 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
         showConfirmationOnSwitchAvatar.value = showConfirmationOnSwitchAvatarConfig;
         gameLogDisabled.value = gameLogDisabledConfig;
         avatarAutoCleanup.value = avatarAutoCleanupConfig;
-        ugcFolderPath.value = ugcFolderPathConfig;
+        // Android saves to MediaStore or an SAF folder; a PC path from an imported database is ignored.
+        ugcFolderPath.value = isAndroid ? normalizeAndroidUgcFolder(ugcFolderPathConfig) : ugcFolderPathConfig;
         autoDeleteOldPrints.value = autoDeleteOldPrintsConfig;
         notificationOpacity.value = notificationOpacityConfig;
         saveInstanceEmoji.value = saveInstanceEmojiConfig;
@@ -504,6 +506,9 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
     async function setUGCFolderPath(path) {
         if (typeof path !== 'string') {
             path = '';
+        }
+        if (isAndroid) {
+            path = normalizeAndroidUgcFolder(path);
         }
         ugcFolderPath.value = path;
         await configRepository.setString('VRCX_userGeneratedContentPath', path);

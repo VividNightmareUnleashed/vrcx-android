@@ -5,20 +5,29 @@
 export const ANDROID_DEFAULT_UGC_FOLDER = 'Pictures/VRCX';
 
 /**
+ * The UGC folder Android actually uses: an SAF tree URI (`content://.../tree/...`), or `''` for the MediaStore default.
+ * Anything else, such as a Windows path that arrived with a database imported from the PC, is treated as unset.
+ *
+ * @param {string | null | undefined} path Value of `VRCX_userGeneratedContentPath`
+ * @returns {string} The tree URI, or `''`
+ */
+export function normalizeAndroidUgcFolder(path) {
+    const value = typeof path === 'string' ? path.trim() : '';
+    return /^content:\/\/[^/]+\/tree\/[^/?#]+/i.test(value) ? value : '';
+}
+
+/**
  * Turns the stored UGC folder (empty, or an SAF tree URI such as
  * `content://com.android.externalstorage.documents/tree/primary%3APictures%2FVRChat`) into a short label.
  *
  * @param {string | null | undefined} path Value of `VRCX_userGeneratedContentPath`
- * @returns {string} For example `Pictures/VRChat`, or the default folder when none is set
+ * @returns {string} For example `Pictures/VRChat`, or the default folder when none (or a PC path) is set
  */
 export function describeUgcFolder(path) {
-    const value = typeof path === 'string' ? path.trim() : '';
-    if (!value) {
-        return ANDROID_DEFAULT_UGC_FOLDER;
-    }
+    const value = normalizeAndroidUgcFolder(path);
     const match = value.match(/\/tree\/([^/?#]+)/);
     if (!match) {
-        return value;
+        return ANDROID_DEFAULT_UGC_FOLDER;
     }
     let documentId = match[1];
     try {
