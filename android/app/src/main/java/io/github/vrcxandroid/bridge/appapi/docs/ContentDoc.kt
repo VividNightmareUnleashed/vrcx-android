@@ -4,13 +4,13 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import io.github.vrcxandroid.bridge.appapi.png.ChannelSeekableStream
 import io.github.vrcxandroid.bridge.appapi.png.MemorySeekableStream
 import io.github.vrcxandroid.bridge.appapi.png.SeekableStream
-import android.os.ParcelFileDescriptor
 import java.io.FileNotFoundException
 
 /** Name, size and modification time of a content document. */

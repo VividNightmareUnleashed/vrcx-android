@@ -125,12 +125,12 @@ class PortableHelpersTest {
     @Test
     fun jsonWriterMatchesNewtonsoftIndentation() {
         val o = NJ.Obj()
-        o.put("a", "q\"b\\c\n\u0001 é")
+        o.put("a", "q\"b\\c\n\u0001" + Char(0x2028) + "é" + Char(0x85))
         o["empty"] = NJ.Arr()
         o["obj"] = NJ.Obj()
         o["list"] = NJ.Arr(mutableListOf(NJ.Int(1), NJ.Null, NJ.Obj().also { it["x"] = NJ.Flt(1f) }))
         assertEquals(
-            "{\n  \"a\": \"q\\\"b\\\\c\\n\\u0001\\u2028é\",\n  \"empty\": [],\n  \"obj\": {},\n  \"list\": [\n    1,\n    null,\n" +
+            "{\n  \"a\": \"q\\\"b\\\\c\\n\\u0001\\u2028é\\u0085\",\n  \"empty\": [],\n  \"obj\": {},\n  \"list\": [\n    1,\n    null,\n" +
                 "    {\n      \"x\": 1.0\n    }\n  ]\n}",
             o.toIndentedString(),
         )

@@ -89,7 +89,7 @@ sealed class NJ {
                     '\t' -> sb.append("\\t")
                     '\b' -> sb.append("\\b")
                     '\u000c' -> sb.append("\\f")
-                    else -> if (c < ' ' || c == '\u0085' || c == ' ' || c == ' ') {
+                    else -> if (c < ' ' || c.code == 0x85 || c.code == 0x2028 || c.code == 0x2029) {
                         sb.append("\\u")
                         val hex = Integer.toHexString(c.code)
                         repeat(4 - hex.length) { sb.append('0') }

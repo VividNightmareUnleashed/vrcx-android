@@ -27,7 +27,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
-import java.io.FileNotFoundException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -237,7 +236,7 @@ class AppApi(
         val file = File(platform.externalFilesDir ?: return "", name)
         if (!file.isFile) return ""
         return try {
-            file.readText(Charsets.UTF_8).removePrefix("﻿")
+            file.readText(Charsets.UTF_8).removePrefix(BOM)
         } catch (e: Exception) {
             ""
         }
@@ -449,6 +448,7 @@ class AppApi(
 
     companion object {
         const val CLASS_NAME = "AppApiElectron"
+        private val BOM: String = Char(0xFEFF).toString()
         private val IMAGE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
         private val UGC_FOLDERS = setOf("prints", "stickers", "emoji")
         private val LOCAL_DATE_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -458,7 +458,5 @@ class AppApi(
             val dot = name.lastIndexOf('.')
             return if (dot >= 0) name.substring(0, dot) else name
         }
-
-        fun fileNotFound(path: String?) = FileNotFoundException("Could not find file '$path'.")
     }
 }

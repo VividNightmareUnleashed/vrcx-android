@@ -80,9 +80,13 @@ internal class Trees(private val context: Context) {
 class AndroidUgcStorage(private val context: Context, private val prefs: SharedPreferences, private val view: (Uri, String?) -> Boolean) : UgcStorage {
     private val trees = Trees(context)
 
+    /** The granted UGC tree, remembered so the photos library can fall back to it. */
     private fun treeFor(ugcFolderPath: String?, write: Boolean): Uri? {
         val tree = trees.granted(ugcFolderPath, write)
-        prefs.edit().apply { if (tree != null) putString(PREF_UGC_TREE, tree.toString()) else remove(PREF_UGC_TREE) }.apply()
+        val value = tree?.toString()
+        if (prefs.getString(PREF_UGC_TREE, null) != value) {
+            prefs.edit().apply { if (value != null) putString(PREF_UGC_TREE, value) else remove(PREF_UGC_TREE) }.apply()
+        }
         return tree
     }
 
