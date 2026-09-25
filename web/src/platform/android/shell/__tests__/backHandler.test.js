@@ -1,34 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    CLOSING_LAYER_WAIT_MS,
     createBackHandler,
     dispatchEscape,
-    findTopLayer,
-    isMainDialogLayer,
+    findClosingFloatingLayer,
+    handleMainDialogEscape,
+    hasOpenLayer,
+    isBackEscape,
     registerBackHandler
 } from '../backHandler';
 
-function addLayer({ parent = document.body, attrs = {}, focusable = false } = {}) {
+function addLayer({ parent = document.body, attrs = {} } = {}) {
     const el = document.createElement('div');
     el.setAttribute('data-dismissable-layer', '');
     for (const [key, value] of Object.entries(attrs)) {
         el.setAttribute(key, value);
     }
-    if (focusable) {
-        const button = document.createElement('button');
-        el.appendChild(button);
-        el.focusTarget = button;
-    }
     parent.appendChild(el);
     return el;
 }
 
-function createSetup({ crumbs = [], historyState = null, routeName = 'feed' } = {}) {
-    const ui = {
-        dialogCrumbs: crumbs,
-        jumpBackDialogCrumb: vi.fn(),
-        closeMainDialog: vi.fn()
-    };
+/** Floating content (menu, popover, tooltip) inside reka's popper wrapper. */
+function addFloatingLayer(attrs = {}) {
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-reka-popper-content-wrapper', '');
+    document.body.appendChild(wrapper);
+    return addLayer({ parent: wrapper, attrs });
+}
+
+function createSetup({ historyState = null, routeName = 'feed' } = {}) {
     const router = {
         back: vi.fn(),
         resolve: vi.fn(() => ({ name: routeName }))
@@ -44,7 +45,6 @@ function createSetup({ crumbs = [], historyState = null, routeName = 'feed' } = 
     const onKeydown = (event) => escapes.push(event);
     document.addEventListener('keydown', onKeydown);
     const handleBack = createBackHandler({
-        getUiStore: () => ui,
         getRouter: () => router,
         shell,
         closeShellPanels,
@@ -52,7 +52,6 @@ function createSetup({ crumbs = [], historyState = null, routeName = 'feed' } = 
         getHistoryState: () => historyState
     });
     return {
-        ui,
         router,
         shell,
         closeShellPanels,
@@ -72,10 +71,11 @@ describe('Android back handler (DESIGN.md §6)', () => {
     afterEach(() => {
         setup?.cleanup();
         setup = null;
+        vi.useRealTimers();
         document.body.innerHTML = '';
     });
 
-    it('sends Escape to an open layer instead of toggling modal state, and reports it handled', () => {
+    it('sends a back-marked Escape to an open layer instead of toggling modal state, and reports it handled', () => {
         setup = createSetup();
         addLayer({ attrs: { 'data-slot': 'alert-dialog-content' } });
 
@@ -83,92 +83,61 @@ describe('Android back handler (DESIGN.md §6)', () => {
         expect(setup.escapes).toHaveLength(1);
         expect(setup.escapes[0].key).toBe('Escape');
         expect(setup.escapes[0].bubbles).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
-        expect(setup.ui.closeMainDialog).not.toHaveBeenCalled();
+        expect(isBackEscape(setup.escapes[0])).toBe(true);
         expect(setup.router.back).not.toHaveBeenCalled();
     });
 
-    it('steps back one crumb when the main entity dialog is on top with more than one crumb', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
-        addLayer({ attrs: { 'data-vrcx-main-dialog': '', 'data-slot': 'dialog-content' } });
+    it('waits for a menu that is still playing its exit animation, which reka would hand the Escape to', () => {
+        vi.useFakeTimers();
+        setup = createSetup();
+        addLayer({ attrs: { 'data-vrcx-main-dialog': '', 'data-state': 'open' } });
+        // A menu closed a moment ago: reka keeps it mounted (and in its layer stack) until the animation ends.
+        const closingMenu = addFloatingLayer({ role: 'menu', 'data-state': 'closed' });
+        expect(findClosingFloatingLayer(document)).toBe(closingMenu);
 
         expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
         expect(setup.escapes).toHaveLength(0);
+
+        closingMenu.parentElement.remove();
+        closingMenu.dispatchEvent(new Event('animationend'));
+        vi.advanceTimersByTime(0);
+        expect(setup.escapes).toHaveLength(1);
+        expect(isBackEscape(setup.escapes[0])).toBe(true);
     });
 
-    it('recognises the main dialog by its breadcrumb too (PC frame on tablets)', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'avatar' }] });
-        const layer = addLayer({ attrs: { 'data-slot': 'dialog-content' } });
-        const crumb = document.createElement('nav');
-        crumb.setAttribute('data-slot', 'breadcrumb');
-        layer.appendChild(crumb);
+    it('does not wait forever for a floating layer that never finishes closing', () => {
+        vi.useFakeTimers();
+        setup = createSetup();
+        addLayer({ attrs: { 'data-slot': 'dialog-content' } });
+        addFloatingLayer({ role: 'menu', 'data-state': 'closed' });
 
-        expect(isMainDialogLayer(layer)).toBe(true);
-        expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
-    });
+        setup.handleBack();
+        vi.advanceTimersByTime(CLOSING_LAYER_WAIT_MS * 2 + 10);
 
-    it('closes the main dialog with Escape when it holds a single crumb', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }] });
-        addLayer({ attrs: { 'data-vrcx-main-dialog': '' } });
-
-        expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
         expect(setup.escapes).toHaveLength(1);
     });
 
-    it('lets a menu over the main dialog close first (last layer in DOM order)', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
-        addLayer({ attrs: { 'data-vrcx-main-dialog': '' } });
-        addLayer({ attrs: { role: 'menu' } });
-
-        expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
-        expect(setup.escapes).toHaveLength(1);
-    });
-
-    it('treats the layer holding focus as the top one (a dialog opened over a sheet)', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
-        const portal = document.createElement('div');
-        document.body.appendChild(portal);
-        const dialog = addLayer({ parent: portal, attrs: { 'data-vrcx-main-dialog': '' }, focusable: true });
-        // The notification sheet was opened first but portals to <body>, after the dialog portal root.
+    it('does not wait for a closing dialog (reka drops it from its stack as soon as it starts closing)', () => {
+        setup = createSetup();
         addLayer({ attrs: { 'data-slot': 'sheet-content' } });
-        dialog.focusTarget.focus();
+        addLayer({ attrs: { 'data-slot': 'dialog-content', 'data-state': 'closed' } });
 
-        expect(findTopLayer(document)).toBe(dialog);
-        expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
-    });
-
-    it('closes floating content first even when focus stays in the dialog (a long-pressed tooltip)', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
-        const portal = document.createElement('div');
-        document.body.appendChild(portal);
-        const dialog = addLayer({ parent: portal, attrs: { 'data-vrcx-main-dialog': '' }, focusable: true });
-        dialog.focusTarget.focus();
-        const wrapper = document.createElement('div');
-        wrapper.setAttribute('data-reka-popper-content-wrapper', '');
-        document.body.appendChild(wrapper);
-        const tooltip = addLayer({ parent: wrapper, attrs: { 'data-slot': 'tooltip-content' } });
-
-        expect(findTopLayer(document)).toBe(tooltip);
         expect(setup.handleBack()).toBe(true);
         expect(setup.escapes).toHaveLength(1);
-        expect(setup.ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
     });
 
-    it('skips a layer that is playing its exit animation', () => {
-        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
-        const dialog = addLayer({ attrs: { 'data-vrcx-main-dialog': '', 'data-state': 'open' } });
-        // A menu closed a moment ago: reka keeps it mounted with data-state="closed" until the animation ends.
-        addLayer({ attrs: { role: 'menu', 'data-state': 'closed' } });
+    it('sends one Escape per press, each after the previous layer had a chance to close', () => {
+        vi.useFakeTimers();
+        setup = createSetup();
+        addLayer({ attrs: { 'data-slot': 'dialog-content' } });
+        addFloatingLayer({ role: 'menu' });
 
-        expect(findTopLayer(document)).toBe(dialog);
-        expect(setup.handleBack()).toBe(true);
-        expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
-        expect(setup.escapes).toHaveLength(0);
+        setup.handleBack();
+        setup.handleBack();
+        expect(setup.escapes).toHaveLength(1);
+
+        vi.advanceTimersByTime(0);
+        expect(setup.escapes).toHaveLength(2);
     });
 
     it('skips hidden layers and falls through to the shell when nothing visible is open', () => {
@@ -176,7 +145,7 @@ describe('Android back handler (DESIGN.md §6)', () => {
         setup.shell.navSheetOpen = true;
         const tooltip = addLayer({ attrs: { 'data-slot': 'tooltip-content', hidden: '' } });
 
-        expect(findTopLayer(document)).toBeNull();
+        expect(hasOpenLayer(document)).toBe(false);
         expect(setup.handleBack()).toBe(true);
         expect(setup.closeShellPanels).toHaveBeenCalledTimes(1);
         expect(setup.escapes).toHaveLength(0);
@@ -235,12 +204,56 @@ describe('Android back handler (DESIGN.md §6)', () => {
         const listener = (event) => seen.push(event);
         window.addEventListener('keydown', listener);
         dispatchEscape(document);
+        dispatchEscape(document, { fromBack: true });
         window.removeEventListener('keydown', listener);
 
-        expect(seen).toHaveLength(1);
+        expect(seen).toHaveLength(2);
         expect(seen[0].key).toBe('Escape');
         expect(seen[0].code).toBe('Escape');
         expect(seen[0].cancelable).toBe(true);
+        expect(isBackEscape(seen[0])).toBe(false);
+        expect(isBackEscape(seen[1])).toBe(true);
+    });
+});
+
+describe('handleMainDialogEscape (the main dialog is reka top layer)', () => {
+    function backEscape() {
+        let event;
+        const listener = (e) => (event = e);
+        document.addEventListener('keydown', listener);
+        dispatchEscape(document, { fromBack: true });
+        document.removeEventListener('keydown', listener);
+        return event;
+    }
+
+    function createUi(crumbs) {
+        return { dialogCrumbs: crumbs, jumpBackDialogCrumb: vi.fn() };
+    }
+
+    it('steps back one crumb instead of closing when there is more than one crumb', () => {
+        const ui = createUi([{ type: 'user' }, { type: 'world' }]);
+        const event = backEscape();
+
+        expect(handleMainDialogEscape(event, ui)).toBe(true);
+        expect(ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('lets the dialog close on its last crumb', () => {
+        const ui = createUi([{ type: 'user' }]);
+        const event = backEscape();
+
+        expect(handleMainDialogEscape(event, ui)).toBe(false);
+        expect(ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('leaves a real Escape key alone (it closes the dialog, as on PC)', () => {
+        const ui = createUi([{ type: 'user' }, { type: 'world' }]);
+        const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+
+        expect(handleMainDialogEscape(event, ui)).toBe(false);
+        expect(ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
     });
 });
 

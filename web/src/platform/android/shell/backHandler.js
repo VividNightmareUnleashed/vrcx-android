@@ -4,10 +4,25 @@
 // when the press was handled. On false native moves the task to the back; the app never finishes itself.
 //
 // Modals are never closed by toggling their state: the helper modals (confirm/prompt/OTP) resolve their promises only
-// from their escapeKeyDown handlers, so every layer is closed with a synthetic Escape keydown that reka routes to its
-// highest layer.
+// from their escapeKeyDown handlers, so every layer is closed with a synthetic Escape keydown.
+//
+// Which layer is on top is reka's decision, not the DOM's: reka keeps its dismissable layers in mount order and hands
+// Escape to the newest one only. Document order does not match it (dialogs live in the modal portal root inside
+// #root, sheets and floating content are appended to <body>, and a hover card opened before a dialog stays mounted
+// under it), so the handler does not guess. It sends one Escape marked as a back press, and the entity dialog host
+// (components/dialogs/MainDialogContainer.vue) turns that Escape into a crumb step when it is the layer reka chose and
+// holds more than one crumb (handleMainDialogEscape below).
 
 const LAYER_SELECTOR = '[data-dismissable-layer]';
+
+/** Reka wraps menus, popovers, selects, tooltips and hover cards in a positioned wrapper appended to <body>. */
+const POPPER_WRAPPER_SELECTOR = '[data-reka-popper-content-wrapper]';
+
+/** Marks the synthetic Escape of a back press (a non-enumerable property on the event). */
+export const BACK_ESCAPE_FLAG = '__vrcxBackPress';
+
+/** Longest wait for a closing menu, popover or tooltip before the next Escape is sent anyway. */
+export const CLOSING_LAYER_WAIT_MS = 400;
 
 /**
  * A layer the user can see: not playing its exit animation (reka keeps a closing layer mounted with
@@ -21,58 +36,41 @@ export function isLiveLayer(layer) {
     return !layer.closest('[hidden]');
 }
 
-/** Reka wraps menus, popovers, selects, tooltips and hover cards in a positioned wrapper appended to <body>. */
-const POPPER_WRAPPER_SELECTOR = '[data-reka-popper-content-wrapper]';
+/**
+ * Whether any reka dismissable layer (dialog, alert, sheet, menu, popover, select, tooltip, hover card) is open.
+ *
+ * @param {Document} doc
+ * @returns {boolean}
+ */
+export function hasOpenLayer(doc) {
+    for (const layer of doc.querySelectorAll(LAYER_SELECTOR)) {
+        if (isLiveLayer(layer)) return true;
+    }
+    return false;
+}
 
 /**
- * The top-most open reka dismissable layer (DESIGN.md §6: the last one in document order), refined where document
- * order and stacking order differ:
- *
- * - Floating content (menus, popovers, tooltips, hover cards) opens over its anchor, so the newest one wins even when it
- *   does not take focus (a long-pressed tooltip over a dialog);
- * - Among dialogs and sheets, the layer holding focus wins: reka moves focus into the newest modal layer, while dialogs
- *   live in the modal portal root inside #root, before the sheets appended to <body>.
+ * A menu, popover, select, tooltip or hover card that is playing its exit animation. Unlike dialogs and sheets (which
+ * leave reka's layer stack as soon as they start closing), these stay in the stack until they unmount, so an Escape
+ * sent meanwhile would go to them and be lost.
  *
  * @param {Document} doc
  * @returns {Element | null}
  */
-export function findTopLayer(doc) {
-    const layers = Array.from(doc.querySelectorAll(LAYER_SELECTOR)).filter(isLiveLayer);
-    if (layers.length === 0) {
-        return null;
-    }
-    for (let i = layers.length - 1; i >= 0; i--) {
-        if (layers[i].closest(POPPER_WRAPPER_SELECTOR)) {
-            return layers[i];
+export function findClosingFloatingLayer(doc) {
+    for (const layer of doc.querySelectorAll(`${LAYER_SELECTOR}[data-state="closed"]`)) {
+        if (layer.closest(POPPER_WRAPPER_SELECTOR) && !layer.closest('[hidden]')) {
+            return layer;
         }
     }
-    const active = doc.activeElement;
-    if (active && active !== doc.body && active !== doc.documentElement) {
-        for (let i = layers.length - 1; i >= 0; i--) {
-            if (layers[i].contains(active)) {
-                return layers[i];
-            }
-        }
-    }
-    return layers[layers.length - 1];
-}
-
-/**
- * The entity dialog host (components/dialogs/MainDialogContainer.vue).
- *
- * @param {Element} layer
- * @returns {boolean}
- */
-export function isMainDialogLayer(layer) {
-    if (!layer) return false;
-    if (layer.matches('[data-vrcx-main-dialog]')) return true;
-    return Boolean(layer.querySelector(':scope > [data-slot="breadcrumb"]'));
+    return null;
 }
 
 /**
  * @param {Document} doc
+ * @param {{ fromBack?: boolean }} [options]
  */
-export function dispatchEscape(doc) {
+export function dispatchEscape(doc, { fromBack = false } = {}) {
     const view = doc.defaultView ?? globalThis;
     const event = new view.KeyboardEvent('keydown', {
         key: 'Escape',
@@ -80,12 +78,105 @@ export function dispatchEscape(doc) {
         bubbles: true,
         cancelable: true
     });
+    if (fromBack) {
+        Object.defineProperty(event, BACK_ESCAPE_FLAG, { value: true });
+    }
     doc.dispatchEvent(event);
 }
 
 /**
+ * @param {Event | null | undefined} event
+ * @returns {boolean}
+ */
+export function isBackEscape(event) {
+    return Boolean(event && /** @type {any} */ (event)[BACK_ESCAPE_FLAG]);
+}
+
+/**
+ * escapeKeyDown handler of the entity dialog host. Reka delivers an Escape to its top layer only, so when the back
+ * press's Escape arrives here the main dialog is on top (DESIGN.md §6 step 1): with more than one crumb it steps back
+ * one crumb instead of closing. A real Escape key keeps closing the dialog, as on PC.
+ *
+ * @param {Event} event
+ * @param {{ dialogCrumbs?: unknown[]; jumpBackDialogCrumb: () => void } | null | undefined} ui
+ * @returns {boolean} True when the Escape became a crumb step
+ */
+export function handleMainDialogEscape(event, ui) {
+    if (!isBackEscape(event) || !ui || (ui.dialogCrumbs?.length ?? 0) <= 1) {
+        return false;
+    }
+    event.preventDefault();
+    ui.jumpBackDialogCrumb();
+    return true;
+}
+
+/**
+ * Sends the back presses' Escapes one at a time, each once the layer closed by the previous one has left reka's stack.
+ *
+ * @param {Document} doc
+ * @returns {{ request: () => void }}
+ */
+export function createEscapeQueue(doc) {
+    const view = doc.defaultView ?? globalThis;
+    let pending = 0;
+    let busy = false;
+    // Waits spent on the Escape at the head of the queue; bounded so a layer that never finishes closing cannot
+    // swallow presses.
+    let waits = 0;
+
+    const later = (fn, ms = 0) => view.setTimeout(fn, ms);
+
+    function waitFor(layer) {
+        busy = true;
+        waits += 1;
+        let done = false;
+        let timer = 0;
+        const next = () => {
+            if (done) return;
+            done = true;
+            view.clearTimeout(timer);
+            layer.removeEventListener('animationend', next);
+            // reka's Presence unmounts the layer from its own animationend handler; look again on the next task.
+            later(flush);
+        };
+        timer = later(next, CLOSING_LAYER_WAIT_MS);
+        layer.addEventListener('animationend', next);
+    }
+
+    function flush() {
+        busy = false;
+        if (pending === 0) return;
+        if (!hasOpenLayer(doc)) {
+            // Everything closed meanwhile: the extra presses have nothing left to close.
+            pending = 0;
+            waits = 0;
+            return;
+        }
+        const closing = waits < 2 ? findClosingFloatingLayer(doc) : null;
+        if (closing) {
+            waitFor(closing);
+            return;
+        }
+        pending -= 1;
+        waits = 0;
+        dispatchEscape(doc, { fromBack: true });
+        // Let the layer that took this Escape start closing (a Vue render) before another one is sent.
+        busy = true;
+        later(flush);
+    }
+
+    return {
+        request() {
+            pending += 1;
+            if (!busy) {
+                flush();
+            }
+        }
+    };
+}
+
+/**
  * @param {object} deps
- * @param {() => any} deps.getUiStore Returns the Pinia ui store (window.$pinia.ui)
  * @param {() => any} deps.getRouter Returns the vue-router instance
  * @param {{ friendsPanelOpen: boolean; navSheetOpen: boolean }} deps.shell Shell panel state
  * @param {() => boolean} [deps.closeShellPanels] Closes the friends panel / nav sheet; true when one was open
@@ -93,21 +184,17 @@ export function dispatchEscape(doc) {
  * @param {() => any} [deps.getHistoryState]
  * @returns {() => boolean}
  */
-export function createBackHandler({ getUiStore, getRouter, shell, closeShellPanels, doc, getHistoryState }) {
+export function createBackHandler({ getRouter, shell, closeShellPanels, doc, getHistoryState }) {
     const documentRef = doc ?? globalThis.document;
     const readHistoryState = getHistoryState ?? (() => globalThis.history?.state ?? null);
+    const escapes = createEscapeQueue(documentRef);
 
     return function handleBack() {
-        // 1. An open reka layer (dialog, alert, sheet, menu, popover, select, tooltip).
-        const top = findTopLayer(documentRef);
-        if (top) {
-            const ui = getUiStore?.();
-            if (ui && isMainDialogLayer(top) && (ui.dialogCrumbs?.length ?? 0) > 1) {
-                ui.jumpBackDialogCrumb();
-                return true;
-            }
-            // Layers that block Escape (for example the database upgrade dialog) stay open; the press is still handled.
-            dispatchEscape(documentRef);
+        // 1. An open reka layer: Escape goes to the one reka considers on top, and the main dialog turns it into a
+        //    crumb step (handleMainDialogEscape). Layers that block Escape (for example the database upgrade dialog)
+        //    stay open; the press is still handled.
+        if (hasOpenLayer(documentRef)) {
+            escapes.request();
             return true;
         }
 

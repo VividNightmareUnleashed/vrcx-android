@@ -32,6 +32,7 @@
     import { useI18n } from 'vue-i18n';
     import { useCompactLayout } from '@/composables/useCompactLayout';
     import { isAndroid } from '@/shared/utils/platform';
+    import { handleMainDialogEscape } from '@/platform/android/shell/backHandler';
 
     import AvatarDialog from './AvatarDialog/AvatarDialog.vue';
     import GroupDialog from './GroupDialog/GroupDialog.vue';
@@ -56,8 +57,16 @@
     const { t } = useI18n();
     // Phones: a full-screen page with a 48px app bar and one scroller (docs/DESIGN.md §3.2). Always false on desktop.
     const { isCompact } = useCompactLayout();
-    // Marks the entity dialog host for the Android back handler (platform/android/shell/backHandler.js).
+    // Marks the entity dialog host on Android (tests and the preview harness look it up).
     const mainDialogMarker = isAndroid ? '' : undefined;
+
+    // Android back button: reka hands the back press's Escape to this dialog only when it is the top layer; with more
+    // than one crumb it steps back instead of closing (docs/DESIGN.md §6, platform/android/shell/backHandler.js).
+    function handleEscapeKeyDown(event) {
+        if (isAndroid) {
+            handleMainDialogEscape(event, uiStore);
+        }
+    }
 
     const previousIds = ref({
         userDialog: {
@@ -261,7 +270,8 @@
             :show-close-button="false"
             :style="dialogStyle"
             :data-vrcx-main-dialog="mainDialogMarker"
-            :data-mobile="isCompact ? 'bare' : undefined">
+            :data-mobile="isCompact ? 'bare' : undefined"
+            @escape-key-down="handleEscapeKeyDown">
             <!-- Phone: dialog app bar with back (crumb history), the current crumb and close. -->
             <header
                 v-if="isCompact"

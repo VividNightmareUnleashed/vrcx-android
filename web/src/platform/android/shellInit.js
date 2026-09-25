@@ -25,7 +25,6 @@ export async function initAndroidShell(app) {
     const router = app.config.globalProperties.$router;
     registerBackHandler(
         createBackHandler({
-            getUiStore: () => window.$pinia?.ui,
             getRouter: () => router,
             shell: shellState,
             closeShellPanels
