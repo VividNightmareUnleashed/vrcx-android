@@ -32,7 +32,8 @@ export const ENTITY_TABS_COMPACT_CLASS = [
     // Sticky offsets count from the scroller's padding box edge minus its padding (MainDialogContainer's p-3), so
     // -12px puts the strip flush under the dialog app bar instead of leaving a 12px slot for content to show through.
     'compact:[&>div:first-child]:-top-3',
-    'compact:[&>div:first-child]:z-10',
+    // Above the rail's own overlays (the user card's avatar and moderation icons are z-20/z-30) scrolling under it.
+    'compact:[&>div:first-child]:z-40',
     'compact:[&>div:first-child]:bg-background',
     'compact:[&>div:first-child]:bg-[image:linear-gradient(var(--profile-card),var(--profile-card))]'
 ].join(' ');

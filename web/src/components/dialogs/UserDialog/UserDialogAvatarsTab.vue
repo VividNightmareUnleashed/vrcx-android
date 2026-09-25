@@ -1,6 +1,6 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div class="flex items-center justify-between compact:flex-wrap compact:gap-2">
+        <div class="flex items-center justify-between compact:flex-wrap compact:justify-start compact:gap-2">
             <div class="flex items-center">
                 <Button
                     v-if="userDialog.ref.id === currentUser.id"

@@ -6,10 +6,10 @@
         </Button>
         <span class="text-sm mx-1.5">{{ tableData.data.length }}</span>
         <br />
-        <div style="display: flex; justify-content: space-between; align-items: center">
-            <div>
+        <div class="flex items-center justify-between compact:flex-wrap compact:gap-x-2">
+            <div class="compact:min-w-0 compact:flex-1">
                 <Select v-model="selectedAuditLogTypes" multiple>
-                    <SelectTrigger style="margin: 8px 0; width: 250px">
+                    <SelectTrigger class="compact:w-full!" style="margin: 8px 0; width: 250px">
                         <SelectValue :placeholder="t('dialog.group_member_moderation.filter_type')" />
                     </SelectTrigger>
                     <SelectContent>

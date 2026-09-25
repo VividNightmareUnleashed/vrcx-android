@@ -11,7 +11,7 @@
         <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
             <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
                 <!-- Banner with icon -->
-                <div class="relative aspect-17/6">
+                <div class="relative aspect-17/6 compact-landscape:aspect-auto compact-landscape:h-28">
                     <img
                         v-if="!groupDialog.loading && !bannerError && groupDialog.ref.bannerUrl"
                         class="absolute inset-0 block h-full w-full cursor-pointer object-cover"

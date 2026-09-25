@@ -9,7 +9,7 @@
         <div class="contents">
             <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
                 <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
-                    <div class="relative aspect-4/3 compact-landscape:aspect-[21/9]">
+                    <div class="relative aspect-4/3 compact-landscape:aspect-auto compact-landscape:h-44">
                         <img
                             v-if="!imageError"
                             :src="avatarDialog.ref.thumbnailImageUrl"
@@ -479,9 +479,13 @@
                                     <div class="mt-2 w-[80%] ml-20 compact:w-full compact:ml-0">
                                         <Carousel v-if="avatarDialog.galleryImages.length" class="w-full">
                                             <CarouselContent class="h-50">
+                                                <!-- Phones: the next image peeks in, since the arrows are hidden. -->
                                                 <CarouselItem
                                                     v-for="imageUrl in avatarDialog.galleryImages"
-                                                    :key="imageUrl">
+                                                    :key="imageUrl"
+                                                    :class="
+                                                        avatarDialog.galleryImages.length > 1 && 'compact:basis-[85%]'
+                                                    ">
                                                     <div class="relative h-50 w-full">
                                                         <img
                                                             :src="imageUrl"

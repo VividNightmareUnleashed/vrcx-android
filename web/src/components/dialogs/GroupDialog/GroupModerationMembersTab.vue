@@ -5,7 +5,8 @@
             <RefreshCw v-else />
         </Button>
         <span class="ml-1.5 mr-1.5 text-sm"> {{ tableData.data.length }}/{{ groupRef.memberCount }} </span>
-        <div class="mt-1.5" style="float: right">
+        <div
+            class="mt-1.5 float-right compact:float-none compact:mt-2 compact:flex compact:flex-wrap compact:items-center compact:gap-x-1.5 compact:gap-y-2">
             <span class="mr-1.5">{{ t('dialog.group.members.sort_by') }}</span>
             <DropdownMenu>
                 <DropdownMenuTrigger as-child :disabled="sortFilterDisabled">
@@ -23,7 +24,7 @@
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-            <span class="ml-2 mr-1.5">{{ t('dialog.group.members.filter') }}</span>
+            <span class="ml-2 mr-1.5 compact:ml-0">{{ t('dialog.group.members.filter') }}</span>
             <DropdownMenu>
                 <DropdownMenuTrigger as-child :disabled="sortFilterDisabled">
                     <Button size="sm" variant="outline" :disabled="sortFilterDisabled" @click.stop>

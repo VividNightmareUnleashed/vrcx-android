@@ -1,7 +1,7 @@
 <template>
     <div class="rounded-b-lg rounded-t-[15px] bg-(--profile-card) overflow-hidden flex flex-col relative">
         <ProfileEffect :profile-effect="userDialog.ref.profileEffect" class="z-1" />
-        <div class="relative aspect-17/6">
+        <div class="relative aspect-17/6 compact-landscape:aspect-auto compact-landscape:h-28">
             <div
                 v-if="
                     userDialog.loading ||

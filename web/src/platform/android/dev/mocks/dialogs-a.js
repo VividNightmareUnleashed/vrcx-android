@@ -394,7 +394,13 @@ function groupInstances(groupId, data) {
         {
             instanceId,
             location: `${LANTERN_HARBOR}:${instanceId}`,
+            worldId: LANTERN_HARBOR,
+            ownerId: GROUP_HARBOR,
             memberCount: 6,
+            userCount: 6,
+            capacity: 32,
+            hasCapacityForYou: true,
+            platforms: { standalonewindows: 4, android: 2, ios: 0 },
             world
         }
     ];
@@ -578,6 +584,58 @@ function publicProfile(userId, data) {
 export const fixtures = {};
 
 /**
+ * Game log rows for the Previous instances dialogs (normally streamed by the PC companion).
+ *
+ * @param {string} sql
+ * @param {Map<string, unknown>} args
+ * @returns {unknown[][] | undefined}
+ */
+export function sqlite(sql, args) {
+    const visits = [
+        [2, `${LANTERN_HARBOR}:12345~region(eu)`, 'Lantern Harbor', ''],
+        [5, `${LANTERN_HARBOR}:24242~region(us)`, 'Lantern Harbor', ''],
+        [
+            9,
+            `${LANTERN_HARBOR}:77777~group(${GROUP_HARBOR})~groupAccessType(public)~region(eu)`,
+            'Lantern Harbor',
+            'Harbor Lights'
+        ],
+        [16, `${PREVIEW_GARDEN}:30303~region(eu)`, 'Preview Garden', '']
+    ];
+    if (/FROM gamelog_join_leave/.test(sql) && /WHERE user_id = @userId/.test(sql) && args.get('@userId') === AURORA) {
+        return visits.map(([days, location, worldName, groupName], index) => {
+            const iso = daysAgo(days);
+            return [
+                iso,
+                Date.parse(iso),
+                location,
+                (index + 1) * 45 * MINUTE,
+                worldName,
+                groupName,
+                900 + index,
+                'OnPlayerLeft'
+            ];
+        });
+    }
+    if (
+        /FROM gamelog_location/.test(sql) &&
+        /WHERE world_id = @worldId/.test(sql) &&
+        args.get('@worldId') === LANTERN_HARBOR
+    ) {
+        return visits
+            .filter(([, location]) => location.startsWith(LANTERN_HARBOR))
+            .map(([days, location, worldName, groupName], index) => [
+                daysAgo(days),
+                location,
+                (index + 2) * 30 * MINUTE,
+                worldName,
+                groupName
+            ]);
+    }
+    return undefined;
+}
+
+/**
  * One page of a list endpoint. The app pages with processBulk until a page comes back empty, so every list must
  * honour offset/n or the preview loops forever.
  *
@@ -665,6 +723,36 @@ export function webApi(path, query, method, options, data) {
     match = path.match(/^calendar\/(grp_[^/]+)\/(cal_[^/]+)$/);
     if (match && method === 'GET') {
         return groupEvents(match[1]).find((event) => event.id === match[2]) ?? null;
+    }
+
+    // --- instances the preview user owns (the instance details offer "Close instance")
+    match = path.match(/^instances\/(wrld_[^:]+):(.+)$/);
+    if (match && method === 'GET' && match[1] === PREVIEW_GARDEN) {
+        const instanceId = decodeURIComponent(match[2]);
+        const world = EXTRA_WORLDS[PREVIEW_GARDEN]();
+        return {
+            id: `${PREVIEW_GARDEN}:${instanceId}`,
+            location: `${PREVIEW_GARDEN}:${instanceId}`,
+            instanceId,
+            name: instanceId.split('~')[0],
+            worldId: PREVIEW_GARDEN,
+            world,
+            ownerId: ME,
+            type: 'public',
+            region: 'eu',
+            capacity: world.capacity,
+            n_users: 3,
+            userCount: 3,
+            platforms: { standalonewindows: 2, android: 1, ios: 0 },
+            gameServerVersion: 1234,
+            active: true,
+            full: false,
+            hasCapacityForYou: true,
+            canRequestInvite: true,
+            queueEnabled: true,
+            queueSize: 2,
+            closedAt: null
+        };
     }
 
     // --- worlds

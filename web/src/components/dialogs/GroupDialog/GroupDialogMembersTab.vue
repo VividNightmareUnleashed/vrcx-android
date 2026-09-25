@@ -1,13 +1,13 @@
 <template>
     <div v-if="groupDialog.visible" class="flex h-full min-h-0 flex-col p-2 rounded-xl bg-(--profile-card)">
-        <div class="sticky top-0 z-10 pb-2 compact:static">
+        <div class="sticky top-0 z-10 pb-2 compact:static compact:z-auto">
             <span v-if="hasGroupPermission(groupDialog.ref, 'group-members-viewall')" class="text-base font-bold p-1">{{
                 t('dialog.group.members.all_members')
             }}</span>
             <span v-else class="text-base font-bold">{{ t('dialog.group.members.friends_only') }}</span>
             <div class="mt-2 compact:flex compact:flex-wrap compact:items-center compact:gap-y-2">
                 <Button
-                    class="rounded-full h-6 w-6"
+                    class="rounded-full h-6 w-6 pointer-coarse:size-9"
                     variant="ghost"
                     size="icon-sm"
                     :loading="isGroupMembersLoading"
@@ -16,7 +16,7 @@
                     <Spinner v-if="isGroupMembersLoading" /><RefreshCcw v-else
                 /></Button>
                 <Button
-                    class="rounded-full h-6 w-6 ml-2"
+                    class="rounded-full h-6 w-6 ml-2 pointer-coarse:size-9"
                     size="icon-sm"
                     variant="ghost"
                     style="margin-left: 6px"
@@ -31,12 +31,12 @@
                 >
                 <div
                     v-if="hasGroupPermission(groupDialog.ref, 'group-members-manage')"
-                    class="float-right flex items-center compact:float-none compact:order-last compact:w-full compact:flex-wrap compact:gap-2">
+                    class="float-right flex items-center compact:float-none compact:order-last compact:grid compact:w-full compact:grid-cols-[auto_minmax(0,1fr)] compact:gap-2">
                     <span class="mr-1.5 compact:mr-0">{{ t('dialog.group.members.sort_by') }}</span>
                     <Select
                         v-model="groupDialogMemberSortValue"
                         :disabled="isGroupMembersLoading || groupDialog.memberSearch.length > 0">
-                        <SelectTrigger class="h-8 w-45 mr-1 compact:w-auto compact:min-w-0 compact:flex-1 compact:mr-0">
+                        <SelectTrigger class="h-8 w-45 mr-1 compact:w-full compact:mr-0">
                             <SelectValue :placeholder="t('dialog.group.members.sort_by')" />
                         </SelectTrigger>
                         <SelectContent>
@@ -46,7 +46,7 @@
                         </SelectContent>
                     </Select>
                     <span class="ml-2 mr-1 compact:m-0">{{ t('dialog.group.members.filter') }}</span>
-                    <div class="inline-block w-[220px] compact:w-auto compact:min-w-0 compact:flex-1">
+                    <div class="inline-block w-[220px] compact:w-full">
                         <VirtualCombobox
                             v-model="groupDialogMemberFilterKey"
                             :groups="groupDialogMemberFilterGroups"

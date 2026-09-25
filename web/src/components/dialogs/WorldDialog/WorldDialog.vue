@@ -9,7 +9,7 @@
         <!-- Summary and info rail -->
         <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
             <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
-                <div class="relative aspect-4/3 compact-landscape:aspect-[21/9]">
+                <div class="relative aspect-4/3 compact-landscape:aspect-auto compact-landscape:h-44">
                     <img
                         v-if="!worldDialog.loading && !imageError"
                         :src="worldDialog.ref.thumbnailImageUrl"

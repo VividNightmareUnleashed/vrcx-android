@@ -1,6 +1,6 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-(--profile-card) p-2">
-        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:gap-2">
+        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:justify-start compact:gap-2">
             <div class="flex items-center">
                 <Button
                     class="rounded-full"

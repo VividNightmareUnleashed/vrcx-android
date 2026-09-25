@@ -1,6 +1,6 @@
 <template v-if="groupDialog.visible">
     <div class="flex h-full min-h-0 flex-col p-2 rounded-xl bg-(--profile-card)">
-        <div class="sticky flex items-center gap-2 top-0 z-10 p-2 compact:static">
+        <div class="sticky flex items-center gap-2 top-0 z-10 p-2 compact:static compact:z-auto">
             <span style="margin-right: 8px; vertical-align: top"
                 >{{ t('dialog.group.posts.posts_count') }} {{ groupDialog.posts.length }}</span
             >
