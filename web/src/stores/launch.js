@@ -102,6 +102,10 @@ export const useLaunchStore = defineStore('Launch', () => {
     );
 
     function showLaunchOptions() {
+        if (isAndroid) {
+            // Launch options (--fps, custom path) are for the PC client.
+            return;
+        }
         isLaunchOptionsDialogVisible.value = true;
     }
 

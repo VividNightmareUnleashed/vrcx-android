@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { logWebRequest } from '../../services/appConfig';
 import { database } from '../../services/database';
 import { languageCodes } from '../../localization';
-import { hasLocalGame, isAndroid } from '../../shared/utils/platform';
+import { hasLocalGame, hasLocalVrchatFiles, isAndroid } from '../../shared/utils/platform';
 import { useGameStore } from '../game';
 import { useModalStore } from '../modal';
 import { useUpdateLoopStore } from '../updateLoop';
@@ -887,6 +887,10 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
     }
 
     async function showVRChatConfig() {
+        if (!hasLocalVrchatFiles) {
+            // VRChat's config.json and cache are on the PC.
+            return;
+        }
         isVRChatConfigDialogVisible.value = true;
         if (!gameStore.VRChatUsedCacheSize) {
             gameStore.getVRChatCacheSize();

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('../../utils/platform', () => ({ isAndroid: true }));
+vi.mock('../../utils/platform', async (importOriginal) => ({ ...(await importOriginal()), isAndroid: true }));
 
 import {
     allToolDefinitions,
