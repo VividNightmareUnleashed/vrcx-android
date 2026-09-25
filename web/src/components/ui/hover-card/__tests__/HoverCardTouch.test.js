@@ -44,24 +44,20 @@ function mountCard({ onAccept = () => {}, onOpenDialog = () => {} } = {}) {
     const open = ref(false);
     const Host = defineComponent({
         setup: () => () =>
-            h(
-                HoverCard,
-                { open: open.value, 'onUpdate:open': (value) => (open.value = value), openDelay: 400 },
-                () => [
-                    h(HoverCardTrigger, { asChild: true }, () =>
-                        h('div', { 'data-testid': 'trigger' }, [
-                            h('p', { 'data-testid': 'message' }, 'Invite to a world'),
-                            h('button', { type: 'button', 'data-testid': 'accept', onClick: onAccept }, 'Accept'),
-                            h(
-                                'span',
-                                { 'data-testid': 'sender', style: 'cursor: pointer', onClick: onOpenDialog },
-                                'Sender'
-                            )
-                        ])
-                    ),
-                    h(HoverCardContent, null, () => 'Details')
-                ]
-            )
+            h(HoverCard, { open: open.value, 'onUpdate:open': (value) => (open.value = value), openDelay: 400 }, () => [
+                h(HoverCardTrigger, { asChild: true }, () =>
+                    h('div', { 'data-testid': 'trigger' }, [
+                        h('p', { 'data-testid': 'message' }, 'Invite to a world'),
+                        h('button', { type: 'button', 'data-testid': 'accept', onClick: onAccept }, 'Accept'),
+                        h(
+                            'span',
+                            { 'data-testid': 'sender', style: 'cursor: pointer', onClick: onOpenDialog },
+                            'Sender'
+                        )
+                    ])
+                ),
+                h(HoverCardContent, null, () => 'Details')
+            ])
     });
     const wrapper = mount(Host, { attachTo: document.body });
     const get = (id) => wrapper.get(`[data-testid="${id}"]`).element;

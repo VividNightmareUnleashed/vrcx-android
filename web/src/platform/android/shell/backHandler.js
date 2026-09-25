@@ -93,7 +93,7 @@ export function isBackEscape(event) {
 }
 
 /**
- * escapeKeyDown handler of the entity dialog host. Reka delivers an Escape to its top layer only, so when the back
+ * EscapeKeyDown handler of the entity dialog host. Reka delivers an Escape to its top layer only, so when the back
  * press's Escape arrives here the main dialog is on top (DESIGN.md §6 step 1): with more than one crumb it steps back
  * one crumb instead of closing. A real Escape key keeps closing the dialog, as on PC.
  *

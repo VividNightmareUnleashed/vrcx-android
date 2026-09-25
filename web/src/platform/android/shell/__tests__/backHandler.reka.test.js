@@ -171,7 +171,11 @@ describe('Android back handler with reka layers', () => {
             setup: () => () => [
                 h(
                     HoverCard,
-                    { open: hoverOpen.value, enableTouch: false, 'onUpdate:open': (value) => (hoverOpen.value = value) },
+                    {
+                        open: hoverOpen.value,
+                        enableTouch: false,
+                        'onUpdate:open': (value) => (hoverOpen.value = value)
+                    },
                     () => [
                         h(HoverCardTrigger, { asChild: true }, () => h('p', 'Sender')),
                         h(HoverCardContent, null, () => 'Details')
