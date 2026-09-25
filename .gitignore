@@ -1,0 +1,24 @@
+# reference clone of upstream VRCX (see UPSTREAM_COMMIT)
+/upstream/
+node_modules/
+/web/build/
+/web/coverage/
+# android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/**/build/
+/android/local.properties
+/android/app/src/main/assets/web/
+*.apk
+*.aab
+.idea/
+*.iml
+.kotlin/
+# companion
+/companion/**/bin/
+/companion/**/obj/
+/companion/publish/
+.vs/
+*.user
+/dist/

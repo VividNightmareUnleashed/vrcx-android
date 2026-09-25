@@ -1,0 +1,182 @@
+import { copyToClipboard } from '../../../shared/utils';
+
+/**
+ * Composable for GroupDialog command dispatch.
+ * Uses a command map pattern consistent with Avatar/World/User dialogs.
+ *
+ * @param {import('vue').Ref} groupDialog - Reactive ref to the group dialog state
+ * @param {object} deps - External dependencies
+ * @param deps.t
+ * @param deps.modalStore
+ * @param deps.currentUser
+ * @param deps.showGroupDialog
+ * @param deps.leaveGroupPrompt
+ * @param deps.setGroupVisibility
+ * @param deps.setGroupSubscription
+ * @param deps.setGroupEventAnnouncements
+ * @param deps.showPreviousInstancesListDialog
+ * @param deps.showGroupMemberModerationDialog
+ * @param deps.showInviteGroupDialog
+ * @param deps.showGroupTransferDialog
+ * @param deps.showGroupPostEditDialog
+ * @param deps.groupRequest
+ * @returns {object} Command composable API
+ */
+export function useGroupDialogCommands(
+    groupDialog,
+    {
+        t,
+        modalStore,
+        currentUser,
+        showGroupDialog,
+        leaveGroupPrompt,
+        setGroupVisibility,
+        setGroupSubscription,
+        setGroupEventAnnouncements,
+        showPreviousInstancesListDialog,
+        showGroupMemberModerationDialog,
+        showInviteGroupDialog,
+        showGroupTransferDialog,
+        showGroupPostEditDialog,
+        groupRequest
+    }
+) {
+    // --- Command map ---
+    // Direct commands: function
+    // Confirmed commands: { confirm: () => ({title, description, ...}), handler: fn }
+
+    function buildCommandMap() {
+        const D = () => groupDialog.value;
+
+        return {
+            // --- Direct commands ---
+            Share: () => {
+                copyToClipboard(D().ref.$url);
+            },
+            'Copy Group Name': () => {
+                copyToClipboard(D().ref.name);
+            },
+            'Copy Group ID': () => {
+                copyToClipboard(D().id);
+            },
+            'Create Post': () => {
+                showGroupPostEditDialog(D().id, null);
+            },
+            'Moderation Tools': () => {
+                showGroupMemberModerationDialog(D().id);
+            },
+            'Invite To Group': () => {
+                showInviteGroupDialog(D().id, '');
+            },
+            'Transfer Group': () => {
+                showGroupTransferDialog(D().id, D().ref.name, D().ref.ownerId);
+            },
+            Refresh: () => {
+                showGroupDialog(D().id, { forceRefresh: true });
+            },
+            'Previous Instances': () => {
+                showPreviousInstancesListDialog(D().ref);
+            },
+            'Leave Group': () => {
+                leaveGroupPrompt(D().id);
+            },
+            'Visibility Everyone': () => {
+                setGroupVisibility(D().id, 'visible');
+            },
+            'Visibility Friends': () => {
+                setGroupVisibility(D().id, 'friends');
+            },
+            'Visibility Hidden': () => {
+                setGroupVisibility(D().id, 'hidden');
+            },
+            'Subscribe To Announcements': () => {
+                setGroupSubscription(D().id, true);
+            },
+            'Unsubscribe To Announcements': () => {
+                setGroupSubscription(D().id, false);
+            },
+            'Subscribe To Event Announcements': () => {
+                setGroupEventAnnouncements(D().id, true);
+            },
+            'Unsubscribe To Event Announcements': () => {
+                setGroupEventAnnouncements(D().id, false);
+            },
+
+            // --- Confirmed commands ---
+            'Block Group': {
+                confirm: () => ({
+                    title: t('confirm.title'),
+                    description: t('confirm.block_group'),
+                    destructive: true
+                }),
+                handler: (id) => {
+                    groupRequest.blockGroup({ groupId: id }).then((args) => {
+                        if (groupDialog.value.visible && groupDialog.value.id === args.params.groupId) {
+                            showGroupDialog(args.params.groupId);
+                        }
+                    });
+                }
+            },
+            'Unblock Group': {
+                confirm: () => ({
+                    title: t('confirm.title'),
+                    description: t('confirm.unblock_group')
+                }),
+                handler: (id) => {
+                    groupRequest
+                        .unblockGroup({
+                            groupId: id,
+                            userId: currentUser.value.id
+                        })
+                        .then((args) => {
+                            if (groupDialog.value.visible && groupDialog.value.id === args.params.groupId) {
+                                showGroupDialog(args.params.groupId);
+                            }
+                        });
+                }
+            }
+        };
+    }
+
+    const commandMap = buildCommandMap();
+
+    /**
+     * Dispatch a group dialog command.
+     *
+     * @param {string} command
+     */
+    function groupDialogCommand(command) {
+        const D = groupDialog.value;
+        if (D.visible === false) {
+            return;
+        }
+
+        const entry = commandMap[command];
+
+        if (!entry) {
+            return;
+        }
+
+        // Direct function
+        if (typeof entry === 'function') {
+            entry();
+            return;
+        }
+
+        // Confirmed command
+        if (entry.confirm) {
+            modalStore
+                .confirm(entry.confirm())
+                .then(({ ok }) => {
+                    if (ok) {
+                        entry.handler(D.id);
+                    }
+                })
+                .catch(() => {});
+        }
+    }
+
+    return {
+        groupDialogCommand
+    };
+}
