@@ -2,11 +2,10 @@
 // controls `open` itself: a long-press shows the tooltip, and a tap toggles it on icon-only information triggers.
 import { ref } from 'vue';
 
+import { INTERACTIVE_SELECTOR } from '../touch/interactiveTarget';
+
 export const TOOLTIP_LONG_PRESS_MS = 500;
 const MOVE_TOLERANCE_PX = 10;
-
-const INTERACTIVE_SELECTOR =
-    'button, a[href], input, select, textarea, label, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [data-slot="context-menu-trigger"]';
 
 /**
  * An information-only trigger: nothing to activate and no text of its own (an info icon, a status dot).
