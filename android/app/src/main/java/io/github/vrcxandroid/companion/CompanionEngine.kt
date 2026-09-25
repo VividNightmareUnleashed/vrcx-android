@@ -769,11 +769,12 @@ class CompanionEngine(
         private var ackedDataBytes = 0L
 
         fun begin() {
-            schedulePing(config.pingIdleMs)
+            if (!ended) schedulePing(config.pingIdleMs)
         }
 
         fun handle(frame: Frame, receivedAt: Long) {
-            if (failed) return
+            // After end() (forget ends the session early), nothing more reaches the log side for this connection.
+            if (failed || ended) return
             try {
                 when (frame) {
                     is Frame.Data -> onData(frame)
