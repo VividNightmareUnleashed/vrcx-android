@@ -31,6 +31,10 @@ public sealed class CompanionServer : IDisposable
     }
 
     public int Port { get; private set; }
+
+    /// <summary>Which peers may connect. PROTOCOL.md §1: local addresses only (replaceable in tests).</summary>
+    internal Func<IPAddress?, bool> IsAllowedPeer { get; init; } = LocalAddress.IsLocal;
+
     public int ActiveConnections => Volatile.Read(ref _active);
     public long RejectedPeers => Interlocked.Read(ref _rejected);
 
@@ -81,7 +85,7 @@ public sealed class CompanionServer : IDisposable
             }
 
             var remote = (client.RemoteEndPoint as IPEndPoint)?.Address;
-            if (!LocalAddress.IsLocal(remote))
+            if (!IsAllowedPeer(remote))
             {
                 Reject(client, remote);
                 continue;

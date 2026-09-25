@@ -354,6 +354,45 @@ public sealed class SyncEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task LogFileIsNotHeldOpenWhileWaitingForAcks()
+    {
+        var content = new byte[1024 * 1024];
+        new Random(5).NextBytes(content);
+        Write(A, content);
+        var (session, sink) = Connect(maxInFlight: 64 * 1024, maxChunk: 16 * 1024);
+        _engine.Subscribe(session, 0, Array.Empty<HaveEntry>());
+        await sink.WaitQuietAsync(200);
+        Assert.True(session.BytesInFlight > 0);
+        Assert.DoesNotContain(sink.Messages, m => m.Type == "syncComplete");
+
+        // Exclusive open fails if any other handle is open.
+        using (new FileStream(Path(A), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+        }
+
+        var deadline = Environment.TickCount64 + 10000;
+        while (!sink.Messages.Any(m => m.Type == "syncComplete"))
+        {
+            Assert.True(Environment.TickCount64 < deadline);
+            session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+            await Task.Delay(5);
+        }
+        Assert.Equal(content, LogFiles.Contiguous(sink.Messages, A));
+    }
+
+    [Fact]
+    public void SessionThatStopsDrainingIsClosed()
+    {
+        var session = new StreamSession("dev", "Phone", "127.0.0.1", NullLog.Instance);
+        for (var i = 0; i < StreamSession.MaxQueuedItems; i++)
+            session.EnqueueControl("process", new byte[] { (byte)'{', (byte)'}' });
+        Assert.False(session.Closed.IsCancellationRequested);
+        session.EnqueueControl("process", new byte[] { (byte)'{', (byte)'}' });
+        Assert.True(session.Closed.IsCancellationRequested);
+        Assert.Equal("queue overflow", session.CloseReason);
+    }
+
+    [Fact]
     public async Task AcksAreClampedAndMonotonic()
     {
         Write(A, LogFiles.Line("x"));

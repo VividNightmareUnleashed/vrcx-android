@@ -34,6 +34,10 @@ public sealed class DiscoveryResponder : IDisposable
     }
 
     public int Port { get; private set; }
+
+    /// <summary>Which senders get a reply. PROTOCOL.md §1: local addresses only (replaceable in tests).</summary>
+    internal Func<IPAddress?, bool> IsAllowedPeer { get; init; } = LocalAddress.IsLocal;
+
     public long RepliesSent { get; private set; }
 
     public void Start()
@@ -96,7 +100,7 @@ public sealed class DiscoveryResponder : IDisposable
                 continue;
             }
 
-            if (result.RemoteEndPoint is not IPEndPoint remote || !LocalAddress.IsLocal(remote.Address))
+            if (result.RemoteEndPoint is not IPEndPoint remote || !IsAllowedPeer(remote.Address))
                 continue;
             if (result.ReceivedBytes is 0 or > MaxRequestBytes || !IsDiscoverRequest(buffer.AsSpan(0, result.ReceivedBytes)))
                 continue;

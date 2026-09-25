@@ -103,10 +103,13 @@ public sealed class FileLog : ICompanionLog, IDisposable
             try
             {
                 _writer ??= Open();
+                if (_writer.BaseStream.Length > 0 && _writer.BaseStream.Length + line.Length + 2 > MaxBytes)
+                {
+                    Rotate();
+                    _writer = Open();
+                }
                 _writer.WriteLine(line);
                 _writer.Flush();
-                if (_writer.BaseStream.Length >= MaxBytes)
-                    Rotate();
             }
             catch (IOException)
             {

@@ -21,8 +21,19 @@ public interface IProcessProbe
 /// </summary>
 public sealed class SystemProcessProbe : IProcessProbe, IDisposable
 {
-    private readonly Target _vrchat = new("VRChat");
-    private readonly Target _vrserver = new("vrserver");
+    private readonly Target _vrchat;
+    private readonly Target _vrserver;
+
+    public SystemProcessProbe() : this("VRChat", "vrserver")
+    {
+    }
+
+    /// <summary>Other process names (tests).</summary>
+    internal SystemProcessProbe(string vrchatName, string vrserverName)
+    {
+        _vrchat = new Target(vrchatName);
+        _vrserver = new Target(vrserverName);
+    }
 
     public ProcessState Poll()
     {

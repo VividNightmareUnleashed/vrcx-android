@@ -187,11 +187,26 @@ public sealed class StreamSession
 
     // ---- queue ----
 
+    /// <summary>
+    /// Upper bound on queued items. A phone that stops acknowledging while the log keeps changing would otherwise grow
+    /// the queue without limit; such a session is closed and resumes through <c>subscribe.have</c> after reconnecting.
+    /// </summary>
+    public const int MaxQueuedItems = 10_000;
+
     internal void Enqueue(OutItem item)
     {
+        bool overflow;
         lock (_queueGate)
+        {
             _queue.AddLast(item);
+            overflow = _queue.Count > MaxQueuedItems;
+        }
         _queueSignal.Set();
+        if (overflow)
+        {
+            _log.Warn("send queue overflow (the phone stopped acknowledging); closing the session");
+            RequestClose("queue overflow");
+        }
     }
 
     internal void EnqueueControl(string type, byte[] json, bool independentOfSubscription = false) =>
@@ -311,7 +326,13 @@ public sealed class StreamSession
             while (file.SentEnd < item.End && item.Epoch == Epoch)
             {
                 var want = (int)Math.Min(_maxChunk, item.End - file.SentEnd);
-                await WaitForCreditAsync(want + 512, cancellationToken).ConfigureAwait(false);
+                if (!HasCredit(want + 512))
+                {
+                    // Never hold VRChat's log open while waiting for the phone.
+                    handle?.Dispose();
+                    handle = null;
+                    await WaitForCreditAsync(want + 512, cancellationToken).ConfigureAwait(false);
+                }
                 if (item.Epoch != Epoch)
                     return;
 
@@ -349,9 +370,11 @@ public sealed class StreamSession
         }
     }
 
+    private bool HasCredit(int nextFrameBytes) => BytesInFlight + nextFrameBytes <= _maxInFlight || BytesInFlight <= 0;
+
     private async Task WaitForCreditAsync(int nextFrameBytes, CancellationToken cancellationToken)
     {
-        while (BytesInFlight + nextFrameBytes > _maxInFlight && BytesInFlight > 0)
+        while (!HasCredit(nextFrameBytes))
             await _ackSignal.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
