@@ -34,9 +34,12 @@ interface SeekableStream : Closeable {
     }
 }
 
-/** Growable in-memory stream (like `MemoryStream`), used to edit a PNG before writing it back in one go. */
+/**
+ * Growable in-memory stream (like `MemoryStream`), used to edit a PNG before writing it back in one go. It takes
+ * ownership of [initial] (no copy, to keep large screenshots from being held twice); writes may change that array.
+ */
 class MemorySeekableStream(initial: ByteArray) : SeekableStream {
-    private var data: ByteArray = initial.copyOf()
+    private var data: ByteArray = initial
     private var size: Int = initial.size
     override val length: Long get() = size.toLong()
     override var position: Long = 0
