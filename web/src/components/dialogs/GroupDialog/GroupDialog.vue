@@ -1,5 +1,5 @@
 <template>
-    <div class="flex-1 min-h-0 min-w-0 flex flex-row">
+    <div :class="['flex-1 min-h-0 min-w-0 flex flex-row', ENTITY_ROOT_COMPACT_CLASS]">
         <DialogHeader class="sr-only">
             <DialogTitle>{{ groupDialog.ref?.name || t('dialog.group.info.header') }}</DialogTitle>
             <DialogDescription>
@@ -8,7 +8,7 @@
         </DialogHeader>
 
         <!-- Summary card -->
-        <div class="flex-none w-77 pr-4 overflow-y-auto">
+        <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
             <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
                 <!-- Banner with icon -->
                 <div class="relative aspect-17/6">
@@ -178,31 +178,31 @@
                                         <MoreHorizontal />
                                     </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent>
+                                <DropdownMenuContent
+                                    :class="MENU_CONTENT_TOUCH_CLASS"
+                                    :align="isCompact ? 'end' : undefined"
+                                    :collision-padding="isCompact ? 8 : undefined">
                                     <DropdownMenuItem @click="groupDialogCommand('Refresh')">
                                         <RefreshCw class="size-4" />
                                         {{ t('dialog.group.actions.refresh') }}
                                     </DropdownMenuItem>
-                                    <DropdownMenuSub>
-                                        <DropdownMenuSubTrigger @click="groupDialogCommand('Share')">
-                                            <Share2 class="size-4 mr-2" />
-                                            <span>{{ t('dialog.group.actions.share') }}</span>
-                                        </DropdownMenuSubTrigger>
-                                        <DropdownMenuSubContent side="right" class="w-56">
-                                            <DropdownMenuItem @click="groupDialogCommand('Share')">
-                                                <Copy class="size-4" />
-                                                {{ t('dialog.user.info.copy_url') }}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem @click="groupDialogCommand('Copy Group Name')">
-                                                <Copy class="size-4" />
-                                                {{ t('dialog.world.info.copy_name') }}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem @click="groupDialogCommand('Copy Group ID')">
-                                                <Copy class="size-4" />
-                                                {{ t('dialog.user.info.copy_id') }}
-                                            </DropdownMenuItem>
-                                        </DropdownMenuSubContent>
-                                    </DropdownMenuSub>
+                                    <CompactDropdownMenuSub
+                                        :label="t('dialog.group.actions.share')"
+                                        :icon="Share2"
+                                        @trigger-click="groupDialogCommand('Share')">
+                                        <DropdownMenuItem @click="groupDialogCommand('Share')">
+                                            <Copy class="size-4" />
+                                            {{ t('dialog.user.info.copy_url') }}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem @click="groupDialogCommand('Copy Group Name')">
+                                            <Copy class="size-4" />
+                                            {{ t('dialog.world.info.copy_name') }}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem @click="groupDialogCommand('Copy Group ID')">
+                                            <Copy class="size-4" />
+                                            {{ t('dialog.user.info.copy_id') }}
+                                        </DropdownMenuItem>
+                                    </CompactDropdownMenuSub>
 
                                     <template v-if="hasGroupModerationPermission(groupDialog.ref)">
                                         <DropdownMenuSeparator />
@@ -423,6 +423,7 @@
                     </div>
                     <TooltipWrapper
                         side="right"
+                        tap-to-open
                         :content="formatDateFilter(groupDialog.ref.createdAt, 'long')"
                         :disabled="!groupDialog.ref.createdAt">
                         <div class="flex justify-between items-start gap-2 text-xs">
@@ -457,7 +458,7 @@
                     <span
                         class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                         {{ t('dialog.user.info.vrcx_info') }}
-                        <TooltipWrapper side="right" :content="t('dialog.user.info.vrcx_info_tooltip')">
+                        <TooltipWrapper side="right" tap-to-open :content="t('dialog.user.info.vrcx_info_tooltip')">
                             <Info class="h-3 w-3 shrink-0" />
                         </TooltipWrapper>
                     </span>
@@ -465,6 +466,7 @@
                 <div class="flex flex-col gap-1.5">
                     <TooltipWrapper
                         side="right"
+                        tap-to-open
                         :content="formatDateFilter(groupDialog.lastVisit, 'long')"
                         :disabled="!groupDialog.lastVisit">
                         <div class="flex justify-between items-start gap-2 text-xs">
@@ -525,7 +527,7 @@
                         >
                         <span v-else class="text-right text-muted-foreground">
                             <template v-for="(role, rIndex) in groupDialog.memberRoles" :key="rIndex">
-                                <TooltipWrapper side="right">
+                                <TooltipWrapper side="right" tap-to-open>
                                     <template #content>
                                         <span>{{ t('dialog.group.info.role') }} {{ role.name }}</span>
                                         <br />
@@ -562,13 +564,14 @@
         </div>
 
         <!-- Right side Tabs -->
-        <div class="flex-1 min-w-0 flex flex-col min-h-0 pl-4">
+        <div ref="tabsPaneRef" :class="['flex-1 min-w-0 flex flex-col min-h-0 pl-4', ENTITY_PANE_COMPACT_CLASS]">
             <TabsUnderline
                 v-model="groupDialog.activeTab"
                 :background="true"
                 :items="groupDialogTabs"
                 :unmount-on-hide="false"
-                fill
+                :fill="!isCompact"
+                :class="ENTITY_TABS_COMPACT_CLASS"
                 @update:modelValue="groupDialogTabClick">
                 <template #Info>
                     <GroupDialogInfoTab
@@ -643,9 +646,6 @@
         DropdownMenuContent,
         DropdownMenuItem,
         DropdownMenuSeparator,
-        DropdownMenuSub,
-        DropdownMenuSubContent,
-        DropdownMenuSubTrigger,
         DropdownMenuTrigger
     } from '../../ui/dropdown-menu';
     import {
@@ -686,6 +686,15 @@
     import GroupTransferDialog from './GroupTransferDialog.vue';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
     import { showGroupMemberModerationDialog } from '../../../coordinators/groupCoordinator';
+    import CompactDropdownMenuSub from '../../CompactDropdownMenuSub.vue';
+    import {
+        ENTITY_PANE_COMPACT_CLASS,
+        ENTITY_RAIL_COMPACT_CLASS,
+        ENTITY_ROOT_COMPACT_CLASS,
+        ENTITY_TABS_COMPACT_CLASS,
+        MENU_CONTENT_TOUCH_CLASS,
+        useEntityDialogCompact
+    } from '../useEntityDialogCompact';
 
     const { t } = useI18n();
     const groupDialogTabs = computed(() => [
@@ -700,6 +709,14 @@
 
     const { currentUser } = storeToRefs(useUserStore());
     const { groupDialog, inviteGroupDialog } = storeToRefs(useGroupStore());
+
+    // Phones: one scroller with the group card on top and a sticky tab strip (docs/DESIGN.md §3.2).
+    const tabsPaneRef = ref(null);
+    const { isCompact } = useEntityDialogCompact({
+        paneRef: tabsPaneRef,
+        entityId: () => groupDialog.value.id,
+        activeTab: () => groupDialog.value.activeTab
+    });
     const { showCreateGroupEventDialog, showEditGroupDialog, updateGroupPostSearch } = useGroupStore();
     const { groupEventRevision } = storeToRefs(useGroupStore());
 

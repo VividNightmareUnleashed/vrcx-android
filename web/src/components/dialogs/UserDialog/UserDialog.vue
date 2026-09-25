@@ -1,5 +1,5 @@
 <template>
-    <div class="user-dialog-scrollbars flex-1 min-h-0 min-w-0 flex flex-row">
+    <div :class="['user-dialog-scrollbars flex-1 min-h-0 min-w-0 flex flex-row', ENTITY_ROOT_COMPACT_CLASS]">
         <DialogHeader class="sr-only">
             <DialogTitle>{{
                 userDialog.ref?.displayName || userDialog.id || t('dialog.user.info.header')
@@ -7,7 +7,7 @@
             <DialogDescription>{{ getUserStateText(userDialog.ref || {}) }}</DialogDescription>
         </DialogHeader>
 
-        <div class="flex-none w-77 overflow-y-auto">
+        <div :class="['flex-none w-77 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
             <UserSummaryHeader
                 :get-user-state-text="getUserStateText"
                 :copy-user-display-name="copyUserDisplayName"
@@ -16,14 +16,15 @@
                 :user-dialog-command="userDialogCommand" />
         </div>
 
-        <div class="flex-1 min-w-0 flex flex-col min-h-0 pl-2">
+        <div ref="tabsPaneRef" :class="['flex-1 min-w-0 flex flex-col min-h-0 pl-2', ENTITY_PANE_COMPACT_CLASS]">
             <TabsUnderline
                 v-model="userDialog.activeTab"
                 :items="userDialogTabs"
                 :activeColor="userDialogTabColor"
                 :unmount-on-hide="false"
-                fill
+                :fill="!isCompact"
                 :background="true"
+                :class="ENTITY_TABS_COMPACT_CLASS"
                 @update:modelValue="userDialogTabClick">
                 <template #Info>
                     <UserDialogInfoTab ref="infoTabRef" />
@@ -118,6 +119,13 @@
 
     import ModerateGroupDialog from '../ModerateGroupDialog.vue';
     import SendInviteRequestDialog from './SendInviteRequestDialog.vue';
+    import {
+        ENTITY_PANE_COMPACT_CLASS,
+        ENTITY_RAIL_COMPACT_CLASS,
+        ENTITY_ROOT_COMPACT_CLASS,
+        ENTITY_TABS_COMPACT_CLASS,
+        useEntityDialogCompact
+    } from '../useEntityDialogCompact';
 
     const props = defineProps({
         previousIds: {
@@ -160,6 +168,14 @@
     const instanceStore = useInstanceStore();
 
     const { userDialog, currentUser } = storeToRefs(useUserStore());
+
+    // Phones: one scroller with the profile card on top and a sticky tab strip (docs/DESIGN.md §3.2).
+    const tabsPaneRef = ref(null);
+    const { isCompact } = useEntityDialogCompact({
+        paneRef: tabsPaneRef,
+        entityId: () => userDialog.value.id,
+        activeTab: () => userDialog.value.activeTab
+    });
     const userDialogTabColor = computed(() => {
         const color = userDialog.value.theme?.buttonColor;
         if (!color) {

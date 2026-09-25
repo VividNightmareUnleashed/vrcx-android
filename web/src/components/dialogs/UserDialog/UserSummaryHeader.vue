@@ -287,7 +287,9 @@
                                     :class="{ grayscale: badge.hidden }"
                                     loading="lazy" />
                             </PopoverTrigger>
-                            <PopoverContent side="right" class="w-75">
+                            <PopoverContent
+                                :side="isCompact ? 'bottom' : 'right'"
+                                class="w-75 compact:max-w-[calc(100vw-2rem)]">
                                 <img
                                     :src="badge.badgeImageUrl"
                                     :class="['cursor-pointer', 'max-w-full', 'max-h-full']"
@@ -487,6 +489,7 @@
     import ProfileEffect from '../../ProfileEffect.vue';
 
     import UserActionDropdown from './UserActionDropdown.vue';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
     import { showGroupDialog } from '@/coordinators/groupCoordinator';
     import { getAvatarName } from '@/coordinators/avatarCoordinator';
 
@@ -514,6 +517,8 @@
     });
 
     const { t } = useI18n();
+    // Phones: the badge card opens below the badge; there is no room to its right.
+    const { isCompact } = useCompactLayout();
 
     const { userDialog, currentUser } = storeToRefs(useUserStore());
     const { toggleSharedConnectionsOptOut, toggleDiscordFriendsOptOut, toggleAvatarCopying, toggleAllowBooping } =

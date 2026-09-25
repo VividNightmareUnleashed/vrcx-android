@@ -16,13 +16,13 @@
             :on-page-change="handlePageChange"
             :on-sort-change="handleSortChange">
             <template #toolbar>
-                <div style="display: flex; align-items: center; justify-content: space-between">
+                <div class="flex items-center justify-between compact:flex-wrap compact:gap-2">
                     <span class="text-sm" v-text="headerText"></span>
                     <InputGroupField
                         v-model="search"
                         :placeholder="t('dialog.previous_instances.search_placeholder')"
                         clearable
-                        class="w-1/3"
+                        class="w-1/3 compact:w-full"
                         style="display: block" />
                 </div>
             </template>

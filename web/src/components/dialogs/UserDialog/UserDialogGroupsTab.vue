@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div class="shrink-0" style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     class="rounded-full"
                     variant="ghost"
@@ -17,20 +17,23 @@
                 <template v-if="userDialogGroupEditMode && !isAndroid">
                     <span class="text-[10px] ml-2">{{ t('dialog.user.groups.hold_shift') }}</span>
                 </template>
+                <!-- Android: the touch stand-in for holding Shift (leave without asking). -->
+                <QuickActionsToggle v-else-if="userDialogGroupEditMode" class="ml-2" />
             </div>
-            <div style="display: flex; align-items: center">
+            <div class="flex items-center" :class="!userDialogGroupEditMode && 'compact:contents'">
                 <template v-if="!userDialogGroupEditMode">
                     <Input
                         v-model="groupSearchQuery"
-                        class="h-8 w-40 mr-2"
+                        class="h-8 w-40 mr-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:mr-0"
                         :placeholder="t('dialog.user.groups.search_placeholder')"
                         @click.stop />
-                    <span style="margin-right: 6px">{{ t('dialog.user.groups.sort_by') }}</span>
+                    <span class="hidden compact:block compact:h-0 compact:basis-full" aria-hidden="true"></span>
+                    <span class="mr-1.5">{{ t('dialog.user.groups.sort_by') }}</span>
                     <Select
                         :model-value="userDialogGroupSortingKey"
                         :disabled="userDialog.isGroupsLoading"
                         @update:modelValue="setUserDialogGroupSortingByKey">
-                        <SelectTrigger size="sm" @click.stop>
+                        <SelectTrigger size="sm" class="compact:mr-auto" @click.stop>
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -108,7 +111,7 @@
                         <div
                             v-for="group in userDialogGroupEditGroups"
                             :key="group.id"
-                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-full hover:rounded-[25px_5px_5px_25px]"
+                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-full hover:rounded-[25px_5px_5px_25px] compact:flex-wrap compact:gap-y-1.5"
                             @click="showGroupDialog(group.id)">
                             <!-- Manual checkbox -->
                             <div
@@ -192,7 +195,7 @@
                                     </AvatarFallback>
                                 </Avatar>
                             </div>
-                            <div class="flex-1 overflow-hidden">
+                            <div class="flex-1 overflow-hidden compact:min-w-[calc(100%-5.5rem)]">
                                 <span class="block truncate font-medium leading-[18px]" v-text="group.name"></span>
                                 <span class="block truncate text-xs">
                                     <TooltipWrapper
@@ -218,7 +221,7 @@
                                 :model-value="group.myMember.visibility"
                                 :disabled="group.privacy !== 'default'"
                                 @update:modelValue="(value) => setGroupVisibility(group.id, value)">
-                                <SelectTrigger size="sm" @click.stop>
+                                <SelectTrigger size="sm" class="compact:ml-auto" @click.stop>
                                     <SelectValue
                                         :placeholder="
                                             group.myMember.visibility === 'visible'
@@ -264,7 +267,7 @@
                                         : t('dialog.user.groups.leave_group_tooltip')
                                 ">
                                 <Button
-                                    class="rounded-full h-6 w-6"
+                                    class="rounded-full h-6 w-6 pointer-coarse:size-9"
                                     size="icon-sm"
                                     variant="outline"
                                     v-if="shiftHeld"
@@ -279,7 +282,7 @@
                                     <LogOut v-else />
                                 </Button>
                                 <Button
-                                    class="rounded-full h-6 w-6 text-red-600"
+                                    class="rounded-full h-6 w-6 text-red-600 pointer-coarse:size-9"
                                     size="icon-sm"
                                     variant="outline"
                                     v-else
@@ -401,6 +404,7 @@
     import { Checkbox } from '@/components/ui/checkbox';
     import { Input } from '@/components/ui/input';
     import { Spinner } from '@/components/ui/spinner';
+    import { QuickActionsToggle } from '@/components/ui/quick-actions';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';

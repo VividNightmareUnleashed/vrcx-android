@@ -16,8 +16,8 @@
             :on-page-change="handlePageChange"
             :on-sort-change="handleSortChange">
             <template #toolbar>
-                <div style="display: flex; align-items: center; justify-content: space-between">
-                    <div class="flex items-center gap-2 px-1 py-2">
+                <div class="flex items-center justify-between compact:flex-wrap compact:gap-x-2">
+                    <div class="flex items-center gap-2 px-1 py-2 compact:min-w-0">
                         <ToggleGroup
                             type="single"
                             :model-value="viewMode"
@@ -51,6 +51,7 @@
                     <InputGroupField
                         v-model="search"
                         :placeholder="t('dialog.previous_instances.search_placeholder')"
+                        class="compact:w-full!"
                         style="width: 150px"
                         clearable />
                 </div>

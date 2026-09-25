@@ -39,6 +39,8 @@ const baseDateColumn = () => ({
     id: 'created_at',
     accessorFn: (row) => (row?.created_at ? Date.parse(row.created_at) : 0),
     size: 170,
+    // Phone cards (docs/DESIGN.md §3.1): the instance is the title, the date and creator go below it.
+    meta: { mobile: { slot: 'footer', order: 1 } },
     header: ({ column }) =>
         sortButton({
             column,
@@ -52,6 +54,7 @@ const timeColumn = () => ({
     id: 'time',
     accessorFn: (row) => row?.time ?? 0,
     size: 100,
+    meta: { mobile: { slot: 'trailing' } },
     header: ({ column }) => sortButton({ column, label: t('table.previous_instances.time') }),
     cell: ({ row }) => <span>{row.original?.timer ?? ''}</span>
 });
@@ -63,7 +66,8 @@ const actionsColumn = ({ shiftHeld, onShowInfo, onDelete, onDeletePrompt, onLaun
     header: () => t('table.previous_instances.action'),
     meta: {
         thClass: 'text-right',
-        tdClass: 'text-right'
+        tdClass: 'text-right',
+        mobile: { slot: 'actions' }
     },
     cell: ({ row }) => {
         const original = row.original;
@@ -131,7 +135,8 @@ export const createPreviousInstancesColumns = (variant, config) => {
                         label: t('table.previous_instances.world')
                     }),
                 meta: {
-                    stretch: true
+                    stretch: true,
+                    mobile: { slot: 'title' }
                 },
                 cell: ({ row }) => (
                     <Location
@@ -145,6 +150,7 @@ export const createPreviousInstancesColumns = (variant, config) => {
                 id: 'creator',
                 accessorFn: (row) => row?.$location?.userId ?? '',
                 size: 170,
+                meta: { mobile: { slot: 'footer', order: 2 } },
                 header: () => t('table.previous_instances.instance_creator'),
                 cell: ({ row }) => (
                     <DisplayName userid={row.original?.$location?.userId} location={row.original?.$location?.tag} />
@@ -169,7 +175,8 @@ export const createPreviousInstancesColumns = (variant, config) => {
                 accessorFn: (row) => row?.$location?.tag ?? row?.location ?? '',
                 header: () => t('table.previous_instances.instance_name'),
                 meta: {
-                    stretch: true
+                    stretch: true,
+                    mobile: { slot: 'title' }
                 },
                 cell: ({ row }) => (
                     <LocationWorld
@@ -184,6 +191,7 @@ export const createPreviousInstancesColumns = (variant, config) => {
                 id: 'creator',
                 accessorFn: (row) => row?.$location?.userId ?? '',
                 size: 170,
+                meta: { mobile: { slot: 'footer', order: 2 } },
                 header: () => t('table.previous_instances.instance_creator'),
                 cell: ({ row }) => (
                     <DisplayName
@@ -210,7 +218,8 @@ export const createPreviousInstancesColumns = (variant, config) => {
             accessorFn: (row) => row?.worldName ?? row?.name ?? '',
             header: () => t('table.previous_instances.instance_name'),
             meta: {
-                stretch: true
+                stretch: true,
+                mobile: { slot: 'title' }
             },
             cell: ({ row }) => (
                 <Location

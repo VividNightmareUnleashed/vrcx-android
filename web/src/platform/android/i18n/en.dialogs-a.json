@@ -1,0 +1,8 @@
+{
+    "android": {
+        "entity_dialogs": {
+            "more_actions": "More actions",
+            "instance_details": "Instance details"
+        }
+    }
+}

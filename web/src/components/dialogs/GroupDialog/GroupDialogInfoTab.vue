@@ -7,7 +7,8 @@
             </div>
         </div>
         <div v-for="room in groupDialog.instances" :key="room.tag" class="flex flex-col gap-2 mb-4">
-            <div class="flex flex-wrap gap-2 whitespace-nowrap overflow-hidden text-ellipsis">
+            <div
+                class="flex flex-wrap gap-2 whitespace-nowrap overflow-hidden text-ellipsis compact:overflow-visible compact:whitespace-normal">
                 <Location
                     :location="room.tag"
                     exclude-group-name
@@ -21,11 +22,13 @@
                     refresh-tooltip="Refresh player count"
                     :on-refresh="() => refreshInstancePlayerCount(room.tag)" />
             </div>
-            <div v-if="room.users.length" class="flex flex-wrap items-start" style="max-height: 150px; overflow: auto">
+            <div
+                v-if="room.users.length"
+                class="flex flex-wrap items-start max-h-[150px] overflow-auto compact:max-h-none compact:overflow-visible">
                 <div
                     v-for="user in room.users"
                     :key="user.id"
-                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                     @click="showUserDialog(user.id)">
                     <div class="relative inline-block flex-none size-9 mr-2.5" :class="userStatusClass(user)">
                         <Avatar class="size-9">
@@ -169,7 +172,9 @@
                 class="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2 pb-2 border-b border-border">
                 {{ t('dialog.group.info.upcoming_events') }}
             </div>
-            <div v-if="upcomingCalenderEvents.length" class="flex flex-wrap gap-4 overflow-y-auto max-h-[360px] py-2.5">
+            <div
+                v-if="upcomingCalenderEvents.length"
+                class="flex flex-wrap gap-4 overflow-y-auto max-h-[360px] py-2.5 compact:max-h-none compact:overflow-visible">
                 <GroupCalendarEventCard
                     v-for="value in upcomingCalenderEvents"
                     :key="value.id"
@@ -177,7 +182,7 @@
                     :is-following="value.userInterest?.isFollowing"
                     @update-following-calendar-data="updateFollowingCalendarData"
                     mode="grid"
-                    card-class="group-dialog-grid-card" />
+                    card-class="group-dialog-grid-card compact:basis-full! compact:max-w-full!" />
             </div>
             <span v-else class="text-xs text-muted-foreground">—</span>
         </div>
@@ -190,7 +195,7 @@
             </div>
             <div
                 v-if="pastCalenderEvents.length"
-                class="flex flex-wrap gap-4 overflow-y-auto overflow-x-hidden max-h-[230px] py-2.5">
+                class="flex flex-wrap gap-4 overflow-y-auto overflow-x-hidden max-h-[230px] py-2.5 compact:max-h-none compact:overflow-visible">
                 <GroupCalendarEventCard
                     v-for="value in pastCalenderEvents"
                     :key="value.id"
@@ -198,7 +203,7 @@
                     :is-following="value.userInterest?.isFollowing"
                     @update-following-calendar-data="updateFollowingCalendarData"
                     mode="grid"
-                    card-class="group-dialog-grid-card" />
+                    card-class="group-dialog-grid-card compact:basis-full! compact:max-w-full!" />
             </div>
             <span v-else class="text-xs text-muted-foreground">—</span>
         </div>

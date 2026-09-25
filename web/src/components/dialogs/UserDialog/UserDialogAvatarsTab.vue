@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex items-center justify-between compact:flex-wrap compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     v-if="userDialog.ref.id === currentUser.id"
                     class="rounded-full"
@@ -26,13 +26,14 @@
                     t('dialog.user.avatars.total_count', { count: userDialogAvatars.length })
                 }}</span>
             </div>
-            <div class="flex items-center">
+            <div class="flex items-center compact:contents">
                 <Input
                     v-model="avatarSearchQuery"
-                    class="h-8 w-40 mr-2"
+                    class="h-8 w-40 mr-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:mr-0"
                     :placeholder="t('dialog.user.avatars.search_placeholder')"
                     @click.stop />
                 <template v-if="userDialog.ref.id === currentUser.id">
+                    <span class="hidden compact:block compact:h-0 compact:basis-full" aria-hidden="true"></span>
                     <span class="mr-1">{{ t('dialog.user.avatars.sort_by') }}</span>
                     <Select
                         :model-value="userDialog.avatarSorting"
@@ -47,7 +48,7 @@
                             <SelectItem value="createdAt">{{ t('dialog.user.avatars.sort_by_uploaded') }}</SelectItem>
                         </SelectContent>
                     </Select>
-                    <span class="ml-2 mr-1">{{ t('dialog.user.avatars.group_by') }}</span>
+                    <span class="ml-2 mr-1 compact:ml-0">{{ t('dialog.user.avatars.group_by') }}</span>
                     <Select
                         :model-value="userDialog.avatarReleaseStatus"
                         :disabled="userDialog.isWorldsLoading"
@@ -69,7 +70,7 @@
                 <div
                     v-for="avatar in filteredUserDialogAvatars"
                     :key="avatar.id"
-                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                     @click="showAvatarDialog(avatar.id)">
                     <div class="relative inline-block flex-none size-9 mr-2.5">
                         <Avatar class="size-9">

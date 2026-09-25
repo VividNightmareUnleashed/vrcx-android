@@ -1,5 +1,5 @@
 <template>
-    <div class="flex-1 min-h-0 min-w-0 flex flex-row">
+    <div :class="['flex-1 min-h-0 min-w-0 flex flex-row', ENTITY_ROOT_COMPACT_CLASS]">
         <DialogHeader class="sr-only">
             <DialogTitle>{{ worldDialog.ref?.name }}</DialogTitle>
             <DialogDescription>
@@ -7,9 +7,9 @@
             </DialogDescription>
         </DialogHeader>
         <!-- Summary and info rail -->
-        <div class="flex-none w-77 pr-4 overflow-y-auto">
+        <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
             <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
-                <div class="relative aspect-4/3">
+                <div class="relative aspect-4/3 compact-landscape:aspect-[21/9]">
                     <img
                         v-if="!worldDialog.loading && !imageError"
                         :src="worldDialog.ref.thumbnailImageUrl"
@@ -82,31 +82,32 @@
                                             <Ellipsis />
                                         </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent>
+                                    <DropdownMenuContent
+                                        :class="MENU_CONTENT_TOUCH_CLASS"
+                                        :align="isCompact ? 'end' : undefined"
+                                        :collision-padding="isCompact ? 8 : undefined">
                                         <DropdownMenuItem @click="worldDialogCommand('Refresh')">
                                             <RefreshCw class="size-4" />
                                             {{ t('dialog.world.actions.refresh') }}
                                         </DropdownMenuItem>
-                                        <DropdownMenuSub>
-                                            <DropdownMenuSubTrigger @click="worldDialogCommand('Share')">
-                                                <Share2 class="size-4 mr-2" />
-                                                <span>{{ t('dialog.world.actions.share') }}</span>
-                                            </DropdownMenuSubTrigger>
-                                            <DropdownMenuSubContent side="right" align="start" class="w-56">
-                                                <DropdownMenuItem @click="worldDialogCommand('Share')">
-                                                    <Copy class="size-4" />
-                                                    {{ t('dialog.world.info.copy_url') }}
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem @click="worldDialogCommand('Copy World Name')">
-                                                    <Copy class="size-4" />
-                                                    {{ t('dialog.world.info.copy_name') }}
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem @click="worldDialogCommand('Copy World ID')">
-                                                    <Copy class="size-4" />
-                                                    {{ t('dialog.world.info.copy_id') }}
-                                                </DropdownMenuItem>
-                                            </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
+                                        <CompactDropdownMenuSub
+                                            :label="t('dialog.world.actions.share')"
+                                            :icon="Share2"
+                                            align="start"
+                                            @trigger-click="worldDialogCommand('Share')">
+                                            <DropdownMenuItem @click="worldDialogCommand('Share')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.world.info.copy_url') }}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem @click="worldDialogCommand('Copy World Name')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.world.info.copy_name') }}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem @click="worldDialogCommand('Copy World ID')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.world.info.copy_id') }}
+                                            </DropdownMenuItem>
+                                        </CompactDropdownMenuSub>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem @click="worldDialogCommand('New Instance')">
                                             <Flag class="size-4" />
@@ -324,13 +325,14 @@
         </div>
 
         <!-- Right side tabs -->
-        <div class="flex-1 min-w-0 flex flex-col min-h-0 pl-4">
+        <div ref="tabsPaneRef" :class="['flex-1 min-w-0 flex flex-col min-h-0 pl-4', ENTITY_PANE_COMPACT_CLASS]">
             <TabsUnderline
                 v-model="worldDialog.activeTab"
                 :background="true"
                 :items="worldDialogTabs"
                 :unmount-on-hide="false"
-                fill
+                :fill="!isCompact"
+                :class="ENTITY_TABS_COMPACT_CLASS"
                 @update:modelValue="worldDialogTabClick">
                 <template #Instances>
                     <WorldDialogInstancesTab />
@@ -423,9 +425,6 @@
         DropdownMenuContent,
         DropdownMenuItem,
         DropdownMenuSeparator,
-        DropdownMenuSub,
-        DropdownMenuSubContent,
-        DropdownMenuSubTrigger,
         DropdownMenuTrigger
     } from '../../ui/dropdown-menu';
     import { deleteVRChatCache, openFolderGeneric } from '../../../shared/utils';
@@ -443,6 +442,15 @@
     import NewInstanceDialog from '../NewInstanceDialog/NewInstanceDialog.vue';
     import SetWorldTagsDialog from './SetWorldTagsDialog.vue';
     import WorldAllowedDomainsDialog from './WorldAllowedDomainsDialog.vue';
+    import CompactDropdownMenuSub from '../../CompactDropdownMenuSub.vue';
+    import {
+        ENTITY_PANE_COMPACT_CLASS,
+        ENTITY_RAIL_COMPACT_CLASS,
+        ENTITY_ROOT_COMPACT_CLASS,
+        ENTITY_TABS_COMPACT_CLASS,
+        MENU_CONTENT_TOUCH_CLASS,
+        useEntityDialogCompact
+    } from '../useEntityDialogCompact';
 
     const { currentUser, userDialog } = storeToRefs(useUserStore());
     const { worldDialog } = storeToRefs(useWorldStore());
@@ -456,6 +464,14 @@
     const modalStore = useModalStore();
 
     const { t } = useI18n();
+
+    // Phones: one scroller with the world card on top and a sticky tab strip (docs/DESIGN.md §3.2).
+    const tabsPaneRef = ref(null);
+    const { isCompact } = useEntityDialogCompact({
+        paneRef: tabsPaneRef,
+        entityId: () => worldDialog.value.id,
+        activeTab: () => worldDialog.value.activeTab
+    });
 
     const {
         worldAllowedDomainsDialog,

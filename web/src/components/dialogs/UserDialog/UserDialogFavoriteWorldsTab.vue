@@ -15,7 +15,7 @@
             <div class="pb-2">
                 <Input
                     v-model="searchQuery"
-                    class="h-8 w-40 shrink-0"
+                    class="h-8 w-40 shrink-0 compact:w-full"
                     :placeholder="t('dialog.user.favorite_worlds.search_placeholder')"
                     @click.stop />
             </div>
@@ -25,7 +25,7 @@
                         <div
                             v-for="world in allFilteredFavoriteWorlds"
                             :key="world.favoriteId"
-                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                             @click="showWorldDialog(world.id)">
                             <div class="relative inline-block flex-none size-9 mr-2.5">
                                 <Avatar class="size-9">
@@ -51,9 +51,9 @@
                 :items="favoriteWorldTabs"
                 :activeColor="userDialogTabColor"
                 :unmount-on-hide="false"
-                variant="equal"
-                fill
-                class="zero-margin-tabs favorite-worlds-tabs min-h-0 flex-1 overflow-hidden">
+                :variant="isCompact ? 'fit' : 'equal'"
+                :fill="!isCompact"
+                :class="['favorite-worlds-tabs min-h-0 flex-1', !isCompact && 'zero-margin-tabs overflow-hidden']">
                 <template
                     v-for="(list, index) in userDialog.userFavoriteWorlds"
                     :key="`favorite-worlds-label-${index}`"
@@ -77,7 +77,7 @@
                             <div
                                 v-for="world in list[2]"
                                 :key="world.favoriteId"
-                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                                 @click="showWorldDialog(world.id)">
                                 <div class="relative inline-block flex-none size-9 mr-2.5">
                                     <Avatar class="size-9">
@@ -121,8 +121,11 @@
     import { showWorldDialog } from '../../../coordinators/worldCoordinator';
     import { handleFavoriteWorldList } from '../../../coordinators/favoriteCoordinator';
     import { favoriteRequest } from '../../../api';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { t } = useI18n();
+    // Phones: the favourite groups scroll sideways at their natural width instead of squeezing into equal columns.
+    const { isCompact } = useCompactLayout();
 
     const { userDialog } = storeToRefs(useUserStore());
     const { favoriteLimits } = storeToRefs(useFavoriteStore());

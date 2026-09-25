@@ -4,7 +4,7 @@
             <div v-if="showLaunchButton" class="inline-block">
                 <TooltipWrapper side="top" :content="t('dialog.user.info.launch_invite_tooltip')">
                     <Button
-                        class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground"
+                        class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                         :style="buttonStyle"
                         size="icon-sm"
                         variant="outline"
@@ -20,7 +20,7 @@
                     side="top"
                     :content="t('dialog.user.info.self_invite_tooltip')">
                     <Button
-                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                         :style="buttonStyle"
                         size="icon-sm"
                         variant="outline"
@@ -31,7 +31,7 @@
                 </TooltipWrapper>
                 <TooltipWrapper v-else side="top" :content="t('dialog.user.info.open_in_vrchat_tooltip')">
                     <Button
-                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                         :style="buttonStyle"
                         size="icon-sm"
                         variant="outline"
@@ -40,7 +40,7 @@
                         <Loader2 class="h-4 w-4 animate-spin" />
                     </Button>
                     <Button
-                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                        class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                         :style="buttonStyle"
                         size="icon-sm"
                         variant="outline"
@@ -56,7 +56,7 @@
                 side="top"
                 :content="t('dialog.user.info.instance_announcement_tooltip')">
                 <Button
-                    class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                    class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                     :style="buttonStyle"
                     size="icon-sm"
                     variant="outline"
@@ -67,7 +67,7 @@
             </TooltipWrapper>
             <TooltipWrapper v-if="showRefreshButton" side="top" :content="refreshTooltip">
                 <Button
-                    class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground"
+                    class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                     :style="buttonStyle"
                     size="icon"
                     variant="outline"
@@ -78,7 +78,7 @@
             </TooltipWrapper>
             <TooltipWrapper v-if="showHistoryButton" side="top" :content="historyTooltip">
                 <Button
-                    class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground"
+                    class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                     :style="buttonStyle"
                     size="icon-sm"
                     variant="outline"
@@ -93,55 +93,46 @@
             v-if="showInstanceInfo"
             :class="
                 cn(
-                    'flex items-center gap-1.5 text-muted-foreground rounded-full border border-muted-foreground/10 py-0.5 px-2',
+                    'flex items-center gap-1.5 text-muted-foreground rounded-full border border-muted-foreground/10 py-0.5 px-2 pointer-coarse:py-1.5',
                     props.class
                 )
             ">
-            <TooltipWrapper v-if="instanceInfoState.isValidInstance" side="top">
+            <!-- Touch: the details (and Close instance) open in a popover on tap; a tooltip cannot hold a button. -->
+            <Popover v-if="instanceInfoState.isValidInstance && isCoarsePointer">
+                <PopoverTrigger as-child>
+                    <button
+                        type="button"
+                        data-slot="instance-info-trigger"
+                        :aria-label="t('android.entity_dialogs.instance_details')"
+                        :class="
+                            cn(
+                                'relative flex items-center gap-0.5 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-x-1 after:-inset-y-2',
+                                !instance?.hasCapacityForYou ? 'text-red-500' : null
+                            )
+                        ">
+                        <UsersRound class="h-4 w-4" />
+                        <span v-if="resolvedInstanceLocation === locationStore.lastLocation.location">
+                            {{ locationStore.lastLocation.playerList.size }}/{{ instance?.capacity }}
+                        </span>
+                        <span v-else-if="instance?.userCount"> {{ instance.userCount }}/{{ instance?.capacity }} </span>
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" class="w-auto max-w-[calc(100vw-2rem)] p-3 text-xs">
+                    <InstanceInfoDetails
+                        labelled
+                        :instance="instance"
+                        :disabled-content-settings="instanceInfoState.disabledContentSettings"
+                        :can-close-instance="instanceInfoState.canCloseInstance"
+                        @close-instance="closeInstance(resolvedInstanceLocation)" />
+                </PopoverContent>
+            </Popover>
+            <TooltipWrapper v-else-if="instanceInfoState.isValidInstance" side="top">
                 <template #content>
-                    <div class="flex flex-col flex-wrap gap-x-6 gap-y-2">
-                        <div class="flex flex-col gap-1">
-                            <span>
-                                <span class="text-platform-pc border-platform-pc!">PC: </span>
-                                {{ instance?.platforms?.standalonewindows }}
-                            </span>
-                            <span>
-                                <span class="text-platform-quest border-platform-quest!">Android: </span>
-                                {{ instance?.platforms?.android }}
-                            </span>
-                            <span>
-                                <span class="text-platform-ios border-platform-quest!">iOS: </span>
-                                {{ instance?.platforms?.ios }}
-                            </span>
-                        </div>
-
-                        <span>
-                            {{ t('dialog.user.info.instance_game_version') }} {{ instance?.gameServerVersion }}
-                        </span>
-
-                        <span v-if="instance?.queueEnabled" class="text-yellow-500 font-medium">
-                            {{ t('dialog.user.info.instance_queuing_enabled') }}
-                        </span>
-
-                        <span v-if="instanceInfoState.disabledContentSettings">
-                            {{ t('dialog.user.info.instance_disabled_content') }}
-                            {{ instanceInfoState.disabledContentSettings }}
-                        </span>
-
-                        <TooltipWrapper
-                            v-if="instanceInfoState.canCloseInstance && !instance?.closedAt"
-                            side="top"
-                            :content="t('dialog.user.info.close_instance')">
-                            <Button
-                                class="w-12 h-6 text-xs hover:text-muted-foreground"
-                                size="icon-sm"
-                                variant="destructive"
-                                :ariaLabel="t('dialog.user.info.close_instance')"
-                                @click="closeInstance(resolvedInstanceLocation)">
-                                <PowerIcon class="h-4 w-4" />
-                            </Button>
-                        </TooltipWrapper>
-                    </div>
+                    <InstanceInfoDetails
+                        :instance="instance"
+                        :disabled-content-settings="instanceInfoState.disabledContentSettings"
+                        :can-close-instance="instanceInfoState.canCloseInstance"
+                        @close-instance="closeInstance(resolvedInstanceLocation)" />
                 </template>
                 <div :class="cn('flex items-center gap-0.5', !instance?.hasCapacityForYou ? 'text-red-500' : null)">
                     <UsersRound class="h-4 w-4" />
@@ -221,7 +212,6 @@
         Mail,
         MapPin,
         Megaphone,
-        PowerIcon,
         RefreshCw,
         UsersRound,
         SquareStack,
@@ -249,12 +239,17 @@
     import { useInviteChecks } from '../composables/useInviteChecks';
     import { instanceRequest, miscRequest } from '../api';
     import InstanceAnnouncementDialog from './dialogs/InstanceAnnouncementDialog.vue';
+    import InstanceInfoDetails from './InstanceInfoDetails.vue';
+    import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+    import { useCompactLayout } from '../composables/useCompactLayout';
 
     defineOptions({
         inheritAttrs: false
     });
 
     const { t } = useI18n();
+    // Touch screens (Android only): 40px buttons and the instance details in a tap popover.
+    const { isCoarsePointer } = useCompactLayout();
 
     const locationStore = useLocationStore();
     const userStore = useUserStore();

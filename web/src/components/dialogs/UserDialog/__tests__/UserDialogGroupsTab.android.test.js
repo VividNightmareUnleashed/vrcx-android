@@ -71,6 +71,9 @@ vi.mock('@/components/ui/button', () => ({
     }
 }));
 vi.mock('../UserDialogGroupCard.vue', () => ({ default: { template: '<div data-testid="group-card" />' } }));
+vi.mock('@/components/ui/quick-actions', () => ({
+    QuickActionsToggle: { template: '<button data-testid="quick-actions">quick actions</button>' }
+}));
 
 import UserDialogGroupsTab from '../UserDialogGroupsTab.vue';
 
@@ -101,6 +104,12 @@ describe('UserDialogGroupsTab.vue on Android', () => {
         });
     });
 
+    it('has no quick actions toggle outside edit mode', () => {
+        const wrapper = mount(UserDialogGroupsTab);
+
+        expect(wrapper.find('[data-testid="quick-actions"]').exists()).toBe(false);
+    });
+
     it('does not offer the in-game sort order', () => {
         const wrapper = mount(UserDialogGroupsTab);
         const values = wrapper.findAll('[data-testid="select-item"]').map((item) => item.attributes('data-value'));
@@ -120,6 +129,8 @@ describe('UserDialogGroupsTab.vue on Android', () => {
         expect(wrapper.text()).toContain('dialog.user.groups.exit_edit_mode');
         expect(wrapper.text()).toContain('Alpha');
         expect(wrapper.text()).not.toContain('dialog.user.groups.hold_shift');
+        // Instead of holding Shift, the quick actions toggle makes leave/delete instant (docs/DESIGN.md §3.3).
+        expect(wrapper.find('[data-testid="quick-actions"]').exists()).toBe(true);
         // The reorder buttons (move to top/bottom, up/down) are gone.
         expect(wrapper.find('.lucide-arrow-up').exists()).toBe(false);
         expect(wrapper.find('.lucide-arrow-down').exists()).toBe(false);
