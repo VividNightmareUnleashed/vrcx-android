@@ -83,7 +83,12 @@ class VrcxForegroundService : Service() {
 
         /** Must be called while the app is visible (background FGS starts are refused on Android 12+). */
         fun start(context: Context) {
-            if (instance != null) return
+            instance?.let {
+                // Already running: refresh the notification (it stays hidden if it was posted before the
+                // POST_NOTIFICATIONS grant).
+                it.refresh()
+                return
+            }
             try {
                 ContextCompat.startForegroundService(context, Intent(context, VrcxForegroundService::class.java))
             } catch (e: Exception) {

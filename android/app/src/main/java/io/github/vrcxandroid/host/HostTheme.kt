@@ -27,14 +27,29 @@ object HostTheme {
 
     /** Called in MainActivity.onCreate before the content view is set. */
     fun applyStartup(activity: Activity) {
-        val prefs = VrcxHost.prefs
-        val storedMode = if (prefs.contains(KEY_MODE)) prefs.getInt(KEY_MODE, 0) else null
-        val storedNight = if (prefs.contains(KEY_SYSTEM_NIGHT)) prefs.getBoolean(KEY_SYSTEM_NIGHT, false) else null
-        val mode = ThemeColors.startupMode(storedMode, storedNight, isSystemNight(activity))
-        current = ThemeColors.forMode(mode)!!
+        current = ThemeColors.forMode(expectedMode(activity))!!
         configureWindow(activity)
         applyToWindow(activity, current)
         WebViewHolder.backgroundColor = current.frame
+    }
+
+    /**
+     * The system switched between light and dark (MainActivity handles uiMode itself). When the page follows the system
+     * theme it calls ChangeTheme a moment later; repaint the frame and bar icons now so they do not lag behind.
+     */
+    fun onSystemNightChanged(activity: Activity) {
+        val colors = ThemeColors.forMode(expectedMode(activity))!!
+        if (colors == current) return
+        current = colors
+        applyToWindow(activity, colors)
+        WebViewHolder.backgroundColor = colors.frame
+    }
+
+    private fun expectedMode(context: Context): Int {
+        val prefs = VrcxHost.prefs
+        val storedMode = if (prefs.contains(KEY_MODE)) prefs.getInt(KEY_MODE, 0) else null
+        val storedNight = if (prefs.contains(KEY_SYSTEM_NIGHT)) prefs.getBoolean(KEY_SYSTEM_NIGHT, false) else null
+        return ThemeColors.startupMode(storedMode, storedNight, isSystemNight(context))
     }
 
     /** AppApi.ChangeTheme(0 light, 1 dark, 2 midnight). Any thread. */

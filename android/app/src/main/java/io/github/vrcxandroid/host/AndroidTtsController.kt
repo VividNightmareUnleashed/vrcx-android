@@ -115,11 +115,13 @@ class AndroidTtsController(private val context: Context) : TtsController {
     }
 
     private fun refreshVoices(engine: TextToSpeech) {
-        listedThisProcess = true
         val list = try {
             val defaultName = runCatching { engine.defaultVoice?.name }.getOrNull()
-            engine.voices.orEmpty()
-                .filterNot { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED in it.features.orEmpty() }
+            val all = engine.voices.orEmpty()
+            val installed = all.filterNot { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED in it.features.orEmpty() }
+            Log.i(TAG, "engine ${engine.defaultEngine}: ${all.size} voices, ${installed.size} installed")
+            // An engine whose voice data is not downloaded yet still lists its voices; speaking one starts the download.
+            installed.ifEmpty { all }
                 .map { v ->
                     VoiceInfo(
                         name = v.name,
@@ -132,6 +134,8 @@ class AndroidTtsController(private val context: Context) : TtsController {
             Log.w(TAG, "could not list voices", t)
             return
         }
+        // An empty list is retried the next time the page asks (engines sometimes report nothing right after init).
+        listedThisProcess = list.isNotEmpty()
         val json = JsonArray(TtsVoiceOrder.order(list).map { it.toJson() })
         if (json == cachedVoices) return
         cachedVoices = json

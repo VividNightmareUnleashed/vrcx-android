@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.host
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
@@ -70,6 +71,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        HostTheme.onSystemNightChanged(this)
     }
 
     override fun onStart() {
