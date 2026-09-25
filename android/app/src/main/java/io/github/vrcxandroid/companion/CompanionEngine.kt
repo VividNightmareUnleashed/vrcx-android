@@ -177,7 +177,14 @@ class CompanionEngine(
             put("status", status)
             put("activeId", jsonOrNull(activeId))
             put("paired", JsonArray(records.map { it.toPublicJson() }))
-            put("machineName", jsonOrNull(info?.machineName?.takeIf { it.isNotEmpty() } ?: active?.machineName))
+            // Last `info` value; before the first one, the name the companion announced when pairing.
+            put(
+                "machineName",
+                jsonOrNull(
+                    info?.machineName?.takeIf { it.isNotEmpty() } ?: active?.machineName
+                        ?: active?.name?.takeIf { it.isNotEmpty() },
+                ),
+            )
             put("tz", info?.let(::tzJson) ?: active?.tz ?: JsonNull)
             put("vrchatRunning", processValid && p!!.vrchat)
             put("steamVrRunning", processValid && p!!.steamVr)
