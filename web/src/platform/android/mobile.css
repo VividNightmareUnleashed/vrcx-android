@@ -230,6 +230,12 @@ html.vrcx-compact [data-slot='alert-dialog-footer'] > * {
     margin-top: 0;
 }
 
+/* Titles stay left-aligned as on PC (shadcn centres them below 640px). */
+html.vrcx-compact [data-slot='alert-dialog-header'] {
+    text-align: left;
+    padding-right: 24px;
+}
+
 /* Inner widgets that assume a desktop-wide dialog. */
 html.vrcx-compact [data-slot='dialog-content'] [data-slot='toggle-group'] {
     max-width: 100%;
