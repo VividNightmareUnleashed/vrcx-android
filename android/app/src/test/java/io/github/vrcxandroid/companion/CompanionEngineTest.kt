@@ -725,9 +725,12 @@ class CompanionEngineTest {
 
         engine.setActive(b.id)
         b.nextConnection()
-        waitFor(message = "other companion") { engine.state().s("machineName") == "OTHERPC" }
+        // machineName alone would not do: until b's info arrives it falls back to the stored name, also "OTHERPC".
+        waitFor(message = "session with the other companion") {
+            sink.events.contains("session:${b.id}:OTHERPC:Europe/Berlin")
+        }
         assertEquals(b.id, engine.state().s("activeId"))
-        assertTrue(sink.events.contains("session:${b.id}:OTHERPC:Europe/Berlin"))
+        assertEquals("OTHERPC", engine.state().s("machineName"))
         val disconnectIndex = sink.events.indexOf("disconnected")
         assertTrue(disconnectIndex in 0 until sink.events.indexOf("session:${b.id}:OTHERPC:Europe/Berlin"))
     }
