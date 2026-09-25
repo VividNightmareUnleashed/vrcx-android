@@ -1,0 +1,26 @@
+# Fixture 1 and phases 1-5, upstream behaviour (the partial line is parsed at EOF).
+# Only used to check the harness against the spec; the Kotlin port runs golden-15 (holdtail) instead.
+tz W. Europe Standard Time|Europe/Berlin
+till 2023-12-31T00:00:00.000Z
+file output_log_2024-01-01_09-59-00.txt 2024-01-01T08:59:00Z
+write output_log_2024-01-01_09-59-00.txt 2024-01-01T09:00:54Z golden-fixture1.bin
+get
+lines
+flag
+text output_log_2024-01-01_09-59-00.txt 2024-01-01T09:01:01Z 2024.01.01 10:01:00 Log        -  [Behaviour] OnPlayerJoined Live (usr_live)\n2024.01.01 10:01:01 Log        -  [Behaviour] Joining wrld_split:123~priv
+get
+lines
+flag
+text output_log_2024-01-01_09-59-00.txt 2024-01-01T09:01:02Z ate(usr_x)~region(us)\n
+get
+lines
+flag
+file output_log_2024-01-01_11-00-00.txt 2024-01-01T10:00:00Z
+text output_log_2024-01-01_11-00-00.txt 2024-01-01T10:00:02Z 2024.01.01 11:00:00 Log        -  [Behaviour] OnPlayerJoined BeforeBad (usr_1)\n2024.01.01 11:00:01 Log        -  [Behaviour] OnPlayerJoined Broken (name\n2024.01.01 11:00:02 Log        -  [Behaviour] OnPlayerJoined AfterBad (usr_2)\n
+get
+lines
+flag
+text output_log_2024-01-01_11-00-00.txt 2024-01-01T10:00:03Z 2024.01.01 11:00:03 Log        -  [Behaviour] OnPlayerJoined Appended (usr_3)\n
+get
+lines
+flag

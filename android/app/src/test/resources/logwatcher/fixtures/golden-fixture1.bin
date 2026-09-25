@@ -1,0 +1,66 @@
+2023.06.01 10:00:00 Log        -  [Behaviour] OnPlayerJoined TooOld (usr_00000000-0000-0000-0000-000000000000)
+2023.06.01 10:00:01 Log        -  [PyPyDance] old line before tillDate
+2024.01.01 10:00:00 Log        -  [Behaviour] Joining wrld_aaa:1~region(eu)
+2024.01.01 10:00:01 Log        -  [Behaviour] OnLeftRoom
+2024.01.01 10:00:02 Log        -  [Behaviour] Destination fetching: wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd/x
+2024.01.01 10:00:03 Debug      -  [Behaviour] OnLeftRoom
+2024.01.01 10:00:04 Log        -  [Behaviour] OnLeftRoom
+2024.01.01 10:00:05 Log        -  [Behaviour] Entering Room: Test World ♡
+2024.01.01 10:00:06 Log        -  [Behaviour] Joining or Creating Room: Test World
+2024.01.01 10:00:06 Log        -  [Behaviour] Joining friend: Someone
+2024.01.01 10:00:07 Log        -  [Behaviour] Joining wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd:67646~private(usr_4f76a584-9d4b-46f6-8209-8305eb683661)~nonce(D9298A536FEEEDDB)
+2024.01.01 10:00:08 Log        -  [Behaviour] OnPlayerJoined Natsumi-sama (usr_032383a7-748c-4fb2-94e4-bcb928e5de6b)
+2024.01.01 10:00:09 Log        -  [Behaviour] OnPlayerJoined Rize♡ (JP) (usr_032383a7-748c-4fb2-94e4-bcb928e5de6c)
+2024.01.01 10:00:10 Log        -  [Behaviour] OnPlayerJoined OldFormatName
+2024.01.01 10:00:11 Log        -  [Behaviour] OnPlayerJoined:Unnamed
+2024.01.01 10:00:12 Log        -  [Behaviour] OnPlayerLeftRoom
+2024.01.01 10:00:13 Log        -  [Behaviour] OnPlayerLeft Natsumi-sama (usr_032383a7-748c-4fb2-94e4-bcb928e5de6b)
+2024.01.01 10:00:13 Log        -  [Behaviour] OnPlayerLeft OldFormatName
+2024.01.01 10:00:14 Log        -  [Behaviour] Instantiated a (Clone [800004] Portals/PortalInternalDynamic)
+2024.01.01 10:00:15 Error      -  Maximum number (384) of shader global keywords exceeded, keyword _FOG_EXP2 will be ignored.
+2024.01.01 10:00:15 Error      -  Maximum number (384) of shader global keywords exceeded, keyword _FOG_EXP3 will be ignored.
+2024.01.01 10:00:16 Error      -  [Behaviour] Master is not sending any events! Moving to a new instance.
+2024.01.01 10:00:17 Log        -  [Network Processing] RPC invoked SwitchAvatar on AvatarPedestal for User
+2024.01.01 10:00:18 Error      -  [Video Playback] ERROR: Video unavailable
+2024.01.01 10:00:18 Error      -  [Video Playback] ERROR: Video unavailable
+2024.01.01 10:00:19 Error      -  [Video Playback] ERROR: Sign in to confirm you're not a bot
+2024.01.01 10:00:20 Error      -  [AVProVideo] Error: Loading failed.  File not found.
+2024.01.01 10:00:21 Error      -  Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances.
+2024.01.01 10:00:22 Log        -  [VRCX] VideoPlay(PyPyDance) "https://jd.pypy.moe/api/v1/videos/-Q3pdlsQxOk.mp4",0.5338666,260.6938,"1339 : Le Freak (Random)"
+2024.01.01 10:00:23 Log        -  [VRCX-World] store:test:testvalue
+2024.01.01 10:00:24 Log        -  [Video Playback] Attempting to resolve URL 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+2024.01.01 10:00:25 Log        -  [Video Playback] Resolving URL 'rtspt://topaz.chat/live/kiriri520'
+2024.01.01 10:00:26 Log        -  User Natsumi-sama added URL https://www.youtube.com/watch?v=dQw4w9WgXcQ
+2024.01.01 10:00:27 Log        -  [USharpVideo] Started video load for URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1s, requested by ʜ ᴀ ᴘ ᴘ ʏ
+2024.01.01 10:00:28 Log        -  [USharpVideo] Syncing video to 2.52
+2024.01.01 10:00:29 Log        -  [API] Received Notification: < Notification from username:pypy, sender user id:usr_4f76a584 to of type: friendRequest, id: not_3a8f66eb, details: {{}}, message: ""> received at 01/02/2021 16:48:58 UTC
+2024.01.01 10:00:30 Log        -  [API] [110] Sending Get request to https://api.vrchat.cloud/api/1/users/usr_x?apiKey=abc&organization=vrchat
+2024.01.01 10:00:30 Log        -  [API] [111] Sending Post request to https://api.vrchat.cloud/api/1/x
+2024.01.01 10:00:31 Log        -  [Behaviour] Switching K․MOG to avatar MoeSera
+2024.01.01 10:00:32 Log        -  [Always] uSpeak: SetInputDevice 0 (3 total) 'Index HMD Mic (Valve VR Radio & HMD Mic)'
+2024.01.01 10:00:33 Log        -  [Always] uSpeak: OnAudioConfigurationChanged - devicesChanged = True, resetting mic..
+2024.01.01 10:00:34 Log        -  [Always] uSpeak: SetInputDevice 0 (2 total) 'Microphone (NVIDIA Broadcast)'
+2024.01.01 10:00:35 Log        -  [VRC Camera] Took screenshot to: C:\Users\Tea\Pictures\VRChat\2023-02\VRChat_2023-02-08_12-31-35.104_1920x1080.png
+2024.01.01 10:00:36 Log        -  [String Download] Attempting to load String from URL 'https://pastebin.com/raw/BaW6NL2L'
+2024.01.01 10:00:37 Log        -  [String Download] Attempting to load String from URL 'http://127.0.0.1:22500/vrcx/data'
+2024.01.01 10:00:38 Log        -  [Image Download] Attempting to load image from URL 'https://i.imgur.com/lCfUMX0.jpeg'
+2024.01.01 10:00:39 Log        -  [Behaviour] Received executive message: You have been kicked from the instance by majority vote
+2024.01.01 10:00:40 Warning    -  [Behaviour] Failed to join instance 'wrld_78eb:82384~region(eu)' due to 'That instance is using an outdated version of VRChat.'
+2024.01.01 10:00:41 Log        -  [ModerationManager] This instance will be reset in 60 minutes due to its age.
+2024.01.01 10:00:42 Log        -  [ModerationManager] A vote kick has been initiated against בורקס 849d, do you agree?
+2024.01.01 10:00:43 Log        -  [ModerationManager] Vote to kick בורקס 849d succeeded
+2024.01.01 10:00:44 Log        -  [StickersManager] User usr_032383a7-748c-4fb2-94e4-bcb928e5de6b (Natsumi-sama ♡) spawned sticker inv_8b380ee4-9a8a-484e-a0c3-b01290b92c6a
+2024.01.01 10:00:45 Warning    -  Could not Start OSC: Address already in use
+2024.01.01 10:00:46 Log        -  Initializing VRSDK.
+2024.01.01 10:00:47 Log        -  STEAMVR HMD Model: Index
+2024.01.01 10:00:48 Log        -  VR Disabled
+2024.01.01 10:00:49 Log        -  VRCApplication: HandleApplicationQuit at 936.5161
+2024.01.01 10:00:50 Error      -  [UdonBehaviour] An exception occurred during Udon execution, this UdonBehaviour will be halted.
+VRC.Udon.VM.UdonVMException: An exception occurred in an UdonVM, execution will be halted. ---> VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to 'X'.
+2024.01.01 10:00:51 Log        -  [PyPyDance] something
+2024.01.01 10:00:52 Log        -  [Behaviour] OnPlayerJoined 
+2021.08.20 04:20:69 Log        -  [Behaviour] OnPlayerJoined BadDate
+2099.01.01 00:00:00 Log        -  [Behaviour] OnPlayerJoined FromTheFuture
+2024.01.01 10:00:53 Log    -  [Behaviour] OnPlayerJoined WrongPadding
+
+2024.01.01 10:00:54 Log        -  [Behaviour] OnPlayerJoined CRLF (usr_crlf)
