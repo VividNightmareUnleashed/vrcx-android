@@ -128,6 +128,74 @@ class LogMirrorTest {
     }
 
     @Test
+    fun orphanDataFilesWithoutAnIndexAreNeverReused() {
+        // no index.json (lost after a failed replace), but a data file from before
+        tmp.root.resolve("f1.log").writeText("ORPHAN-BYTES\n")
+        tmp.root.resolve("f7.log").writeText("x")
+        val m = mirror()
+        assertTrue(m.entries().isEmpty())
+        assertFalse(tmp.root.resolve("f1.log").exists())
+        assertFalse(tmp.root.resolve("f7.log").exists())
+        m.applySnapshot(listOf(meta("output_log_a.txt", fileId = "fid", length = 4)))
+        assertEquals(LogMirror.AppendResult.APPENDED, m.append("output_log_a.txt", "fid", 0, "NEW\n".toByteArray()))
+        val e = m.entry("output_log_a.txt")!!
+        assertTrue("local ${e.local} is not an old name", e.local != "f1.log" && e.local != "f7.log")
+        assertArrayEquals("NEW\n".toByteArray(), bytesOf(m, "output_log_a.txt"))
+        assertEquals(4L, File(tmp.root, e.local).length())
+        assertEquals(listOf(MirroredFile("output_log_a.txt", "fid", 4)), mirror().have())
+    }
+
+    @Test
+    fun indexIsRestoredFromItsTemporaryCopy() {
+        val m = mirror()
+        m.applySnapshot(listOf(meta("a", length = 3)))
+        m.append("a", "id-a", 0, "abc".toByteArray())
+        // the fallback of writeAtomically deleted index.json and its second rename failed
+        val index = tmp.root.resolve(LogMirror.INDEX)
+        index.renameTo(tmp.root.resolve(LogMirror.INDEX + ".tmp"))
+        val again = mirror()
+        assertEquals(listOf(MirroredFile("a", "id-a", 3)), again.have())
+        assertTrue(index.exists())
+        assertFalse(tmp.root.resolve(LogMirror.INDEX + ".tmp").exists())
+        assertArrayEquals("abc".toByteArray(), bytesOf(again, "a"))
+        // a leftover temporary file next to a good index is stale and removed
+        tmp.root.resolve(LogMirror.INDEX + ".tmp").writeText("{\"files\":[]}")
+        assertEquals(listOf(MirroredFile("a", "id-a", 3)), mirror().have())
+        assertFalse(tmp.root.resolve(LogMirror.INDEX + ".tmp").exists())
+    }
+
+    @Test
+    fun appendsLandAtTheMirroredLengthAfterAFailedWrite() {
+        val m = mirror()
+        m.applySnapshot(listOf(meta("a")))
+        m.append("a", "id-a", 0, "abc".toByteArray())
+        val data = File(tmp.root, m.entry("a")!!.local)
+        // part of a write that failed: the file holds more than the mirrored length
+        data.appendText("PARTIAL")
+        assertEquals(3, m.entry("a")!!.size)
+        // the companion resends from the mirrored length
+        assertEquals(LogMirror.AppendResult.APPENDED, m.append("a", "id-a", 3, "de".toByteArray()))
+        assertArrayEquals("abcde".toByteArray(), bytesOf(m, "a"))
+        assertEquals(5L, data.length())
+        assertEquals(listOf(MirroredFile("a", "id-a", 5)), mirror().have())
+    }
+
+    @Test
+    fun bytesLostUnderTheMirrorAreAskedForAgain() {
+        val m = mirror()
+        m.applySnapshot(listOf(meta("a")))
+        m.append("a", "id-a", 0, "abcdef".toByteArray())
+        val data = File(tmp.root, m.entry("a")!!.local)
+        data.delete()
+        assertEquals(LogMirror.AppendResult.GAP, m.append("a", "id-a", 6, "gh".toByteArray()))
+        assertEquals(ResyncRequest("a", "id-a", 0), m.pendingResyncs().single())
+        assertEquals(0, m.entry("a")!!.size)
+        assertEquals(LogMirror.AppendResult.APPENDED, m.append("a", "id-a", 0, "abcdefgh".toByteArray()))
+        assertArrayEquals("abcdefgh".toByteArray(), bytesOf(m, "a"))
+        assertTrue(m.pendingResyncs().isEmpty())
+    }
+
+    @Test
     fun dataBeforeTheSnapshotIsKept() {
         val m = mirror()
         assertEquals(LogMirror.AppendResult.APPENDED, m.append("a", "id-a", 0, "abc".toByteArray()))

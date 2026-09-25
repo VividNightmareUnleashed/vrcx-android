@@ -18,11 +18,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * A gap in the byte stream of a mirrored file: the companion client should send
  * `{"t":"fetch","name":name,"fileId":fileId,"fromOffset":fromOffset}` (docs/PROTOCOL.md §5.9). Reported once per
- * gap through [LogWatcher.resyncListener] and kept until contiguous data arrives, see [LogWatcher.pendingResyncs].
+ * gap through [FetchRequester.requestFetch] and kept until contiguous data arrives, see [LogWatcher.pendingResyncs].
  */
 data class ResyncRequest(val name: String, val fileId: String, val fromOffset: Long)
 
@@ -31,8 +33,10 @@ data class ResyncRequest(val name: String, val fileId: String, val fromOffset: L
  * under `filesDir/logmirror/<companionId>/`:
  * - `index.json`: `{"v":1,"companionId","info":{...},"nextId","files":[{"name","fileId","local","creationTimeUtcTicks",
  *   "lastWriteTimeUtcTicks","pcLength"}]}`, written atomically (temporary file + rename);
- * - `<local>` data files holding the exact PC bytes. The mirrored length of a file is the size of its data file, so
- *   appends never need an index write and a crash can only lose a valid suffix.
+ * - `<local>` data files (`fN.log`) holding the exact PC bytes. The mirrored length of a file is the size of its data
+ *   file, so appends never need an index write and a crash can only lose a valid suffix. Appends are written at the
+ *   mirrored length (a failed write is cut back), local names are never reused, and data files the index does not
+ *   list are deleted on [load].
  *
  * Not thread-safe; [LogWatcher] confines it to its thread.
  */
@@ -70,36 +74,61 @@ internal class LogMirror(val dir: File, val companionId: String, private val log
     fun load() {
         dir.mkdirs()
         val index = File(dir, INDEX)
-        if (!index.exists()) return
-        try {
-            val root = Json.parseToJsonElement(index.readText()).jsonObject
-            info = (root["info"] as? JsonObject)?.let(::infoFromJson)
-            nextId = (root["nextId"] as? JsonPrimitive)?.longOrNull ?: 1L
-            for (f in root["files"]?.jsonArray ?: JsonArray(emptyList())) {
-                val o = f.jsonObject
-                val name = o["name"]?.jsonPrimitive?.contentOrNull ?: continue
-                val local = o["local"]?.jsonPrimitive?.contentOrNull ?: continue
-                val data = File(dir, local)
-                entries[name] = Entry(
-                    name = name,
-                    fileId = o["fileId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                    local = local,
-                    creationTicks = o["creationTimeUtcTicks"]?.jsonPrimitive?.longOrNull ?: 0,
-                    lastWriteTicks = o["lastWriteTimeUtcTicks"]?.jsonPrimitive?.longOrNull ?: 0,
-                    pcLength = o["pcLength"]?.jsonPrimitive?.longOrNull ?: 0,
-                    size = if (data.exists()) data.length() else 0,
-                )
-            }
-        } catch (e: Exception) {
-            log.log(LwLog.WARN, "log mirror index unreadable, starting over: ${e.message}", e)
-            entries.clear()
-            info = null
+        val tmp = File(dir, INDEX + TMP_SUFFIX)
+        var recovered = false
+        if (index.exists()) {
+            readIndex(index)
+        } else if (tmp.exists()) {
+            // writeAtomically's fallback deleted the index and its second rename failed (or the process died between
+            // the two): the temporary file is the complete, synced new index.
+            recovered = readIndex(tmp)
+            if (recovered) log.log(LwLog.WARN, "log mirror index restored from its temporary copy", null)
         }
-        // Data files the index does not know about (a crash between creating a file and writing the index).
+        // Local names are never reused, even for data files the index does not know about: a new entry must not pick
+        // up bytes left behind (a crash or an index write failure between creating a file and recording it).
+        val present = dir.listFiles().orEmpty()
+        for (f in present) {
+            val id = localId(f.name) ?: continue
+            if (id >= nextId) nextId = id + 1
+        }
         val known = entries.values.mapTo(HashSet()) { it.local }
-        dir.listFiles()?.forEach { f ->
-            if (f.name != INDEX && f.name !in known) f.delete()
+        for (f in present) {
+            if (f.name == INDEX || f.name in known) continue
+            if (f.name == tmp.name && recovered) continue
+            if (!f.delete()) log.log(LwLog.WARN, "cannot delete stray log mirror file ${f.name}", null)
         }
+        // A failed write keeps the temporary copy (it is rewritten, not consumed), so nothing is lost either way.
+        if (recovered) writeIndex()
+    }
+
+    /** Reads an index file into [entries]; false (and nothing kept) when it cannot be parsed. */
+    private fun readIndex(file: File): Boolean = try {
+        val root = Json.parseToJsonElement(file.readText()).jsonObject
+        info = (root["info"] as? JsonObject)?.let(::infoFromJson)
+        nextId = maxOf(1L, (root["nextId"] as? JsonPrimitive)?.longOrNull ?: 1L)
+        for (f in root["files"]?.jsonArray ?: JsonArray(emptyList())) {
+            val o = f.jsonObject
+            val name = o["name"]?.jsonPrimitive?.contentOrNull ?: continue
+            val local = o["local"]?.jsonPrimitive?.contentOrNull ?: continue
+            if (localId(local) == null) continue
+            val data = File(dir, local)
+            entries[name] = Entry(
+                name = name,
+                fileId = o["fileId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                local = local,
+                creationTicks = o["creationTimeUtcTicks"]?.jsonPrimitive?.longOrNull ?: 0,
+                lastWriteTicks = o["lastWriteTimeUtcTicks"]?.jsonPrimitive?.longOrNull ?: 0,
+                pcLength = o["pcLength"]?.jsonPrimitive?.longOrNull ?: 0,
+                size = if (data.exists()) data.length() else 0,
+            )
+        }
+        true
+    } catch (e: Exception) {
+        log.log(LwLog.WARN, "log mirror index unreadable, starting over: ${e.message}", e)
+        entries.clear()
+        info = null
+        nextId = 1L
+        false
     }
 
     fun setInfo(value: CompanionInfo) {
@@ -173,12 +202,33 @@ internal class LogMirror(val dir: File, val companionId: String, private val log
             replaced = true
         }
         if (offset > e.size) return gap(name, fileId, e.size)
-        val skip = e.size - offset
-        if (skip >= bytes.size) return AppendResult.DUPLICATE
-        FileOutputStream(File(dir, e.local), true).use { out ->
-            out.write(bytes, skip.toInt(), bytes.size - skip.toInt())
+        if (e.size - offset >= bytes.size) return AppendResult.DUPLICATE
+        RandomAccessFile(File(dir, e.local), "rw").use { raf ->
+            val actual = raf.length()
+            if (actual < e.size) {
+                // Bytes vanished under the mirror (the file was deleted or cut from outside): continue from what is
+                // really there, asking for the rest again when this frame does not reach back that far.
+                log.log(LwLog.WARN, "log mirror file of $name shrank from ${e.size} to $actual bytes", null)
+                e.size = actual
+                if (offset > actual) return gap(name, fileId, actual)
+            } else if (actual > e.size) {
+                // Leftovers of a write that failed half-way: the mirrored length is e.size, never the file length.
+                raf.setLength(e.size)
+            }
+            val skip = (e.size - offset).toInt()
+            raf.seek(e.size)
+            try {
+                raf.write(bytes, skip, bytes.size - skip)
+            } catch (ex: IOException) {
+                try {
+                    raf.setLength(e.size)
+                } catch (_: IOException) {
+                    // the next append trims it
+                }
+                throw ex
+            }
+            e.size += bytes.size - skip
         }
-        e.size += bytes.size - skip
         pendingResync.remove(name)
         return if (replaced) AppendResult.REPLACED_AND_APPENDED else AppendResult.APPENDED
     }
@@ -225,6 +275,12 @@ internal class LogMirror(val dir: File, val companionId: String, private val log
 
     private fun newLocal(): String = "f${nextId++}.log"
 
+    /** N of a data file named `fN.log`, or null for any other name. */
+    private fun localId(name: String): Long? {
+        if (name.length <= 5 || name[0] != 'f' || !name.endsWith(".log")) return null
+        return name.substring(1, name.length - 4).toLongOrNull()?.takeIf { it > 0 }
+    }
+
     private fun writeIndex() {
         dirty = false
         val root = buildJsonObject {
@@ -254,17 +310,28 @@ internal class LogMirror(val dir: File, val companionId: String, private val log
 
     companion object {
         const val INDEX = "index.json"
+        private const val TMP_SUFFIX = ".tmp"
 
+        /**
+         * Writes [text] to a synced temporary file and renames it over [target]. When no atomic replace is possible
+         * the target is deleted first; if the rename then fails, [load] restores the index from the temporary file.
+         */
         fun writeAtomically(target: File, text: String) {
-            val tmp = File(target.parentFile, target.name + ".tmp")
+            val tmp = File(target.parentFile, target.name + TMP_SUFFIX)
             FileOutputStream(tmp).use { out ->
                 out.write(text.toByteArray(Charsets.UTF_8))
                 out.fd.sync()
             }
-            if (!tmp.renameTo(target)) {
-                // Some file systems refuse to rename over an existing file.
-                target.delete()
-                if (!tmp.renameTo(target)) throw IOException("cannot replace $target")
+            try {
+                Files.move(
+                    tmp.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (e: IOException) {
+                if (!tmp.renameTo(target)) {
+                    target.delete()
+                    if (!tmp.renameTo(target)) throw IOException("cannot replace $target", e)
+                }
             }
         }
 

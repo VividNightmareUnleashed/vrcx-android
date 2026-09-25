@@ -33,8 +33,14 @@ import kotlin.math.abs
  * Threading: all state lives on one dedicated thread ("LogWatcher"). The bridge methods ([setDateTill], [get],
  * [getLogLines], [reset]) hop to it; the [LogSink] calls block their caller until they are applied, in wire order,
  * which gives the companion client natural backpressure (call them from the connection's I/O thread, never from the
- * main thread). Nothing polls: `Update()` runs when data, a snapshot, a truncation, a process change or the end of
- * the initial sync arrives (after `SetDateTill`, like upstream's thread), and inside `Get()`.
+ * main thread). Nothing polls: `Update()` runs when data, a snapshot, a truncation or a process change arrives (after
+ * `SetDateTill`, like upstream's thread), at the end of a companion sync, and inside `Get()`.
+ *
+ * One `Update()` per sync: while the companion sends a backlog (the initial sync, or the catch-up after a reconnect),
+ * and before the first run ended, arriving data does not run `Update()`; `syncComplete` runs one over everything
+ * mirrored (`Get()` still runs its own, as upstream's does). Upstream finds such a backlog complete on disk and parses
+ * it in one pass; one pass per 256 KiB frame would emit the records before a throwing line again on every frame.
+ * Live data outside a sync runs `Update()` per frame, like upstream's one pass per poll.
  *
  * Delivery is pull mode only (`LINUX = true` frontend): records parsed after the first run are queued for
  * `GetLogLines()`, and the page is told with the event `log-available` (no payload) at most once per second.
@@ -59,16 +65,18 @@ import kotlin.math.abs
  *   reads it again), and the pull queue is capped at 100 000 lines;
  * - `SetDateTill` shifts a tillDate within 5 s of the phone clock by the PC clock skew.
  *
- * Gap handling for the companion client: when `data` arrives beyond the mirrored length, the bytes are dropped and a
- * [ResyncRequest] is reported through [resyncListener] (once per gap, on the LogWatcher thread; the listener must not
- * block) and listed by [pendingResyncs] until contiguous data arrives. The client answers it with a `fetch`
- * (PROTOCOL.md §5.9). When the user forgets a paired PC, the client calls [forgetCompanion] to delete its mirror.
+ * Gap handling for the companion client ([CompanionMirrorControl]): when `data` arrives beyond the mirrored length, or
+ * a mirror write fails, the bytes are dropped and the resend is asked for once per gap and session through the
+ * [FetchRequester] the client registered with [setFetchRequester] (called on the LogWatcher thread; it must not
+ * block). The client sends `fetch` (PROTOCOL.md §5.9); [pendingResyncs] lists the open gaps until contiguous data
+ * arrives, and the next `subscribe.have` resumes from the mirrored lengths anyway. When the user forgets a paired PC,
+ * the client calls [forgetCompanion] to delete its mirror.
  */
 class LogWatcher internal constructor(
     private val root: File,
     private val env: Env,
     private val config: Config = Config(),
-) : GameStateProvider, LogSink {
+) : GameStateProvider, LogSink, CompanionMirrorControl {
 
     /** Production constructor used by AppGraph: the mirror lives under `filesDir/logmirror/`. */
     constructor(context: Context) : this(File(context.filesDir, "logmirror"), AndroidEnv)
@@ -128,6 +136,9 @@ class LogWatcher internal constructor(
     private var initialSyncDone = false
     private var getCalled = false
     private var updatePending = false
+
+    /** An `Update()` was skipped while updates were held (see [updatesHeld]); it runs when they are released. */
+    private var updateDeferred = false
     private var unsignalled = false
     private var lastLogAvailableNs = 0L
     private var logAvailableEverSent = false
@@ -163,9 +174,9 @@ class LogWatcher internal constructor(
 
     private val initialSync = CompletableDeferred<Unit>()
 
-    /** Called once per detected gap with the `fetch` the companion client should send. See the class KDoc. */
+    /** Receives one resend request per detected gap. See the class KDoc. */
     @Volatile
-    var resyncListener: ((ResyncRequest) -> Unit)? = null
+    private var fetchRequester: FetchRequester? = null
 
     init {
         executor.execute { loadActiveMirror() }
@@ -246,7 +257,7 @@ class LogWatcher internal constructor(
         onThread {
             engine.resetLog = true
             // Upstream interrupts its thread's sleep; the thread only updates while active.
-            if (threadActive) runUpdate()
+            updateNow()
         }
     }
 
@@ -255,14 +266,16 @@ class LogWatcher internal constructor(
 
     override fun onSessionStarted(companionId: String, info: CompanionInfo): Unit = sink("onSessionStarted", Unit) {
         cancelGrace()
-        if (mirror?.companionId != companionId) {
-            val previous = mirror
-            previous?.flushIndex()
+        val current = mirror
+        // A mirror directory that vanished (deleted from outside) is started over instead of being written blindly.
+        if (current == null || current.companionId != companionId || !current.dir.isDirectory) {
+            if (current != null && current.dir.isDirectory) current.flushIndex()
             mirror = LogMirror(dirFor(companionId), companionId, env.log).also { it.load() }
-            if (previous != null) engine.forgetAll()
-            reportedResyncs.clear()
+            if (current != null) engine.forgetAll()
             writeActive(companionId)
         }
+        // A new session is a new chance to ask for the gaps that are still open.
+        reportedResyncs.clear()
         sessionActive = true
         syncing = true
         processKnown = false
@@ -330,7 +343,8 @@ class LogWatcher internal constructor(
             this.vrchatRunning = vrchatRunning
             mirror?.let { stateCompanionId = it.companionId }
             // Bytes written before the change are parsed (and a final tail flushed) before the new state is shown.
-            if (threadActive) runUpdate()
+            // During a sync those bytes come after `process` (PROTOCOL.md §5.5) and are parsed at `syncComplete`.
+            updateNow()
             if (syncing && catchUp && gameRunning && !vrchatRunning) {
                 // The bytes missed while disconnected are still to come: publish the stop after them.
                 deferredState = vrchatRunning to steamVrRunning
@@ -367,6 +381,8 @@ class LogWatcher internal constructor(
         processKnown = false
         // A stop that waited for missed bytes that never came: the last published state goes through the grace period.
         deferredState = null
+        // The part of an interrupted sync that did arrive is parsed now (in the first run: by the first Get()).
+        if (updateDeferred) updateNow()
         mirror?.flushIndex()
         cancelGrace()
         graceTask = executor.schedule(
@@ -384,8 +400,12 @@ class LogWatcher internal constructor(
     /** Gaps waiting for a `fetch` answer. */
     fun pendingResyncs(): List<ResyncRequest> = sink("pendingResyncs", emptyList()) { mirror?.pendingResyncs() ?: emptyList() }
 
-    /** Deletes the mirror of a companion the user forgot. */
-    fun forgetCompanion(companionId: String): Unit = sink("forgetCompanion", Unit) {
+    override fun setFetchRequester(requester: FetchRequester?) {
+        fetchRequester = requester
+    }
+
+    /** Deletes the mirror of a companion the user forgot, and everything kept for it. */
+    override fun forgetCompanion(companionId: String): Unit = sink("forgetCompanion", Unit) {
         if (stateCompanionId == companionId) stateCompanionId = null
         val m = mirror
         if (m != null && m.companionId == companionId) {
@@ -447,14 +467,33 @@ class LogWatcher internal constructor(
         env.onTillDateChanged(engine.tillDateTicks)
     }
 
+    /**
+     * Whether arriving data must not run `Update()` now: a companion sync is in progress, or the first run has not
+     * ended (only `Get()` reads its records, and it runs its own `Update()`). See the class KDoc.
+     */
+    private fun updatesHeld(): Boolean = syncing || (!initialSyncDone && !getCalled)
+
+    /** Schedules an `Update()` after the current task, so that it sees everything this task changed. */
     private fun requestUpdate() {
-        if (!threadActive || updatePending) return
+        if (!threadActive) return
+        if (updatesHeld()) {
+            updateDeferred = true
+            return
+        }
+        if (updatePending) return
         updatePending = true
         executor.execute { if (updatePending) runUpdate() }
     }
 
+    /** Runs an `Update()` now unless updates are held. */
+    private fun updateNow() {
+        if (!threadActive) return
+        if (updatesHeld()) updateDeferred = true else runUpdate()
+    }
+
     private fun runUpdate() {
         updatePending = false
+        updateDeferred = false
         val m = mirror
         engine.update(if (m == null) emptyList() else views(m), endFirstRun = initialSyncDone || getCalled)
         signalLogAvailable(force = false)
@@ -525,10 +564,11 @@ class LogWatcher internal constructor(
         if (reportedResyncs[r.name] == r) return
         reportedResyncs[r.name] = r
         env.log.log(LwLog.WARN, "gap in ${r.name}: resync from ${r.fromOffset}", null)
+        val requester = fetchRequester ?: return
         try {
-            resyncListener?.invoke(r)
+            requester.requestFetch(r.name, r.fileId, r.fromOffset)
         } catch (e: Exception) {
-            env.log.log(LwLog.WARN, "resync listener failed: ${e.message}", e)
+            env.log.log(LwLog.WARN, "fetch request failed: ${e.message}", e)
         }
     }
 

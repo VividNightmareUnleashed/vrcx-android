@@ -151,9 +151,11 @@ class LogWatcherTest {
         val started = System.nanoTime()
         assertEquals(listOf("Partial"), names(w.get()))
         assertTrue((System.nanoTime() - started) / 1_000_000 >= 250)
-        // the late companion's catch-up is processed as live records
+        // the late companion's catch-up is processed as live records, in one pass when its sync completes
         pc.write(joined("CatchUp"))
         w.awaitIdle()
+        assertTrue(queueNames(w).isEmpty())
+        w.onSyncComplete()
         assertEquals(listOf("CatchUp"), queueNames(w))
     }
 
@@ -284,8 +286,10 @@ class LogWatcherTest {
         pc.write(joined("Missed", "2024.05.10 12:00:01") + "2024.05.10 12:00:02 Log        -  VRCApplication: OnApplicationQuit at 5.0\n")
         w.awaitIdle()
         assertTrue(w.isGameRunning)
-        assertTrue("the quit line was parsed while the game still counts as running", w.vrcClosedGracefully)
+        // the catch-up is parsed in one pass at syncComplete, before the stop is published
+        assertFalse(w.vrcClosedGracefully)
         w.onSyncComplete()
+        assertTrue(w.vrcClosedGracefully)
         assertFalse(w.isGameRunning)
         val after = synchronized(env.events) { env.events.drop(mark).map { it.first } }
         assertEquals(listOf(LogWatcher.EVENT_LOG_AVAILABLE, LogWatcher.EVENT_GAME_STATE), after)
@@ -501,7 +505,8 @@ class LogWatcherTest {
     fun gapsAreReportedOnceUntilTheFetchAnswerArrives() {
         val w = watcher()
         val requests = ArrayList<ResyncRequest>()
-        w.resyncListener = { requests += it }
+        val control: CompanionMirrorControl = w
+        control.setFetchRequester { name, fileId, fromOffset -> requests += ResyncRequest(name, fileId, fromOffset) }
         startSession(w)
         val pc = Pc(w)
         pc.write("0123456789")
@@ -509,9 +514,175 @@ class LogWatcherTest {
         w.onData(pc.name, pc.fileId, 24, "later".toByteArray())
         assertEquals(listOf(ResyncRequest(pc.name, pc.fileId, 10)), requests)
         assertEquals(requests, w.pendingResyncs())
+        // a new session asks again for a gap that is still open
+        w.onDisconnected()
+        startSession(w)
+        w.onData(pc.name, pc.fileId, 24, "later".toByteArray())
+        assertEquals(2, requests.size)
         w.onData(pc.name, pc.fileId, 10, "abc".toByteArray())
         assertTrue(w.pendingResyncs().isEmpty())
         assertEquals(13L, w.have().single().length)
+        // without a requester the gap is only listed
+        control.setFetchRequester(null)
+        w.onData(pc.name, pc.fileId, 30, "x".toByteArray())
+        assertEquals(2, requests.size)
+        assertEquals(listOf(ResyncRequest(pc.name, pc.fileId, 13)), w.pendingResyncs())
+    }
+
+    // ------------------------------------------------------------------------------------------------------------
+    // One Update() per sync (a throwing line re-emits the records before it on each growth)
+
+    /** A file whose second line throws in ParseUserInfo; the records after it are lost, as upstream. */
+    private fun badFile(before: Int): String {
+        val sb = StringBuilder()
+        for (i in 0 until before) sb.append(joined("BeforeBad$i", "2024.05.10 12:00:00"))
+        sb.append("2024.05.10 12:00:01 Log        -  [Behaviour] OnPlayerJoined Broken (name\n")
+        for (i in 0 until 40) sb.append(joined("After$i", "2024.05.10 12:00:02"))
+        return sb.toString()
+    }
+
+    /** Sends [text] as the companion does during a sync: one snapshot with the full length, then [frames] data frames. */
+    private fun sendInFrames(w: LogWatcher, pc: Pc, text: String, frames: Int) {
+        val all = text.toByteArray()
+        val start = pc.bytes.size
+        pc.bytes += all
+        pc.lastWrite += 10_000_000
+        w.onSnapshot(listOf(pc.meta()))
+        val per = (all.size + frames - 1) / frames
+        var off = 0
+        while (off < all.size) {
+            val end = minOf(all.size, off + per)
+            w.onData(pc.name, pc.fileId, (start + off).toLong(), all.copyOfRange(off, end))
+            off = end
+        }
+    }
+
+    private fun drainGet(w: LogWatcher): List<String> {
+        val out = ArrayList<String>()
+        while (true) {
+            val rows = runBlocking { w.get() }
+            if (rows.isEmpty()) return out
+            out += names(rows)
+        }
+    }
+
+    @Test
+    fun initialSyncInManyFramesIsParsedOnce() {
+        val w = watcher()
+        startSession(w)
+        runBlocking { w.setDateTill("2024-05-01T00:00:00.000Z") }
+        sendInFrames(w, Pc(w), badFile(3), frames = 20)
+        w.onSyncComplete()
+        // upstream parses the complete file once: the records before the bad line once, nothing after it
+        assertEquals(listOf("BeforeBad0", "BeforeBad1", "BeforeBad2"), drainGet(w))
+        assertEquals(1, env.logs.count { it.startsWith("WARN Failed to parse log file") })
+        assertTrue(queueNames(w).isEmpty())
+    }
+
+    @Test
+    fun catchUpAfterAReconnectIsParsedOnce() {
+        val w = watcher(LogWatcher.Config(logAvailableIntervalMs = 0))
+        startSession(w)
+        runBlocking { w.setDateTill("2024-05-01T00:00:00.000Z") }
+        w.onSyncComplete()
+        assertTrue(drainGet(w).isEmpty())
+        val pc = Pc(w)
+        pc.write(joined("Live"))
+        w.awaitIdle()
+        assertEquals(listOf("Live"), queueNames(w))
+        w.onDisconnected()
+        startSession(w)
+        sendInFrames(w, pc, badFile(2), frames = 12)
+        w.awaitIdle()
+        assertTrue("nothing is parsed before the catch-up completes", queueNames(w).isEmpty())
+        w.onSyncComplete()
+        assertEquals(listOf("BeforeBad0", "BeforeBad1"), queueNames(w))
+        // live growth after the sync re-emits them, like each upstream poll that sees the file grow
+        pc.write(joined("Later"))
+        w.awaitIdle()
+        assertEquals(listOf("BeforeBad0", "BeforeBad1"), queueNames(w))
+    }
+
+    @Test
+    fun persistedMirrorAndItsCatchUpAreParsedOnceAfterARestart() {
+        val root = tmp.newFolder("restart")
+        val first = watcher(root = root)
+        startSession(first)
+        val pc = Pc(first)
+        sendInFrames(first, pc, badFile(2), frames = 3)
+        first.onSyncComplete()
+        first.onDisconnected()
+        first.awaitIdle()
+        first.close()
+
+        val second = watcher(root = root)
+        runBlocking { second.setDateTill("2024-05-01T00:00:00.000Z") }
+        startSession(second)
+        val resumed = Pc(second).also {
+            it.bytes = pc.bytes
+            it.lastWrite = pc.lastWrite
+        }
+        sendInFrames(second, resumed, joined("Appended", "2024.05.10 12:00:03"), frames = 2)
+        second.onSyncComplete()
+        assertEquals(listOf("BeforeBad0", "BeforeBad1"), drainGet(second))
+    }
+
+    @Test
+    fun anInterruptedSyncIsParsedAtTheDisconnect() {
+        val w = watcher()
+        startSession(w)
+        runBlocking { w.setDateTill("2024-05-01T00:00:00.000Z") }
+        w.onSyncComplete()
+        assertTrue(drainGet(w).isEmpty())
+        w.onDisconnected()
+        startSession(w)
+        val pc = Pc(w)
+        pc.write(joined("Arrived"))
+        w.awaitIdle()
+        assertTrue(queueNames(w).isEmpty())
+        w.onDisconnected()
+        assertEquals(listOf("Arrived"), queueNames(w))
+    }
+
+    @Test
+    fun forgetThenPairTheSamePcAgainStartsAFreshMirror() {
+        val w = watcher()
+        startSession(w, "pc-1")
+        runBlocking { w.setDateTill("2024-05-01T00:00:00.000Z") }
+        val pc = Pc(w)
+        pc.write(joined("Old"))
+        w.onSyncComplete()
+        assertEquals(listOf("Old"), drainGet(w))
+        w.onDisconnected()
+        val control: CompanionMirrorControl = w
+        control.forgetCompanion("pc-1")
+        assertFalse(File(tmp.root, "pc-1").exists())
+
+        // paired again without an app restart: subscribe.have is empty, so the companion sends everything from 0
+        startSession(w, "pc-1")
+        assertTrue(w.have().isEmpty())
+        val again = Pc(w)
+        again.write(joined("Old") + joined("New", "2024.05.10 12:00:05"))
+        w.onSyncComplete()
+        assertEquals(listOf(MirroredFile(again.name, again.fileId, again.bytes.size.toLong())), w.have())
+        assertEquals(again.bytes.size.toLong(), File(File(tmp.root, "pc-1"), "f1.log").length())
+        assertEquals(listOf("Old", "New"), queueNames(w))
+    }
+
+    @Test
+    fun aMirrorDirectoryDeletedFromOutsideStartsOver() {
+        val w = watcher()
+        startSession(w, "pc-1")
+        val pc = Pc(w)
+        pc.write(joined("A"))
+        w.onDisconnected()
+        w.awaitIdle()
+        assertTrue(File(tmp.root, "pc-1").deleteRecursively())
+        startSession(w, "pc-1")
+        assertTrue(w.have().isEmpty())
+        val fresh = Pc(w)
+        fresh.write(joined("B"))
+        assertEquals(listOf(MirroredFile(fresh.name, fresh.fileId, fresh.bytes.size.toLong())), w.have())
     }
 
     @Test
