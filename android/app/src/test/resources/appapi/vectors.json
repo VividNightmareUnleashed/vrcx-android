@@ -1,0 +1,989 @@
+{
+  "timeZone": "Europe/Berlin",
+  "colour": [
+    {
+      "id": "usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469",
+      "colour": 22041
+    },
+    {
+      "id": "usr_032383a7-748c-4fb2-94e4-bcb928e5de6b",
+      "colour": 43473
+    },
+    {
+      "id": "usr_00000000-0000-0000-0000-000000000000",
+      "colour": 31682
+    },
+    {
+      "id": "",
+      "colour": 55695
+    },
+    {
+      "id": "a",
+      "colour": 47552
+    },
+    {
+      "id": "VRCX",
+      "colour": 55905
+    },
+    {
+      "id": "日本語",
+      "colour": 63668
+    },
+    {
+      "id": "usr_😀",
+      "colour": 46329
+    }
+  ],
+  "colourBulk": {
+    "ids": [
+      "usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469",
+      "usr_032383a7-748c-4fb2-94e4-bcb928e5de6b",
+      "usr_00000000-0000-0000-0000-000000000000",
+      ""
+    ],
+    "pairs": [
+      [
+        "usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469",
+        22041
+      ],
+      [
+        "usr_032383a7-748c-4fb2-94e4-bcb928e5de6b",
+        43473
+      ],
+      [
+        "usr_00000000-0000-0000-0000-000000000000",
+        31682
+      ],
+      [
+        "",
+        55695
+      ]
+    ]
+  },
+  "files": [
+    {
+      "name": "empty",
+      "generator": "bytes",
+      "n": 0,
+      "seed": 0,
+      "b64": "",
+      "md5": "1B2M2Y8AsgTpgAmY7PhCfg==",
+      "length": "0",
+      "signatureSha256": "7b6b4c7b6f972ec6843c7157bfb1ffafe21eb8ee800683ecbc17ae0b50c6c1ea",
+      "signature": "cnMBNwAACAAAAAAg"
+    },
+    {
+      "name": "hello",
+      "generator": "bytes",
+      "n": 5,
+      "seed": 0,
+      "b64": "aGVsbG8=",
+      "md5": "XUFAKrxLKna5cZ2REBfFkg==",
+      "length": "5",
+      "signatureSha256": "217da258d5fc7f8852c84b554af1b5f802dad5df676d74fd607a6a5546ec72dc",
+      "signature": "cnMBNwAACAAAAAAgB/gCrzJNzwJ91KMKkyxEHzZaJehrFz3vpLjliUglNHG4G3LP"
+    },
+    {
+      "name": "one",
+      "generator": "bytes",
+      "n": 1,
+      "seed": 0,
+      "b64": "/w==",
+      "md5": "AFlP1PQrpD/BygQnoFdilQ==",
+      "length": "1",
+      "signatureSha256": "de90ea352c879255542dadf332ba2c6f54736dce8f0a372791d68929cab1ebdd",
+      "signature": "cnMBNwAACAAAAAAgAR4BHqxOQHaog5NygvE3fvXKy47dAOPHlinkNTJGTrO+J3Nn"
+    },
+    {
+      "name": "p2047",
+      "generator": "pattern",
+      "n": 2047,
+      "seed": 0,
+      "md5": "dZrpoR5eekgD+cCoU/tf1g==",
+      "length": "2047",
+      "signatureSha256": "c82a8da08c3bb4c6ec6098838b837d1f87e41d0f7196244c6b9b4330e9e6e80a",
+      "signature": "cnMBNwAACAAAAAAgtADy6H84fopEAMthrNLd61l7Qpiib04CLSS8cS13b3pOsJuG"
+    },
+    {
+      "name": "p2048",
+      "generator": "pattern",
+      "n": 2048,
+      "seed": 0,
+      "md5": "h0PZ5dDsTim8EQNsotEkuQ==",
+      "length": "2048",
+      "signatureSha256": "bb7e55edec2b05661c6f0a026e62d5d9cdacd7ac323cfc30268013ebc7a275b4",
+      "signature": "cnMBNwAACAAAAAAgqAD0AATunZwrx/qcrf9mgUQNibuDIvKCwlJ9yfQpradglwTB"
+    },
+    {
+      "name": "p2049",
+      "generator": "pattern",
+      "n": 2049,
+      "seed": 0,
+      "md5": "iYTbE+FyZIJLXHiXZoUvXg==",
+      "length": "2049",
+      "signatureSha256": "68f34a4a57ad30a4a7c0be693632f1fae9e6c2229875337f0d5a819c6605d72e",
+      "signature": "cnMBNwAACAAAAAAgqAD0AATunZwrx/qcrf9mgUQNibuDIvKCwlJ9yfQpradglwTBAB8AHwMXCi51l7e349hMBTkdE5pisVfnh4bYwILync9MERMU"
+    },
+    {
+      "name": "p5000",
+      "generator": "pattern",
+      "n": 5000,
+      "seed": 0,
+      "md5": "pjnySy8uzRRX7sanr5QolA==",
+      "length": "5000",
+      "signatureSha256": "870dea8dfa10529f07c3986244dfb0bc5a941d0357eda55a78fd8fedd763ae65",
+      "signature": "cnMBNwAACAAAAAAgqAD0AATunZwrx/qcrf9mgUQNibuDIvKCwlJ9yfQpradglwTBqAD0AATunZwrx/qcrf9mgUQNibuDIvKCwlJ9yfQpradglwTBtCgr/N17ePLuThXIdnwk76jqHm9F/Ba58HkCduXoCxt1RW5t"
+    },
+    {
+      "name": "lcg10000",
+      "generator": "lcg",
+      "n": 10000,
+      "seed": 42,
+      "md5": "QJZhVHtloQxIu69ZHu2Evw==",
+      "length": "10000",
+      "signatureSha256": "764a42051d84ed70f046c161d3753e4f3b53242fdd6984d8a15fd03b1beea93c"
+    },
+    {
+      "name": "lcg70001",
+      "generator": "lcg",
+      "n": 70001,
+      "seed": 7,
+      "md5": "K9xrk8NlD+tPBApXcBNKGA==",
+      "length": "70001",
+      "signatureSha256": "e6e0e30183df56e40d5d0e8a2419097299d127d082b7a78eb9a0a887e78f3caf"
+    }
+  ],
+  "makeValidFileName": [
+    {
+      "input": "normal.png",
+      "output": "normal.png"
+    },
+    {
+      "input": "a/b\\c.png",
+      "output": "abc.png"
+    },
+    {
+      "input": "what?.png",
+      "output": "what.png"
+    },
+    {
+      "input": "trailing...",
+      "output": "trailing"
+    },
+    {
+      "input": "dots..png",
+      "output": "dots..png"
+    },
+    {
+      "input": "co:lon*star\"quote<lt>gt|pipe.png",
+      "output": "colonstarquoteltgtpipe.png"
+    },
+    {
+      "input": "tab\there.png",
+      "output": "tabhere.png"
+    },
+    {
+      "input": "new\nline.png",
+      "output": "newline.png"
+    },
+    {
+      "input": "..",
+      "output": ""
+    },
+    {
+      "input": ".",
+      "output": ""
+    },
+    {
+      "input": "..png",
+      "output": "..png"
+    },
+    {
+      "input": "ünïcödé 日本.png",
+      "output": "ünïcödé 日本.png"
+    },
+    {
+      "input": "name. ",
+      "output": "name. "
+    },
+    {
+      "input": "abc.",
+      "output": "abc"
+    },
+    {
+      "input": "a.b.c",
+      "output": "a.b.c"
+    },
+    {
+      "input": "x?.",
+      "output": "x"
+    },
+    {
+      "input": "?.",
+      "output": ""
+    },
+    {
+      "input": "a?.b",
+      "output": "a.b"
+    },
+    {
+      "input": "2025-09",
+      "output": "2025-09"
+    },
+    {
+      "input": "Alice_2025-09-01_10-11-12.123_inv_1234.png",
+      "output": "Alice_2025-09-01_10-11-12.123_inv_1234.png"
+    },
+    {
+      "input": "a\u0001b\u001fc",
+      "output": "abc"
+    },
+    {
+      "input": "end.?",
+      "output": "end."
+    },
+    {
+      "input": "sp ace .png",
+      "output": "sp ace .png"
+    },
+    {
+      "input": "x.\u0001.",
+      "output": "x"
+    },
+    {
+      "input": "  lead.png",
+      "output": "  lead.png"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "VRChat_2025-08-01_21-14-31.451_1920x1080.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/VRChat_2025-08-01_21-14-31.451_1920x1080.png\",\n  \"application\": \"VRChat\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\n    \"displayName\": \"Alice & Bob\"\n  },\n  \"world\": {\n    \"id\": \"wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd\",\n    \"name\": \"The Great Pug\",\n    \"instanceId\": \"wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd\"\n  },\n  \"players\": [],\n  \"timestamp\": \"2025-08-01T21:14:31.4513219+02:00\",\n  \"note\": \"Sunset über dem See\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/upper.PNG\",\n  \"nextFilePath\": \"{dir}/vrcx_json.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"1041\",\n  \"fileName\": \"VRChat_2025-08-01_21-14-31.451_1920x1080\",\n  \"filePath\": \"{dir}/VRChat_2025-08-01_21-14-31.451_1920x1080.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" x:xmptk=\"XMP Core 5.5.0\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:vrc=\"http://ns.vrchat.com/vrc/1.0/\"><xmp:CreatorTool>VRChat</xmp:CreatorTool><xmp:Author>Alice &amp; Bob</xmp:Author><tiff:DateTime>2025-08-01T21:14:31.4513219+02:00</tiff:DateTime><dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Sunset über dem See</rdf:li></rdf:Alt></dc:title><vrc:WorldID>wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd</vrc:WorldID><vrc:WorldDisplayName>The Great Pug</vrc:WorldDisplayName><vrc:AuthorID>usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469</vrc:AuthorID></rdf:Description></rdf:RDF></x:xmpmeta>"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "aca58649f863df96f12439e37673f9b35827402b35bc4c1ef90ead6603da2a04",
+      "afterDeleteLength": 203
+    },
+    {
+      "file": "bad_json.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/bad_json.png\",\n  \"error\": \"Failed to parse metadata. Check log file for details.\"\n}",
+      "extra": "{\n  \"nextFilePath\": \"{dir}/bad_xml.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"228\",\n  \"fileName\": \"bad_json\",\n  \"filePath\": \"{dir}/bad_json.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "{not json}"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "bad_xml.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/bad_xml.png\",\n  \"error\": \"Failed to parse metadata. Check log file for details.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/bad_json.png\",\n  \"nextFilePath\": \"{dir}/both.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"267\",\n  \"fileName\": \"bad_xml\",\n  \"filePath\": \"{dir}/bad_xml.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><broken"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "both.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/both.png\",\n  \"application\": \"VRCX\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\n    \"displayName\": \"Alice\"\n  },\n  \"world\": {\n    \"id\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\n    \"name\": \"The Great Pug\",\n    \"instanceId\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\n      \"displayName\": \"VirtualTeacup\"\n    },\n    {\n      \"id\": \"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\n      \"displayName\": \"Zettai \\\"Ryouiki\\\" É\"\n    }\n  ]\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/bad_xml.png\",\n  \"nextFilePath\": \"{dir}/lfs_cvr.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"1511\",\n  \"fileName\": \"both\",\n  \"filePath\": \"{dir}/both.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" x:xmptk=\"XMP Core 5.5.0\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:vrc=\"http://ns.vrchat.com/vrc/1.0/\"><xmp:CreatorTool>VRChat</xmp:CreatorTool><xmp:Author>Alice &amp; Bob</xmp:Author><tiff:DateTime>2025-08-01T21:14:31.4513219+02:00</tiff:DateTime><dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Sunset über dem See</rdf:li></rdf:Alt></dc:title><vrc:WorldID>wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fdd</vrc:WorldID><vrc:WorldDisplayName>The Great Pug</vrc:WorldDisplayName><vrc:AuthorID>usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469</vrc:AuthorID></rdf:Description></rdf:RDF></x:xmpmeta>",
+        "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\"displayName\":\"Alice\"},\"world\":{\"name\":\"The Great Pug\",\"id\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\"instanceId\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"},\"players\":[{\"id\":\"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\"displayName\":\"VirtualTeacup\"},{\"id\":\"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\"displayName\":\"Zettai \\\"Ryouiki\\\" É\"}]}"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "lfs_cvr.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/lfs_cvr.png\",\n  \"application\": \"cvr\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"\",\n    \"displayName\": \"Hordini (047b30bd-089d-887c-8734-b0032df5d176)\"\n  },\n  \"world\": {\n    \"id\": \"\",\n    \"name\": \"Bono's Basement (Anime) (#816724) (2e73b387-c6d4-45e9-b998-0fd6aa122c1d)\",\n    \"instanceId\": \"\"\n  },\n  \"players\": [\n    {\n      \"id\": \"\",\n      \"displayName\": \"DDAkebono (5301af21-eb8d-7b36-3ef4-b623fa51c2c6)\",\n      \"pos\": {\n        \"x\": 3.778407,\n        \"y\": 0.01250887,\n        \"z\": -3.815876\n      }\n    },\n    {\n      \"id\": \"\",\n      \"displayName\": \"Natsumi (f9e5c36c-41b0-7031-1185-35b4034010c0)\",\n      \"pos\": {\n        \"x\": 4.828233,\n        \"y\": 0.01250893,\n        \"z\": -3.920135\n      }\n    }\n  ],\n  \"pos\": {\n    \"x\": 2.196716,\n    \"y\": 0.01250899,\n    \"z\": -3.817466\n  }\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/both.png\",\n  \"nextFilePath\": \"{dir}/lfs_rq.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"592\",\n  \"fileName\": \"lfs_cvr\",\n  \"filePath\": \"{dir}/lfs_cvr.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "lfs|cvr|1|author:047b30bd-089d-887c-8734-b0032df5d176,Hordini|world:2e73b387-c6d4-45e9-b998-0fd6aa122c1d,i+efec20004ef1cd8b-404003-93833f-1aee112a,Bono's Basement (Anime) (#816724)|pos:2.196716,0.01250899,-3.817466|players:5301af21-eb8d-7b36-3ef4-b623fa51c2c6,3.778407,0.01250887,-3.815876,DDAkebono;f9e5c36c-41b0-7031-1185-35b4034010c0,4.828233,0.01250893,-3.920135,Natsumi"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "lfs_rq.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/lfs_rq.png\",\n  \"application\": \"lfs\",\n  \"version\": 2,\n  \"author\": {\n    \"id\": \"usr_8c0a2f22-26d4-4dc9-8396-2ab40e3d07fc\",\n    \"displayName\": \"knah\"\n  },\n  \"world\": {\n    \"id\": \"wrld_fb4edc80-6c48-43f2-9bd1-2fa9f1345621\",\n    \"name\": \"Luminescent Ledge\",\n    \"instanceId\": \"wrld_fb4edc80-6c48-43f2-9bd1-2fa9f1345621:35341\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_65b9eeeb-7c91-4ad2-8ce4-addb1c161cd6\",\n      \"displayName\": \"Jakkuba\",\n      \"pos\": {\n        \"x\": 0.74,\n        \"y\": 0.59,\n        \"z\": 1.57\n      }\n    },\n    {\n      \"id\": \"usr_6a50647f-d971-4281-90c3-3fe8caf2ba80\",\n      \"displayName\": \"SopwithPup\",\n      \"pos\": {\n        \"x\": 8.07,\n        \"y\": 9.76,\n        \"z\": 0.16\n      }\n    }\n  ],\n  \"pos\": {\n    \"x\": 8.231676,\n    \"y\": 0.257298,\n    \"z\": -0.1983307\n  }\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/lfs_cvr.png\",\n  \"nextFilePath\": \"{dir}/lfs_trailing.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"525\",\n  \"fileName\": \"lfs_rq\",\n  \"filePath\": \"{dir}/lfs_rq.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "lfs|2|author:usr_8c0a2f22-26d4-4dc9-8396-2ab40e3d07fc,knah|world:wrld_fb4edc80-6c48-43f2-9bd1-2fa9f1345621,35341,Luminescent Ledge|pos:8.231676,0.257298,-0.1983307|rq:2|players:usr_65b9eeeb-7c91-4ad2-8ce4-addb1c161cd6,0.74,0.59,1.57,Jakkuba;usr_6a50647f-d971-4281-90c3-3fe8caf2ba80,8.07,9.76,0.16,SopwithPup"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "lfs_trailing.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/lfs_trailing.png\",\n  \"application\": \"lfs\",\n  \"version\": 2,\n  \"author\": {\n    \"id\": \"usr_032383a7-748c-4fb2-94e4-bcb928e5de6b\",\n    \"displayName\": \"Natsumi-sama\"\n  },\n  \"world\": {\n    \"id\": \"wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f\",\n    \"name\": \"pet park test\",\n    \"instanceId\": \"wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f:35372\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_9d73bff9-4543-4b6f-a004-9e257869ff50\",\n      \"displayName\": \"Olivia.\",\n      \"pos\": {\n        \"x\": -0.85,\n        \"y\": -0.17,\n        \"z\": -0.58\n      }\n    },\n    {\n      \"id\": \"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\n      \"displayName\": \"Zettai Ryouiki\",\n      \"pos\": {\n        \"x\": 12.3,\n        \"y\": 13.72,\n        \"z\": 0.08\n      }\n    },\n    {\n      \"id\": \"usr_032383a7-748c-4fb2-94e4-bcb928e5de6b\",\n      \"displayName\": \"Natsumi-sama\",\n      \"pos\": {\n        \"x\": 0.68,\n        \"y\": 0.32,\n        \"z\": -0.28\n      }\n    }\n  ],\n  \"pos\": {\n    \"x\": -60.49379,\n    \"y\": -0.002925932,\n    \"z\": 5.805772\n  }\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/lfs_rq.png\",\n  \"nextFilePath\": \"{dir}/lfs_v1.png\",\n  \"fileResolution\": \"64x40\",\n  \"fileSizeBytes\": \"10777\",\n  \"fileName\": \"lfs_trailing\",\n  \"filePath\": \"{dir}/lfs_trailing.png\",\n  \"fileSize\": \"0.01 MB\"\n}",
+      "texts": [
+        "lfs|2|author:usr_032383a7-748c-4fb2-94e4-bcb928e5de6b,Natsumi-sama|world:wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f,35372,pet park test|pos:-60.49379,-0.002925932,5.805772|players:usr_9d73bff9-4543-4b6f-a004-9e257869ff50,-0.85,-0.17,-0.58,Olivia.;usr_3097f91e-a816-4c7a-a625-38fbfdee9f96,12.30,13.72,0.08,Zettai Ryouiki;usr_032383a7-748c-4fb2-94e4-bcb928e5de6b,0.68,0.32,-0.28,Natsumi-sama"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "03df76679fcb34abb226a6d49cc1fe66ca92cb41944c7535b6d3965695064c1e",
+      "afterDeleteLength": 10777
+    },
+    {
+      "file": "lfs_v1.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/lfs_v1.png\",\n  \"error\": \"Failed to parse metadata. Check log file for details.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/lfs_trailing.png\",\n  \"nextFilePath\": \"{dir}/multi_itxt.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"409\",\n  \"fileName\": \"lfs_v1\",\n  \"filePath\": \"{dir}/lfs_v1.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "lfs|1|world:wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213,The Great Pug|players:usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb,VirtualTeacup;usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb,VirtualTeacup"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "multi_itxt.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/multi_itxt.png\",\n  \"application\": \"VRCX\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\n    \"displayName\": \"Alice\"\n  },\n  \"world\": {\n    \"id\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\n    \"name\": \"The Great Pug\",\n    \"instanceId\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\n      \"displayName\": \"VirtualTeacup\"\n    },\n    {\n      \"id\": \"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\n      \"displayName\": \"Zettai \\\"Ryouiki\\\" É\"\n    }\n  ]\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/lfs_v1.png\",\n  \"nextFilePath\": \"{dir}/nometa.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"1284\",\n  \"fileName\": \"multi_itxt\",\n  \"filePath\": \"{dir}/multi_itxt.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" xmlns:vrc=\"http://ns.vrchat.com/vrc/1.0/\"><xmp:CreatorTool>VRChat</xmp:CreatorTool><tiff:DateTime>2023-12-31T23:59:59.5Z</tiff:DateTime><vrc:WorldID>wrld_1</vrc:WorldID><vrc:AuthorID>usr_2</vrc:AuthorID><xmp:Author>Carol</xmp:Author></rdf:Description></rdf:RDF></x:xmpmeta>",
+        "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\"displayName\":\"Alice\"},\"world\":{\"name\":\"The Great Pug\",\"id\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\"instanceId\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"},\"players\":[{\"id\":\"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\"displayName\":\"VirtualTeacup\"},{\"id\":\"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\"displayName\":\"Zettai \\\"Ryouiki\\\" É\"}]}"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "e57a67b5e1f277f7d7e37226880588ee2901629c085162d5672ec29766941441",
+      "afterDeleteLength": 292
+    },
+    {
+      "file": "nometa.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/nometa.png\",\n  \"error\": \"Image has no valid metadata.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/multi_itxt.png\",\n  \"nextFilePath\": \"{dir}/notpng.png\",\n  \"fileResolution\": \"16x9\",\n  \"fileSizeBytes\": \"343\",\n  \"fileName\": \"nometa\",\n  \"filePath\": \"{dir}/nometa.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [],
+      "deleteResult": true,
+      "afterDeleteSha256": "38bdf8a4db98875f2c766c169610231da31edbdfa8dffeb60a1346313da03f61",
+      "afterDeleteLength": 343
+    },
+    {
+      "file": "notpng.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/notpng.png\",\n  \"error\": \"Image has no valid metadata.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/nometa.png\",\n  \"nextFilePath\": \"{dir}/other_text.png\",\n  \"fileResolution\": \"0x0\",\n  \"fileSizeBytes\": \"100\",\n  \"fileName\": \"notpng\",\n  \"filePath\": \"{dir}/notpng.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [],
+      "deleteResult": true,
+      "afterDeleteSha256": "09ecb6ebc8bcefc733f6f2ec44f791abeed6a99edf0cc31519637898aebd52d8",
+      "afterDeleteLength": 100
+    },
+    {
+      "file": "other_text.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/other_text.png\",\n  \"error\": \"Image has no valid metadata.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/notpng.png\",\n  \"nextFilePath\": \"{dir}/screenshotmanager.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"258\",\n  \"fileName\": \"other_text\",\n  \"filePath\": \"{dir}/other_text.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [],
+      "deleteResult": true,
+      "afterDeleteSha256": "1e61c04c83904f1a69e529dab7c30229283a189857d93ff4dba8b49ba7fa5f12",
+      "afterDeleteLength": 258
+    },
+    {
+      "file": "screenshotmanager.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/screenshotmanager.png\",\n  \"application\": \"screenshotmanager\",\n  \"version\": 0,\n  \"author\": {\n    \"id\": \"author:usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\n    \"displayName\": \"VirtualTeacup\"\n  },\n  \"world\": {\n    \"id\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\n    \"name\": \"The Great Pug\",\n    \"instanceId\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213\"\n  },\n  \"players\": []\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/other_text.png\",\n  \"nextFilePath\": \"{dir}/tiny.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"361\",\n  \"fileName\": \"screenshotmanager\",\n  \"filePath\": \"{dir}/screenshotmanager.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "screenshotmanager|0|author:usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb,VirtualTeacup|wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f,47213,The Great Pug"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "tiny.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/tiny.png\",\n  \"error\": \"Image has no valid metadata.\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/screenshotmanager.png\",\n  \"nextFilePath\": \"{dir}/upper.PNG\",\n  \"fileResolution\": \"0x0\",\n  \"fileSizeBytes\": \"18\",\n  \"fileName\": \"tiny\",\n  \"filePath\": \"{dir}/tiny.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [],
+      "deleteResult": true,
+      "afterDeleteSha256": "1e7950104fe7397c5da8668cdabd99e1c753c6c4e0ae30d90a579f7d2a1b16e3",
+      "afterDeleteLength": 18
+    },
+    {
+      "file": "upper.PNG",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/upper.PNG\",\n  \"error\": \"Screenshot contains no metadata.\"\n}",
+      "extra": null,
+      "texts": [
+        "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\"displayName\":\"Alice\"},\"world\":{\"name\":\"The Great Pug\",\"id\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\"instanceId\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"},\"players\":[{\"id\":\"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\"displayName\":\"VirtualTeacup\"},{\"id\":\"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\"displayName\":\"Zettai \\\"Ryouiki\\\" É\"}]}"
+      ],
+      "deleteResult": false,
+      "afterDeleteSha256": "a05d08ca223f9a63636520f6d5e010cc48d61a4e36244cbd9d519e0d9e6f66d4",
+      "afterDeleteLength": 673
+    },
+    {
+      "file": "vrcx_json.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/vrcx_json.png\",\n  \"application\": \"VRCX\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\n    \"displayName\": \"Alice\"\n  },\n  \"world\": {\n    \"id\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\n    \"name\": \"The Great Pug\",\n    \"instanceId\": \"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\n      \"displayName\": \"VirtualTeacup\"\n    },\n    {\n      \"id\": \"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\n      \"displayName\": \"Zettai \\\"Ryouiki\\\" É\"\n    }\n  ]\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/VRChat_2025-08-01_21-14-31.451_1920x1080.png\",\n  \"nextFilePath\": \"{dir}/vrcx_json_timestamp.png\",\n  \"fileResolution\": \"8x8\",\n  \"fileSizeBytes\": \"673\",\n  \"fileName\": \"vrcx_json\",\n  \"filePath\": \"{dir}/vrcx_json.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_c1644b5b-3ca4-45b4-97c6-a2a0de70d469\",\"displayName\":\"Alice\"},\"world\":{\"name\":\"The Great Pug\",\"id\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f\",\"instanceId\":\"wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f:47213~private(usr_x)\"},\"players\":[{\"id\":\"usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb\",\"displayName\":\"VirtualTeacup\"},{\"id\":\"usr_3097f91e-a816-4c7a-a625-38fbfdee9f96\",\"displayName\":\"Zettai \\\"Ryouiki\\\" É\"}]}"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "addbdb904ab5cedce9c1ad501a939176df4e761597c2c1a1c47eaba69f51cef3",
+      "afterDeleteLength": 190
+    },
+    {
+      "file": "vrcx_json_timestamp.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/vrcx_json_timestamp.png\",\n  \"application\": \"VRCX\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_a\",\n    \"displayName\": \"A\"\n  },\n  \"world\": {\n    \"id\": \"wrld_b\",\n    \"name\": null,\n    \"instanceId\": \"wrld_b:1\"\n  },\n  \"players\": [\n    {\n      \"id\": \"usr_c\",\n      \"displayName\": \"Charlie\",\n      \"pos\": {\n        \"x\": 1.5,\n        \"y\": -2.0,\n        \"z\": 0.25\n      }\n    }\n  ],\n  \"pos\": {\n    \"x\": 3.0,\n    \"y\": 4.125,\n    \"z\": -5.0\n  },\n  \"timestamp\": \"2025-01-02T03:04:05Z\",\n  \"note\": \"line1\\nline2\\ttab\\u0001ctl\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/vrcx_json.png\",\n  \"nextFilePath\": \"{dir}/xmp_legacy.png\",\n  \"fileResolution\": \"4x4\",\n  \"fileSizeBytes\": \"455\",\n  \"fileName\": \"vrcx_json_timestamp\",\n  \"filePath\": \"{dir}/vrcx_json_timestamp.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_a\",\"displayName\":\"A\"},\"world\":{\"name\":null,\"id\":\"wrld_b\",\"instanceId\":\"wrld_b:1\"},\"players\":[{\"id\":\"usr_c\",\"displayName\":\"Charlie\",\"pos\":{\"x\":1.5,\"y\":-2,\"z\":0.25}}],\"pos\":{\"X\":3,\"Y\":4.125,\"Z\":-5},\"timestamp\":\"2025-01-02T03:04:05Z\",\"note\":\"line1\\nline2\\ttab\\u0001ctl\"}"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "8cf79806c1cdc922f117a2f0c278371ac1c20649cd79fab3df721b263f17b034",
+      "afterDeleteLength": 106
+    },
+    {
+      "file": "xmp_legacy.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/xmp_legacy.png\",\n  \"application\": \"VRChat\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_032383a7-748c-4fb2-94e4-bcb928e5de6b\",\n    \"displayName\": null\n  },\n  \"world\": {\n    \"id\": \"wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f\",\n    \"name\": null,\n    \"instanceId\": \"wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f\"\n  },\n  \"players\": [],\n  \"timestamp\": \"2024-02-29T08:09:10\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/vrcx_json_timestamp.png\",\n  \"nextFilePath\": \"{dir}/xmp_utc.png\",\n  \"fileResolution\": \"8x6\",\n  \"fileSizeBytes\": \"750\",\n  \"fileName\": \"xmp_legacy\",\n  \"filePath\": \"{dir}/xmp_legacy.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n  <rdf:Description xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" xmlns:vrc=\"http://ns.vrchat.com/vrc/1.0/\">\n   <xmp:CreatorTool>VRChat</xmp:CreatorTool>\n   <xmp:Author>usr_032383a7-748c-4fb2-94e4-bcb928e5de6b</xmp:Author>\n   <tiff:DateTime>2024-02-29T08:09:10</tiff:DateTime>\n   <vrc:World>wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f</vrc:World>\n  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "bb6f842290e82ff7d96e89503bcb2900dcbdec66688d37893c719f7767be789b",
+      "afterDeleteLength": 165
+    },
+    {
+      "file": "xmp_utc.png",
+      "metadata": "{\n  \"sourceFile\": \"{dir}/xmp_utc.png\",\n  \"application\": \"VRChat\",\n  \"version\": 1,\n  \"author\": {\n    \"id\": \"usr_2\",\n    \"displayName\": \"Carol\"\n  },\n  \"world\": {\n    \"id\": \"wrld_1\",\n    \"name\": null,\n    \"instanceId\": \"wrld_1\"\n  },\n  \"players\": [],\n  \"timestamp\": \"2024-01-01T00:59:59.5+01:00\"\n}",
+      "extra": "{\n  \"previousFilePath\": \"{dir}/xmp_legacy.png\",\n  \"fileResolution\": \"3x5\",\n  \"fileSizeBytes\": \"615\",\n  \"fileName\": \"xmp_utc\",\n  \"filePath\": \"{dir}/xmp_utc.png\",\n  \"fileSize\": \"0.00 MB\"\n}",
+      "texts": [
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" xmlns:vrc=\"http://ns.vrchat.com/vrc/1.0/\"><xmp:CreatorTool>VRChat</xmp:CreatorTool><tiff:DateTime>2023-12-31T23:59:59.5Z</tiff:DateTime><vrc:WorldID>wrld_1</vrc:WorldID><vrc:AuthorID>usr_2</vrc:AuthorID><xmp:Author>Carol</xmp:Author></rdf:Description></rdf:RDF></x:xmpmeta>"
+      ],
+      "deleteResult": true,
+      "afterDeleteSha256": "9d9096309f87e70707d2f27f42abcf459281a3a9eb0bb33a1b14fa420cd77d0a",
+      "afterDeleteLength": 106
+    }
+  ],
+  "search": [
+    {
+      "query": "teacup",
+      "type": 0,
+      "results": [
+        "both.png",
+        "multi_itxt.png",
+        "vrcx_json.png"
+      ]
+    },
+    {
+      "query": "ZETTAI",
+      "type": 0,
+      "results": [
+        "both.png",
+        "lfs_trailing.png",
+        "multi_itxt.png",
+        "vrcx_json.png"
+      ]
+    },
+    {
+      "query": "natsumi",
+      "type": 0,
+      "results": [
+        "lfs_cvr.png",
+        "lfs_trailing.png"
+      ]
+    },
+    {
+      "query": "usr_290c03d6-66cc-4f0e-b782-c07f5cfa8deb",
+      "type": 1,
+      "results": [
+        "both.png",
+        "multi_itxt.png",
+        "vrcx_json.png"
+      ]
+    },
+    {
+      "query": "pug",
+      "type": 2,
+      "results": [
+        "both.png",
+        "multi_itxt.png",
+        "screenshotmanager.png",
+        "VRChat_2025-08-01_21-14-31.451_1920x1080.png",
+        "vrcx_json.png"
+      ]
+    },
+    {
+      "query": "wrld_6caf5200-70e1-46c2-b043-e3c4abe69e0f",
+      "type": 3,
+      "results": [
+        "both.png",
+        "multi_itxt.png",
+        "screenshotmanager.png",
+        "vrcx_json.png"
+      ]
+    },
+    {
+      "query": "wrld_b016712b-5ce6-4bcb-9144-c8ed089b520f",
+      "type": 3,
+      "results": [
+        "lfs_trailing.png",
+        "xmp_legacy.png"
+      ]
+    },
+    {
+      "query": "nobody",
+      "type": 0,
+      "results": []
+    }
+  ],
+  "copyITxt": {
+    "source": "multi_itxt.png",
+    "target": "nometa.png",
+    "sha256": "4d0cd8557464cd596944b180c8e0734f252174d08746444e62a28e124bcfcb63",
+    "length": 1412
+  },
+  "writeVrcx": {
+    "target": "xmp_utc.png",
+    "sha256": "2439edbf3244d76dced5712d95537a93ef01d8316f8f1c9f097273802dda9ff9",
+    "length": 665
+  },
+  "resize": [
+    {
+      "w": 100,
+      "h": 50,
+      "matching": false,
+      "outW": 100,
+      "outH": 50
+    },
+    {
+      "w": 2000,
+      "h": 2000,
+      "matching": false,
+      "outW": 2000,
+      "outH": 2000
+    },
+    {
+      "w": 2001,
+      "h": 1000,
+      "matching": false,
+      "outW": 2000,
+      "outH": 1000
+    },
+    {
+      "w": 4000,
+      "h": 3000,
+      "matching": false,
+      "outW": 2000,
+      "outH": 1500
+    },
+    {
+      "w": 3000,
+      "h": 4000,
+      "matching": false,
+      "outW": 1500,
+      "outH": 2000
+    },
+    {
+      "w": 2500,
+      "h": 2600,
+      "matching": false,
+      "outW": 1923,
+      "outH": 2000
+    },
+    {
+      "w": 1000,
+      "h": 3001,
+      "matching": false,
+      "outW": 666,
+      "outH": 2000
+    },
+    {
+      "w": 2003,
+      "h": 2999,
+      "matching": false,
+      "outW": 1336,
+      "outH": 2000
+    },
+    {
+      "w": 4001,
+      "h": 2001,
+      "matching": false,
+      "outW": 2000,
+      "outH": 1000
+    },
+    {
+      "w": 300,
+      "h": 100,
+      "matching": true,
+      "outW": 300,
+      "outH": 300
+    },
+    {
+      "w": 100,
+      "h": 301,
+      "matching": true,
+      "outW": 301,
+      "outH": 301
+    },
+    {
+      "w": 5000,
+      "h": 1200,
+      "matching": true,
+      "outW": 2000,
+      "outH": 2000
+    },
+    {
+      "w": 1,
+      "h": 3000,
+      "matching": false,
+      "outW": 1,
+      "outH": 2000
+    }
+  ],
+  "resizePrint": [
+    {
+      "w": 1920,
+      "h": 1080,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1920,
+      "innerH": 1080
+    },
+    {
+      "w": 1000,
+      "h": 500,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 129,
+      "innerW": 1920,
+      "innerH": 960
+    },
+    {
+      "w": 500,
+      "h": 1000,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 129,
+      "innerW": 1920,
+      "innerH": 960
+    },
+    {
+      "w": 800,
+      "h": 600,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 304,
+      "y": 69,
+      "innerW": 1440,
+      "innerH": 1080
+    },
+    {
+      "w": 3840,
+      "h": 2160,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1920,
+      "innerH": 1080
+    },
+    {
+      "w": 4000,
+      "h": 1000,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 369,
+      "innerW": 1920,
+      "innerH": 480
+    },
+    {
+      "w": 2000,
+      "h": 3000,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 214,
+      "y": 69,
+      "innerW": 1620,
+      "innerH": 1080
+    },
+    {
+      "w": 1920,
+      "h": 1200,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 160,
+      "y": 69,
+      "innerW": 1728,
+      "innerH": 1080
+    },
+    {
+      "w": 1919,
+      "h": 1080,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1919,
+      "innerH": 1080
+    },
+    {
+      "w": 2560,
+      "h": 1080,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1920,
+      "innerH": 810
+    },
+    {
+      "w": 1080,
+      "h": 1920,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1920,
+      "innerH": 1080
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "outW": 2048,
+      "outH": 1440,
+      "x": 64,
+      "y": 69,
+      "innerW": 1920,
+      "innerH": 1080
+    }
+  ],
+  "floatFormat": [
+    {
+      "bits": 0,
+      "text": "0.0"
+    },
+    {
+      "bits": -2147483648,
+      "text": "-0.0"
+    },
+    {
+      "bits": 1065353216,
+      "text": "1.0"
+    },
+    {
+      "bits": 1095027917,
+      "text": "12.3"
+    },
+    {
+      "bits": -1032717916,
+      "text": "-60.49379"
+    },
+    {
+      "bits": 925353388,
+      "text": "1E-05"
+    },
+    {
+      "bits": 930850946,
+      "text": "1.5E-05"
+    },
+    {
+      "bits": 953267991,
+      "text": "0.0001"
+    },
+    {
+      "bits": 956396123,
+      "text": "0.00012345"
+    },
+    {
+      "bits": 1290500515,
+      "text": "123456790.0"
+    },
+    {
+      "bits": 1259902592,
+      "text": "10000000.0"
+    },
+    {
+      "bits": 1485589024,
+      "text": "1.234E+15"
+    },
+    {
+      "bits": 1510874058,
+      "text": "1E+16"
+    },
+    {
+      "bits": 2139081118,
+      "text": "3.4E+38"
+    },
+    {
+      "bits": 1050253722,
+      "text": "0.3"
+    },
+    {
+      "bits": 1266679808,
+      "text": "16777216.0"
+    },
+    {
+      "bits": 8388608,
+      "text": "1.1754944E-38"
+    },
+    {
+      "bits": -1153449730,
+      "text": "-0.002925932"
+    },
+    {
+      "bits": 981668463,
+      "text": "0.001"
+    },
+    {
+      "bits": 1454761505,
+      "text": "1E+14"
+    },
+    {
+      "bits": 1482907561,
+      "text": "1E+15"
+    },
+    {
+      "bits": 1206984794,
+      "text": "123456.7"
+    }
+  ],
+  "fileSize": [
+    {
+      "bytes": 0,
+      "text": "0.00 MB"
+    },
+    {
+      "bytes": 1,
+      "text": "0.00 MB"
+    },
+    {
+      "bytes": 5242,
+      "text": "0.00 MB"
+    },
+    {
+      "bytes": 5243,
+      "text": "0.01 MB"
+    },
+    {
+      "bytes": 10485,
+      "text": "0.01 MB"
+    },
+    {
+      "bytes": 1048576,
+      "text": "1.00 MB"
+    },
+    {
+      "bytes": 1572864,
+      "text": "1.50 MB"
+    },
+    {
+      "bytes": 5347737,
+      "text": "5.10 MB"
+    },
+    {
+      "bytes": 10480000,
+      "text": "9.99 MB"
+    },
+    {
+      "bytes": 104857599,
+      "text": "100.00 MB"
+    },
+    {
+      "bytes": 3000000000,
+      "text": "2861.02 MB"
+    },
+    {
+      "bytes": 15728,
+      "text": "0.01 MB"
+    },
+    {
+      "bytes": 1053818,
+      "text": "1.00 MB"
+    }
+  ],
+  "xmpDates": [
+    {
+      "input": "2025-08-01T21:14:31.4513219+02:00",
+      "output": "2025-08-01T21:14:31.4513219+02:00"
+    },
+    {
+      "input": "2024-02-29T08:09:10",
+      "output": "2024-02-29T08:09:10"
+    },
+    {
+      "input": "2023-12-31T23:59:59.5Z",
+      "output": "2024-01-01T00:59:59.5+01:00"
+    },
+    {
+      "input": "2025-01-15T10:00:00+05:30",
+      "output": "2025-01-15T05:30:00+01:00"
+    },
+    {
+      "input": "2025-01-15T10:00:00.1200000-08:00",
+      "output": "2025-01-15T19:00:00.12+01:00"
+    },
+    {
+      "input": "2025-03-30T01:30:00Z",
+      "output": "2025-03-30T03:30:00+02:00"
+    },
+    {
+      "input": "2025-10-26T00:30:00Z",
+      "output": "2025-10-26T02:30:00+02:00"
+    },
+    {
+      "input": "2025-06-01 12:13:14",
+      "output": "2025-06-01T12:13:14"
+    },
+    {
+      "input": "2025-06-01T12:13",
+      "output": "2025-06-01T12:13:00"
+    },
+    {
+      "input": "2025-06-01",
+      "output": "2025-06-01T00:00:00"
+    },
+    {
+      "input": "not a date",
+      "output": null
+    },
+    {
+      "input": "",
+      "output": null
+    },
+    {
+      "input": "2025-06-01T12:13:14.123456789Z",
+      "output": "2025-06-01T14:13:14.1234568+02:00"
+    },
+    {
+      "input": "2025-06-01T12:13:14+0100",
+      "output": "2025-06-01T13:13:14+02:00"
+    }
+  ],
+  "jsonDates": [
+    {
+      "input": "2025-01-02T03:04:05Z",
+      "output": "2025-01-02T03:04:05Z"
+    },
+    {
+      "input": "2025-01-02T03:04:05.1200000+05:30",
+      "output": "2025-01-01T22:34:05.12+01:00"
+    },
+    {
+      "input": "2025-06-01T00:00:00",
+      "output": "2025-06-01T00:00:00"
+    },
+    {
+      "input": "2025-06-01T00:00:00.000Z",
+      "output": "2025-06-01T00:00:00Z"
+    },
+    {
+      "input": "2025-07-04T12:00:00-04:00",
+      "output": "2025-07-04T18:00:00+02:00"
+    },
+    {
+      "input": "2025-01-02T03:04:05.1234567Z",
+      "output": "2025-01-02T03:04:05.1234567Z"
+    }
+  ]
+}
