@@ -23,12 +23,13 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             size: 20,
             minSize: 0,
             maxSize: 20,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         },
         {
             accessorKey: 'created',
             size: 120,
-            meta: { label: () => t('table.moderation.date') },
+            meta: { label: () => t('table.moderation.date'), mobile: { slot: 'trailing' } },
             header: ({ column }) => (
                 <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
                     {t('table.moderation.date')}
@@ -56,7 +57,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             accessorKey: 'type',
             size: 140,
             header: () => t('table.moderation.type'),
-            meta: { label: () => t('table.moderation.type') },
+            // Phones: the moderation type heads the card, the target is its main line, the source a labelled footer.
+            meta: { label: () => t('table.moderation.type'), mobile: { slot: 'title' } },
             cell: ({ row }) => {
                 const type = row.getValue('type');
                 const typeKey = `view.moderation.filters.${type}`;
@@ -73,7 +75,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             accessorKey: 'sourceDisplayName',
             meta: {
                 class: 'overflow-hidden',
-                label: () => t('table.moderation.source')
+                label: () => t('table.moderation.source'),
+                mobile: { slot: 'footer', label: true }
             },
             size: 120,
             header: () => t('table.moderation.source'),
@@ -95,7 +98,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             minSize: 80,
             meta: {
                 stretch: true,
-                label: () => t('table.moderation.target')
+                label: () => t('table.moderation.target'),
+                mobile: { slot: 'body', class: 'font-medium' }
             },
             header: () => t('table.moderation.target'),
             cell: ({ row }) => {
@@ -114,7 +118,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             id: 'action',
             meta: {
                 class: 'text-right',
-                label: () => t('table.moderation.action')
+                label: () => t('table.moderation.action'),
+                mobile: { slot: 'actions' }
             },
             size: 80,
             minSize: 80,
@@ -146,6 +151,7 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             enableSorting: false,
             enableResizing: false,
             size: 5,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         }
     ];

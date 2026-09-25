@@ -9,7 +9,36 @@
             :total-items="totalItems"
             :on-page-size-change="handlePageSizeChange">
             <template #toolbar>
-                <div class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
+                <!-- Phones (docs/DESIGN.md §3.4): search on the first row, the type filter on the second. -->
+                <div
+                    v-if="isCompact"
+                    class="flex w-full min-w-0 flex-col gap-2"
+                    data-testid="friend-log-compact-toolbar">
+                    <InputGroupField
+                        v-model="friendLogTable.filters[1].value"
+                        class="min-w-0"
+                        :placeholder="t('view.friend_log.search_placeholder')"
+                        clearable
+                        enterkeyhint="search" />
+                    <Select
+                        multiple
+                        :model-value="
+                            Array.isArray(friendLogTable.filters?.[0]?.value) ? friendLogTable.filters[0].value : []
+                        "
+                        @update:modelValue="handleFriendLogFilterChange">
+                        <SelectTrigger size="sm" class="w-full min-w-0">
+                            <SelectValue :placeholder="t('view.friend_log.filter_placeholder')" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                <SelectItem v-for="type in FRIEND_LOG_TYPES" :key="type" :value="type">
+                                    {{ t('view.friend_log.filters.' + type) }}
+                                </SelectItem>
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div v-else class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
                     <Select
                         multiple
                         :model-value="
@@ -72,6 +101,17 @@
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
 
     import configRepository from '../../services/config';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+
+    const FRIEND_LOG_TYPES = [
+        'Friend',
+        'Unfriend',
+        'FriendRequest',
+        'CancelFriendRequest',
+        'DisplayName',
+        'TrustLevel'
+    ];
+    const { isCompact } = useCompactLayout();
 
     const appearanceSettingsStore = useAppearanceSettingsStore();
     const vrcxStore = useVrcxStore();

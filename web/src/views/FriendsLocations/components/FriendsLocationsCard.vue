@@ -1,7 +1,7 @@
 <template>
     <UserContextMenu :user-id="friend.id" :state="friend.state" :location="friend.ref?.location">
         <Card
-            class="friend-card x-hover-card hover:bg-muted relative"
+            class="friend-card x-hover-card hover:bg-muted relative pointer-coarse:active:bg-muted"
             :style="cardStyle"
             @click="showUserDialog(friend.id)">
             <ProfileEffect

@@ -344,7 +344,7 @@ function worldNameOf(row) {
 
 // Row of the 18 columns the UNION ALL game log queries select (services/database/gameLog.js).
 function unionColumns(row) {
-    const name = row.userId ? NAMES[row.userId] ?? '' : null;
+    const name = row.userId ? (NAMES[row.userId] ?? '') : null;
     const isLocation = row.table === 'location';
     return [
         row.id,
@@ -369,15 +369,7 @@ function unionColumns(row) {
 }
 
 function searchText(row) {
-    return [
-        NAMES[row.userId],
-        worldNameOf(row),
-        row.data,
-        row.message,
-        row.videoName,
-        row.videoUrl,
-        row.resourceUrl
-    ]
+    return [NAMES[row.userId], worldNameOf(row), row.data, row.message, row.videoName, row.videoUrl, row.resourceUrl]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -475,7 +467,15 @@ function sessionEvents(table, args) {
         .map((row) =>
             table === 'join_leave'
                 ? [row.type, iso(row.at), NAMES[row.userId] ?? '', row.userId, row.location]
-                : [iso(row.at), row.videoUrl, row.videoName, row.videoId, NAMES[row.userId] ?? '', row.userId, row.location]
+                : [
+                      iso(row.at),
+                      row.videoUrl,
+                      row.videoName,
+                      row.videoId,
+                      NAMES[row.userId] ?? '',
+                      row.userId,
+                      row.location
+                  ]
         );
 }
 
@@ -775,7 +775,7 @@ function playerModerations() {
  * @param {string} method
  * @param {object} options
  * @param {object} data
- * @returns {unknown} response body, or undefined to fall through
+ * @returns {unknown} Response body, or undefined to fall through
  */
 export function webApi(path, query, method, options, data) {
     if (method !== 'GET') return undefined;
@@ -812,9 +812,7 @@ export function webApi(path, query, method, options, data) {
         const search = String(query.get('query') ?? '').toLowerCase();
         const offset = Number(query.get('offset') ?? 0);
         const n = Number(query.get('n') ?? 10);
-        return GROUPS.filter(
-            (group) => !search || group.name.toLowerCase().includes(search) || search.length < 3
-        )
+        return GROUPS.filter((group) => !search || group.name.toLowerCase().includes(search) || search.length < 3)
             .map(buildGroup)
             .slice(offset, offset + n);
     }
@@ -833,13 +831,19 @@ export function sqlite(sql, args) {
     if (/^SELECT \* FROM \w+_friend_log_history$/.test(text)) return friendLogRows();
     if (text.includes('FROM gamelog_join_leave g WHERE')) return userStats();
     if (text.includes('UNION ALL') && text.includes('FROM gamelog_')) return unionRows(text, args);
-    if (text.startsWith('SELECT id, created_at, location, world_id, world_name, time, group_name FROM gamelog_location')) {
+    if (
+        text.startsWith('SELECT id, created_at, location, world_id, world_name, time, group_name FROM gamelog_location')
+    ) {
         return sessionSegments(text, args);
     }
     if (text.startsWith('SELECT type, created_at, display_name, user_id, location FROM gamelog_join_leave')) {
         return sessionEvents('join_leave', args);
     }
-    if (text.startsWith('SELECT created_at, video_url, video_name, video_id, display_name, user_id, location FROM gamelog_video_play')) {
+    if (
+        text.startsWith(
+            'SELECT created_at, video_url, video_name, video_id, display_name, user_id, location FROM gamelog_video_play'
+        )
+    ) {
         return sessionEvents('video_play', args);
     }
     const perTable = text.match(/^SELECT \* FROM gamelog_(\w+) WHERE created_at >= date\('([^']+)'\)/);
@@ -882,7 +886,9 @@ function seedDashboard() {
     const api = window.interopApi;
     if (!api) return false;
     const key = 'config:vrcx_dashboardconfigs';
-    Promise.resolve(api.callDotNetMethod('SQLite', 'ExecuteJson', ['SELECT value FROM configs WHERE key = @key', { '@key': key }]))
+    Promise.resolve(
+        api.callDotNetMethod('SQLite', 'ExecuteJson', ['SELECT value FROM configs WHERE key = @key', { '@key': key }])
+    )
         .then((json) => {
             if (JSON.parse(json).length) return undefined;
             return api.callDotNetMethod('SQLite', 'ExecuteNonQuery', [

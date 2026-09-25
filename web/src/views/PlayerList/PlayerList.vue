@@ -25,7 +25,11 @@
                      stats run full width under the image). -->
                 <div
                     class="ml-2 compact:contents"
-                    :style="isCompact ? null : { display: 'flex', flexDirection: 'column', minWidth: '320px', width: '100%' }">
+                    :style="
+                        isCompact
+                            ? null
+                            : { display: 'flex', flexDirection: 'column', minWidth: '320px', width: '100%' }
+                    ">
                     <div class="flex items-center">
                         <span
                             class="cursor-pointer"

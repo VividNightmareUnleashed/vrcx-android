@@ -15,8 +15,8 @@ export const PLAYER_ICON_LEGEND = Object.freeze([
 ]);
 
 /**
- * @param {Array<object>} rows Player list rows (stores/instance.js currentInstanceUsersData)
- * @returns {Array<{ key: string; icon: string; labelKey: string }>} Legend entries for the icons shown in `rows`
+ * @param {object[]} rows Player list rows (stores/instance.js currentInstanceUsersData)
+ * @returns {{ key: string; icon: string; labelKey: string }[]} Legend entries for the icons shown in `rows`
  */
 export function getPlayerIconLegend(rows) {
     const list = Array.isArray(rows) ? rows : [];

@@ -12,7 +12,7 @@ let applied = null;
  *
  * @param {{ sessionsViewMode: string; setSessionsViewMode: (mode: string) => Promise<void> }} gameLogStore
  * @param {{ getString: Function; setString: Function }} [repository]
- * @returns {Promise<boolean>} true when the default was applied
+ * @returns {Promise<boolean>} True when the default was applied
  */
 export function applyAndroidGameLogViewDefault(gameLogStore, repository = configRepository) {
     if (!applied) {

@@ -9,7 +9,50 @@
             :total-items="totalItems"
             :on-page-size-change="handlePageSizeChange">
             <template #toolbar>
-                <div class="mb-2 flex justify-between items-center gap-2">
+                <!-- Phones (docs/DESIGN.md §3.4): search and refresh first, the type filter full width below. -->
+                <div
+                    v-if="isCompact"
+                    class="flex w-full min-w-0 flex-col gap-2"
+                    data-testid="notification-compact-toolbar">
+                    <div class="flex min-w-0 items-center gap-1">
+                        <InputGroupField
+                            v-model="notificationTable.filters[1].value"
+                            class="min-w-0 flex-1"
+                            :placeholder="t('view.notification.search_placeholder')"
+                            clearable
+                            enterkeyhint="search" />
+                        <Button
+                            class="shrink-0 rounded-full"
+                            variant="ghost"
+                            size="icon-sm"
+                            :disabled="isNotificationsLoading"
+                            :aria-label="t('view.notification.refresh_tooltip')"
+                            @click="refreshNotifications()">
+                            <Spinner v-if="isNotificationsLoading" />
+                            <RefreshCw v-else />
+                        </Button>
+                    </div>
+                    <Select
+                        multiple
+                        :model-value="
+                            Array.isArray(notificationTable.filters?.[0]?.value)
+                                ? notificationTable.filters[0].value
+                                : []
+                        "
+                        @update:modelValue="handleNotificationFilterChange">
+                        <SelectTrigger size="sm" class="w-full min-w-0">
+                            <SelectValue :placeholder="t('view.notification.filter_placeholder')" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                <SelectItem v-for="type in NOTIFICATION_TYPES" :key="type" :value="type">
+                                    {{ t('view.notification.filters.' + type) }}
+                                </SelectItem>
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div v-else class="mb-2 flex justify-between items-center gap-2">
                     <Select
                         multiple
                         :model-value="
@@ -116,6 +159,35 @@
     import SendInviteRequestResponseDialog from './dialogs/SendInviteRequestResponseDialog.vue';
     import SendInviteResponseDialog from './dialogs/SendInviteResponseDialog.vue';
     import configRepository from '../../services/config';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+
+    const NOTIFICATION_TYPES = [
+        'requestInvite',
+        'invite',
+        'requestInviteResponse',
+        'inviteResponse',
+        'friendRequest',
+        'ignoredFriendRequest',
+        'message',
+        'boop',
+        'event.announcement',
+        'groupChange',
+        'group.announcement',
+        'group.informative',
+        'group.invite',
+        'group.joinRequest',
+        'group.transfer',
+        'group.queueReady',
+        'group.event.created',
+        'group.event.starting',
+        'moderation.warning.group',
+        'moderation.report.closed',
+        'moderation.contentrestriction',
+        'instance.closed',
+        'economy.alert',
+        'twitchdrop.fulfilled'
+    ];
+    const { isCompact } = useCompactLayout();
 
     const { refreshInviteMessageTableData } = useInviteStore();
     const { clearInviteImageUpload } = useGalleryStore();

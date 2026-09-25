@@ -8,7 +8,22 @@
             @delete="handleDelete" />
 
         <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-            <template v-if="displayRows.length && !isEditing">
+            <!-- Phones (docs/DESIGN.md §3.4): every panel stacked in one scrolling column, widgets about half a screen
+                 tall and pages most of a screen; no resizable splitters. The rows keep their PC layout data. -->
+            <template v-if="displayRows.length && !isEditing && isCompact">
+                <template v-for="(row, rowIndex) in displayRows" :key="rowIndex">
+                    <div
+                        v-for="(panelItem, panelIndex) in row.panels"
+                        :key="`${rowIndex}:${panelIndex}`"
+                        :class="['flex shrink-0', compactPanelHeightClass(panelItem)]"
+                        data-testid="dashboard-compact-panel">
+                        <DashboardPanel
+                            :panel-data="panelItem"
+                            @select="(value) => handleLiveUpdatePanel(rowIndex, panelIndex, value)" />
+                    </div>
+                </template>
+            </template>
+            <template v-else-if="displayRows.length && !isEditing">
                 <ResizablePanelGroup direction="vertical" :auto-save-id="`dashboard-${id}`" class="flex-1 min-h-0">
                     <template v-for="(row, rowIndex) in displayRows" :key="rowIndex">
                         <ResizablePanel :default-size="100 / displayRows.length" :min-size="10">
@@ -94,7 +109,10 @@
     import { useDashboardStore, useModalStore } from '@/stores';
 
     import DashboardEditToolbar from './components/DashboardEditToolbar.vue';
+    import DashboardPanel from './components/DashboardPanel.vue';
     import DashboardRow from './components/DashboardRow.vue';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
+    import { getCompactPanelHeightClass } from './dashboardCompact';
 
     const props = defineProps({
         id: {
@@ -105,6 +123,8 @@
 
     const router = useRouter();
     const { t } = useI18n();
+    const { isCompact } = useCompactLayout();
+    const compactPanelHeightClass = getCompactPanelHeightClass;
     const dashboardStore = useDashboardStore();
     const modalStore = useModalStore();
 

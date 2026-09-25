@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Checkbox } from '../../components/ui/checkbox';
 import { TooltipWrapper } from '../../components/ui/tooltip';
 import { i18n } from '../../plugins';
+import { useCompactLayout } from '../../composables/useCompactLayout';
 import {
     formatDateFilter,
     getFaviconUrl,
@@ -16,6 +17,24 @@ import {
 } from '../../shared/utils';
 
 const { t } = i18n.global;
+
+// Phone layout (docs/DESIGN.md §3.1): read during render, so cells follow orientation changes.
+const isCompactLayout = () => useCompactLayout().isCompact.value;
+
+/**
+ * Phone card footer entry "Label: value", or nothing when the value is empty (friends without game log statistics
+ * would otherwise show a row of bare labels).
+ *
+ * @param {() => string} label
+ * @param {unknown} content
+ * @returns {import('vue').VNode | null}
+ */
+const compactStat = (label, content) =>
+    content === null || content === undefined || content === '' ? null : (
+        <span class="whitespace-nowrap">
+            {label()}: {content}
+        </span>
+    );
 
 const sortButton = ({ column, label, descFirst = false }) => {
     const resolvedLabel = typeof label === 'function' ? label() : label;
@@ -95,7 +114,8 @@ export const createColumns = ({
             enableResizing: false,
             meta: {
                 thClass: 'p-0',
-                tdClass: 'p-0'
+                tdClass: 'p-0',
+                mobile: { slot: 'hidden' }
             },
             cell: () => null
         },
@@ -106,7 +126,8 @@ export const createColumns = ({
             enableSorting: false,
             meta: {
                 thClass: 'p-0',
-                tdClass: 'p-0'
+                tdClass: 'p-0',
+                mobile: { slot: 'leading', order: 0 }
             },
             cell: ({ row }) => {
                 const id = row.original?.id;
@@ -128,9 +149,14 @@ export const createColumns = ({
                     descFirst: true
                 }),
             size: 100,
-            meta: { label: () => t('table.friendList.no') },
+            meta: { label: () => t('table.friendList.no'), mobile: { slot: 'trailing' } },
             sortingFn: sortByNumber((row) => row?.$friendNumber ?? 0),
-            cell: ({ row }) => <span>{row.original?.$friendNumber || ''}</span>
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    <span>{row.original?.$friendNumber ? `#${row.original.$friendNumber}` : ''}</span>
+                ) : (
+                    <span>{row.original?.$friendNumber || ''}</span>
+                )
         },
         {
             id: 'avatar',
@@ -138,12 +164,12 @@ export const createColumns = ({
             header: () => t('table.friendList.avatar'),
             size: 90,
             enableSorting: false,
-            meta: { label: () => t('table.friendList.avatar') },
+            meta: { label: () => t('table.friendList.avatar'), mobile: { slot: 'leading', order: 1 } },
             cell: ({ row }) => {
                 const src = userImage(row.original, true);
                 return (
                     <div class="flex items-center">
-                        <Avatar class="size-6 rounded-full">
+                        <Avatar class="size-6 rounded-full compact:size-8">
                             <AvatarImage src={src} class="friends-list-avatar object-cover" loading="lazy" />
                             <AvatarFallback>
                                 <User class="size-3 text-muted-foreground" />
@@ -162,7 +188,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.displayName')
                 }),
             size: 200,
-            meta: { label: () => t('table.friendList.displayName') },
+            meta: { label: () => t('table.friendList.displayName'), mobile: { slot: 'title' } },
             sortingFn: sortByString((row) => row?.displayName ?? ''),
             cell: ({ row }) => {
                 const style = randomUserColours?.value ? { color: row.original?.$userColour } : null;
@@ -182,7 +208,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.rank')
                 }),
             size: 140,
-            meta: { label: () => t('table.friendList.rank') },
+            meta: { label: () => t('table.friendList.rank'), mobile: { slot: 'badge' } },
             sortingFn: sortByNumber((row) => row?.$trustSortNum ?? 0),
             cell: ({ row }) => {
                 if (randomUserColours?.value) {
@@ -207,7 +233,8 @@ export const createColumns = ({
             sortingFn: sortByStatus,
             meta: {
                 stretch: true,
-                label: () => t('table.friendList.status')
+                label: () => t('table.friendList.status'),
+                mobile: { slot: 'body' }
             },
             cell: ({ row }) => {
                 const status = row.original?.status;
@@ -230,7 +257,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.language')
                 }),
             size: 130,
-            meta: { label: () => t('table.friendList.language') },
+            meta: { label: () => t('table.friendList.language'), mobile: { slot: 'footer' } },
             sortingFn: sortByLanguages,
             cell: ({ row }) => (
                 <div class="flex items-center">
@@ -247,7 +274,7 @@ export const createColumns = ({
             header: () => t('table.friendList.bioLink'),
             size: 130,
             enableSorting: false,
-            meta: { label: () => t('table.friendList.bioLink') },
+            meta: { label: () => t('table.friendList.bioLink'), mobile: { slot: 'footer' } },
             cell: ({ row }) => (
                 <div class="flex items-center">
                     {(row.original?.bioLinks ?? []).filter(Boolean).map((link, index) => (
@@ -278,8 +305,14 @@ export const createColumns = ({
             sortingFn: sortByNumber((row) => row?.$joinCount ?? 0),
             meta: {
                 class: 'text-right',
-                label: () => t('table.friendList.joinCount')
-            }
+                label: () => t('table.friendList.joinCount'),
+                mobile: { slot: 'footer' }
+            },
+            // PC: TanStack's default cell. Phones: "Joins: 3", or nothing without game log data.
+            cell: ({ row, renderValue }) =>
+                isCompactLayout()
+                    ? compactStat(() => t('table.friendList.joinCount'), row.original?.$joinCount || null)
+                    : (renderValue()?.toString?.() ?? null)
         },
         {
             id: 'timeTogether',
@@ -293,10 +326,14 @@ export const createColumns = ({
             sortingFn: sortByNumber((row) => row?.$timeSpent ?? 0),
             meta: {
                 class: 'text-right',
-                label: () => t('table.friendList.timeTogether')
+                label: () => t('table.friendList.timeTogether'),
+                mobile: { slot: 'footer' }
             },
             cell: ({ row }) => {
                 const time = row.original?.$timeSpent;
+                if (isCompactLayout()) {
+                    return compactStat(() => t('table.friendList.timeTogether'), time ? timeToText(time) : null);
+                }
                 return time ? <span>{timeToText(time)}</span> : null;
             }
         },
@@ -309,10 +346,13 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastSeen')
                 }),
             size: 170,
-            meta: { label: () => t('table.friendList.lastSeen') },
+            meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer' } },
             sortingFn: sortByString((row) => row?.$lastSeen ?? ''),
             cell: ({ row }) => {
                 const text = formatDateFilter(row.original?.$lastSeen, 'long');
+                if (isCompactLayout()) {
+                    return compactStat(() => t('table.friendList.lastSeen'), text === '-' ? null : text);
+                }
                 return <span>{text === '-' ? '' : text}</span>;
             }
         },
@@ -328,12 +368,20 @@ export const createColumns = ({
             sortingFn: sortByNumber((row) => row?.$mutualCount ?? 0),
             meta: {
                 class: 'text-right',
-                label: () => t('table.friendList.mutualFriends')
+                label: () => t('table.friendList.mutualFriends'),
+                mobile: { slot: 'footer' }
             },
             cell: ({ row }) => {
                 const count = row.original?.$mutualCount;
                 const optedOut = row.original?.$mutualOptedOut;
                 if (!count && !optedOut) return null;
+                if (isCompactLayout()) {
+                    // Phones: the opted-out note inline instead of in the icon's tooltip.
+                    return compactStat(
+                        () => t('table.friendList.mutualFriends'),
+                        optedOut ? t('table.friendList.mutualOptedOut') : count
+                    );
+                }
                 return (
                     <span class="inline-flex items-center gap-1">
                         {count || null}
@@ -355,9 +403,17 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastActivity')
                 }),
             size: 200,
-            meta: { label: () => t('table.friendList.lastActivity') },
+            meta: { label: () => t('table.friendList.lastActivity'), mobile: { slot: 'footer' } },
             sortingFn: sortByString((row) => row?.last_activity ?? ''),
-            cell: ({ row }) => <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    compactStat(
+                        () => t('table.friendList.lastActivity'),
+                        formatDateFilter(row.original?.last_activity, 'long')
+                    )
+                ) : (
+                    <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
+                )
         },
         {
             id: 'lastLogin',
@@ -368,7 +424,8 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastLogin')
                 }),
             size: 200,
-            meta: { label: () => t('table.friendList.lastLogin') },
+            // Phones: in the user dialog (a card tap opens it); the card keeps to the common fields.
+            meta: { label: () => t('table.friendList.lastLogin'), mobile: { slot: 'detail' } },
             sortingFn: sortByString((row) => row?.last_login ?? ''),
             cell: ({ row }) => <span>{formatDateFilter(row.original?.last_login, 'long')}</span>
         },
@@ -381,7 +438,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.dateJoined')
                 }),
             size: 120,
-            meta: { label: () => t('table.friendList.dateJoined') },
+            meta: { label: () => t('table.friendList.dateJoined'), mobile: { slot: 'detail' } },
             sortingFn: sortByString((row) => row?.date_joined ?? ''),
             cell: ({ row }) => <span>{row.original?.date_joined ?? ''}</span>
         },
@@ -392,18 +449,33 @@ export const createColumns = ({
             enableSorting: false,
             meta: {
                 class: 'text-center',
-                label: t('table.friendList.unfriend')
+                label: t('table.friendList.unfriend'),
+                mobile: { slot: 'actions' }
             },
-            cell: ({ row }) => (
-                // TODO(icon): verify unfollow icon replacement
-                <UserMinus
-                    class="h-4 w-4 text-destructive inline-block"
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        onConfirmDeleteFriend?.(row.original?.id);
-                    }}
-                />
-            )
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-destructive"
+                        aria-label={t('table.friendList.unfriend')}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onConfirmDeleteFriend?.(row.original?.id);
+                        }}
+                    >
+                        <UserMinus class="h-4 w-4" />
+                    </Button>
+                ) : (
+                    // TODO(icon): verify unfollow icon replacement
+                    <UserMinus
+                        class="h-4 w-4 text-destructive inline-block"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onConfirmDeleteFriend?.(row.original?.id);
+                        }}
+                    />
+                )
         }
     );
 

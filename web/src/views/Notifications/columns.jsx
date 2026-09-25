@@ -22,10 +22,18 @@ import { showWorldDialog } from '../../coordinators/worldCoordinator';
 import { showGroupDialog } from '../../coordinators/groupCoordinator';
 
 import Emoji from '../../components/Emoji.vue';
+import { useCompactLayout } from '../../composables/useCompactLayout';
+import {
+    getNotificationActionFlags,
+    getNotificationMessageLines,
+    hasSenderContent,
+    isGroupId
+} from './notificationCompact';
 
 const { t, te } = i18n.global;
 
-const isGroupId = (id) => typeof id === 'string' && id.startsWith('grp_');
+// Phone layout (docs/DESIGN.md §3.1, §3.3): read during render, so cells follow orientation changes.
+const isCompactLayout = () => useCompactLayout().isCompact.value;
 
 export const createColumns = ({
     getNotificationCreatedAt,
@@ -86,6 +94,250 @@ export const createColumns = ({
         }
     };
 
+    const respond = (original, response) => {
+        if (response.type === 'link') {
+            openNotificationLink(response.data);
+            return;
+        }
+        if (response.icon === 'reply' && original.type === 'boop') {
+            showSendBoopDialog(original.senderUserId);
+            return;
+        }
+        sendNotificationResponse(original.id, original.responses, response.type);
+    };
+
+    /**
+     * Phone actions: the PC's icon buttons (labels only in tooltips there) as labelled buttons that wrap.
+     *
+     * @param {object} original
+     * @returns {import('vue').VNode | null}
+     */
+    const renderCompactActions = (original) => {
+        const { showDecline, showDeleteLog } = getNotificationActionFlags(original);
+        const quick = shiftHeld.value;
+        const items = [];
+        if (original.senderUserId !== currentUser.value?.id && !isNotificationExpired(original)) {
+            if (original.type === 'friendRequest') {
+                items.push({
+                    key: 'accept',
+                    icon: Check,
+                    label: t('view.notification.actions.accept'),
+                    onClick: () => acceptFriendRequestNotification(original)
+                });
+            }
+            if (original.type === 'invite') {
+                items.push({
+                    key: 'decline-with-message',
+                    icon: MessageCircle,
+                    label: t('view.notification.actions.decline_with_message'),
+                    onClick: () => showSendInviteResponseDialog(original)
+                });
+            }
+            if (original.type === 'requestInvite') {
+                if (canInvite()) {
+                    items.push({
+                        key: 'invite',
+                        icon: Check,
+                        label: t('view.notification.actions.invite'),
+                        onClick: () => acceptRequestInvite(original)
+                    });
+                }
+                items.push({
+                    key: 'decline-with-message',
+                    icon: MessageCircle,
+                    label: t('view.notification.actions.decline_with_message'),
+                    onClick: () => showSendInviteRequestResponseDialog(original)
+                });
+            }
+            if (Array.isArray(original.responses)) {
+                for (const response of original.responses) {
+                    items.push({
+                        key: `response:${response.text}:${response.type}`,
+                        icon: getResponseIcon(response, original.type),
+                        label: response.text,
+                        onClick: () => respond(original, response)
+                    });
+                }
+            }
+            if (showDecline) {
+                items.push({
+                    key: 'decline',
+                    icon: X,
+                    label: t('view.notification.actions.decline'),
+                    destructive: quick,
+                    onClick: () => (quick ? hideNotification(original) : hideNotificationPrompt(original))
+                });
+            }
+            if (original.type === 'group.queueReady') {
+                items.push({
+                    key: 'queue-delete-log',
+                    icon: quick ? X : Trash2,
+                    label: t('view.notification.actions.delete_log'),
+                    destructive: quick,
+                    onClick: () => (quick ? deleteNotificationLog(original) : deleteNotificationLogPrompt(original))
+                });
+            }
+        }
+        if (showDeleteLog && original.type !== 'group.queueReady') {
+            items.push({
+                key: 'delete-log',
+                icon: quick ? X : Trash2,
+                label: t('view.notification.actions.delete_log'),
+                destructive: quick,
+                onClick: () => (quick ? deleteNotificationLog(original) : deleteNotificationLogPrompt(original))
+            });
+        }
+        if (!items.length) {
+            return null;
+        }
+        return (
+            <div class="flex flex-wrap items-center gap-1.5 pt-0.5" data-testid="notification-compact-actions">
+                {items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                        <Button
+                            key={item.key}
+                            variant="outline"
+                            size="sm"
+                            class={[
+                                'h-8 max-w-full gap-1.5 px-2.5 text-xs',
+                                item.destructive ? 'text-destructive' : ''
+                            ]}
+                            onClick={item.onClick}
+                        >
+                            <Icon class="size-3.5 shrink-0" />
+                            <span class="truncate">{item.label}</span>
+                        </Button>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    /**
+     * Phone message: the full text on up to three lines, plus what PC only shows in the type badge's tooltip (the
+     * instance of queue and closed-instance notifications, the link text of linked ones).
+     *
+     * @param {object} original
+     * @returns {import('vue').VNode | null}
+     */
+    const renderCompactMessage = (original) => {
+        const parts = [];
+        if ((original.type === 'group.queueReady' || original.type === 'instance.closed') && original.location) {
+            parts.push(
+                <Location
+                    key="type-location"
+                    location={original.location}
+                    hint={original.worldName}
+                    grouphint={original.groupName}
+                    link={true}
+                />
+            );
+        } else if (
+            original.link &&
+            original.linkText &&
+            // A group link's text is the group name, which is already the card title.
+            (hasSenderContent(original) || !original.link.startsWith('group:'))
+        ) {
+            parts.push(
+                <span key="link-text" class="block truncate text-xs text-muted-foreground">
+                    {original.linkText}
+                </span>
+            );
+        }
+        if (original.type === 'invite' && original.details) {
+            parts.push(
+                <Location
+                    key="invite-location"
+                    location={original.details.worldId}
+                    hint={original.details.worldName}
+                    grouphint={original.details.groupName}
+                    link
+                />
+            );
+        }
+        getNotificationMessageLines(original).forEach((line, index) => {
+            parts.push(
+                <TooltipWrapper key={`line-${index}`} content={line} delayDuration={500}>
+                    <span class="line-clamp-3 whitespace-pre-line break-words">{line}</span>
+                </TooltipWrapper>
+            );
+        });
+        return parts.length ? <div class="flex w-full min-w-0 flex-col gap-0.5">{parts}</div> : null;
+    };
+
+    /**
+     * Group column content (also the card title of group notifications on phones).
+     *
+     * @param {object} original
+     * @returns {import('vue').VNode | null}
+     */
+    const renderGroupCell = (original) => {
+        const label =
+            original.senderUsername ||
+            original.groupName ||
+            original.data?.groupName ||
+            original.details?.groupName ||
+            original.linkText;
+
+        if (original.senderUserId && (original.type === 'groupChange' || isGroupId(original.senderUserId))) {
+            return (
+                <span class="table-user-text block w-full min-w-0 truncate">
+                    <span
+                        class="cursor-pointer block w-full min-w-0 truncate"
+                        onClick={() => showGroupDialog(original.senderUserId)}
+                    >
+                        {label}
+                    </span>
+                </span>
+            );
+        }
+
+        if (original.type === 'groupChange' && original.senderUsername) {
+            return <span class="table-user-text block w-full min-w-0 truncate">{original.senderUsername}</span>;
+        }
+
+        if (original.link?.startsWith('group:')) {
+            return (
+                <span class="table-user-text block w-full min-w-0 truncate">
+                    <span
+                        class="cursor-pointer block w-full min-w-0 truncate"
+                        onClick={() => openNotificationLink(original.link)}
+                    >
+                        {original.data?.groupName || label}
+                    </span>
+                </span>
+            );
+        }
+
+        if (original.link?.startsWith('event:')) {
+            return (
+                <span class="table-user-text block w-full min-w-0 truncate">
+                    <span
+                        class="cursor-pointer block w-full min-w-0 truncate"
+                        onClick={() => openNotificationLink(original.link)}
+                    >
+                        {original.data?.groupName || original.groupName || label}
+                    </span>
+                </span>
+            );
+        }
+
+        if (original.data?.groupName) {
+            return <span class="table-user-text block w-full min-w-0 truncate">{original.data.groupName}</span>;
+        }
+
+        if (original.details?.groupName) {
+            return <span class="table-user-text block w-full min-w-0 truncate">{original.details.groupName}</span>;
+        }
+
+        if (original.groupName) {
+            return <span class="table-user-text block w-full min-w-0 truncate">{original.groupName}</span>;
+        }
+
+        return null;
+    };
+
     return [
         {
             id: 'spacer',
@@ -94,13 +346,14 @@ export const createColumns = ({
             size: 20,
             minSize: 0,
             maxSize: 20,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         },
         {
             accessorFn: (row) => getNotificationCreatedAtTs(row),
             id: 'created_at',
             size: 120,
-            meta: { label: () => t('table.notification.date') },
+            meta: { label: () => t('table.notification.date'), mobile: { slot: 'trailing' } },
             header: ({ column }) => (
                 <Button
                     variant="ghost"
@@ -127,15 +380,11 @@ export const createColumns = ({
                 const shortText = formatDateFilter(createdAt, 'short');
                 const longText = formatDateFilter(createdAt, 'long');
 
+                // TooltipWrapper: on phones a tap or long-press shows the full date (docs/DESIGN.md §3.3).
                 return (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <span>{shortText}</span>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                            <span>{longText}</span>
-                        </TooltipContent>
-                    </Tooltip>
+                    <TooltipWrapper side="right" content={longText}>
+                        <span>{shortText}</span>
+                    </TooltipWrapper>
                 );
             }
         },
@@ -143,7 +392,7 @@ export const createColumns = ({
             accessorKey: 'type',
             size: 180,
             header: () => t('table.notification.type'),
-            meta: { label: () => t('table.notification.type') },
+            meta: { label: () => t('table.notification.type'), mobile: { slot: 'badge' } },
             cell: ({ row }) => {
                 const original = row.original;
                 const typeKey = `view.notification.filters.${original.type}`;
@@ -209,12 +458,17 @@ export const createColumns = ({
             accessorKey: 'senderUsername',
             meta: {
                 class: 'overflow-hidden',
-                label: () => t('table.notification.user')
+                label: () => t('table.notification.user'),
+                mobile: { slot: 'title' }
             },
             size: 150,
             header: () => t('table.notification.user'),
             cell: ({ row }) => {
                 const original = row.original;
+                // Phones: group notifications have no user, so the card title shows the group instead.
+                if (isCompactLayout() && !hasSenderContent(original)) {
+                    return renderGroupCell(original);
+                }
                 if (original.senderUserId && !isGroupId(original.senderUserId)) {
                     return (
                         <span class="table-user-text block w-full min-w-0 truncate">
@@ -252,84 +506,25 @@ export const createColumns = ({
             accessorKey: 'groupName',
             meta: {
                 class: 'overflow-hidden',
-                label: () => t('table.notification.group')
+                label: () => t('table.notification.group'),
+                mobile: { slot: 'body', class: 'text-xs text-muted-foreground' }
             },
             size: 150,
             header: () => t('table.notification.group'),
             cell: ({ row }) => {
                 const original = row.original;
-                const label =
-                    original.senderUsername ||
-                    original.groupName ||
-                    original.data?.groupName ||
-                    original.details?.groupName ||
-                    original.linkText;
-
-                if (original.senderUserId && (original.type === 'groupChange' || isGroupId(original.senderUserId))) {
-                    return (
-                        <span class="table-user-text block w-full min-w-0 truncate">
-                            <span
-                                class="cursor-pointer block w-full min-w-0 truncate"
-                                onClick={() => showGroupDialog(original.senderUserId)}
-                            >
-                                {label}
-                            </span>
-                        </span>
-                    );
+                // Phones: the card title already shows the group when there is no user (see the user column).
+                if (isCompactLayout() && !hasSenderContent(original)) {
+                    return null;
                 }
-
-                if (original.type === 'groupChange' && original.senderUsername) {
-                    return <span class="table-user-text block w-full min-w-0 truncate">{original.senderUsername}</span>;
-                }
-
-                if (original.link?.startsWith('group:')) {
-                    return (
-                        <span class="table-user-text block w-full min-w-0 truncate">
-                            <span
-                                class="cursor-pointer block w-full min-w-0 truncate"
-                                onClick={() => openNotificationLink(original.link)}
-                            >
-                                {original.data?.groupName || label}
-                            </span>
-                        </span>
-                    );
-                }
-
-                if (original.link?.startsWith('event:')) {
-                    return (
-                        <span class="table-user-text block w-full min-w-0 truncate">
-                            <span
-                                class="cursor-pointer block w-full min-w-0 truncate"
-                                onClick={() => openNotificationLink(original.link)}
-                            >
-                                {original.data?.groupName || original.groupName || label}
-                            </span>
-                        </span>
-                    );
-                }
-
-                if (original.data?.groupName) {
-                    return <span class="table-user-text block w-full min-w-0 truncate">{original.data.groupName}</span>;
-                }
-
-                if (original.details?.groupName) {
-                    return (
-                        <span class="table-user-text block w-full min-w-0 truncate">{original.details.groupName}</span>
-                    );
-                }
-
-                if (original.groupName) {
-                    return <span class="table-user-text block w-full min-w-0 truncate">{original.groupName}</span>;
-                }
-
-                return null;
+                return renderGroupCell(original);
             }
         },
         {
             accessorKey: 'photo',
             size: 80,
             header: () => t('table.notification.photo'),
-            meta: { label: () => t('table.notification.photo') },
+            meta: { label: () => t('table.notification.photo'), mobile: { slot: 'leading' } },
             cell: ({ row }) => {
                 const original = row.original;
                 if (original.type === 'boop') {
@@ -387,11 +582,16 @@ export const createColumns = ({
             meta: {
                 class: 'min-w-0 overflow-hidden',
                 stretch: true,
-                label: () => t('table.notification.message')
+                label: () => t('table.notification.message'),
+                // The compact renderer clamps its own lines (up to three).
+                mobile: { slot: 'body', class: 'line-clamp-none!' }
             },
             minSize: 100,
             cell: ({ row }) => {
                 const original = row.original;
+                if (isCompactLayout()) {
+                    return renderCompactMessage(original);
+                }
                 return (
                     <div class="w-full min-w-0">
                         {original.type === 'invite' && original.details ? (
@@ -446,7 +646,9 @@ export const createColumns = ({
             id: 'action',
             meta: {
                 class: 'text-right',
-                label: () => t('table.notification.action')
+                label: () => t('table.notification.action'),
+                // Phones: labelled buttons that wrap under the message (docs/DESIGN.md §3.3).
+                mobile: { slot: 'body', class: 'line-clamp-none!' }
             },
             size: 120,
             minSize: 120,
@@ -455,18 +657,11 @@ export const createColumns = ({
             enableSorting: false,
             cell: ({ row }) => {
                 const original = row.original;
+                if (isCompactLayout()) {
+                    return renderCompactActions(original);
+                }
                 const hasResponses = Array.isArray(original.responses);
-                const showDecline =
-                    original.type !== 'requestInviteResponse' &&
-                    original.type !== 'inviteResponse' &&
-                    original.type !== 'message' &&
-                    original.type !== 'boop' &&
-                    original.type !== 'groupChange' &&
-                    !original.type?.includes('group.') &&
-                    !original.type?.includes('moderation.') &&
-                    !original.type?.includes('instance.') &&
-                    !original.link?.startsWith('economy.');
-                const showDeleteLog = original.type !== 'friendRequest' && original.type !== 'ignoredFriendRequest';
+                const { showDecline, showDeleteLog } = getNotificationActionFlags(original);
 
                 return (
                     <div class="flex items-center justify-end gap-2">
@@ -662,6 +857,7 @@ export const createColumns = ({
             enableSorting: false,
             enableResizing: false,
             size: 5,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         }
     ];

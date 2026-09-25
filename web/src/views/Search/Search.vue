@@ -5,8 +5,10 @@
             :unmount-on-hide="false"
             aria-label="Search tabs"
             class="flex flex-col min-h-0 flex-1">
-            <div class="mt-0 mx-0 mb-2 flex items-center gap-5">
-                <TabsList>
+            <!-- Phones (docs/DESIGN.md §3.4): the tabs across the full width, then the search row with an explicit
+                 search button (a soft keyboard's Enter is easy to miss). -->
+            <div class="mt-0 mx-0 mb-2 flex items-center gap-5 compact:flex-col compact:items-stretch compact:gap-2">
+                <TabsList class="compact:grid compact:w-full compact:grid-cols-4">
                     <TabsTrigger value="user">{{ t('view.search.user.header') }}</TabsTrigger>
                     <TabsTrigger value="world">{{ t('view.search.world.header') }}</TabsTrigger>
                     <TabsTrigger value="avatar">{{ t('view.search.avatar.header') }}</TabsTrigger>
@@ -18,8 +20,19 @@
                         :placeholder="searchPlaceholder"
                         style="flex: 1"
                         clearable
+                        :enterkeyhint="isCompact ? 'search' : undefined"
                         @input="updateSearchText"
                         @keyup.enter="search" />
+                    <Button
+                        v-if="isCompact"
+                        class="ml-2 shrink-0"
+                        size="icon"
+                        variant="outline"
+                        data-testid="search-submit"
+                        :aria-label="t('android.views_a.search')"
+                        @click="search">
+                        <SearchIcon />
+                    </Button>
                     <TooltipWrapper side="bottom" :content="t('view.search.clear_results_tooltip')">
                         <Button
                             class="rounded-full ml-2"
@@ -129,8 +142,8 @@
                         </div>
                         <template v-else-if="searchWorldResults.length > 0">
                             <ItemGroup
-                                class="grid gap-3"
-                                style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+                                class="grid gap-3 compact:gap-2"
+                                :style="{ gridTemplateColumns: resultGridColumns }">
                                 <Item
                                     v-for="world in searchWorldResults"
                                     :key="world.id"
@@ -148,7 +161,10 @@
                                         </ItemHeader>
                                         <ItemContent class="min-w-0">
                                             <TooltipWrapper side="top" :content="world.name">
-                                                <ItemTitle class="truncate w-auto">{{ world.name }}</ItemTitle>
+                                                <ItemTitle
+                                                    class="truncate w-auto compact:line-clamp-2 compact:whitespace-normal"
+                                                    >{{ world.name }}</ItemTitle
+                                                >
                                             </TooltipWrapper>
                                             <ItemDescription v-if="world.occupants" class="line-clamp-1 text-xs">
                                                 {{ world.authorName }} ({{ world.occupants }})
@@ -205,8 +221,8 @@
                         </div>
                         <template v-else-if="searchAvatarPage.length > 0">
                             <ItemGroup
-                                class="grid gap-3"
-                                style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+                                class="grid gap-3 compact:gap-2"
+                                :style="{ gridTemplateColumns: resultGridColumns }">
                                 <Item
                                     v-for="avatar in searchAvatarPage"
                                     :key="avatar.id"
@@ -231,7 +247,10 @@
                                         </ItemHeader>
                                         <ItemContent class="min-w-0">
                                             <TooltipWrapper side="top" :content="avatar.name">
-                                                <ItemTitle class="truncate w-auto">{{ avatar.name }}</ItemTitle>
+                                                <ItemTitle
+                                                    class="truncate w-auto compact:line-clamp-2 compact:whitespace-normal"
+                                                    >{{ avatar.name }}</ItemTitle
+                                                >
                                             </TooltipWrapper>
                                             <ItemDescription class="line-clamp-1 text-xs">
                                                 {{ avatar.authorName }}
@@ -300,7 +319,8 @@
 
 <script setup>
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-    import { Settings, Trash2, User, Users } from 'lucide-vue-next';
+    import { Search as SearchIcon, Settings, Trash2, User, Users } from 'lucide-vue-next';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
     import IconFrame from '@/components/IconFrame.vue';
     import { DataTableEmpty } from '@/components/ui/data-table';
@@ -350,6 +370,12 @@
     const { cachedConfig } = storeToRefs(useAuthStore());
 
     const { t } = useI18n();
+
+    const { isCompact } = useCompactLayout();
+    // Phones: two cards per row (PC: as many 180px cards as fit).
+    const resultGridColumns = computed(() =>
+        isCompact.value ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))'
+    );
     const { userImage } = useUserDisplay();
 
     const activeSearchTab = ref('user');

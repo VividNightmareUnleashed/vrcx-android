@@ -7,7 +7,8 @@
                     <button
                         type="button"
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
-                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span
+                            class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
                         <div class="min-w-28 shrink-0 compact:hidden">
@@ -47,7 +48,8 @@
                     <button
                         type="button"
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
-                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span
+                            class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
                         <div class="min-w-28 shrink-0 compact:hidden">
@@ -125,7 +127,8 @@
                 <ContextMenuTrigger as-child>
                     <div
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50 cursor-default">
-                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span
+                            class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
                         <div class="min-w-28 shrink-0 compact:hidden">
@@ -149,7 +152,9 @@
                                 {{ t('view.game_log.sessions.play_count', { count: event.playCount }) }}
                             </Badge>
                         </span>
-                        <span v-if="event.displayName" class="shrink-0 text-muted-foreground text-[0.75rem] compact:max-w-24 compact:truncate">
+                        <span
+                            v-if="event.displayName"
+                            class="shrink-0 text-muted-foreground text-[0.75rem] compact:max-w-24 compact:truncate">
                             {{ event.displayName }}
                         </span>
                         <GameLogRowMenu v-if="isCompact" :entry="event" />

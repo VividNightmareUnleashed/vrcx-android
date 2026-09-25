@@ -1,6 +1,7 @@
 <template>
     <div class="relative h-full min-h-[180px]">
-        <div v-if="isEditing" class="flex h-full gap-2" :class="isVertical ? 'flex-col' : 'flex-row'">
+        <!-- Phones: the panels of a row are edited one under the other, as they are shown. -->
+        <div v-if="isEditing" class="flex h-full gap-2" :class="isVertical || isCompact ? 'flex-col' : 'flex-row'">
             <DashboardPanel
                 v-for="(panelItem, panelIndex) in row.panels"
                 :key="panelIndex"
@@ -47,6 +48,7 @@
     import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
     import DashboardPanel from './DashboardPanel.vue';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     const props = defineProps({
         row: {
@@ -70,8 +72,12 @@
     const emit = defineEmits(['update-panel', 'remove-panel']);
 
     const isVertical = computed(() => props.row.direction === 'vertical');
+    const { isCompact } = useCompactLayout();
 
     const panelEditClass = computed(() => {
+        if (isCompact.value) {
+            return 'w-full min-h-28';
+        }
         if (props.row.panels.length === 1) {
             return 'w-full';
         }

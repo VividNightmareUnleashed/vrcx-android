@@ -22,12 +22,13 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             size: 20,
             minSize: 0,
             maxSize: 20,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         },
         {
             accessorKey: 'created_at',
             size: 120,
-            meta: { label: () => t('table.friendLog.date') },
+            meta: { label: () => t('table.friendLog.date'), mobile: { slot: 'trailing' } },
             header: ({ column }) => (
                 <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
                     {t('table.friendLog.date')}
@@ -56,7 +57,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
 
             size: 160,
             header: () => t('table.friendLog.type'),
-            meta: { label: () => t('table.friendLog.type') },
+            // Phones: the event type heads the card, the names are its main line.
+            meta: { label: () => t('table.friendLog.type'), mobile: { slot: 'title' } },
             cell: ({ row }) => {
                 const type = row.getValue('type');
                 return (
@@ -73,7 +75,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             header: () => t('table.friendLog.user'),
             meta: {
                 stretch: true,
-                label: () => t('table.friendLog.user')
+                label: () => t('table.friendLog.user'),
+                mobile: { slot: 'body', class: 'font-medium' }
             },
             cell: ({ row }) => {
                 const original = row.original;
@@ -104,7 +107,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             id: 'action',
             meta: {
                 class: 'w-[80px] max-w-[80px] text-right',
-                label: () => t('table.friendLog.action')
+                label: () => t('table.friendLog.action'),
+                mobile: { slot: 'actions' }
             },
             size: 80,
             maxSize: 80,
@@ -117,6 +121,7 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
                         <button
                             type="button"
                             class="inline-flex h-6 items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+                            aria-label={t('common.actions.delete')}
                             onClick={() => (shiftHeld.value ? onDelete(original) : onDeletePrompt(original))}
                         >
                             {shiftHeld.value ? <X class="h-4 w-4 text-red-600" /> : <Trash2 class="h-4 w-4" />}
@@ -131,6 +136,7 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             enableSorting: false,
             enableResizing: false,
             size: 5,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         }
     ];

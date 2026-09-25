@@ -12,7 +12,101 @@
                 :on-page-size-change="handlePageSizeChange"
                 :on-row-click="handleRowClick">
                 <template #toolbar>
-                    <div class="mb-2 flex items-center justify-between">
+                    <!-- Phones (docs/DESIGN.md §3.4): search and a "more" menu (bulk unfriend, loaders) first, then the
+                         VIP toggle and the search fields. -->
+                    <div
+                        v-if="isCompact"
+                        class="flex w-full min-w-0 flex-col gap-2"
+                        data-testid="friend-list-compact-toolbar">
+                        <div class="flex min-w-0 items-center gap-1">
+                            <InputGroupField
+                                v-model="friendsListSearch"
+                                class="min-w-0 flex-1"
+                                :placeholder="t('view.friend_list.search_placeholder')"
+                                clearable
+                                enterkeyhint="search"
+                                @input="scheduleFriendsListSearchChange"
+                                @change="friendsListSearchChange" />
+                            <DropdownMenu>
+                                <DropdownMenuTrigger as-child>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        class="shrink-0"
+                                        data-testid="friend-list-more"
+                                        :aria-label="t('android.views_a.more_actions')">
+                                        <Loader2 v-if="isMutualFetching" class="animate-spin" />
+                                        <EllipsisVertical v-else />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" class="min-w-56">
+                                    <DropdownMenuCheckboxItem
+                                        :model-value="friendsListBulkUnfriendMode"
+                                        @update:model-value="
+                                            (value) => {
+                                                friendsListBulkUnfriendMode = Boolean(value);
+                                                toggleFriendsListBulkUnfriendMode();
+                                            }
+                                        ">
+                                        {{ t('view.friend_list.bulk_unfriend') }}
+                                    </DropdownMenuCheckboxItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        :disabled="isMutualOptOut || isMutualFetching"
+                                        @click="loadMutualFriends">
+                                        <Loader2 v-if="isMutualFetching" class="size-4 animate-spin" />
+                                        {{ t('view.friend_list.load_mutual_friends') }}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem @click="friendsListLoadUsers">
+                                        {{ t('view.friend_list.load') }}
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                        <div class="flex min-w-0 items-center gap-2">
+                            <Toggle
+                                variant="outline"
+                                size="sm"
+                                class="shrink-0"
+                                :model-value="friendsListSearchFilterVIP"
+                                :ariaLabel="t('view.friend_list.favorites_only_tooltip')"
+                                @update:modelValue="
+                                    (v) => {
+                                        friendsListSearchFilterVIP = v;
+                                        friendsListSearchChange();
+                                    }
+                                ">
+                                <Star fill="currentColor" v-if="friendsListSearchFilterVIP" />
+                                <Star v-else />
+                            </Toggle>
+                            <Select
+                                multiple
+                                :model-value="Array.isArray(friendsListSearchFilters) ? friendsListSearchFilters : []"
+                                @update:modelValue="handleFriendListFilterChange">
+                                <SelectTrigger size="sm" class="min-w-0 flex-1">
+                                    <SelectValue :placeholder="t('view.friend_list.filter_placeholder')" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectGroup>
+                                        <SelectItem v-for="type in FRIEND_LIST_SEARCH_FIELDS" :key="type" :value="type">
+                                            {{ type }}
+                                        </SelectItem>
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button
+                            v-if="friendsListBulkUnfriendMode"
+                            variant="outline"
+                            size="sm"
+                            class="self-start"
+                            :disabled="!selectedFriends.size"
+                            @click="showBulkUnfriendSelectionConfirm">
+                            {{ t('view.friend_list.bulk_unfriend_selection') }}
+                            <span v-if="selectedFriends.size" class="tabular-nums">({{ selectedFriends.size }})</span>
+                        </Button>
+                    </div>
+                    <div v-else class="mb-2 flex items-center justify-between">
                         <div class="flex flex-none mr-2 items-center">
                             <TooltipWrapper side="bottom" :content="t('view.friend_list.favorites_only_tooltip')">
                                 <div>
@@ -148,7 +242,16 @@
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
     import { useRoute } from 'vue-router';
-    import { Loader2 } from 'lucide-vue-next';
+    import { EllipsisVertical, Loader2 } from 'lucide-vue-next';
+    import {
+        DropdownMenu,
+        DropdownMenuCheckboxItem,
+        DropdownMenuContent,
+        DropdownMenuItem,
+        DropdownMenuSeparator,
+        DropdownMenuTrigger
+    } from '@/components/ui/dropdown-menu';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
 
     import {
         useAppearanceSettingsStore,
@@ -172,6 +275,8 @@
     import { useUserDisplay } from '../../composables/useUserDisplay';
 
     const { t } = useI18n();
+    const { isCompact } = useCompactLayout();
+    const FRIEND_LIST_SEARCH_FIELDS = ['Display Name', 'User Name', 'Rank', 'Status', 'Bio', 'Note', 'Memo'];
 
     const emit = defineEmits(['lookup-user']);
 

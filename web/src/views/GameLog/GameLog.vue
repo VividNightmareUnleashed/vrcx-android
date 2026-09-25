@@ -44,7 +44,10 @@
                 :on-page-size-change="handlePageSizeChange">
                 <template #toolbar>
                     <!-- Phones (docs/DESIGN.md §3.4): search on its own row, then the mode, VIP and type filters. -->
-                    <div v-if="isCompact" class="flex w-full min-w-0 flex-col gap-2" data-testid="game-log-compact-toolbar">
+                    <div
+                        v-if="isCompact"
+                        class="flex w-full min-w-0 flex-col gap-2"
+                        data-testid="game-log-compact-toolbar">
                         <InputGroupField
                             v-model="gameLogTable.search"
                             class="min-w-0"

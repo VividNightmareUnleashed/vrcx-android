@@ -1,6 +1,6 @@
 <template>
     <div class="x-container x-container--auto-height" ref="moderationRef">
-        <div class="mb-4 flex items-center">
+        <div v-if="!isCompact" class="mb-4 flex items-center">
             <Select
                 multiple
                 :model-value="
@@ -67,7 +67,75 @@
             quick-actions
             :page-sizes="pageSizes"
             :total-items="totalItems"
-            :on-page-size-change="handlePageSizeChange" />
+            :on-page-size-change="handlePageSizeChange">
+            <!-- Phones (docs/DESIGN.md §3.4): search and the clear/refresh buttons first, the type filter below; in the
+                 table toolbar so it shares the row with the View options and Quick actions buttons. -->
+            <template v-if="isCompact" #toolbar>
+                <div class="flex w-full min-w-0 flex-col gap-2" data-testid="moderation-compact-toolbar">
+                    <div class="flex min-w-0 items-center gap-1">
+                        <InputGroupField
+                            v-model="playerModerationTable.filters[1].value"
+                            class="min-w-0 flex-1"
+                            :placeholder="t('view.moderation.search_placeholder')"
+                            clearable
+                            enterkeyhint="search" />
+                        <DropdownMenu>
+                            <DropdownMenuTrigger as-child>
+                                <Button
+                                    class="shrink-0 rounded-full"
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    :aria-label="t('view.moderation.clear_type_placeholder')"
+                                    :disabled="playerModerationTable.loading">
+                                    <Trash2 class="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" class="w-[220px]">
+                                <DropdownMenuLabel>
+                                    {{ t('view.moderation.clear_type_placeholder') }}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    v-for="item in moderationTypes"
+                                    :key="item"
+                                    @click="clearPlayerModerationsByType(item)">
+                                    {{ t('view.moderation.filters.' + item) }}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                            class="shrink-0 rounded-full"
+                            variant="ghost"
+                            size="icon-sm"
+                            :aria-label="t('view.moderation.refresh_tooltip')"
+                            :disabled="playerModerationTable.loading"
+                            @click="refreshPlayerModerations()">
+                            <Spinner v-if="playerModerationTable.loading" />
+                            <RefreshCw v-else />
+                        </Button>
+                    </div>
+                    <Select
+                        multiple
+                        :model-value="
+                            Array.isArray(playerModerationTable.filters?.[0]?.value)
+                                ? playerModerationTable.filters[0].value
+                                : []
+                        "
+                        @update:modelValue="handleModerationFilterChange">
+                        <SelectTrigger size="sm" class="w-full min-w-0">
+                            <SelectValue :placeholder="t('view.moderation.filter_placeholder')" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                <SelectItem v-for="item in moderationTypes" :key="item" :value="item">
+                                    {{ t('view.moderation.filters.' + item) }}
+                                </SelectItem>
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </template>
+        </DataTableLayout>
     </div>
 </template>
 
@@ -98,6 +166,9 @@
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
 
     import configRepository from '../../services/config.js';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+
+    const { isCompact } = useCompactLayout();
 
     const { t } = useI18n();
     const { playerModerationTable } = storeToRefs(useModerationStore());
