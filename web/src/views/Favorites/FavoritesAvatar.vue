@@ -440,7 +440,7 @@
     import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
     import { createReusableTemplate } from '@vueuse/core';
     import { useCompactLayout } from '@/composables/useCompactLayout';
-    import { computed, markRaw, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+    import { computed, markRaw, nextTick, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue';
     import { Ellipsis, Loader, MoreHorizontal, Plus, RefreshCcw, RefreshCw } from 'lucide-vue-next';
     import { Button } from '@/components/ui/button';
     import { DataTableEmpty } from '@/components/ui/data-table';
@@ -538,6 +538,10 @@
     const [DefineContentPanel, ReuseContentPanel] = createReusableTemplate();
     const { isCompact, isCoarsePointer } = useCompactLayout();
     const groupSheetOpen = ref(false);
+    // The sheet is teleported to <body>: close it when the page is left, so it never covers another page.
+    onDeactivated(() => {
+        groupSheetOpen.value = false;
+    });
 
     const {
         cardScale: avatarCardScale,

@@ -327,7 +327,7 @@
     import { createReusableTemplate } from '@vueuse/core';
     import { useCompactLayout } from '@/composables/useCompactLayout';
     import { Ellipsis, MoreHorizontal, Plus, RefreshCcw, RefreshCw } from 'lucide-vue-next';
-    import { computed, ref, watch } from 'vue';
+    import { computed, onDeactivated, ref, watch } from 'vue';
     import { Button } from '@/components/ui/button';
     import { DataTableEmpty } from '@/components/ui/data-table';
     import { InputGroupField } from '@/components/ui/input-group';
@@ -406,6 +406,10 @@
     const [DefineContentPanel, ReuseContentPanel] = createReusableTemplate();
     const { isCompact } = useCompactLayout();
     const groupSheetOpen = ref(false);
+    // The sheet is teleported to <body>: close it when the page is left, so it never covers another page.
+    onDeactivated(() => {
+        groupSheetOpen.value = false;
+    });
 
     const {
         cardScale: friendCardScale,

@@ -367,7 +367,7 @@
     import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
     import { createReusableTemplate } from '@vueuse/core';
     import { useCompactLayout } from '@/composables/useCompactLayout';
-    import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+    import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
     import { Ellipsis, MoreHorizontal, Plus, RefreshCcw, RefreshCw } from 'lucide-vue-next';
     import { Button } from '@/components/ui/button';
     import { DataTableEmpty } from '@/components/ui/data-table';
@@ -425,6 +425,10 @@
     const [DefineContentPanel, ReuseContentPanel] = createReusableTemplate();
     const { isCompact } = useCompactLayout();
     const groupSheetOpen = ref(false);
+    // The sheet is teleported to <body>: close it when the page is left, so it never covers another page.
+    onDeactivated(() => {
+        groupSheetOpen.value = false;
+    });
     const { sortFavorites } = storeToRefs(useAppearanceSettingsStore());
     const { setSortFavorites } = useAppearanceSettingsStore();
     const favoriteStore = useFavoriteStore();
