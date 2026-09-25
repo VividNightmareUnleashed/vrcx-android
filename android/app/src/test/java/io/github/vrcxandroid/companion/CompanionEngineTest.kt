@@ -1,0 +1,856 @@
+package io.github.vrcxandroid.companion
+
+import io.github.vrcxandroid.logwatcher.FetchRequester
+import io.github.vrcxandroid.logwatcher.LogSink
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class CompanionEngineTest {
+    private val loopback = InetAddress.getByName("127.0.0.1")
+    private val engines = CopyOnWriteArrayList<CompanionEngine>()
+    private val closeables = CopyOnWriteArrayList<AutoCloseable>()
+    private val sink = RecordingLogSink()
+    private val emitter = RecordingEmitter()
+
+    private val since = 638_400_000_000_000_000L
+    private val file1 = "output_log_2024-01-01_09-59-00.txt"
+    private val file2 = "output_log_2024-01-02_10-00-00.txt"
+    private val oldFile = "output_log_2023-01-01_00-00-00.txt"
+
+    @After
+    fun tearDown() {
+        engines.forEach { it.close() }
+        closeables.forEach { it.close() }
+    }
+
+    private fun config(
+        subscribeWaitMs: Long = 5_000,
+        backoffBaseMs: Long = 50,
+        backoffMaxMs: Long = 300,
+        reconnectDiscoveryMs: Long = 0,
+        discoveryPort: Int = 9,
+        keepAliveAfterMs: Long = 10_000,
+        ackEveryBytes: Long = 512L * 1024,
+        storeRetryMs: Long = 5_000,
+    ) = CompanionConfig(
+        connectTimeoutMs = 2_000,
+        readTimeoutMs = 5_000,
+        backoffBaseMs = backoffBaseMs,
+        backoffMaxMs = backoffMaxMs,
+        reconnectDiscoveryMs = reconnectDiscoveryMs,
+        discoveryPort = discoveryPort,
+        discoveryTargets = { listOf(loopback) },
+        subscribeWaitMs = subscribeWaitMs,
+        keepAliveAfterMs = keepAliveAfterMs,
+        ackEveryBytes = ackEveryBytes,
+        storeRetryMs = storeRetryMs,
+    )
+
+    private fun engine(
+        store: SecureStore = InMemorySecureStore(),
+        config: CompanionConfig = config(),
+        logSink: LogSink = sink,
+        cleaner: (String) -> Unit = {},
+    ): CompanionEngine = CompanionEngine(store, { logSink }, emitter, "Pixel Test", MulticastLockHandle.NONE, cleaner, config)
+        .also { engines += it }
+
+    private fun server(alias: String = "companion"): FakeCompanionServer =
+        FakeCompanionServer(alias).also { closeables += it }
+
+    private fun logText(lines: Int, tag: String = "") = buildString {
+        for (i in 1..lines) {
+            append("2024.01.01 10:%02d:%02d Log        -  [Behaviour] line %s%d\r\n".format(i / 60 % 60, i % 60, tag, i))
+        }
+    }
+
+    private fun FakeCompanionServer.withLogs(): FakeCompanionServer {
+        files += ServerFile(file1, "0001", 638_396_207_400_000_000, 638_500_000_000_000_000, logText(300, "a"))
+        files += ServerFile(file2, "0002", 638_397_072_000_000_000, 638_500_000_000_000_001, logText(40, "b"))
+        files += ServerFile(oldFile, "0000", 638_080_000_000_000_000, 638_080_000_000_000_000, "old\n")
+        return this
+    }
+
+    private fun pairedStore(
+        server: FakeCompanionServer,
+        deviceId: String = "device-1",
+        hosts: List<String> = listOf("127.0.0.1"),
+        store: InMemorySecureStore = InMemorySecureStore(),
+    ): InMemorySecureStore {
+        store.put(PairingRepository.KEY_DEVICE_ID, deviceId)
+        val token = PairingCrypto.randomToken()
+        server.tokens[deviceId] = token
+        PairingRepository(store).save(
+            listOf(PairedCompanion(server.id, "TESTPC", server.fp, token, hosts, server.port, 1L, 1L)),
+            server.id,
+        )
+        return store
+    }
+
+    private fun target(server: FakeCompanionServer, fp: String? = server.fp, id: String? = null) = buildJsonObject {
+        put("host", "127.0.0.1")
+        put("port", server.port)
+        if (fp != null) put("fp", fp)
+        if (id != null) put("id", id)
+    }
+
+    private fun pairingError(block: suspend () -> Unit): String {
+        try {
+            runBlocking { block() }
+        } catch (e: PairingException) {
+            return e.code
+        }
+        fail("expected PairingException")
+        return ""
+    }
+
+    private fun awaitSyncCount(n: Int) = waitFor(message = "$n sync(s), events ${sink.events}") {
+        sink.events.count { it == "sync" } >= n
+    }
+
+    private fun awaitStatus(engine: CompanionEngine, status: String) =
+        waitFor(message = "status $status, state ${engine.state()}") { engine.state().s("status") == status }
+
+    private fun assertMirrorMatches(server: FakeCompanionServer, vararg names: String) {
+        for (name in names) {
+            val f = server.files.first { it.name == name }
+            assertEquals(name, String(f.bytes), sink.content(name))
+        }
+    }
+
+    // ---- pairing -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun pairsWithCodeThenAuthenticatesAndSyncsInWireOrder() {
+        val server = server().withLogs()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+
+        val paired = runBlocking { engine.pair(target(server), "abcde-12345") }
+        assertEquals(server.id, paired.s("activeId"))
+        val record = (paired["paired"] as JsonArray).single() as JsonObject
+        assertEquals(server.fp, record.s("fp"))
+        assertEquals("TESTPC", record.s("name"))
+        assertEquals(listOf(JsonPrimitive("127.0.0.1")), (record["hosts"] as JsonArray).toList())
+        assertFalse(record.containsKey("token"))
+        assertEquals(1, server.pairRequests.size)
+        assertEquals("Pixel Test", server.pairRequests.single().s("deviceName"))
+
+        val conn = server.nextConnection()
+        val subscribe = conn.awaitMessage("subscribe")
+        assertEquals(since.toString(), (subscribe["sinceUtcTicks"] as JsonPrimitive).content)
+        assertEquals(0, (subscribe["have"] as JsonArray).size)
+        awaitSyncCount(1)
+
+        // Wire order: session, snapshot, process, data (oldest file first), syncComplete.
+        val events = sink.events.toList()
+        assertEquals("session:${server.id}:TESTPC:Europe/Berlin", events.first())
+        assertTrue(events[1].startsWith("snapshot:"))
+        assertTrue(events[1].contains("$oldFile#0000=4"))
+        assertEquals("process:true,false", events[2])
+        val data = events.filter { it.startsWith("data:") }
+        val firstFile2 = data.indexOfFirst { it.startsWith("data:$file2") }
+        assertTrue(data.take(firstFile2).all { it.startsWith("data:$file1") })
+        assertTrue(data.none { it.startsWith("data:$oldFile") })
+        assertEquals("sync", events.last())
+        assertEquals(emptyList<String>(), sink.errors)
+        assertMirrorMatches(server, file1, file2)
+        assertEquals(setOf("companion-sink"), sink.threads.toSet())
+
+        // One ack after syncComplete covering every data-frame byte (length prefix included).
+        val ack = conn.awaitMessage("ack")
+        assertEquals(conn.sentDataBytes.get().toString(), (ack["bytes"] as JsonPrimitive).content)
+
+        awaitStatus(engine, "connected")
+        val state = engine.state()
+        assertEquals(
+            setOf("status", "activeId", "paired", "machineName", "tz", "vrchatRunning", "steamVrRunning", "syncing", "lastError"),
+            state.keys,
+        )
+        assertEquals("TESTPC", state.s("machineName"))
+        assertEquals(true, state.b("vrchatRunning"))
+        assertEquals(false, state.b("steamVrRunning"))
+        assertEquals(false, state.b("syncing"))
+        assertEquals(JsonNull, state["lastError"])
+        assertEquals("Europe/Berlin", (state["tz"] as JsonObject).s("ianaId"))
+        assertTrue(emitter.states.any { it.s("status") == "connected" })
+        assertTrue(emitter.states.none { it.toString().contains(server.tokens.values.first()) })
+    }
+
+    @Test
+    fun wrongCodeIsRejectedByTheCompanion() {
+        val server = server()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+        assertEquals(PairingException.CODE, pairingError { engine.pair(target(server), "ABCDE-12346") })
+        assertEquals(1, server.failedPairAttempts.get())
+        assertEquals("unpaired", engine.state().s("status"))
+    }
+
+    @Test
+    fun malformedCodeIsRejectedWithoutConnecting() {
+        val server = server()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+        assertEquals(PairingException.CODE, pairingError { engine.pair(target(server), "ABC") })
+        assertEquals(PairingException.CODE, pairingError { engine.pair(target(server), "ABCDU-12345") })
+        assertEquals(0, server.accepted.get())
+    }
+
+    @Test
+    fun closedPairingWindowSendsNoProof() {
+        val server = server()
+        val engine = engine()
+        assertEquals(PairingException.CLOSED, pairingError { engine.pair(target(server), "ABCDE12345") })
+        assertTrue(server.pairRequests.isEmpty())
+    }
+
+    @Test
+    fun fingerprintMismatchAbortsTheHandshake() {
+        val impostor = server("impostor")
+        impostor.pairingCode = "ABCDE12345"
+        val engine = engine()
+        val pinned = TestKeys.fingerprint("companion")
+        assertEquals(PairingException.FINGERPRINT, pairingError { engine.pair(target(impostor, fp = pinned), "ABCDE12345") })
+        assertTrue(impostor.pairRequests.isEmpty())
+        assertEquals("unpaired", engine.state().s("status"))
+    }
+
+    @Test
+    fun capturedFingerprintIsStoredForManualPairing() {
+        val server = server()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+        val state = runBlocking { engine.pair(target(server, fp = null), "ABCDE12345") }
+        val record = (state["paired"] as JsonArray).single() as JsonObject
+        assertEquals(server.fp, record.s("fp"))
+        server.nextConnection() // the stored pin works for the authenticated reconnect
+    }
+
+    @Test
+    fun relayWithAnotherCertificateCannotPair() {
+        // The companion computes the proof with its own fingerprint, which differs from the one the phone saw.
+        val server = server()
+        server.pairingCode = "ABCDE12345"
+        server.proofFpOverride = TestKeys.fingerprint("impostor")
+        val engine = engine()
+        assertEquals(PairingException.CODE, pairingError { engine.pair(target(server, fp = null), "ABCDE12345") })
+    }
+
+    @Test
+    fun unexpectedCompanionIdIsRejected() {
+        val server = server()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+        assertEquals(
+            PairingException.FINGERPRINT,
+            pairingError { engine.pair(target(server, id = "another-companion"), "ABCDE12345") },
+        )
+    }
+
+    @Test
+    fun nonLocalTargetsAreRefusedBeforeConnecting() {
+        val engine = engine()
+        val public = buildJsonObject {
+            put("host", "8.8.8.8")
+            put("port", 49460)
+        }
+        assertEquals(PairingException.NOT_LOCAL, pairingError { engine.pair(public, "ABCDE12345") })
+        assertEquals(
+            PairingException.NOT_LOCAL,
+            pairingError { engine.pairWithQr("vrcxc://pair?v=1&id=abc&h=203.0.113.9&p=49460&fp=x&c=ABCDE12345") },
+        )
+        assertEquals(PairingException.INVALID_QR, pairingError { engine.pairWithQr("https://example.com") })
+    }
+
+    @Test
+    fun pairsFromQrPayload() {
+        val server = server().withLogs()
+        server.pairingCode = "ABCDE12345"
+        val engine = engine()
+        val qr = "vrcxc://pair?v=1&id=${server.id}&n=TESTPC&h=127.0.0.2,127.0.0.1&p=${server.port}" +
+            "&fp=${server.fp}&c=abcde-12345"
+        val state = runBlocking { engine.pairWithQr(qr) }
+        val record = (state["paired"] as JsonArray).single() as JsonObject
+        // The address that worked comes first; the other listed one is kept for later.
+        assertEquals(listOf("127.0.0.1", "127.0.0.2"), (record["hosts"] as JsonArray).map { (it as JsonPrimitive).content })
+        server.nextConnection()
+        awaitSyncCount(1)
+        assertMirrorMatches(server, file1, file2)
+    }
+
+    // ---- authenticated sessions --------------------------------------------------------------------------------
+
+    @Test
+    fun subscribesWithHaveOffsetsAndResumes() {
+        val server = server().withLogs()
+        val content1 = server.files.first { it.name == file1 }.bytes
+        sink.preload(file1, "0001", content1.copyOf(100))
+        sink.preload("output_log_gone.txt", "0099", "x".toByteArray())
+        engine(pairedStore(server))
+
+        val conn = server.nextConnection()
+        val subscribe = conn.awaitMessage("subscribe")
+        val have = (subscribe["have"] as JsonArray).map { it as JsonObject }
+        assertEquals(
+            listOf("$file1/0001/100", "output_log_gone.txt/0099/1"),
+            have.map { "${it.s("name")}/${it.s("fileId")}/${(it["length"] as JsonPrimitive).content}" },
+        )
+        awaitSyncCount(1)
+        assertEquals("data:$file1@100+4096", sink.dataEvents().first())
+        assertNull(sink.mirror["output_log_gone.txt"])
+        assertEquals(emptyList<String>(), sink.errors)
+        assertMirrorMatches(server, file1, file2)
+    }
+
+    @Test
+    fun liveTruncateDataAndHeartbeatSkew() {
+        val server = server().withLogs()
+        server.pcClockOffsetMs = 5_000
+        engine(pairedStore(server))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        waitFor(message = "skew from info") { sink.skews.isNotEmpty() }
+        assertTrue("skew ${sink.skews}", sink.skews.last() in 4_500..5_100)
+
+        conn.sendControl(control(CompanionProtocol.T_TRUNCATE) {
+            put("name", file1)
+            put("fileId", "0001")
+            put("newLength", 10)
+        })
+        conn.sendData(file1, "0001", 10, "new tail\n".toByteArray())
+        conn.sendControl(buildJsonObject { put("t", "futureMessage") }) // unknown types are ignored
+        conn.heartbeat(System.currentTimeMillis() + 7_000)
+        waitFor(message = "live data") { sink.events.contains("data:$file1@10+9") }
+        val tail = sink.events.dropWhile { it != "sync" }
+        assertEquals(listOf("sync", "truncate:$file1:10", "data:$file1@10+9"), tail)
+        assertEquals(String(server.files.first { it.name == file1 }.bytes.copyOf(10)) + "new tail\n", sink.content(file1))
+        waitFor(message = "skew from heartbeat") { sink.skews.last() >= 6_500 }
+        assertTrue("skew ${sink.skews}", sink.skews.last() in 6_500..7_100)
+
+        conn.sendControl(control(CompanionProtocol.T_PROCESS) {
+            put("vrchatRunning", false)
+            put("steamVrRunning", true)
+            put("pcUtcNowMs", 1)
+        })
+        waitFor(message = "process in state") { engines.first().state().b("steamVrRunning") == true }
+        assertEquals(false, engines.first().state().b("vrchatRunning"))
+    }
+
+    @Test
+    fun acksAtLeastEveryThreshold() {
+        val server = server()
+        server.files += ServerFile(file1, "0001", 1, since + 1, logText(4000))
+        server.chunkSize = 16 * 1024
+        engine(pairedStore(server), config(ackEveryBytes = 20_000))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        waitFor(message = "final ack") {
+            conn.messages.any { it.s("t") == "ack" && (it["bytes"] as JsonPrimitive).content == conn.sentDataBytes.get().toString() }
+        }
+        val acks = conn.messages.filter { it.s("t") == "ack" }.map { (it["bytes"] as JsonPrimitive).content.toLong() }
+        assertTrue("acks $acks", acks.size >= 3)
+        var previous = 0L
+        for (a in acks) {
+            assertTrue(a > previous)
+            assertTrue("gap ${a - previous}", a - previous <= 20_000 + 16 * 1024 + 256)
+            previous = a
+        }
+        assertMirrorMatches(server, file1)
+    }
+
+    @Test
+    fun answersHeartbeatsAfterSilenceWithAPendingAckOrAPing() {
+        val server = server().withLogs()
+        engine(pairedStore(server), config(keepAliveAfterMs = 1_500))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        conn.awaitMessage("ack")
+        // Right after the ack the phone has just spoken: a heartbeat needs no answer.
+        conn.heartbeat()
+        Thread.sleep(300)
+        assertTrue(conn.messages.none { it.s("t") == "ping" || it.s("t") == "ack" })
+
+        // Live bytes below the ack threshold, then silence: the next heartbeat is answered with their ack.
+        val f = server.files.first { it.name == file1 }
+        val length = f.bytes.size.toLong()
+        f.append("live line\n")
+        conn.sendData(f.name, f.fileId, length, "live line\n".toByteArray())
+        waitFor(message = "live data") { sink.events.contains("data:$file1@$length+10") }
+        Thread.sleep(1_700)
+        conn.heartbeat()
+        val ack = conn.awaitMessage("ack", 3_000)
+        assertEquals(conn.sentDataBytes.get().toString(), (ack["bytes"] as JsonPrimitive).content)
+
+        // Nothing left to acknowledge: a ping.
+        Thread.sleep(1_700)
+        conn.heartbeat()
+        conn.awaitMessage("ping", 3_000)
+    }
+
+    @Test
+    fun keepAliveContinuesWhileALogSinkCallIsSlow() {
+        val server = server().withLogs()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slowSink = object : LogSink by sink {
+            override fun onProcessState(vrchatRunning: Boolean, steamVrRunning: Boolean, pcUtcNowMs: Long) {
+                entered.countDown()
+                release.await(30, TimeUnit.SECONDS)
+                sink.onProcessState(vrchatRunning, steamVrRunning, pcUtcNowMs)
+            }
+        }
+        engine(pairedStore(server), config(keepAliveAfterMs = 300), logSink = slowSink)
+        val conn = server.nextConnection()
+        assertTrue(entered.await(10, TimeUnit.SECONDS))
+        try {
+            // The sink thread is stuck in onProcessState (like a LogWatcher pass over a large mirror) while the
+            // companion keeps sending heartbeats.
+            repeat(10) {
+                conn.heartbeat()
+                Thread.sleep(150)
+            }
+            val sent = (conn.seen + conn.messages).mapNotNull { it.s("t") }
+            assertTrue("phone messages during the stall: $sent", sent.count { it == "ping" } >= 2)
+            // Nothing was consumed yet (the data frames wait behind the stalled call), so nothing is acknowledged.
+            assertTrue("phone messages during the stall: $sent", "ack" !in sent)
+        } finally {
+            release.countDown()
+        }
+        awaitSyncCount(1)
+        val total = conn.sentDataBytes.get().toString()
+        waitFor(message = "ack of everything") {
+            (conn.seen + conn.messages).any { it.s("t") == "ack" && (it["bytes"] as JsonPrimitive).content == total }
+        }
+        assertFalse(conn.closed)
+        assertMirrorMatches(server, file1, file2)
+    }
+
+    @Test
+    fun reconnectsAfterTheServerDropsTheConnection() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server))
+        val first = server.nextConnection()
+        awaitSyncCount(1)
+        val before = sink.content(file1)!!.length
+
+        first.close()
+        server.files.first { it.name == file1 }.append("after reconnect\n")
+
+        val second = server.nextConnection()
+        val subscribe = second.awaitMessage("subscribe")
+        val have = (subscribe["have"] as JsonArray).map { it as JsonObject }.associate {
+            it.s("name") to (it["length"] as JsonPrimitive).content.toLong()
+        }
+        assertEquals(before.toLong(), have[file1])
+        awaitSyncCount(2)
+        val afterFirstSync = sink.events.dropWhile { it != "sync" }.drop(1)
+        assertEquals("disconnected", afterFirstSync.first())
+        assertTrue(afterFirstSync[1].startsWith("session:${server.id}"))
+        assertEquals(listOf("data:$file1@$before+16"), afterFirstSync.filter { it.startsWith("data:") })
+        assertEquals(emptyList<String>(), sink.errors)
+        assertMirrorMatches(server, file1, file2)
+        awaitStatus(engine, "connected")
+    }
+
+    @Test
+    fun gapIsRepairedWithFetchAndOverlapIsTrimmed() {
+        val server = server().withLogs()
+        engine(pairedStore(server))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        val f = server.files.first { it.name == file1 }
+        val length = f.bytes.size.toLong()
+
+        // Overlap: the first 5 bytes are already mirrored.
+        f.append("0123456789")
+        conn.sendData(f.name, f.fileId, length - 5, f.bytes.copyOfRange((length - 5).toInt(), (length + 5).toInt()), compress = false)
+        waitFor(message = "trimmed overlap") { sink.events.contains("data:$file1@$length+5") }
+
+        // Gap: bytes length+5 until length+20 never arrive; the phone asks for them and ignores the frame after the gap.
+        f.append("abcdefghij")
+        f.append("KLMNOPQRST")
+        conn.sendData(f.name, f.fileId, length + 20, "KLMNOPQRST".toByteArray(), compress = false)
+        val fetch = conn.awaitMessage("fetch")
+        assertEquals(file1, fetch.s("name"))
+        assertEquals("0001", fetch.s("fileId"))
+        assertEquals((length + 5).toString(), (fetch["fromOffset"] as JsonPrimitive).content)
+        conn.sendRange(f, length + 5)
+        waitFor(message = "fetch answer") { sink.content(file1) == String(f.bytes) }
+        assertTrue(sink.events.none { it == "data:$file1@${length + 20}+10" })
+        assertEquals(emptyList<String>(), sink.errors)
+    }
+
+    @Test
+    fun mirrorRequestedFetchRewindsTheFile() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        val f = server.files.first { it.name == file2 }
+        val before = sink.dataEvents().size
+
+        // As the log side calls it (CompanionMirrorControl.setFetchRequester).
+        val requester: FetchRequester = engine
+        requester.requestFetch(file2, "0002", 0)
+        val fetch = conn.awaitMessage("fetch")
+        assertEquals("0", (fetch["fromOffset"] as JsonPrimitive).content)
+        // A live frame sent before the companion saw the fetch is dropped; the answer from 0 is delivered.
+        f.append("live\n")
+        conn.sendData(f.name, f.fileId, (f.bytes.size - 5).toLong(), "live\n".toByteArray())
+        conn.sendRange(f, 0)
+        waitFor(message = "refetched") { sink.dataEvents().drop(before).any { it.startsWith("data:$file2@0+") } }
+        waitFor(message = "complete file") { sink.content(file2) == String(f.bytes) }
+        assertTrue(sink.dataEvents().drop(before).first().startsWith("data:$file2@0+"))
+    }
+
+    @Test
+    fun withoutALogSinkTheSessionNeverSubscribes() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server), config(subscribeWaitMs = 100), logSink = NullLogSink)
+        val conn = server.nextConnection()
+        awaitStatus(engine, "connected")
+        Thread.sleep(400)
+        assertTrue(conn.messages.none { it.s("t") == "subscribe" })
+    }
+
+    @Test
+    fun waitsForTillDateAndResubscribesWhenItChanges() {
+        val server = server().withLogs()
+        sink.since = 0
+        val engine = engine(pairedStore(server), config(subscribeWaitMs = 20_000))
+        val conn = server.nextConnection()
+        waitFor(message = "session") { sink.events.any { it.startsWith("session:") } }
+        Thread.sleep(300)
+        assertTrue(conn.messages.none { it.s("t") == "subscribe" })
+
+        engine.onTillDateChanged(since)
+        val first = conn.awaitMessage("subscribe")
+        assertEquals(since.toString(), (first["sinceUtcTicks"] as JsonPrimitive).content)
+        awaitSyncCount(1)
+
+        engine.onTillDateChanged(since + 1)
+        val second = conn.awaitMessage("subscribe")
+        assertEquals((since + 1).toString(), (second["sinceUtcTicks"] as JsonPrimitive).content)
+        assertEquals(2, (second["have"] as JsonArray).size)
+        awaitSyncCount(2)
+        // Nothing is sent twice after the restart.
+        assertEquals(emptyList<String>(), sink.errors)
+        assertMirrorMatches(server, file1, file2)
+    }
+
+    @Test
+    fun resubscribeDuringSyncIgnoresTheSupersededSyncComplete() {
+        val server = server().withLogs()
+        server.autoSync = false
+        val engine = engine(pairedStore(server))
+        val conn = server.nextConnection()
+        conn.awaitMessage("subscribe")
+        val f1 = server.files.first { it.name == file1 }
+        conn.sendControl(server.snapshotMessage())
+        conn.sendControl(server.processMessage())
+        conn.sendData(f1.name, f1.fileId, 0, f1.bytes.copyOf(1000))
+        waitFor(message = "first chunk") { sink.events.contains("data:$file1@0+1000") }
+
+        // LogWatcher.SetDateTill updates its tillDate, then notifies the client.
+        sink.since = since - 1
+        engine.onTillDateChanged(since - 1)
+        val second = conn.awaitMessage("subscribe")
+        assertEquals((since - 1).toString(), (second["sinceUtcTicks"] as JsonPrimitive).content)
+        // The companion finishes the old sequence (one more in-flight chunk, then its syncComplete) ...
+        conn.sendData(f1.name, f1.fileId, 1000, f1.bytes.copyOfRange(1000, 2000))
+        conn.sendControl(control(CompanionProtocol.T_SYNC_COMPLETE))
+        // ... then restarts from the phone's have list (1000 bytes, which is behind what it now holds).
+        conn.sendControl(server.snapshotMessage())
+        conn.sendControl(server.processMessage())
+        conn.sendRange(f1, 1000)
+        waitFor(message = "restarted data") { sink.content(file1) == String(f1.bytes) }
+        assertTrue(sink.events.none { it == "sync" })
+        assertEquals("syncing", true, engine.state().b("syncing"))
+        conn.sendControl(control(CompanionProtocol.T_SYNC_COMPLETE))
+        awaitSyncCount(1)
+        val snapshots = sink.events.withIndex().filter { it.value.startsWith("snapshot:") }.map { it.index }
+        assertEquals(2, snapshots.size)
+        assertTrue(sink.events.indexOf("sync") > snapshots[1])
+        assertEquals(emptyList<String>(), sink.errors)
+        waitFor(message = "not syncing") { engine.state().b("syncing") == false }
+    }
+
+    @Test
+    fun subscribesWithZeroAfterWaitingForTillDate() {
+        val server = server().withLogs()
+        sink.since = 0
+        engine(pairedStore(server), config(subscribeWaitMs = 300))
+        val conn = server.nextConnection()
+        val subscribe = conn.awaitMessage("subscribe")
+        assertEquals("0", (subscribe["sinceUtcTicks"] as JsonPrimitive).content)
+        awaitSyncCount(1)
+        assertTrue(sink.dataEvents().any { it.startsWith("data:$oldFile") })
+    }
+
+    @Test
+    fun authFailMarksThePairingRevokedAndStopsRetrying() {
+        val server = server()
+        val store = pairedStore(server)
+        val token = server.tokens.remove("device-1")!!
+        val engine = engine(store)
+        awaitStatus(engine, "error")
+        assertEquals(CompanionEngine.REVOKED, engine.state().s("lastError"))
+        Thread.sleep(500)
+        assertEquals(1, server.accepted.get())
+
+        server.tokens["device-1"] = token
+        engine.setActive(server.id)
+        server.nextConnection()
+        awaitStatus(engine, "connected")
+        assertEquals(JsonNull, engine.state()["lastError"])
+    }
+
+    @Test
+    fun revokedReasonSurvivesStoppingAndRestartingTheLoop() {
+        val server = server()
+        val store = pairedStore(server)
+        server.tokens.remove("device-1")
+        val engine = engine(store)
+        awaitStatus(engine, "error")
+        assertEquals(CompanionEngine.REVOKED, engine.state().s("lastError"))
+
+        // Background mode off and the app hidden, then shown again (ARCHITECTURE.md §7).
+        engine.setRunning(false)
+        assertEquals("idle", engine.state().s("status"))
+        engine.setRunning(true)
+        val state = engine.state()
+        assertEquals("error", state.s("status"))
+        assertEquals(CompanionEngine.REVOKED, state.s("lastError"))
+        Thread.sleep(400)
+        assertEquals(1, server.accepted.get())
+        assertEquals(CompanionEngine.REVOKED, emitter.states.last().s("lastError"))
+    }
+
+    @Test
+    fun protocolVersionMismatchIsReported() {
+        val server = server()
+        server.helloVersion = 2
+        val engine = engine(pairedStore(server))
+        waitFor(message = "version error") { engine.state().s("lastError") == PairingException.VERSION }
+        assertEquals("error", engine.state().s("status"))
+    }
+
+    @Test
+    fun setRunningFalseClosesAndStops() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server))
+        val conn = server.nextConnection()
+        awaitStatus(engine, "connected")
+
+        engine.setRunning(false)
+        assertEquals("idle", engine.state().s("status"))
+        waitFor(message = "server sees the close") { conn.closed }
+        waitFor(message = "disconnected") { sink.events.contains("disconnected") }
+        val accepted = server.accepted.get()
+        Thread.sleep(400)
+        assertEquals(accepted, server.accepted.get())
+
+        engine.setRunning(true)
+        server.nextConnection()
+        awaitStatus(engine, "connected")
+    }
+
+    @Test
+    fun networkChangeReconnectsImmediately() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server), config(backoffBaseMs = 20_000, backoffMaxMs = 20_000))
+        server.nextConnection()
+        awaitSyncCount(1)
+        engine.onNetworkChanged()
+        val start = System.nanoTime()
+        server.nextConnection(5_000)
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 5_000)
+        awaitSyncCount(2)
+    }
+
+    @Test
+    fun forgetRemovesTheRecordAfterDisconnectingAndCleansTheMirror() {
+        val server = server().withLogs()
+        val order = CopyOnWriteArrayList<String>()
+        sink.onEvent = { order += it }
+        val store = pairedStore(server)
+        val engine = engine(store, cleaner = { id -> order += "cleanup:$id" })
+        server.nextConnection()
+        awaitSyncCount(1)
+
+        engine.forget(server.id)
+        assertEquals("unpaired", engine.state().s("status"))
+        waitFor(message = "cleanup") { order.contains("cleanup:${server.id}") }
+        assertTrue(order.indexOf("disconnected") in 0 until order.indexOf("cleanup:${server.id}"))
+        assertTrue(PairingRepository(store).load().records.isEmpty())
+        assertEquals(JsonNull, engine.state()["activeId"])
+    }
+
+    @Test
+    fun setActiveSwitchesCompanions() {
+        val a = server().withLogs()
+        val b = FakeCompanionServer(id = "b0b0b0b0-0000-4000-8000-000000000002", machine = "OTHERPC").also { closeables += it }
+        val store = pairedStore(a)
+        val tokenB = PairingCrypto.randomToken()
+        b.tokens["device-1"] = tokenB
+        val repo = PairingRepository(store)
+        val loaded = repo.load()
+        repo.save(
+            loaded.records + PairedCompanion(b.id, "OTHERPC", b.fp, tokenB, listOf("127.0.0.1"), b.port, 2L, 0L),
+            a.id,
+        )
+        val engine = engine(store)
+        a.nextConnection()
+        awaitStatus(engine, "connected")
+        waitFor(message = "info") { sink.events.any { it.startsWith("session:${a.id}") } }
+        assertEquals("TESTPC", engine.state().s("machineName"))
+
+        engine.setActive(b.id)
+        b.nextConnection()
+        // machineName alone would not do: until b's info arrives it falls back to the stored name, also "OTHERPC".
+        waitFor(message = "session with the other companion") {
+            sink.events.contains("session:${b.id}:OTHERPC:Europe/Berlin")
+        }
+        assertEquals(b.id, engine.state().s("activeId"))
+        assertEquals("OTHERPC", engine.state().s("machineName"))
+        val disconnectIndex = sink.events.indexOf("disconnected")
+        assertTrue(disconnectIndex in 0 until sink.events.indexOf("session:${b.id}:OTHERPC:Europe/Berlin"))
+    }
+
+    @Test
+    fun rediscoversTheCompanionWhenStoredHostsFail() {
+        val server = server().withLogs()
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) })
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val engine = engine(store, config(reconnectDiscoveryMs = 1_500, discoveryPort = responder.port))
+        server.nextConnection(15_000)
+        awaitStatus(engine, "connected")
+        val hosts = PairingRepository(store).load().records.single().hosts
+        assertEquals(listOf("127.0.0.1", "127.0.0.2"), hosts)
+    }
+
+    @Test
+    fun spoofedDiscoveryReplyWithTheSameIdDoesNotHideTheCompanion() {
+        val server = server().withLogs()
+        // Sent just before the genuine reply: same id, another key.
+        val spoof = discoveryReply(server.id, TestKeys.fingerprint("impostor"), server.port).toString().toByteArray()
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) }, listOf(spoof))
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val engine = engine(store, config(reconnectDiscoveryMs = 1_500, discoveryPort = responder.port))
+        server.nextConnection(15_000)
+        awaitStatus(engine, "connected")
+        assertEquals(listOf("127.0.0.1", "127.0.0.2"), PairingRepository(store).load().records.single().hosts)
+    }
+
+    @Test
+    fun discoveredAddressesAreStoredOnlyAfterAPinnedConnectionWorked() {
+        val server = server()
+        val closedPort = ServerSocket(0).use { it.localPort }
+        // Right id and fingerprint, but nothing that proves the key listens there.
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, closedPort) })
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val before = PairingRepository(store).load().records.single()
+        val engine = engine(
+            store,
+            config(
+                reconnectDiscoveryMs = 1_000,
+                discoveryPort = responder.port,
+                backoffBaseMs = 30_000,
+                backoffMaxMs = 30_000,
+            ),
+        )
+        waitFor(message = "failed attempt, state ${engine.state()}") {
+            responder.requests.isNotEmpty() && engine.state().s("lastError") == PairingException.UNREACHABLE
+        }
+        val after = PairingRepository(store).load().records.single()
+        assertEquals(before.hosts, after.hosts)
+        assertEquals(before.port, after.port)
+        assertEquals(0, server.accepted.get())
+    }
+
+    @Test
+    fun discoverReturnsCompanionsWithoutStoringTheirAddresses() {
+        val server = server()
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port, pairing = true) })
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("192.168.77.1"))
+        val engine = engine(store, config(discoveryPort = responder.port).copy(startRunning = false))
+        val found = runBlocking { engine.discover(500) }
+        val entry = found.single() as JsonObject
+        assertEquals(server.id, entry.s("id"))
+        assertEquals("127.0.0.1", entry.s("host"))
+        assertEquals(true, entry.b("pairing"))
+        assertEquals(listOf("192.168.77.1"), PairingRepository(store).load().records.single().hosts)
+        assertEquals(0, server.accepted.get())
+    }
+
+    @Test
+    fun discoveringTheActiveCompanionEndsTheBackoffWait() {
+        val server = server().withLogs()
+        val port = DatagramSocket(0).use { it.localPort }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val engine = engine(
+            store,
+            config(reconnectDiscoveryMs = 800, discoveryPort = port, backoffBaseMs = 60_000, backoffMaxMs = 60_000),
+        )
+        // Nobody answers the first attempt's discovery: the loop then waits a minute.
+        waitFor(message = "failed attempt, state ${engine.state()}") {
+            engine.state().s("lastError") == PairingException.UNREACHABLE
+        }
+        FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) }, port = port)
+            .also { closeables += it }
+        val found = runBlocking { engine.discover(500) }
+        assertEquals(1, found.size)
+        server.nextConnection(15_000)
+        awaitStatus(engine, "connected")
+    }
+
+    // ---- pairing store ------------------------------------------------------------------------------------------
+
+    @Test
+    fun unreadableStoreIsRetriedWithoutReplacingTheDeviceId() {
+        val server = server().withLogs()
+        val store = FlakySecureStore()
+        pairedStore(server, store = store.inner)
+        store.broken = true
+        val engine = engine(store, config(storeRetryMs = 200))
+
+        val state = engine.state()
+        assertEquals("error", state.s("status"))
+        assertEquals(PairingException.STORAGE, state.s("lastError"))
+        assertEquals(0, (state["paired"] as JsonArray).size)
+        // A pairing would need the stored device id and would overwrite the unreadable pairings.
+        assertEquals(PairingException.STORAGE, pairingError { engine.pair(target(server), "ABCDE12345") })
+        Thread.sleep(500)
+        assertEquals(0, server.accepted.get())
+        assertEquals(0, store.writes.get())
+
+        // The Keystore is back: the loop picks the stored pairing up by itself and authenticates with the old id.
+        store.broken = false
+        server.nextConnection()
+        awaitStatus(engine, "connected")
+        assertEquals("device-1", store.inner.get(PairingRepository.KEY_DEVICE_ID))
+        assertEquals(1, (engine.state()["paired"] as JsonArray).size)
+    }
+}
