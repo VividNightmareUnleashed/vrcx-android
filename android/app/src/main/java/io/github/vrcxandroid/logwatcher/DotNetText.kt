@@ -84,10 +84,13 @@ internal object DotNetUtf8 {
  * is how upstream builds the `GetLogLines()` strings (`LogWatcher.cs:292`). Rules, as observed on .NET 10:
  * backslash as `\\`; backspace, tab, LF, form feed and CR as the short escapes `\b \t \n \f \r`; the double quote,
  * `& ' + < >`, backquote, the other C0 controls, DEL and every non-ASCII UTF-16 code unit as a six-character
- * `\uXXXX` escape (uppercase hex); `null` elements as `null`.
+ * `\uXXXX` escape (uppercase hex); a surrogate that is not part of a high-low pair as `�`; `null` elements as
+ * `null`. Upstream's fixed index arithmetic can split a pair (`Remove(Length - 1)` after a non-BMP character, the
+ * skips after `OnPlayerJoined`/`OnPlayerLeft`), so lone surrogates do reach this code.
  */
 internal object DotNetJson {
     private const val HEX = "0123456789ABCDEF"
+    private const val REPLACEMENT = 0xFFFD
 
     fun serialize(record: Array<String?>): String {
         val sb = StringBuilder(96)
@@ -103,8 +106,18 @@ internal object DotNetJson {
 
     fun appendString(sb: StringBuilder, s: String) {
         sb.append('"')
-        for (c in s) {
-            val code = c.code
+        var paired = false
+        for (i in s.indices) {
+            val c = s[i]
+            var code = c.code
+            if (paired) {
+                // the low half of a pair whose high half was just written
+                paired = false
+            } else if (Character.isHighSurrogate(c) && i + 1 < s.length && Character.isLowSurrogate(s[i + 1])) {
+                paired = true
+            } else if (Character.isSurrogate(c)) {
+                code = REPLACEMENT
+            }
             when {
                 code == 0x0A -> sb.append("\\n")
                 code == 0x0D -> sb.append("\\r")

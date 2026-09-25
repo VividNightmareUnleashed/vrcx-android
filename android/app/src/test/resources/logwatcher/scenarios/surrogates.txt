@@ -1,0 +1,11 @@
+# Lone UTF-16 surrogates made by upstream's fixed index arithmetic: Remove(Length-1) after a non-BMP character
+# (A11, A12, A19, A20) and the +17/+15 skips of OnPlayerJoined/OnPlayerLeft (A1). JSON text writes them as U+FFFD.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-10_11-59-00.txt 2024-05-10T09:59:00Z
+text output_log_2024-05-10_11-59-00.txt 2024-05-10T10:05:00Z 2024.05.10 12:00:01 Log        -  [Video Playback] Attempting to resolve URL 'https://a/\uD83D\uDE00\n2024.05.10 12:00:02 Log        -  [Video Playback] Resolving URL 'https://y/\uD83D\uDE00\n2024.05.10 12:00:03 Log        -  [Behaviour] OnPlayerJoined\uD83D\uDE00Name (usr_a)\n2024.05.10 12:00:04 Log        -  [Behaviour] OnPlayerLeft\uD83D\uDE00Name (usr_a)\n2024.05.10 12:00:05 Log        -  [String Download] Attempting to load String from URL 'https://s/\uD83C\uDFB5\n2024.05.10 12:00:06 Log        -  [Image Download] Attempting to load image from URL 'https://i/\uD83C\uDFB5\n2024.05.10 12:00:07 Log        -  [Video Playback] Resolving URL 'https://z/\uD83D\uDE00'\n
+get
+lines
+text output_log_2024-05-10_11-59-00.txt 2024-05-10T10:10:00Z 2024.05.10 12:10:01 Log        -  [Video Playback] Resolving URL 'https://y/\uD83D\uDE00\n2024.05.10 12:10:02 Log        -  [Behaviour] OnPlayerJoined\uD83D\uDE00\uD83D\uDE00 (usr_b)\n2024.05.10 12:10:03 Log        -  [Behaviour] OnPlayerLeft\uD83D\uDE00x (usr_b)\n2024.05.10 12:10:04 Log        -  [String Download] Attempting to load String from URL 'x\uD83D\uDE00\uD83D\uDE00\n
+get
+lines

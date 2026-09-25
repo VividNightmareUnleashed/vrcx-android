@@ -1,0 +1,21 @@
+--- get
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:01.000Z","video-play","https://a/\uFFFD"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:02.000Z","video-play","https://y/\uFFFD"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:03.000Z","player-joined","\uFFFDName","usr_a"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:04.000Z","player-left","\uFFFDName","usr_a"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:05.000Z","resource-load-string","https://s/\uFFFD"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:06.000Z","resource-load-image","https://i/\uFFFD"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:07.000Z","video-play","https://z/\uD83D\uDE00"]
+--- end get calls=2
+--- lines count=0
+--- get
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:01.000Z","video-play","https://y/\uFFFD"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:02.000Z","player-joined","\uFFFD\uD83D\uDE00","usr_b"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:03.000Z","player-left","\uFFFDx","usr_b"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:04.000Z","resource-load-string","x\uD83D\uDE00\uFFFD"]
+--- end get calls=2
+--- lines count=4
+Q ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:01.000Z","video-play","https://y/\uFFFD"]
+Q ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:02.000Z","player-joined","\uFFFD\uD83D\uDE00","usr_b"]
+Q ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:03.000Z","player-left","\uFFFDx","usr_b"]
+Q ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:10:04.000Z","resource-load-string","x\uD83D\uDE00\uFFFD"]

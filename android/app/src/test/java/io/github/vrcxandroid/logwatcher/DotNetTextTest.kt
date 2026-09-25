@@ -18,16 +18,33 @@ class DotNetTextTest {
     @Test
     fun jsonEscapingMatchesSystemTextJson() {
         var checked = 0
+        var lone = 0
         for (line in Resources.lines("probes/json.txt")) {
             val (key, expected) = line.split('\t', limit = 2)
             val record: Array<String?> = when {
                 key == "MIX" -> arrayOf("a", null, "", "x\"y\\z</script>&'+`" + 0x2028.toChar() + 0xE9.toChar())
+                // "S <UTF-16 units>": strings with lone or misordered surrogates
+                key.startsWith("S ") -> {
+                    lone++
+                    arrayOf(String(key.substring(2).split(' ').map { it.toInt(16).toChar() }.toCharArray()))
+                }
                 else -> arrayOf(String(Character.toChars(key.toInt(16))))
             }
             assertEquals("code point $key", expected, DotNetJson.serialize(record))
             checked++
         }
         assertTrue(checked > 256)
+        assertTrue(lone >= 10)
+    }
+
+    @Test
+    fun loneSurrogatesFromUpstreamIndexArithmeticBecomeReplacementCharacters() {
+        // `Remove(Length - 1)` on a URL ending in U+1F600 keeps its high surrogate (A11/A12/A19/A20); .NET 10 writes
+        // `\uFFFD` for it, never the lone `\uD83D`
+        assertEquals("[\"https://y/\\uFFFD\"]", DotNetJson.serialize(arrayOf("https://y/\uD83D")))
+        // the +17 skip of OnPlayerJoined lands on the low half of a pair (A1)
+        assertEquals("[\"\\uFFFDName\"]", DotNetJson.serialize(arrayOf("\uDE00Name")))
+        assertEquals("[\"\\uD83D\\uDE00\"]", DotNetJson.serialize(arrayOf("\uD83D\uDE00")))
     }
 
     @Test
