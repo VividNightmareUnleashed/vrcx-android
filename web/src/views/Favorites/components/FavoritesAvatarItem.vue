@@ -4,7 +4,7 @@
             <ContextMenuTrigger as-child>
                 <Item
                     variant="outline"
-                    class="favorites-item cursor-pointer hover:bg-muted x-hover-list"
+                    class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                     :style="itemStyle"
                     @click="handleViewDetails">
                     <ItemMedia variant="image">
@@ -23,27 +23,28 @@
                     </ItemMedia>
                     <ItemContent class="min-w-0">
                         <ItemTitle class="truncate max-w-full">
-                            {{ localFavFakeRef.name }}
+                            <!-- Phones: the name ellipsizes and the status icons stay visible. -->
+                            <span class="compact:min-w-0 compact:truncate">{{ localFavFakeRef.name }}</span>
                             <AlertTriangle
                                 v-if="showUnavailable"
                                 :title="t('view.favorite.unavailable_tooltip')"
                                 class="h-4 w-4" />
                             <Lock v-if="isPrivateAvatar" :title="t('view.favorite.private')" class="h-4 w-4" />
                         </ItemTitle>
-                        <ItemDescription class="truncate line-clamp-1 text-xs">
+                        <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-1.75rem)]">
                             {{ localFavFakeRef.authorName }}
                         </ItemDescription>
                     </ItemContent>
                     <ItemActions v-if="editMode && !isLocalFavorite" @click.stop>
                         <Checkbox v-model="isSelected" />
                     </ItemActions>
-                    <ItemActions v-else-if="!editMode">
+                    <ItemActions v-else-if="!editMode" class="compact:absolute compact:bottom-1 compact:right-1">
                         <DropdownMenu>
                             <DropdownMenuTrigger as-child>
                                 <Button
                                     size="icon-sm"
                                     variant="ghost"
-                                    class="rounded-full"
+                                    class="rounded-full compact:size-7"
                                     @click.stop
                                     :ariaLabel="t('nav_tooltip.manage')">
                                     <MoreHorizontal class="h-4 w-4" />
@@ -215,5 +216,12 @@
 
     .favorites-item:hover :deep(img) {
         filter: saturate(1) contrast(1);
+    }
+
+    /* Touch screens have no hover to lift the dimming, so thumbnails show in full colour. */
+    @media (hover: none) {
+        .favorites-item :deep(img) {
+            filter: none;
+        }
     }
 </style>

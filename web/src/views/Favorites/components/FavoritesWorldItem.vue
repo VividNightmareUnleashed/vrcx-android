@@ -3,7 +3,7 @@
         <ContextMenuTrigger as-child>
             <Item
                 variant="outline"
-                class="favorites-item cursor-pointer hover:bg-muted x-hover-list"
+                class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                 :style="itemStyle"
                 @click="handleViewDetails">
                 <ItemMedia variant="image">
@@ -22,14 +22,15 @@
                 </ItemMedia>
                 <ItemContent class="min-w-0">
                     <ItemTitle class="truncate max-w-full">
-                        {{ displayName }}
+                        <!-- Phones: the name ellipsizes and the status icons stay visible. -->
+                        <span class="compact:min-w-0 compact:truncate">{{ displayName }}</span>
                         <AlertTriangle
                             v-if="showUnavailable"
                             :title="t('view.favorite.unavailable_tooltip')"
                             class="h-4 w-4" />
                         <Lock v-if="isPrivateWorld" :title="t('view.favorite.private')" class="h-4 w-4" />
                     </ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs">
+                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-1.75rem)]">
                         {{ authorText }}
                     </ItemDescription>
                 </ItemContent>
@@ -41,7 +42,7 @@
                         <Button
                             size="icon-sm"
                             variant="ghost"
-                            class="rounded-full"
+                            class="rounded-full compact:absolute compact:bottom-1 compact:right-1 compact:size-7"
                             @click.stop
                             :ariaLabel="t('nav_tooltip.manage')">
                             <MoreHorizontal class="h-4 w-4" />
@@ -86,7 +87,10 @@
             </WorldActionMenuItems>
         </ContextMenuContent>
     </ContextMenu>
-    <NewInstanceDialog :new-instance-dialog-location-tag="newInstanceDialogLocationTag" :last-location="lastLocation" />
+    <NewInstanceDialog
+        v-if="newInstanceDialogMounted"
+        :new-instance-dialog-location-tag="newInstanceDialogLocationTag"
+        :last-location="lastLocation" />
 </template>
 
 <script setup>
@@ -120,6 +124,7 @@
     import { showWorldDialog } from '../../../coordinators/worldCoordinator';
     import { useFavoriteStore, useInviteStore, useLocationStore } from '../../../stores';
     import NewInstanceDialog from '../../../components/dialogs/NewInstanceDialog/NewInstanceDialog.vue';
+    import { isAndroid } from '../../../shared/utils/platform';
 
     const props = defineProps({
         group: [Object, String],
@@ -137,6 +142,9 @@
     const { canOpenInstanceInGame } = useInviteStore();
 
     const newInstanceDialogLocationTag = ref('');
+    // Android: every card used to mount its own New Instance dialog (and read its settings) up front; phones mount
+    // it on first use instead. Desktop keeps the upstream behaviour.
+    const newInstanceDialogMounted = ref(!isAndroid);
 
     const isSelected = computed({
         get: () => props.selected,
@@ -180,6 +188,7 @@
     }
 
     function handleNewInstance() {
+        newInstanceDialogMounted.value = true;
         newInstanceDialogLocationTag.value = '';
         nextTick(() => (newInstanceDialogLocationTag.value = props.favorite.id));
     }
@@ -205,5 +214,12 @@
 
     .favorites-item:hover :deep(img) {
         filter: saturate(1) contrast(1);
+    }
+
+    /* Touch screens have no hover to lift the dimming, so thumbnails show in full colour. */
+    @media (hover: none) {
+        .favorites-item :deep(img) {
+            filter: none;
+        }
     }
 </style>

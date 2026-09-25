@@ -1,11 +1,24 @@
 <template>
-    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div>
+    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap compact:gap-2">
+        <div class="compact:flex compact:items-center compact:gap-1">
+            <!-- Phones: the group list lives in a left sheet (docs/DESIGN.md §3.4); this opens it. -->
+            <Button
+                v-if="groupsButtonVisible"
+                class="rounded-full"
+                size="icon-sm"
+                variant="ghost"
+                :aria-label="t('android.favorites.groups')"
+                @click="$emit('open-groups')">
+                <PanelLeft />
+            </Button>
             <Select :model-value="sortValue" @update:modelValue="$emit('update:sortValue', $event)">
-                <SelectTrigger size="sm" class="min-w-[200px]">
+                <SelectTrigger size="sm" class="min-w-[200px] compact:min-w-0">
                     <span class="flex items-center gap-2">
                         <ArrowUpDown class="h-4 w-4" />
-                        <SelectValue :placeholder="t('view.settings.appearance.appearance.sort_favorite_by_name')" />
+                        <!-- Phones: icon only, the search gets the width. -->
+                        <SelectValue
+                            class="compact:sr-only"
+                            :placeholder="t('view.settings.appearance.appearance.sort_favorite_by_name')" />
                     </span>
                 </SelectTrigger>
                 <SelectContent>
@@ -31,7 +44,7 @@
                 </SelectContent>
             </Select>
         </div>
-        <div class="flex items-center gap-2 flex-1">
+        <div class="flex items-center gap-2 flex-1 compact:min-w-0">
             <InputGroupSearch
                 :model-value="searchQuery"
                 class="flex-1"
@@ -109,7 +122,7 @@
         DropdownMenuTrigger
     } from '@/components/ui/dropdown-menu';
     import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-    import { ArrowUpDown, Ellipsis } from 'lucide-vue-next';
+    import { ArrowUpDown, Ellipsis, PanelLeft } from 'lucide-vue-next';
     import { Button } from '@/components/ui/button';
     import { InputGroupSearch } from '@/components/ui/input-group';
     import { Slider } from '@/components/ui/slider';
@@ -128,7 +141,9 @@
         cardScaleSlider: { type: Object, default: () => ({ min: 0, max: 100, step: 1 }) },
         cardSpacingValue: { type: Array, default: () => [50] },
         cardSpacingPercent: { type: Number, default: 100 },
-        cardSpacingSlider: { type: Object, default: () => ({ min: 0, max: 100, step: 1 }) }
+        cardSpacingSlider: { type: Object, default: () => ({ min: 0, max: 100, step: 1 }) },
+        // Phones: show the button that opens the group sheet.
+        groupsButtonVisible: { type: Boolean, default: false }
     });
 
     defineEmits([
@@ -140,7 +155,8 @@
         'update:cardSpacingValue',
         'search',
         'import',
-        'export'
+        'export',
+        'open-groups'
     ]);
 
     const { t } = useI18n();

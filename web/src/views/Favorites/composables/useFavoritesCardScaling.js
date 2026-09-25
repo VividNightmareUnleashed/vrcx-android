@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeMount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeMount, ref, unref, watch } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
 
 import configRepository from '../../../services/config.js';
@@ -14,6 +14,37 @@ function clamp(value, min, max) {
         return max;
     }
     return value;
+}
+
+/**
+ * Width a card may shrink to so that at least `minColumns` cards share one row. Returns `minWidth` unchanged when one
+ * column is enough, the container is not measured yet, or the forced columns would be narrower than `floorWidth`.
+ *
+ * @param {number} minWidth Card width from the scale slider
+ * @param {number} containerWidth Measured width of the grid's container
+ * @param {number} gap Gap between cards
+ * @param {number} minColumns Columns wanted per row
+ * @param {object} [options]
+ * @param {number} [options.floorWidth] Narrowest card worth forcing (px)
+ * @param {number} [options.reserve] Container width the grid cannot use (scroller padding, list padding; px)
+ * @returns {number}
+ */
+export function resolveCardMinWidth(
+    minWidth,
+    containerWidth,
+    gap,
+    minColumns,
+    { floorWidth = 120, reserve = 16 } = {}
+) {
+    const columns = Math.floor(Number(minColumns) || 1);
+    if (columns <= 1 || !(containerWidth > 0)) {
+        return minWidth;
+    }
+    const forcedWidth = (containerWidth - reserve - gap * (columns - 1)) / columns;
+    if (!Number.isFinite(forcedWidth) || forcedWidth < floorWidth) {
+        return minWidth;
+    }
+    return Math.min(minWidth, Math.floor(forcedWidth));
 }
 
 export function useFavoritesCardScaling(options = {}) {
@@ -42,6 +73,10 @@ export function useFavoritesCardScaling(options = {}) {
     const minGap = options.minGap ?? 4;
     const minPadding = options.minPadding ?? 4;
     const defaultSpacing = clamp(options.defaultSpacing ?? 1, spacingSlider.min, spacingSlider.max);
+    // Cards per row the grid must at least offer (a number, ref or getter). Phones ask for 2 (docs/DESIGN.md §3.4).
+    const minColumnsOption = options.minColumns ?? 1;
+    const resolveMinColumns = () =>
+        typeof minColumnsOption === 'function' ? minColumnsOption() : (unref(minColumnsOption) ?? 1);
 
     const cardScaleBase = ref(1);
     const cardSpacingBase = ref(defaultSpacing);
@@ -80,10 +115,15 @@ export function useFavoritesCardScaling(options = {}) {
     });
 
     const gridStyle = computed(() => {
-        const minWidth = baseWidth * cardScale.value;
         const spacing = cardSpacing.value;
         const adjustedGapBase = baseGap + (cardScale.value - 1) * gapStep;
         const gap = Math.max(minGap, adjustedGapBase * spacing);
+        const minWidth = resolveCardMinWidth(
+            baseWidth * cardScale.value,
+            containerWidth.value ?? 0,
+            gap,
+            resolveMinColumns()
+        );
         const paddingY = Math.max(minPadding, basePaddingY * cardScale.value * spacing);
         const paddingX = Math.max(minPadding, basePaddingX * cardScale.value * spacing);
         const contentGap = Math.max(minPadding, baseContentGap * cardScale.value * spacing);

@@ -12,7 +12,7 @@
             </template>
             <Item
                 variant="outline"
-                class="favorites-item cursor-pointer hover:bg-muted x-hover-list"
+                class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                 :style="itemStyle"
                 @click="handleOpenProfile">
                 <ItemMedia class="relative size-10">
@@ -25,8 +25,10 @@
                     <IconFrame :icon-frame="favorite.ref.iconFrame" />
                 </ItemMedia>
                 <ItemContent class="min-w-0">
-                    <ItemTitle class="truncate max-w-full" :style="displayNameStyle">{{ displayName }}</ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs!">
+                    <ItemTitle class="truncate max-w-full compact:block" :style="displayNameStyle">{{
+                        displayName
+                    }}</ItemTitle>
+                    <ItemDescription class="truncate line-clamp-1 text-xs! compact:max-w-[calc(100%-1.75rem)]">
                         <template v-if="favorite.ref.location !== 'offline'">
                             <Location
                                 :location="favorite.ref.location"
@@ -46,7 +48,7 @@
                         <Button
                             size="icon-sm"
                             variant="ghost"
-                            class="rounded-full"
+                            class="rounded-full compact:absolute compact:bottom-1 compact:right-1 compact:size-7"
                             @click.stop
                             :ariaLabel="t('nav_tooltip.manage')">
                             <MoreHorizontal class="h-4 w-4" />
@@ -292,5 +294,12 @@
 
     .favorites-item:hover :deep(img) {
         filter: saturate(1) contrast(1);
+    }
+
+    /* Touch screens have no hover to lift the dimming, so thumbnails show in full colour. */
+    @media (hover: none) {
+        .favorites-item :deep(img) {
+            filter: none;
+        }
     }
 </style>
