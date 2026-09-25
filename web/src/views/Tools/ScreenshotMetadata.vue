@@ -1,6 +1,6 @@
 <template>
-    <!-- Phones: one scrolling column, the details under the image. -->
     <div class="screenshot-metadata-page x-container flex flex-col overflow-hidden compact:overflow-y-auto">
+        <!-- Phones: one scrolling column, the details under the image. -->
         <div class="flex items-center gap-2 ml-2">
             <Button variant="ghost" size="sm" class="mr-3" @click="goBack">
                 <ArrowLeft />

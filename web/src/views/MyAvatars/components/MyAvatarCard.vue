@@ -1,11 +1,11 @@
 <template>
-    <!-- A tap on the card wears the avatar, so the info card never opens on touch (the menu has View details). -->
     <HoverCard
         :open="hoverOpen"
         :open-delay="700"
         :close-delay="100"
         :enable-touch="false"
         @update:open="handleHoverOpen">
+        <!-- A tap on the card wears the avatar, so the info card never opens on touch (the menu has View details). -->
         <HoverCardTrigger as="div">
             <ContextMenu @update:open="handleContextMenuOpen">
                 <ContextMenuTrigger ref="menuTriggerRef" as="div">
