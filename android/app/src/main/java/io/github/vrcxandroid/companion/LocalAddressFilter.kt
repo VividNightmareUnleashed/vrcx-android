@@ -54,20 +54,62 @@ object LocalAddressFilter {
         if (h.startsWith("[") && h.endsWith("]")) h = h.substring(1, h.length - 1)
         if (h.isEmpty()) return null
         parseIpv4(h)?.let { return InetAddress.getByAddress(it) }
-        if (':' in h) {
-            // A string containing ':' is only ever parsed as an IPv6 literal (no name service lookup).
-            if (!h.all { it.isLetterOrDigit() || it == ':' || it == '.' || it == '%' || it == '_' || it == '-' }) {
-                return null
-            }
-            return try {
-                InetAddress.getByName(h)
-            } catch (e: UnknownHostException) {
-                null
-            } catch (e: SecurityException) {
-                null
-            }
+        if (':' !in h) return null
+        val zoneAt = h.indexOf('%')
+        val bytes = parseIpv6(if (zoneAt < 0) h else h.substring(0, zoneAt)) ?: return null
+        if (zoneAt < 0) return InetAddress.getByAddress(bytes)
+        val zone = h.substring(zoneAt + 1)
+        if (zone.isEmpty() || !zone.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }) return null
+        // The text is a valid numeric literal, so this resolves the zone (interface) without a name lookup.
+        return try {
+            InetAddress.getByName(h)
+        } catch (e: UnknownHostException) {
+            Inet6Address.getByAddress(null, bytes, -1)
+        } catch (e: SecurityException) {
+            Inet6Address.getByAddress(null, bytes, -1)
         }
-        return null
+    }
+
+    /** Strict RFC 4291 text form (with `::` and a trailing dotted quad); returns the 16 bytes or null. */
+    private fun parseIpv6(s: String): ByteArray? {
+        if (s.isEmpty() || s.length > 45) return null
+        val gap = s.indexOf("::")
+        if (gap >= 0 && s.indexOf("::", gap + 1) >= 0) return null
+        val head: List<Int>
+        val tail: List<Int>
+        if (gap >= 0) {
+            head = parseGroups(s.substring(0, gap), allowIpv4 = false) ?: return null
+            tail = parseGroups(s.substring(gap + 2), allowIpv4 = true) ?: return null
+            if (head.size + tail.size > 7) return null
+        } else {
+            head = parseGroups(s, allowIpv4 = true) ?: return null
+            tail = emptyList()
+            if (head.size != 8) return null
+        }
+        val groups = head + List(8 - head.size - tail.size) { 0 } + tail
+        val out = ByteArray(16)
+        for (i in 0 until 8) {
+            out[2 * i] = (groups[i] ushr 8).toByte()
+            out[2 * i + 1] = groups[i].toByte()
+        }
+        return out
+    }
+
+    private fun parseGroups(part: String, allowIpv4: Boolean): List<Int>? {
+        if (part.isEmpty()) return emptyList()
+        val pieces = part.split(':')
+        val out = ArrayList<Int>(8)
+        for ((i, p) in pieces.withIndex()) {
+            if (allowIpv4 && i == pieces.lastIndex && '.' in p) {
+                val v4 = parseIpv4(p) ?: return null
+                out += ((v4[0].toInt() and 0xFF) shl 8) or (v4[1].toInt() and 0xFF)
+                out += ((v4[2].toInt() and 0xFF) shl 8) or (v4[3].toInt() and 0xFF)
+                continue
+            }
+            if (p.isEmpty() || p.length > 4 || !p.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+            out += p.toInt(16)
+        }
+        return out
     }
 
     private fun parseIpv4(h: String): ByteArray? {

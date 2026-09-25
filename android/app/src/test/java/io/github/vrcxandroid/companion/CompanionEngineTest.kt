@@ -462,6 +462,43 @@ class CompanionEngineTest {
     }
 
     @Test
+    fun resubscribeDuringSyncIgnoresTheSupersededSyncComplete() {
+        val server = server().withLogs()
+        server.autoSync = false
+        val engine = engine(pairedStore(server))
+        val conn = server.nextConnection()
+        conn.awaitMessage("subscribe")
+        val f1 = server.files.first { it.name == file1 }
+        conn.sendControl(server.snapshotMessage())
+        conn.sendControl(server.processMessage())
+        conn.sendData(f1.name, f1.fileId, 0, f1.bytes.copyOf(1000))
+        waitFor(message = "first chunk") { sink.events.contains("data:$file1@0+1000") }
+
+        // LogWatcher.SetDateTill updates its tillDate, then notifies the client.
+        sink.since = since - 1
+        engine.onTillDateChanged(since - 1)
+        val second = conn.awaitMessage("subscribe")
+        assertEquals((since - 1).toString(), (second["sinceUtcTicks"] as JsonPrimitive).content)
+        // The companion finishes the old sequence (one more in-flight chunk, then its syncComplete) ...
+        conn.sendData(f1.name, f1.fileId, 1000, f1.bytes.copyOfRange(1000, 2000))
+        conn.sendControl(control(CompanionProtocol.T_SYNC_COMPLETE))
+        // ... then restarts from the phone's have list (1000 bytes, which is behind what it now holds).
+        conn.sendControl(server.snapshotMessage())
+        conn.sendControl(server.processMessage())
+        conn.sendRange(f1, 1000)
+        waitFor(message = "restarted data") { sink.content(file1) == String(f1.bytes) }
+        assertTrue(sink.events.none { it == "sync" })
+        assertEquals("syncing", true, engine.state().b("syncing"))
+        conn.sendControl(control(CompanionProtocol.T_SYNC_COMPLETE))
+        awaitSyncCount(1)
+        val snapshots = sink.events.withIndex().filter { it.value.startsWith("snapshot:") }.map { it.index }
+        assertEquals(2, snapshots.size)
+        assertTrue(sink.events.indexOf("sync") > snapshots[1])
+        assertEquals(emptyList<String>(), sink.errors)
+        waitFor(message = "not syncing") { engine.state().b("syncing") == false }
+    }
+
+    @Test
     fun subscribesWithZeroAfterWaitingForTillDate() {
         val server = server().withLogs()
         sink.since = 0

@@ -89,6 +89,29 @@ class LocalAddressFilterTest {
     }
 
     @Test
+    fun strictIpv6Syntax() {
+        val valid = listOf(
+            "1:2:3:4:5:6:7:8", "::", "::1", "fe80::", "1::", "1:2:3:4:5:6::8", "::ffff:1.2.3.4",
+            "64:ff9b::192.0.2.33", "FD00:ABCD::1", "0:0:0:0:0:0:0:1",
+        )
+        valid.forEach { assertNotNull(it, LocalAddressFilter.parseLiteral(it)) }
+        val invalid = listOf(
+            "1:2:3:4:5:6:7", "1:2:3:4:5:6:7:8:9", "1::2::3", ":::", "1:::2", "12345::", "1.2.3.4::",
+            "::1.2.3", "::1.2.3.256", ":1:2:3:4:5:6:7", "1:2:3:4:5:6:7:", "fe80::1%", "fe80::1%a/b", "fe80::g",
+            "1:2:3:4:5:6:7::8",
+        )
+        invalid.forEach { assertNull(it, LocalAddressFilter.parseLiteral(it)) }
+        assertEquals(
+            "0:0:0:0:0:0:0:1",
+            (LocalAddressFilter.parseLiteral("0::1") as Inet6Address).hostAddress!!.substringBefore('%'),
+        )
+        // A zone that names no interface on this machine still yields the (unscoped) address.
+        val scoped = LocalAddressFilter.parseLiteral("fe80::1%nosuchif0")
+        assertNotNull(scoped)
+        assertTrue(LocalAddressFilter.isLocal(scoped!!))
+    }
+
+    @Test
     fun hostPortSplitting() {
         assertEquals("192.168.1.5" to 5000, LocalAddressFilter.splitHostPort("192.168.1.5:5000", 49460))
         assertEquals("192.168.1.5" to 49460, LocalAddressFilter.splitHostPort("192.168.1.5", 49460))

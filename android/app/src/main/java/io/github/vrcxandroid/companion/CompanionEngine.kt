@@ -751,6 +751,8 @@ class CompanionEngine(
         private var ended = false
         private var failed = false
         private var subscribed = false
+        /** A second subscribe was sent and its sequence (starting with a snapshot) has not begun yet. */
+        private var awaitingRestart = false
         private var allowZeroSince = false
         private var waitTask: ScheduledFuture<*>? = null
         private var pingTask: ScheduledFuture<*>? = null
@@ -769,10 +771,11 @@ class CompanionEngine(
                     is Frame.Control -> onControl(frame, receivedAt)
                 }
             } catch (e: IOException) {
-                // A write failed: the connection is gone and the loop reconnects.
+                // A write failed (or the log side reported an I/O error): the connection is gone. Later frames of
+                // this connection are skipped; the next subscribe resynchronizes from the mirror's `have` list.
+                failed = true
                 conn.close()
             } catch (e: Exception) {
-                // The log side failed; reconnecting resynchronizes from its `have` list.
                 Log.e(TAG, "log sink failed on ${frameKind(frame)}; reconnecting", e)
                 failed = true
                 conn.close()
@@ -803,6 +806,7 @@ class CompanionEngine(
                     }
                 }
                 CompanionProtocol.T_SNAPSHOT -> if (started) {
+                    awaitingRestart = false
                     val files = parseSnapshot(json)
                     tracker.onSnapshot(files)
                     sink.onSnapshot(files)
@@ -821,8 +825,12 @@ class CompanionEngine(
                     sink.onTruncate(name, fileId, newLength)
                 }
                 CompanionProtocol.T_SYNC_COMPLETE -> if (started) {
-                    sink.onSyncComplete()
-                    setSyncing(companionId, false)
+                    // After a re-subscribe, a syncComplete that arrives before the restarted sequence's snapshot ends
+                    // the superseded sequence; the log side hears only about the sync it asked for last.
+                    if (!awaitingRestart) {
+                        sink.onSyncComplete()
+                        setSyncing(companionId, false)
+                    }
                     if (receivedDataBytes > ackedDataBytes) sendAck()
                 }
                 else -> Unit // unknown and out-of-place types are ignored (PROTOCOL.md §4, §6)
@@ -901,6 +909,7 @@ class CompanionEngine(
                     }
                 })
             })
+            awaitingRestart = subscribed
             subscribed = true
             setSyncing(companionId, true)
         }
