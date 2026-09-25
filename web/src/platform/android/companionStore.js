@@ -1,5 +1,7 @@
 // PC companion state mirrored from native (AndroidHost.CompanionGetState + `companion-state` events).
-// The phone shell only reads `isPaired`, `isConnected`, `vrchatRunning`.
+// The phone shell only reads `isPaired`, `isConnected`, `vrchatRunning`, and opens
+// Settings → PC companion with `router.push(COMPANION_SETTINGS_ROUTE)` (Settings.vue honours `?tab=companion`).
+// platformInit.js keeps the store in sync; nothing here polls.
 // See docs/ARCHITECTURE.md §5.1 for the state object and docs/PROTOCOL.md for pairing.
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
