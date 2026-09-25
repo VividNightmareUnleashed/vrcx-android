@@ -88,7 +88,7 @@
     import ToolItem from './components/ToolItem.vue';
     import { useToolActions } from '../../composables/useToolActions';
     import { useToolNavPinning } from '../../composables/useToolNavPinning';
-    import { getToolsByCategory, toolCategories } from '../../shared/constants';
+    import { getToolsByCategory, getVisibleToolCategories } from '../../shared/constants';
     import configRepository from '../../services/config.js';
 
     const { t } = useI18n();
@@ -96,7 +96,8 @@
     const { pinToolToNav, pinnedToolKeys, refreshPinnedState, unpinToolFromNav } = useToolNavPinning();
     const toolsCategoryCollapsedConfigKey = 'VRCX_toolsCategoryCollapsed';
 
-    const categories = toolCategories.map((category) => ({
+    // Categories left empty by platform filtering (the PC-only Shortcuts on Android) are not shown.
+    const categories = getVisibleToolCategories().map((category) => ({
         ...category,
         tools: getToolsByCategory(category.key)
     }));

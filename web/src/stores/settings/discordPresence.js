@@ -10,6 +10,7 @@ import {
     isPopcornPalaceWorld
 } from '../../shared/utils/discordPresence';
 import { ActivityType, StatusDisplayType } from '../../shared/constants/discord';
+import { hasDiscordPresence } from '../../shared/utils/platform';
 import { queryRequest } from '../../api';
 import { useGameLogStore } from '../gameLog';
 import { useGameStore } from '../game';
@@ -110,7 +111,8 @@ export const useDiscordPresenceSettingsStore = defineStore('DiscordPresenceSetti
             configRepository.getBool('discordWorldNameAsDiscordStatus', false)
         ]);
 
-        discordActive.value = discordActiveConfig;
+        // No local Discord client to talk to on Android: presence stays off (the setting group is hidden).
+        discordActive.value = hasDiscordPresence && discordActiveConfig;
         discordInstance.value = discordInstanceConfig;
         discordHideInvite.value = discordHideInviteConfig;
         discordJoinButton.value = discordJoinButtonConfig;
@@ -123,6 +125,7 @@ export const useDiscordPresenceSettingsStore = defineStore('DiscordPresenceSetti
     initDiscordPresenceSettings();
 
     async function updateDiscord() {
+        if (!hasDiscordPresence) return;
         let currentLocation = locationStore.lastLocation.location;
         let startTime = locationStore.lastLocation.date;
         if (locationStore.lastLocation.location === 'traveling') {

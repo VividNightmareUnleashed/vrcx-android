@@ -1,3 +1,5 @@
+import { isAndroid } from '../utils/platform';
+
 const toolCategories = [
     { key: 'image', labelKey: 'view.tools.pictures.header' },
     { key: 'shortcuts', labelKey: 'view.tools.shortcuts.header' },
@@ -7,7 +9,7 @@ const toolCategories = [
     { key: 'other', labelKey: 'view.tools.other.header' }
 ];
 
-const toolDefinitions = [
+const allToolDefinitions = [
     {
         key: 'screenshot-metadata',
         category: 'image',
@@ -30,6 +32,7 @@ const toolDefinitions = [
     },
     {
         key: 'vrc-photos',
+        pcOnly: true,
         category: 'shortcuts',
         iconKey: 'folder-open',
         navIcon: 'ri-folder-image-line',
@@ -45,6 +48,7 @@ const toolDefinitions = [
     },
     {
         key: 'steam-screenshots',
+        pcOnly: true,
         category: 'shortcuts',
         iconKey: 'folder-image',
         navIcon: 'ri-folder-image-line',
@@ -60,6 +64,7 @@ const toolDefinitions = [
     },
     {
         key: 'vrcx-data',
+        pcOnly: true,
         category: 'shortcuts',
         iconKey: 'folder-cog',
         navIcon: 'ri-folder-settings-line',
@@ -75,6 +80,7 @@ const toolDefinitions = [
     },
     {
         key: 'vrchat-data',
+        pcOnly: true,
         category: 'shortcuts',
         iconKey: 'folder-cog',
         navIcon: 'ri-folder-settings-line',
@@ -90,6 +96,7 @@ const toolDefinitions = [
     },
     {
         key: 'crash-dumps',
+        pcOnly: true,
         category: 'shortcuts',
         iconKey: 'folder-x',
         navIcon: 'ri-folder-warning-line',
@@ -105,6 +112,7 @@ const toolDefinitions = [
     },
     {
         key: 'vrchat-config',
+        pcOnly: true,
         category: 'system',
         iconKey: 'sliders-horizontal',
         navIcon: 'ri-settings-3-line',
@@ -119,6 +127,7 @@ const toolDefinitions = [
     },
     {
         key: 'launch-options',
+        pcOnly: true,
         category: 'system',
         iconKey: 'terminal',
         navIcon: 'ri-terminal-box-line',
@@ -133,6 +142,7 @@ const toolDefinitions = [
     },
     {
         key: 'registry-backup',
+        pcOnly: true,
         category: 'system',
         iconKey: 'archive',
         navIcon: 'ri-archive-stack-line',
@@ -217,6 +227,20 @@ const toolDefinitions = [
     }
 ];
 
+/**
+ * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) on Android
+ * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav.
+ *
+ * @param {Array<{ pcOnly?: boolean }>} tools
+ * @param {boolean} [android]
+ * @returns {Array<object>}
+ */
+function filterToolsForPlatform(tools, android = isAndroid) {
+    return android ? tools.filter((tool) => !tool.pcOnly) : tools;
+}
+
+const toolDefinitions = filterToolsForPlatform(allToolDefinitions);
+
 const toolDefinitionMap = new Map(toolDefinitions.map((tool) => [tool.key, tool]));
 
 const toolNavDefinitions = toolDefinitions
@@ -244,8 +268,18 @@ function getToolsByCategory(categoryKey) {
     return toolDefinitions.filter((tool) => tool.category === categoryKey);
 }
 
+/**
+ * @returns {Array<{ key: string, labelKey: string }>} categories that still hold at least one tool
+ */
+function getVisibleToolCategories() {
+    return toolCategories.filter((category) => getToolsByCategory(category.key).length > 0);
+}
+
 export {
+    allToolDefinitions,
     defaultHiddenToolNavKeys,
+    filterToolsForPlatform,
+    getVisibleToolCategories,
     isToolNavKey,
     toolCategories,
     toolDefinitions,

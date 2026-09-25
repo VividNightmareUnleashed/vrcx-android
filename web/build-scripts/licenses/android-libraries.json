@@ -1,0 +1,136 @@
+[
+    {
+        "name": "AndroidX Core KTX",
+        "coordinates": "androidx.core:core-ktx",
+        "version": "1.15.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/core",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "AndroidX Activity KTX",
+        "coordinates": "androidx.activity:activity-ktx",
+        "version": "1.9.3",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/activity",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "AndroidX WebKit",
+        "coordinates": "androidx.webkit:webkit",
+        "version": "1.12.1",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/webkit",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "AndroidX Browser",
+        "coordinates": "androidx.browser:browser",
+        "version": "1.8.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/browser",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "AndroidX Security Crypto",
+        "coordinates": "androidx.security:security-crypto",
+        "version": "1.1.0-alpha06",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/security",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "AndroidX SQLite (bundled)",
+        "coordinates": "androidx.sqlite:sqlite-bundled",
+        "version": "2.5.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://developer.android.com/jetpack/androidx/releases/sqlite",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright The Android Open Source Project\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "SQLite",
+        "version": "",
+        "license": "blessing",
+        "projectUrl": "https://www.sqlite.org/",
+        "licenseUrl": "https://www.sqlite.org/copyright.html",
+        "noticeText": "SQLite is in the public domain. Bundled through AndroidX SQLite (bundled).\n\nMay you do good and not evil.\nMay you find forgiveness for yourself and forgive others.\nMay you share freely, never taking more than you give."
+    },
+    {
+        "name": "OkHttp",
+        "coordinates": "com.squareup.okhttp3:okhttp",
+        "version": "4.12.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://square.github.io/okhttp/",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2019 Square, Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "OkHttp Brotli",
+        "coordinates": "com.squareup.okhttp3:okhttp-brotli",
+        "version": "4.12.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://square.github.io/okhttp/",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2019 Square, Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "Okio",
+        "coordinates": "com.squareup.okio:okio",
+        "version": "3.6.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://square.github.io/okio/",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2013 Square, Inc.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "Brotli decoder",
+        "coordinates": "org.brotli:dec",
+        "version": "0.1.2",
+        "license": "MIT",
+        "projectUrl": "https://github.com/google/brotli",
+        "licenseUrl": "https://github.com/google/brotli/blob/master/LICENSE",
+        "noticeText": "Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+    },
+    {
+        "name": "Kotlin Standard Library",
+        "coordinates": "org.jetbrains.kotlin:kotlin-stdlib",
+        "version": "2.1.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://kotlinlang.org/",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "kotlinx.coroutines",
+        "coordinates": "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+        "version": "1.9.0",
+        "license": "Apache-2.0",
+        "projectUrl": "https://github.com/Kotlin/kotlinx.coroutines",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2016-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "kotlinx.serialization",
+        "coordinates": "org.jetbrains.kotlinx:kotlinx-serialization-json",
+        "version": "1.7.3",
+        "license": "Apache-2.0",
+        "projectUrl": "https://github.com/Kotlin/kotlinx.serialization",
+        "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+        "noticeText": "Copyright 2017-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
+    },
+    {
+        "name": "Google code scanner (Google Play services)",
+        "coordinates": "com.google.android.gms:play-services-code-scanner",
+        "version": "16.1.0",
+        "license": "Android Software Development Kit License",
+        "projectUrl": "https://developers.google.com/ml-kit/vision/barcode-scanning/code-scanner",
+        "licenseUrl": "https://developer.android.com/studio/terms",
+        "noticeText": "Google Play services code scanner is provided by Google under the Android Software Development Kit License Agreement (https://developer.android.com/studio/terms). The scanner runs in Google Play services; VRCX receives only the scanned text."
+    }
+]

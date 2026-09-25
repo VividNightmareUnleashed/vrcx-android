@@ -96,6 +96,11 @@
                 </Table>
             </div>
         </template>
+        <CompanionEmptyState
+            v-else-if="isAndroid"
+            variant="widget"
+            kind="playerList"
+            :fallback-text="t('dashboard.widget.instance_not_in_game')" />
         <div v-else class="flex h-full items-center justify-center text-[13px] text-muted-foreground">
             {{ t('dashboard.widget.instance_not_in_game') }}
         </div>
@@ -103,7 +108,7 @@
 </template>
 
 <script setup>
-    import { computed, onActivated, onMounted } from 'vue';
+    import { computed, defineAsyncComponent, onActivated, onMounted } from 'vue';
     import { Apple, IdCard, Monitor, Settings, Smartphone } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
@@ -123,6 +128,11 @@
     import Timer from '@/components/Timer.vue';
     import WidgetHeader from './WidgetHeader.vue';
     import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table';
+    import { isAndroid } from '@/shared/utils/platform';
+
+    const CompanionEmptyState = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/CompanionEmptyState.vue'))
+        : null;
 
     const ALL_COLUMNS = ['icon', 'displayName', 'rank', 'timer', 'platform', 'language', 'status'];
     const DEFAULT_COLUMNS = ['icon', 'displayName', 'timer'];

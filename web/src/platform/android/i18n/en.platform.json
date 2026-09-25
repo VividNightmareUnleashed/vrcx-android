@@ -1,1 +1,149 @@
-{}
+{
+    "view": {
+        "settings": {
+            "category": {
+                "companion": "PC companion"
+            },
+            "general": {
+                "vrcx_updater": {
+                    "header": "Updates",
+                    "updater_disabled": "Updates come with new versions of the Android app."
+                }
+            },
+            "notifications": {
+                "notifications": {
+                    "desktop_notifications": {
+                        "header": "System notifications",
+                        "when_to_display": "Show system notifications"
+                    }
+                }
+            },
+            "advanced": {
+                "advanced": {
+                    "user_generated_content": {
+                        "description": "Prints, stickers and emoji you save are stored on this device. You can choose a different folder."
+                    }
+                }
+            }
+        }
+    },
+    "dialog": {
+        "launch": {
+            "launch": "Launch VRChat",
+            "game_running_warning": "VRChat is running on your PC. Launch it on this device as well?"
+        }
+    },
+    "android": {
+        "companion": {
+            "title": "PC companion",
+            "intro": "VRCX Companion runs on your Windows PC and sends VRChat's log to this device over your local network. It fills the game log and player list, and tells VRCX when VRChat is running.",
+            "status_label": "Status",
+            "status": {
+                "connected": "Connected to {name}",
+                "connecting": "Connecting to {name}",
+                "searching": "Looking for {name} on this network",
+                "idle": "Not connected",
+                "error": "Can't reach {name}",
+                "unpaired": "No PC paired"
+            },
+            "vrchat_label": "VRChat on PC",
+            "steamvr_label": "SteamVR on PC",
+            "running": "Running",
+            "not_running": "Not running",
+            "syncing_label": "Catching up",
+            "syncing_description": "Copying new log lines from your PC.",
+            "time_zone_label": "PC time zone",
+            "time_zone_description": "Game log times use your PC's time zone.",
+            "last_error_label": "Last error",
+            "paired_header": "Paired PCs",
+            "paired_empty": "No PCs paired yet.",
+            "active": "Active",
+            "last_seen": "Last seen {time}",
+            "never_seen": "Not connected yet",
+            "set_active": "Use this PC",
+            "forget": "Forget",
+            "forget_confirm_title": "Forget {name}?",
+            "forget_confirm_description": "This device stops receiving the game log from this PC. You can pair it again at any time.",
+            "cancel": "Cancel",
+            "continue": "Continue",
+            "pair_header": "Pair a PC",
+            "pair_description": "On your PC, open VRCX Companion from the system tray and choose Pair new device. It shows a QR code and a pairing code for 5 minutes.",
+            "scan_label": "Scan QR code",
+            "scan_description": "Point the camera at the QR code on your PC.",
+            "scan_button": "Scan",
+            "discover_label": "Find PCs on this network",
+            "discover_description": "Your device and your PC need to be on the same network.",
+            "discover_button": "Search",
+            "discover_searching": "Searching",
+            "discover_none": "No PCs found. Check that VRCX Companion is running, or enter the address instead.",
+            "pairing_open": "Ready to pair",
+            "pairing_closed": "Choose Pair new device on the PC first",
+            "pair_button": "Pair",
+            "manual_label": "Enter address manually",
+            "manual_description": "Use the address shown in VRCX Companion, for example 192.168.1.20:49460.",
+            "manual_button": "Enter address",
+            "address_prompt_title": "PC address",
+            "address_prompt_description": "Enter the address shown in VRCX Companion. The port is optional.",
+            "address_invalid": "Enter an address like 192.168.1.20 or 192.168.1.20:49460.",
+            "code_prompt_title": "Pair with {name}",
+            "code_prompt_description": "Enter the pairing code shown on your PC.",
+            "code_invalid": "The pairing code has 10 letters and numbers, like ABCDE-12345.",
+            "paired_toast": "Paired with {name}",
+            "errors": {
+                "code": "That code doesn't match. Check the code on your PC and try again.",
+                "expired": "The pairing code has expired. Choose Pair new device on your PC to get a new one.",
+                "closed": "Pairing isn't open on your PC. Choose Pair new device in VRCX Companion.",
+                "unreachable": "Can't reach your PC. Check that both devices are on the same network and that VRCX Companion is running.",
+                "not_local": "That address isn't on your local network. VRCX only connects to PCs on your network.",
+                "fingerprint": "This PC's identity has changed. Forget it and pair again.",
+                "generic": "Something went wrong: {detail}"
+            },
+            "data_header": "Data",
+            "data_description": "Bring over your history from VRCX on your PC, or keep a copy of the data on this device.",
+            "import_label": "Import VRCX database from PC",
+            "import_description": "Pick VRCX.sqlite3, copied from the VRCX folder in AppData on your PC. It replaces the data on this device, then the app restarts.",
+            "import_button": "Import",
+            "import_confirm_title": "Import a VRCX database?",
+            "import_confirm_description": "Everything VRCX has stored on this device is replaced by the file you pick, including saved logins. The app restarts when the import is done.",
+            "import_confirm": "Choose file",
+            "import_failed": "Import failed: {message}",
+            "export_label": "Export database",
+            "export_description": "Save a copy of this device's VRCX database. It contains saved logins, so keep it private.",
+            "export_button": "Export",
+            "export_done": "Database saved",
+            "export_failed": "Export failed: {message}"
+        },
+        "system": {
+            "background_label": "Keep running in background",
+            "background_description": "Keeps notifications, the feed and the PC companion working while VRCX is closed. Android shows a notification while VRCX runs.",
+            "battery_label": "Battery optimization",
+            "battery_unrestricted": "VRCX can run in the background without restrictions.",
+            "battery_restricted": "Android may pause VRCX in the background, which can delay notifications.",
+            "battery_button": "Allow",
+            "notification_label": "Notification permission",
+            "notification_granted": "Allowed",
+            "notification_denied": "Blocked. Turn notifications on in Android settings.",
+            "notification_default": "Not allowed yet",
+            "notification_allow": "Allow",
+            "notification_settings": "Open settings"
+        },
+        "empty": {
+            "unpaired_title": "Game log needs the VRCX Companion on your PC",
+            "game_log_description": "Joins, leaves and videos come from VRChat's log on your PC. Places you visit still show up from your VRChat account.",
+            "player_list_description": "The players in your instance come from VRChat's log on your PC.",
+            "unpaired_action": "Set up PC companion",
+            "disconnected_title": "Your PC companion isn't connected",
+            "disconnected_description": "VRCX catches up as soon as it can reach {name} again.",
+            "disconnected_action": "PC companion settings",
+            "your_pc": "your PC"
+        },
+        "launch": {
+            "failed": "Couldn't open VRChat on this device.",
+            "launched": "Opening VRChat"
+        },
+        "media": {
+            "folder_current": "Saving to {folder}",
+            "folder_open_failed": "Couldn't open this folder on your device."
+        }
+    }
+}

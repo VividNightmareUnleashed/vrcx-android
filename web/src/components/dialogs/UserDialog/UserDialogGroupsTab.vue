@@ -14,7 +14,7 @@
                 <span class="ml-1.5 text-sm">{{
                     t('dialog.user.groups.total_count', { count: userDialog.userGroups.groups.length })
                 }}</span>
-                <template v-if="userDialogGroupEditMode">
+                <template v-if="userDialogGroupEditMode && !isAndroid">
                     <span class="text-[10px] ml-2">{{ t('dialog.user.groups.hold_shift') }}</span>
                 </template>
             </div>
@@ -34,15 +34,17 @@
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem
-                                v-for="(item, key) in userDialogGroupSortingOptions"
-                                :key="String(key)"
-                                :value="String(key)"
-                                :disabled="
-                                    item === userDialogGroupSortingOptions.inGame && userDialog.id !== currentUser.id
-                                ">
-                                {{ t(item.name) }}
-                            </SelectItem>
+                            <template v-for="(item, key) in userDialogGroupSortingOptions" :key="String(key)">
+                                <SelectItem
+                                    v-if="hasLocalVrchatFiles || item !== userDialogGroupSortingOptions.inGame"
+                                    :value="String(key)"
+                                    :disabled="
+                                        item === userDialogGroupSortingOptions.inGame &&
+                                        userDialog.id !== currentUser.id
+                                    ">
+                                    {{ t(item.name) }}
+                                </SelectItem>
+                            </template>
                         </SelectContent>
                     </Select>
                 </template>
@@ -122,7 +124,7 @@
                                     @update:modelValue="() => toggleGroupSelection(group.id)" />
                             </div>
 
-                            <div style="margin-right: 3px; margin-left: 6px" @click.stop>
+                            <div v-if="hasLocalVrchatFiles" style="margin-right: 3px; margin-left: 6px" @click.stop>
                                 <Button
                                     size="icon-sm"
                                     variant="outline"
@@ -153,7 +155,7 @@
                                     <DownloadIcon class="size-3.5 shrink-0" />
                                 </Button>
                             </div>
-                            <div style="margin-right: 8px" @click.stop>
+                            <div v-if="hasLocalVrchatFiles" style="margin-right: 8px" @click.stop>
                                 <Button
                                     size="icon-sm"
                                     variant="outline"
@@ -420,6 +422,7 @@
     import { groupRequest } from '../../../api';
     import { useOptionKeySelect } from '../../../composables/useOptionKeySelect';
     import { userDialogGroupSortingOptions } from '../../../shared/constants';
+    import { hasLocalVrchatFiles, isAndroid } from '../../../shared/utils/platform';
     import { moveGroupInOrder, normalizeGroupOrder } from '../../../shared/utils/groupOrder';
 
     const { t } = useI18n();
@@ -543,7 +546,10 @@
             }
         }
         if (userId === currentUser.value.id) {
-            userDialog.value.groupSorting = userDialogGroupSortingOptions.inGame;
+            // The in-game order comes from VRChat's registry on the PC, so Android sorts by name.
+            userDialog.value.groupSorting = hasLocalVrchatFiles
+                ? userDialogGroupSortingOptions.inGame
+                : userDialogGroupSortingOptions.alphabetical;
         } else if (userDialog.value.groupSorting.value === userDialogGroupSortingOptions.inGame.value) {
             userDialog.value.groupSorting = userDialogGroupSortingOptions.alphabetical;
         }

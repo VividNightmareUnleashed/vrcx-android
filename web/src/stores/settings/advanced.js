@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { logWebRequest } from '../../services/appConfig';
 import { database } from '../../services/database';
 import { languageCodes } from '../../localization';
+import { hasLocalGame, isAndroid } from '../../shared/utils/platform';
 import { useGameStore } from '../game';
 import { useModalStore } from '../modal';
 import { useUpdateLoopStore } from '../updateLoop';
@@ -626,6 +627,10 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
     }
 
     function handleSetAppLauncherSettings() {
+        if (!hasLocalGame) {
+            // The app launcher starts PC programs together with VRChat.
+            return;
+        }
         AppApi.SetAppLauncherSettings(
             enableAppLauncher.value,
             enableAppLauncherAutoClose.value,
@@ -848,7 +853,10 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
         if (LINUX && ugcFolderPath.value == null) {
             resetUGCFolder();
         }
-        await AppApi.OpenUGCPhotosFolder(ugcFolderPath.value);
+        const opened = await AppApi.OpenUGCPhotosFolder(ugcFolderPath.value);
+        if (isAndroid && opened === false) {
+            toast.error(t('android.media.folder_open_failed'));
+        }
     }
 
     async function folderSelectorDialog(oldPath) {
@@ -871,6 +879,10 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
 
     async function openUGCFolderSelector() {
         const path = await folderSelectorDialog(ugcFolderPath.value);
+        if (isAndroid && !path) {
+            // Cancelling the Android folder picker keeps the current folder instead of resetting it.
+            return;
+        }
         await setUGCFolderPath(path);
     }
 

@@ -1,6 +1,7 @@
 import { toast } from 'vue-sonner';
 
 import { deleteVRChatCache as _deleteVRChatCache, isRealInstance } from '../shared/utils';
+import { hasLocalGame, hasLocalVrchatFiles } from '../shared/utils/platform';
 import { database } from '../services/database';
 import { useAdvancedSettingsStore } from '../stores/settings/advanced';
 import { useAvatarStore } from '../stores/avatar';
@@ -62,7 +63,9 @@ export async function runGameRunningChangedFlow(isGameRunning) {
     runLastLocationResetFlow();
     gameLogStore.clearNowPlaying();
     vrStore.updateVRLastLocation();
-    workerTimers.setTimeout(() => runCheckVRChatDebugLoggingFlow(), 60000);
+    if (hasLocalVrchatFiles) {
+        workerTimers.setTimeout(() => runCheckVRChatDebugLoggingFlow(), 60000);
+    }
     updateLoopStore.setNextDiscordUpdate(0);
 }
 
@@ -113,7 +116,8 @@ export function runUpdateIsHmdAfkFlow(isHmdAfkArg) {
 function runAutoVRChatCacheManagementFlow() {
     const advancedSettingsStore = useAdvancedSettingsStore();
 
-    if (advancedSettingsStore.autoSweepVRChatCache) {
+    // The VRChat cache is on the PC.
+    if (hasLocalVrchatFiles && advancedSettingsStore.autoSweepVRChatCache) {
         runSweepVRChatCacheFlow();
     }
 }
@@ -160,7 +164,8 @@ export function runCheckIfGameCrashedFlow() {
     const locationStore = useLocationStore();
     const gameStore = useGameStore();
 
-    if (!advancedSettingsStore.relaunchVRChatAfterCrash) {
+    // A crash of the PC game must never launch VRChat on the phone.
+    if (!hasLocalGame || !advancedSettingsStore.relaunchVRChatAfterCrash) {
         return;
     }
     const { location } = locationStore.lastLocation;
@@ -224,7 +229,8 @@ export async function runCheckVRChatDebugLoggingFlow() {
     const advancedSettingsStore = useAdvancedSettingsStore();
     const modalStore = useModalStore();
 
-    if (advancedSettingsStore.gameLogDisabled) {
+    // Reads and writes VRChat's registry, which is on the PC.
+    if (!hasLocalVrchatFiles || advancedSettingsStore.gameLogDisabled) {
         return;
     }
     try {

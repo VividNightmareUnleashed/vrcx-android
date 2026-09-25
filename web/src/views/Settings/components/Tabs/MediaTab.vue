@@ -1,7 +1,9 @@
 <template>
     <!--//- Pictures | Screenshot Helper-->
     <div class="flex flex-col gap-10 py-2">
-        <SettingsGroup :title="t('view.settings.advanced.advanced.screenshot_helper.header')">
+        <SettingsGroup
+            v-if="hasLocalVrchatFiles"
+            :title="t('view.settings.advanced.advanced.screenshot_helper.header')">
             <template #description>
                 {{ t('view.settings.advanced.advanced.screenshot_helper.description') }}
             </template>
@@ -56,6 +58,9 @@
         <SettingsGroup :title="t('view.settings.advanced.advanced.user_generated_content.header')">
             <template #description>
                 {{ t('view.settings.advanced.advanced.user_generated_content.description') }}
+                <span v-if="isAndroid" class="block" data-testid="ugc-folder-label">{{
+                    t('android.media.folder_current', { folder: describeUgcFolder(ugcFolderPath) })
+                }}</span>
             </template>
 
             <div class="flex gap-2">
@@ -122,6 +127,8 @@
     import { useI18n } from 'vue-i18n';
 
     import { useAdvancedSettingsStore } from '@/stores';
+    import { describeUgcFolder } from '@/shared/utils/androidPaths';
+    import { hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
 
     import SettingsGroup from '../SettingsGroup.vue';
     import SettingsItem from '../SettingsItem.vue';

@@ -46,10 +46,10 @@
                 <ToggleGroupItem value="Desktop Mode">{{
                     t('view.settings.notifications.notifications.conditions.desktop')
                 }}</ToggleGroupItem>
-                <ToggleGroupItem value="Inside VR">{{
+                <ToggleGroupItem v-if="hasVrOverlay" value="Inside VR">{{
                     t('view.settings.notifications.notifications.conditions.inside_vr')
                 }}</ToggleGroupItem>
-                <ToggleGroupItem value="Outside VR">{{
+                <ToggleGroupItem v-if="hasVrOverlay" value="Outside VR">{{
                     t('view.settings.notifications.notifications.conditions.outside_vr')
                 }}</ToggleGroupItem>
                 <ToggleGroupItem value="Game Running">{{
@@ -63,7 +63,21 @@
                 }}</ToggleGroupItem>
             </ToggleGroup>
 
+            <!-- Moved here from the VR tab, which does not exist without a VR overlay. -->
             <SettingsItem
+                v-if="!hasVrOverlay"
+                :label="t('view.settings.notifications.notifications.steamvr_notifications.user_images')"
+                :description="
+                    t('view.settings.notifications.notifications.steamvr_notifications.user_images_description')
+                ">
+                <Switch
+                    :model-value="imageNotifications"
+                    :ariaLabel="t('view.settings.notifications.notifications.steamvr_notifications.user_images')"
+                    @update:modelValue="setImageNotifications()" />
+            </SettingsItem>
+
+            <SettingsItem
+                v-if="hasVrOverlay"
                 :label="
                     t('view.settings.notifications.notifications.desktop_notifications.desktop_notification_while_afk')
                 ">
@@ -90,7 +104,7 @@
                     <ToggleGroupItem value="Never">{{
                         t('view.settings.notifications.notifications.conditions.never')
                     }}</ToggleGroupItem>
-                    <ToggleGroupItem value="Inside VR">{{
+                    <ToggleGroupItem v-if="hasVrOverlay" value="Inside VR">{{
                         t('view.settings.notifications.notifications.conditions.inside_vr')
                     }}</ToggleGroupItem>
                     <ToggleGroupItem value="Game Running">{{
@@ -167,6 +181,7 @@
     import { useI18n } from 'vue-i18n';
 
     import { useNotificationStore, useNotificationsSettingsStore } from '@/stores';
+    import { hasVrOverlay } from '@/shared/utils/platform';
 
     import FeedFiltersDialog from '../../dialogs/FeedFiltersDialog.vue';
     import SettingsGroup from '../SettingsGroup.vue';
@@ -179,6 +194,7 @@
     const {
         desktopToast,
         afkDesktopToast,
+        imageNotifications,
         notificationTTS,
         notificationTTSNickName,
         isTestTTSVisible,
@@ -190,6 +206,7 @@
     const {
         setDesktopToast,
         setAfkDesktopToast,
+        setImageNotifications,
         setNotificationTTSNickName,
         getTTSVoiceName,
         changeTTSVoice,

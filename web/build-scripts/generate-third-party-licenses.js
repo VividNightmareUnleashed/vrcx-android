@@ -1,4 +1,4 @@
-/* global __dirname, require */
+/* global __dirname, require, module */
 // generate-third-party-licenses.js
 // use by frontend open source software notice dialog
 
@@ -31,13 +31,20 @@ const os = require('os');
 const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
-const frontendLicensePath = path.join(rootDir, 'build', 'html', '.vite', 'license.md');
-const outputDir = path.join(rootDir, 'build', 'html', 'licenses');
+// `VRCX_TARGET=android` (npm run build:android) reads and writes the Android bundle in build/android/web and adds
+// the Android app's libraries; the default target is the desktop bundle in build/html.
+const buildTarget = process.env.VRCX_TARGET === 'android' ? 'android' : 'desktop';
+const bundleDir =
+    buildTarget === 'android' ? path.join(rootDir, 'build', 'android', 'web') : path.join(rootDir, 'build', 'html');
+const frontendLicensePath = path.join(bundleDir, '.vite', 'license.md');
+const outputDir = path.join(bundleDir, 'licenses');
 const outputManifestPath = path.join(outputDir, 'third-party-licenses.json');
 const outputNoticePath = path.join(outputDir, 'THIRD_PARTY_NOTICES.txt');
 const dotnetDir = path.join(rootDir, 'Dotnet');
 const nugetCacheDir = process.env.NUGET_PACKAGES || path.join(os.homedir(), '.nuget', 'packages');
 const overridesPath = path.join(__dirname, 'licenses', 'nuget-overrides.json');
+const androidLibrariesPath = path.join(__dirname, 'licenses', 'android-libraries.json');
+const androidGradlePath = path.join(rootDir, '..', 'android', 'app', 'build.gradle.kts');
 
 const nugetOverrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'));
 
@@ -405,6 +412,80 @@ function enrichDotnetEntries(entries) {
 }
 
 /**
+ * Lists the .NET projects whose packages are bundled. Returns an empty list when the Dotnet folder is absent (the
+ * Android port vendors only the frontend).
+ *
+ * @param {string} directory
+ * @returns {string[]}
+ */
+function listCsprojFiles(directory) {
+    if (!fs.existsSync(directory)) {
+        return [];
+    }
+    return fs
+        .readdirSync(directory)
+        .filter((fileName) => fileName.endsWith('.csproj'))
+        .map((fileName) => path.join(directory, fileName))
+        .concat(path.join(directory, 'DBMerger', 'DBMerger.csproj'))
+        .filter((filePath, index, filePaths) => filePaths.indexOf(filePath) === index && fs.existsSync(filePath));
+}
+
+/**
+ * Reads `implementation("group:artifact:version")` (also `api(...)` and `runtimeOnly(...)`) dependencies from a
+ * Gradle Kotlin script. Test configurations are ignored because they are not shipped.
+ *
+ * @param {string} gradleText
+ * @returns {{ group: string, artifact: string, version: string }[]}
+ */
+function parseGradleDependencies(gradleText) {
+    const pattern = /^\s*(?:implementation|api|runtimeOnly)\(\s*"([^":\s]+):([^":\s]+):([^"\s]+)"\s*\)/gm;
+    return [...(gradleText || '').matchAll(pattern)].map(([, group, artifact, version]) => ({
+        group,
+        artifact,
+        version
+    }));
+}
+
+/**
+ * Turns the manual Android library list into manifest entries. When the Gradle script is available, the version of
+ * each listed `group:artifact` comes from it, so the notice follows dependency updates.
+ *
+ * @param {{ name: string, version?: string, license?: string, projectUrl?: string, licenseUrl?: string, noticeText?: string, coordinates?: string }[]} libraries
+ * @param {{ group: string, artifact: string, version: string }[]} [gradleDependencies]
+ * @returns {ProjectLicense[]}
+ */
+function createAndroidEntries(libraries, gradleDependencies = []) {
+    const gradleVersions = new Map(gradleDependencies.map((dep) => [`${dep.group}:${dep.artifact}`, dep.version]));
+
+    return libraries
+        .map((library) => {
+            const version = (library.coordinates && gradleVersions.get(library.coordinates)) || library.version || '';
+            return {
+                id: `android-${sanitizeId(`${library.name}-${version}`)}`,
+                name: library.name,
+                version,
+                sourceType: 'android',
+                license: library.license || 'Unknown',
+                licenseUrl: library.licenseUrl || '',
+                projectUrl: library.projectUrl || '',
+                noticeText: normalizeWhitespace(library.noticeText),
+                sourceLabel: 'Bundled Android app component',
+                needsReview: !library.license && !library.noticeText
+            };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * @returns {ProjectLicense[]}
+ */
+function loadAndroidEntries() {
+    const libraries = JSON.parse(fs.readFileSync(androidLibrariesPath, 'utf8'));
+    const gradleDependencies = parseGradleDependencies(readFileIfExists(androidGradlePath) || '');
+    return createAndroidEntries(libraries, gradleDependencies);
+}
+
+/**
  * @param {string} frontendLicenseMarkdown
  * @param {ProjectLicense[]} entries
  */
@@ -419,15 +500,32 @@ function createThirdPartyNoticeText(frontendLicenseMarkdown, entries) {
         '========================================',
         '',
         normalizeWhitespace(frontendLicenseMarkdown) || 'No frontend license manifest was available.',
-        '',
-        '',
-        '========================================',
-        '.NET and native bundled components',
-        '========================================',
         ''
     ];
 
-    for (const entry of entries.filter((item) => item.sourceType !== 'frontend')) {
+    const sections = [
+        { heading: '.NET and native bundled components', sourceTypes: ['dotnet', 'native'] },
+        { heading: 'Android app components', sourceTypes: ['android'] }
+    ];
+
+    for (const section of sections) {
+        const sectionEntries = entries.filter((item) => section.sourceTypes.includes(item.sourceType));
+        if (sectionEntries.length === 0) {
+            continue;
+        }
+        lines.push('', '========================================', section.heading, '========================================', '');
+        appendNoticeEntries(lines, sectionEntries);
+    }
+
+    return `${lines.join('\n').trimEnd()}\n`;
+}
+
+/**
+ * @param {string[]} lines
+ * @param {ProjectLicense[]} entries
+ */
+function appendNoticeEntries(lines, entries) {
+    for (const entry of entries) {
         lines.push(`${entry.name}${entry.version ? ` - ${entry.version}` : ''} (${entry.license})`);
         lines.push(`Source: ${entry.sourceLabel}`);
 
@@ -459,8 +557,6 @@ function createThirdPartyNoticeText(frontendLicenseMarkdown, entries) {
         lines.push('----------------------------------------');
         lines.push('');
     }
-
-    return `${lines.join('\n').trimEnd()}\n`;
 }
 
 function main() {
@@ -468,18 +564,17 @@ function main() {
 
     const frontendLicenseMarkdown = readFileIfExists(frontendLicensePath) || '';
     const frontendEntries = parseFrontendLicenses(frontendLicenseMarkdown);
-    const csprojFiles = fs
-        .readdirSync(dotnetDir)
-        .filter((fileName) => fileName.endsWith('.csproj'))
-        .map((fileName) => path.join(dotnetDir, fileName))
-        .concat(path.join(dotnetDir, 'DBMerger', 'DBMerger.csproj'))
-        .filter((filePath, index, filePaths) => filePaths.indexOf(filePath) === index && fs.existsSync(filePath));
+    const csprojFiles = listCsprojFiles(dotnetDir);
+    if (csprojFiles.length === 0) {
+        console.log('No .NET projects found, skipping the .NET scan.');
+    }
 
     const dotnetEntries = enrichDotnetEntries(mergeDotnetEntries(csprojFiles));
+    const androidEntries = buildTarget === 'android' ? loadAndroidEntries() : [];
     const manifest = {
         generatedAt: new Date().toISOString(),
         noticePath: 'licenses/THIRD_PARTY_NOTICES.txt',
-        entries: [...frontendEntries, ...dotnetEntries]
+        entries: [...frontendEntries, ...dotnetEntries, ...androidEntries]
     };
 
     fs.writeFileSync(outputManifestPath, JSON.stringify(manifest, null, 4));
@@ -491,4 +586,14 @@ function main() {
     );
 }
 
-main();
+if (require.main === module) {
+    main();
+}
+
+module.exports = {
+    createAndroidEntries,
+    createThirdPartyNoticeText,
+    listCsprojFiles,
+    parseFrontendLicenses,
+    parseGradleDependencies
+};

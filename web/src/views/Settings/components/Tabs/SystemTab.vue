@@ -10,7 +10,10 @@
                 </div>
             </div>
 
-            <div class="flex flex-col gap-0.5 px-1 py-1 cursor-pointer" @click="checkForVRCXUpdate">
+            <div
+                v-if="hasDesktopShell"
+                class="flex flex-col gap-0.5 px-1 py-1 cursor-pointer"
+                @click="checkForVRCXUpdate">
                 <div class="flex-1">
                     <span class="block truncate font-medium text-sm leading-[18px]">{{
                         t('view.settings.general.general.latest_app_version')
@@ -87,28 +90,33 @@
                     @update:modelValue="setIsStartAtWindowsStartup" />
             </SettingsItem>
 
-            <SettingsItem v-if="!isLinux" :label="t('view.settings.general.application.minimized')">
-                <Switch
-                    :model-value="isStartAsMinimizedState"
-                    :ariaLabel="t('view.settings.general.application.minimized')"
-                    @update:modelValue="setIsStartAsMinimizedState" />
-            </SettingsItem>
-            <SettingsItem
-                v-else
-                :label="t('view.settings.general.application.minimized')"
-                :description="t('view.settings.general.application.startup_linux')">
-                <Switch
-                    :model-value="isStartAsMinimizedState"
-                    :ariaLabel="t('view.settings.general.application.minimized')"
-                    @update:modelValue="setIsStartAsMinimizedState" />
-            </SettingsItem>
+            <template v-if="hasDesktopShell">
+                <SettingsItem v-if="!isLinux" :label="t('view.settings.general.application.minimized')">
+                    <Switch
+                        :model-value="isStartAsMinimizedState"
+                        :ariaLabel="t('view.settings.general.application.minimized')"
+                        @update:modelValue="setIsStartAsMinimizedState" />
+                </SettingsItem>
+                <SettingsItem
+                    v-else
+                    :label="t('view.settings.general.application.minimized')"
+                    :description="t('view.settings.general.application.startup_linux')">
+                    <Switch
+                        :model-value="isStartAsMinimizedState"
+                        :ariaLabel="t('view.settings.general.application.minimized')"
+                        @update:modelValue="setIsStartAsMinimizedState" />
+                </SettingsItem>
 
-            <SettingsItem v-if="!isMacOS" :label="t('view.settings.general.application.tray')">
-                <Switch
-                    :model-value="isCloseToTray"
-                    :ariaLabel="t('view.settings.general.application.tray')"
-                    @update:modelValue="setIsCloseToTray" />
-            </SettingsItem>
+                <SettingsItem v-if="!isMacOS" :label="t('view.settings.general.application.tray')">
+                    <Switch
+                        :model-value="isCloseToTray"
+                        :ariaLabel="t('view.settings.general.application.tray')"
+                        @update:modelValue="setIsCloseToTray" />
+                </SettingsItem>
+            </template>
+
+            <!-- Android: background mode, battery optimization and notification permission replace the tray row. -->
+            <AndroidSystemSettings v-if="isAndroid" />
 
             <SettingsItem
                 v-if="!isLinux"
@@ -182,9 +190,14 @@
     import { useGeneralSettingsStore, useVRCXUpdaterStore } from '@/stores';
     import { links } from '@/shared/constants';
     import { openExternalLink } from '@/shared/utils';
+    import { hasDesktopShell, isAndroid } from '@/shared/utils/platform';
 
     import SettingsGroup from '../SettingsGroup.vue';
     import SettingsItem from '../SettingsItem.vue';
+
+    const AndroidSystemSettings = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/settings/AndroidSystemSettings.vue'))
+        : null;
 
     const { t } = useI18n();
 
