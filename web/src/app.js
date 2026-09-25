@@ -4,6 +4,7 @@ import { createApp } from 'vue';
 import { i18n, initComponents, initPlugins, initRouter, initSentry } from './plugins';
 import { initPiniaPlugins, pinia } from './stores';
 import { queryClient } from './queries';
+import { isAndroid } from './shared/utils/platform';
 
 import App from './App.vue';
 
@@ -18,5 +19,9 @@ app.use(pinia).use(i18n).use(VueQueryPlugin, { queryClient });
 initComponents(app);
 initRouter(app);
 await initSentry(app);
+if (isAndroid) {
+    const { initAndroid } = await import('./platform/android');
+    await initAndroid(app);
+}
 
 app.mount('#root');

@@ -1,6 +1,8 @@
 import { createI18n } from 'vue-i18n';
 
 import { getLocalizedStrings } from '../localization';
+import { getAndroidMessages } from '../platform/android/i18n';
+import { isAndroid } from '../shared/utils/platform';
 
 const FALLBACK_LOCALE = 'en';
 
@@ -20,6 +22,9 @@ async function loadLocalizedStrings(code) {
     for (const locale of localesToLoad) {
         const messages = await getLocalizedStrings(locale);
         i18n.global.setLocaleMessage(locale, messages);
+        if (isAndroid) {
+            i18n.global.mergeLocaleMessage(locale, getAndroidMessages(locale));
+        }
     }
 }
 
