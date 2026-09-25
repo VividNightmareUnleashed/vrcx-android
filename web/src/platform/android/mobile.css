@@ -264,6 +264,19 @@ html.vrcx-compact [data-slot='sidebar'][data-mobile='true'].inset-y-0 {
     width: min(288px, 85vw);
 }
 
+/* Landscape is too short for a fixed header and footer around the nav list: the whole nav sheet scrolls as one
+ * column (header, entries, Help/Manage, status bar). */
+html.vrcx-compact-landscape [data-slot='sidebar'][data-mobile='true'] > div {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* data-sidebar, not data-slot: NavMenu wraps the content in a ContextMenuTrigger, which replaces its data-slot. */
+html.vrcx-compact-landscape [data-slot='sidebar'][data-mobile='true'] [data-sidebar='content'] {
+    flex: none;
+    overflow: visible;
+}
+
 /* Bottom sheets never cover the whole screen. */
 html.vrcx-compact [data-slot='sheet-content'].bottom-0 {
     max-height: calc(100dvh - var(--safe-top) - 48px);
