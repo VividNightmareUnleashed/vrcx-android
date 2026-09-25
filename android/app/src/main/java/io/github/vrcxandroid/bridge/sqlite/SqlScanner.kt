@@ -3,7 +3,7 @@ package io.github.vrcxandroid.bridge.sqlite
 /**
  * One SQL statement of a (possibly multi-statement) command text.
  *
- * @property sql the statement text as it appears in the command, without the terminating `;`.
+ * @property sql the statement text as it appears in the command, trimmed, without the terminating `;`.
  * @property params parameter names by index: `params[i]` is the name SQLite reports for index `i + 1`
  *   (`sqlite3_bind_parameter_name`), or null for a nameless `?` or an index skipped by `?NNN`.
  * @property firstKeyword the statement's first keyword, upper-case (`SELECT`, `INSERT`, `BEGIN`, ...).
@@ -41,7 +41,7 @@ internal object SqlScanner {
 
         fun finish(end: Int) {
             if (state.hasTokens) {
-                out.add(ScannedStatement(sql.substring(stmtStart, end), state.paramList(), state.firstKeyword, state.writes))
+                out.add(ScannedStatement(sql.substring(stmtStart, end).trim(), state.paramList(), state.firstKeyword, state.writes))
             }
             state = StatementState()
         }

@@ -67,7 +67,7 @@ internal object JsonText {
                 '\t' -> sb.append("\\t")
                 '\b' -> sb.append("\\b")
                 '\u000C' -> sb.append("\\f")
-                '\u0085', ' ', ' ' -> appendUnicodeEscape(sb, c, HEX_LOWER)
+                '\u0085', '\u2028', '\u2029' -> appendUnicodeEscape(sb, c, HEX_LOWER)
                 else -> if (c < ' ') appendUnicodeEscape(sb, c, HEX_LOWER) else sb.append(c)
             }
         }
