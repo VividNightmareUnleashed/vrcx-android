@@ -42,6 +42,9 @@ public sealed class SyncEngine : IDisposable
     /// <summary>Raised (outside the engine lock) when the observed process state changes.</summary>
     public event Action<ProcessState>? ProcessStateChanged;
 
+    /// <summary>Raised (outside the engine lock) when a session is added or removed.</summary>
+    public event Action? SessionsChanged;
+
     public ProcessState? LastProcessState
     {
         get
@@ -87,12 +90,16 @@ public sealed class SyncEngine : IDisposable
             _log.Info("closing the older session of a device that connected again");
             old.RequestClose("replaced");
         }
+        SessionsChanged?.Invoke();
     }
 
     public void RemoveSession(StreamSession session)
     {
+        bool removed;
         lock (_gate)
-            _sessions.Remove(session);
+            removed = _sessions.Remove(session);
+        if (removed)
+            SessionsChanged?.Invoke();
     }
 
     /// <summary>Closes the sessions of a device (it was revoked).</summary>
@@ -107,6 +114,8 @@ public sealed class SyncEngine : IDisposable
         }
         foreach (var s in matching)
             s.RequestClose(reason);
+        if (matching.Count > 0)
+            SessionsChanged?.Invoke();
     }
 
     /// <summary>Queues a control message on every registered session (e.g. <c>info</c>), independent of subscriptions.</summary>

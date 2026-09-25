@@ -14,7 +14,7 @@
     <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
     <!-- single-file publish: dotnet publish -r win-x64 -p:PublishSingleFile=true (docs/ARCHITECTURE.md §10) -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <DebugType>embedded</DebugType>
+    <SelfContained>false</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>

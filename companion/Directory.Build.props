@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
+    <DebugType>embedded</DebugType>
     <Version>1.0.0</Version>
     <Company>VRCX Android</Company>
     <Product>VRCX Companion</Product>
