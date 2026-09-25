@@ -1,10 +1,12 @@
 package io.github.vrcxandroid.bridge.appapi
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.vrcxandroid.bridge.appapi.docs.ContentDoc
@@ -15,6 +17,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
@@ -58,6 +61,40 @@ class MediaStoreAppApiTest {
         created += uri
         assertTrue(folder.exists(name))
         return uri
+    }
+
+    /** An image the app owns in MediaStore at [relativePath] (for example "Pictures/VRChat/2099-01/"). */
+    private fun insertImage(relativePath: String, name: String, bytes: ByteArray): Uri {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)!!
+        created += uri
+        resolver.openOutputStream(uri, "w")!!.use { it.write(bytes) }
+        return uri
+    }
+
+    @Test
+    fun screenshotToolsFallBackToPicturesVrchatWithoutAPhotosFolder() {
+        val worldId = "wrld_test_" + System.nanoTime()
+        val json = "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_a\",\"displayName\":\"A\"}," +
+            "\"world\":{\"name\":\"Test World\",\"id\":\"$worldId\",\"instanceId\":\"$worldId:1\"}," +
+            "\"players\":[{\"id\":\"usr_c\",\"displayName\":\"Charlie\"}]}"
+        val shot = insertImage("Pictures/VRChat/$month/", "VRChat_2099-01-01_00-00-00.000_64x36.png", ScreenshotParser.writeVrcxMetadata(json, png(64, 36, Color.CYAN))!!)
+        // a newer print with the same metadata: found by search, but never the "last screenshot"
+        val print = insertImage("Pictures/VRChat/Prints/$month/", "print.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 32, Color.CYAN))!!)
+
+        assertEquals("", call("GetVRChatPhotosLocation").jsonPrimitive.content)
+        val found = Json.parseToJsonElement(call("FindScreenshotsBySearch", worldId, 3).jsonPrimitive.content).jsonArray
+        assertEquals(setOf(shot.toString(), print.toString()), found.map { api.docs.resolve(it.jsonPrimitive.content)!!.key }.toSet())
+        val byName = Json.parseToJsonElement(call("FindScreenshotsBySearch", "charl", 0).jsonPrimitive.content).jsonArray
+        assertTrue(byName.map { api.docs.resolve(it.jsonPrimitive.content)!!.key }.containsAll(listOf(shot.toString(), print.toString())))
+
+        val last = call("GetLastScreenshot").jsonPrimitive.content
+        assertEquals(shot.toString(), api.docs.resolve(last)!!.key)
     }
 
     @Test
