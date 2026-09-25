@@ -17,13 +17,20 @@ internal static class Program
         if (args.Contains("--render-ui", StringComparer.OrdinalIgnoreCase))
             return UiPreview.Run(args);
 
+        var openPairing = args.Contains("--pair", StringComparer.OrdinalIgnoreCase);
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("VRCX Companion is already running. Its icon is in the notification area of the taskbar.",
-                "VRCX Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Already running: ask that instance to show a window instead of starting a second one.
+            if (!SignalRunningInstance(openPairing ? PairingEventName : StatusEventName))
+            {
+                MessageBox.Show("VRCX Companion is already running. Its icon is in the notification area of the taskbar.",
+                    "VRCX Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
             return 0;
         }
+        using var statusSignal = new EventWaitHandle(false, EventResetMode.AutoReset, StatusEventName);
+        using var pairingSignal = new EventWaitHandle(false, EventResetMode.AutoReset, PairingEventName);
 
         ApplicationConfiguration.Initialize();
         var paths = AppPaths.Default;
@@ -73,7 +80,33 @@ internal static class Program
         {
             using var tray = new TrayApplicationContext(host, log);
             context = tray;
-            Application.Run(tray);
+            using var stopSignals = new ManualResetEvent(false);
+            var signals = new Thread(() =>
+            {
+                WaitHandle[] handles = [stopSignals, statusSignal, pairingSignal];
+                while (true)
+                {
+                    var index = WaitHandle.WaitAny(handles);
+                    if (index == 0)
+                        return;
+                    if (index == 1)
+                        tray.RequestShowStatus();
+                    else
+                        tray.RequestShowPairing();
+                }
+            }) { IsBackground = true, Name = "instance-signals" };
+            signals.Start();
+            if (openPairing)
+                tray.RequestShowPairing();
+            try
+            {
+                Application.Run(tray);
+            }
+            finally
+            {
+                stopSignals.Set();
+                signals.Join(TimeSpan.FromSeconds(2));
+            }
         }
         finally
         {
@@ -83,6 +116,23 @@ internal static class Program
             log.Info("exit");
         }
         return 0;
+    }
+
+    private const string StatusEventName = @"Local\VRCX-Companion-2f6d1c4e-show-status";
+    private const string PairingEventName = @"Local\VRCX-Companion-2f6d1c4e-show-pairing";
+
+    /// <summary>Signals the running instance to open a window. False when it is not listening (for example still starting).</summary>
+    private static bool SignalRunningInstance(string eventName)
+    {
+        try
+        {
+            using var handle = EventWaitHandle.OpenExisting(eventName);
+            return handle.Set();
+        }
+        catch (Exception e) when (e is WaitHandleCannotBeOpenedException or UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Disposes the host off the UI thread, waiting at most <paramref name="timeout"/>. Later calls return at once.</summary>

@@ -105,6 +105,10 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
             VrcxHost.setKeepScreenOn(KEEP_ON_PAGE, args.bool(0) == true)
             JsonNull
         }
+        "ShowKeyboard" -> {
+            VrcxHost.showKeyboard()
+            JsonNull
+        }
 
         // ---- app ----
         "CanLaunchVRChat" -> jsonOf(host.canHandle(Intent(Intent.ACTION_VIEW, Uri.parse("vrchat://launch"))))

@@ -184,6 +184,25 @@ object VrcxHost {
         launchInbox.deliver(command, events.isPageConnected) { emit("launch-command", JsonPrimitive(it)) }
     }
 
+    // ---- Soft keyboard ----
+
+    /**
+     * Shows the soft keyboard for the page's focused field. Android only raises it for focus that comes from a tap, so
+     * a dialog that focuses its code or text field on open (2FA code, prompts, Quick Search) asks for it explicitly.
+     * Nothing happens while no Activity is visible.
+     */
+    fun showKeyboard() {
+        main.post {
+            val webView = WebViewHolder.current ?: return@post
+            // No requestFocus(): re-focusing the WebView makes Chromium blur the page's focused field, which dismisses
+            // the dialog that asked for the keyboard. The WebView already has focus when a page field does.
+            if (activity == null || !webView.isAttachedToWindow || !webView.hasFocus()) return@post
+            val imm = webView.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager ?: return@post
+            imm.showSoftInput(webView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
     // ---- Keep screen on ----
 
     private val keepScreenOnReasons = HashSet<String>()

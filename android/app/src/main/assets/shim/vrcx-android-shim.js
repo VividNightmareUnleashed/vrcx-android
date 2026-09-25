@@ -1305,6 +1305,46 @@
     });
 
     // ---------------------------------------------------------------------------------------------------------------
+    // 12b. Soft keyboard: Android raises it only for focus that comes from a tap. When a dialog focuses its text field
+    //      by itself (2FA code, prompts, Quick Search), ask native to show the keyboard. The phone shell's focus guard
+    //      keeps every other dialog from focusing a field on open, so this only fires for text-entry dialogs.
+    // ---------------------------------------------------------------------------------------------------------------
+
+    var TAP_FOCUS_WINDOW_MS = 800;
+    var TEXT_INPUT_TYPES = /^(|text|search|email|number|tel|url|password)$/i;
+
+    function isTextEntry(el) {
+        if (!el || el.disabled || el.readOnly) return false;
+        if (el.isContentEditable) return true;
+        if (el.tagName === 'TEXTAREA') return true;
+        return el.tagName === 'INPUT' && TEXT_INPUT_TYPES.test(el.getAttribute('type') || '');
+    }
+
+    guard('keyboard', function () {
+        var lastPointerDownAt = 0;
+        document.addEventListener(
+            'pointerdown',
+            function () {
+                lastPointerDownAt = now();
+            },
+            true
+        );
+        document.addEventListener(
+            'focusin',
+            function (event) {
+                var el = event.target;
+                if (!isTextEntry(el)) return;
+                if (now() - lastPointerDownAt < TAP_FOCUS_WINDOW_MS) return;
+                if (!el.closest || !el.closest('[role="dialog"], [data-slot="dialog-content"], [data-slot="sheet-content"]')) {
+                    return;
+                }
+                nativeCall('AndroidHost', 'ShowKeyboard', []).catch(function () {});
+            },
+            true
+        );
+    });
+
+    // ---------------------------------------------------------------------------------------------------------------
     // 13. Hello: native replays the current state events (insets, voices, companion state, ...)
     // ---------------------------------------------------------------------------------------------------------------
 

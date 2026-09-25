@@ -74,6 +74,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return menu;
     }
 
+    /// <summary>Opens the Status window (callable from any thread; used when VRCX Companion is started again).</summary>
+    public void RequestShowStatus() => Post(ShowStatus);
+
+    /// <summary>Opens the pairing window (callable from any thread; used by the --pair argument).</summary>
+    public void RequestShowPairing() => Post(ShowPairing);
+
     /// <summary>Asks the message loop to close the windows and exit (callable from any thread).</summary>
     public void RequestExit()
     {
