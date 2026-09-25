@@ -4,6 +4,7 @@ import android.util.Log
 import io.github.vrcxandroid.CompanionController
 import io.github.vrcxandroid.EventEmitter
 import io.github.vrcxandroid.logwatcher.CompanionInfo
+import io.github.vrcxandroid.logwatcher.FetchRequester
 import io.github.vrcxandroid.logwatcher.LogSink
 import io.github.vrcxandroid.logwatcher.MirroredFile
 import io.github.vrcxandroid.logwatcher.PcFileMeta
@@ -20,7 +21,6 @@ import java.io.EOFException
 import java.io.IOException
 import java.net.InetAddress
 import java.net.UnknownHostException
-import java.util.UUID
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -33,13 +33,14 @@ data class CompanionConfig(
     val connectTimeoutMs: Int = 4_000,
     /** PROTOCOL.md §5.9: close after 20 s without receiving anything. */
     val readTimeoutMs: Int = 20_000,
-    /** PROTOCOL.md §5.9: `ping` when nothing else was sent for 30 s. */
-    val pingIdleMs: Long = 30_000,
     /**
-     * A heartbeat (every 5 s) is answered with `ping` (or a pending `ack`) when nothing was sent for this long, so the
-     * companion, which closes after 20 s of silence, always hears from the phone well within its timeout.
+     * Keep-alive (PROTOCOL.md §5.9): a frame from the companion (heartbeats come every 5 s) is answered with an
+     * `ack` of the bytes consumed so far, or a `ping`, when nothing was sent for this long. The connection loop sends
+     * it, never the sink thread, so the companion, which closes after 20 s of silence, hears from the phone within
+     * about 15 s even while a [LogSink] call runs for long. This also covers the 30 s idle `ping`: without incoming
+     * frames the read timeout ends the connection first.
      */
-    val heartbeatReplyAfterMs: Long = 10_000,
+    val keepAliveAfterMs: Long = 10_000,
     /** `ack` whenever this many data-frame bytes arrived since the last one (PROTOCOL.md: at least every 1 MiB). */
     val ackEveryBytes: Long = 512L * 1024,
     val backoffBaseMs: Long = 1_000,
@@ -53,6 +54,8 @@ data class CompanionConfig(
     val subscribeWaitMs: Long = 30_000,
     /** Process flags stay valid this long after a disconnect (ARCHITECTURE.md §8). */
     val processGraceMs: Long = 120_000,
+    /** Retry delay while the pairing store cannot be read ([SecureStoreException]). */
+    val storeRetryMs: Long = 5_000,
     val discoveryPort: Int = CompanionProtocol.DEFAULT_DISCOVERY_PORT,
     val discoveryTargets: () -> List<InetAddress> = CompanionDiscovery::broadcastTargets,
     /** Whether the connection loop runs before the host calls `setRunning`. */
@@ -75,22 +78,17 @@ object NullLogSink : LogSink {
 }
 
 /**
- * Optional interface for the log side: drops everything it keeps for a companion that was forgotten (its mirror
- * under `filesDir/logmirror/<companionId>/` and in-memory state). Without it the client deletes the directory itself.
- */
-interface CompanionMirrorOwner {
-    fun forgetCompanion(companionId: String)
-}
-
-/**
  * The phone side of docs/PROTOCOL.md, free of Android APIs so it runs in JVM tests. [CompanionManager] wires it to
  * EncryptedSharedPreferences, WifiManager, ConnectivityManager, the LogWatcher and the bridge.
  *
  * Threads:
- * - `companion-loop`: connects (with backoff), authenticates, then reads frames until the connection ends.
- * - `companion-sink`: every [LogSink] call, in wire order, plus the writes that depend on them (subscribe, ack, fetch,
- *   ping). Frames are handed over from the loop thread in the order they were read.
+ * - `companion-loop`: connects (with backoff), authenticates, then reads frames until the connection ends. It also
+ *   sends the keep-alives ([CompanionConfig.keepAliveAfterMs]), so a slow [LogSink] call never silences the phone.
+ * - `companion-sink`: every [LogSink] call, in wire order, plus the writes that depend on them (subscribe, ack, fetch).
+ *   Frames are handed over from the loop thread in the order they were read.
  * Pairing and discovery run on the caller's coroutine (Dispatchers.IO).
+ *
+ * [mirrorCleaner] runs on the sink thread once the forgotten companion's session has ended.
  */
 class CompanionEngine(
     private val store: SecureStore,
@@ -101,7 +99,7 @@ class CompanionEngine(
     private val mirrorCleaner: (String) -> Unit = {},
     private val config: CompanionConfig = CompanionConfig(),
     private val wallClock: () -> Long = System::currentTimeMillis,
-) : CompanionController, Closeable {
+) : CompanionController, FetchRequester, Closeable {
 
     private enum class Phase(val wire: String) {
         IDLE("idle"),
@@ -125,6 +123,9 @@ class CompanionEngine(
 
     // ---- guarded by mutex ----
     private var loaded = false
+    /** The last load failed ([SecureStoreException]); the next attempt is not before [nextLoadAtMs]. */
+    private var loadFailed = false
+    private var nextLoadAtMs = 0L
     private var records: List<PairedCompanion> = emptyList()
     private var activeId: String? = null
     private var deviceId: String = ""
@@ -132,7 +133,9 @@ class CompanionEngine(
     private var closed = false
     private var phase = Phase.IDLE
     private var lastError: String? = null
+    /** A companion that answered `authFail`: no retries until the user selects or pairs it again. */
     private var haltedId: String? = null
+    private var haltedReason: String? = null
     private var generation = 0
     private var wakeRequested = false
     private var connection: TlsConnection? = null
@@ -163,15 +166,24 @@ class CompanionEngine(
     // ================================================================================================================
 
     override fun state(): JsonObject = mutex.withLock {
-        ensureLoadedLocked()
+        val readable = ensureLoadedLocked()
         val active = activeRecordLocked()
+        val halted = active != null && haltedId == active.id
         val status = when {
+            !readable -> Phase.ERROR.wire
             records.isEmpty() -> "unpaired"
             !running || active == null -> Phase.IDLE.wire
-            haltedId == activeId -> Phase.ERROR.wire
+            halted -> Phase.ERROR.wire
             else -> phase.wire
         }
         val connected = status == Phase.CONNECTED.wire
+        val error = when {
+            !readable -> PairingException.STORAGE
+            connected -> null
+            // Kept as long as the pairing stays halted, also across setRunning(false) / setRunning(true).
+            halted -> haltedReason ?: lastError
+            else -> lastError
+        }
         val p = process?.takeIf { it.companionId == activeId }
         val processValid = p != null && (connected ||
             disconnectedAtMs?.let { monotonicMs() - it < config.processGraceMs } == true)
@@ -192,23 +204,22 @@ class CompanionEngine(
             put("vrchatRunning", processValid && p!!.vrchat)
             put("steamVrRunning", processValid && p!!.steamVr)
             put("syncing", connected && syncing)
-            put("lastError", jsonOrNull(if (connected) null else lastError))
+            put("lastError", jsonOrNull(error))
         }
     }
 
     override suspend fun discover(timeoutMs: Long): JsonArray = withContext(Dispatchers.IO) {
         val found = discovery.discover(timeoutMs.coerceIn(200, 15_000))
+        // Replies are not authenticated, so nothing is stored from them. When the active companion answered while it
+        // is not connected, the loop retries now instead of after its backoff; it rediscovers the address itself and
+        // remembers it once a pinned connection through it succeeded.
         update {
-            ensureLoadedLocked()
-            var dirty = false
-            records = records.map { rec ->
-                val hit = found.firstOrNull { it.id == rec.id && PairingCrypto.constantTimeEquals(it.fp, rec.fp) }
-                    ?: return@map rec
-                val hosts = (hit.hosts + rec.hosts).distinct().take(PairedCompanion.MAX_HOSTS)
-                if (hosts == rec.hosts && hit.port == rec.port) rec else rec.copy(hosts = hosts, port = hit.port)
-                    .also { dirty = true }
+            val active = if (ensureLoadedLocked()) activeRecordLocked() else null
+            val answered = active != null && found.any { it.id == active.id && fpMatches(it.fp, active.fp) }
+            if (answered && running && !closed && connection == null && haltedId != activeId) {
+                wakeRequested = true
+                changed.signalAll()
             }
-            if (dirty) persistLocked()
         }
         buildJsonArray { found.forEach { add(it.toJson()) } }
     }
@@ -251,7 +262,7 @@ class CompanionEngine(
             ensureLoadedLocked()
             val rec = records.firstOrNull { it.id == companionId } ?: return@update false
             records = records - rec
-            if (haltedId == companionId) haltedId = null
+            if (haltedId == companionId) clearHaltLocked()
             if (activeId == companionId) {
                 endedSession = session
                 activeId = records.maxByOrNull { it.lastSeen }?.id
@@ -281,14 +292,14 @@ class CompanionEngine(
             if (activeId == companionId) {
                 // Selecting the active companion again retries after an error (for example "pairing removed").
                 if (haltedId == companionId || phase == Phase.ERROR || connection == null) {
-                    haltedId = null
+                    clearHaltLocked()
                     wakeRequested = true
                     changed.signalAll()
                 }
                 return@update
             }
             activeId = companionId
-            haltedId = null
+            clearHaltLocked()
             dropConnectionLocked()
             wakeRequested = true
             persistLocked()
@@ -325,7 +336,7 @@ class CompanionEngine(
      * Asks the companion to resend a file from [fromOffset] (PROTOCOL.md §5.9), for example when the mirror finds a
      * gap or lost its copy. Ignored while not connected: the next `subscribe.have` covers it.
      */
-    fun requestFetch(name: String, fileId: String, fromOffset: Long) {
+    override fun requestFetch(name: String, fileId: String, fromOffset: Long) {
         val current = mutex.withLock { session } ?: return
         post { current.fetch(name, fileId, fromOffset) }
     }
@@ -362,8 +373,14 @@ class CompanionEngine(
             var record: PairedCompanion? = null
             var gen = 0
             mutex.withLock {
-                ensureLoadedLocked()
-                while (!closed && !canConnectLocked()) changed.await()
+                while (!closed && !(ensureLoadedLocked() && canConnectLocked())) {
+                    // An unreadable store is retried after a delay; otherwise only a change allows a connection.
+                    if (loaded) {
+                        changed.await()
+                    } else {
+                        changed.awaitNanos(TimeUnit.MILLISECONDS.toNanos(config.storeRetryMs))
+                    }
+                }
                 if (closed) return
                 if (wakeRequested) {
                     wakeRequested = false
@@ -411,24 +428,29 @@ class CompanionEngine(
         var sawFingerprint = false
         var sawNotLocal = false
         var sawAddress = false
-        val tried = HashSet<String>()
+        val tried = HashSet<Pair<String, Int>>()
         var usedHost: String? = null
+        var usedPort = record.port
 
-        fun tryHosts(hosts: List<String>, fp: String, port: Int): TlsConnection? {
+        /** [trusted]: stored addresses. A key mismatch there is reported; at an address from discovery it is not. */
+        fun tryHosts(hosts: List<String>, port: Int, trusted: Boolean): TlsConnection? {
             for (host in hosts) {
-                if (!tried.add(host)) continue
+                if (!tried.add(host to port)) continue
                 if (!isCurrent(gen)) return null
                 val addresses = resolveForLoop(host)
                 if (addresses.isEmpty()) {
-                    if (LocalAddressFilter.parseLiteral(host) != null) sawNotLocal = true
+                    if (trusted && LocalAddressFilter.parseLiteral(host) != null) sawNotLocal = true
                     continue
                 }
-                sawAddress = true
+                if (trusted) sawAddress = true
                 for (address in addresses) {
                     try {
-                        return connector.connect(address, port, fp).also { usedHost = host }
+                        return connector.connect(address, port, record.fp).also {
+                            usedHost = host
+                            usedPort = port
+                        }
                     } catch (e: FingerprintMismatchException) {
-                        sawFingerprint = true
+                        if (trusted) sawFingerprint = true
                     } catch (e: IOException) {
                         // unreachable at this address
                     }
@@ -437,21 +459,15 @@ class CompanionEngine(
             return null
         }
 
-        var current = record
-        var conn = tryHosts(current.hosts, current.fp, current.port)
+        var conn = tryHosts(record.hosts, record.port, trusted = true)
         if (conn == null && config.reconnectDiscoveryMs > 0 && isCurrent(gen)) {
             update { if (generation == gen && phase != Phase.ERROR) phase = Phase.SEARCHING }
-            val found = discovery.discover(config.reconnectDiscoveryMs) {
-                it.id == current.id && PairingCrypto.constantTimeEquals(it.fp, current.fp)
-            }
-            val hit = found.firstOrNull { it.id == current.id && PairingCrypto.constantTimeEquals(it.fp, current.fp) }
-            if (hit != null) {
-                current = replaceRecord(current.id) {
-                    val hosts = (hit.hosts + it.hosts).distinct().take(PairedCompanion.MAX_HOSTS)
-                    it.copy(hosts = hosts, port = hit.port)
-                } ?: current
-                conn = tryHosts(hit.hosts, current.fp, current.port)
-            }
+            // Matched on id and fingerprint; the pinned connection below is what verifies an address. Only the address
+            // that worked is stored (by runSession), so a spoofed reply can neither hide the companion nor pollute the
+            // stored hosts.
+            val wanted = { c: DiscoveredCompanion -> c.id == record.id && fpMatches(c.fp, record.fp) }
+            val hit = discovery.discover(config.reconnectDiscoveryMs, wanted).firstOrNull(wanted)
+            if (hit != null) conn = tryHosts(hit.hosts, hit.port, trusted = false)
         }
         if (conn == null) {
             if (!isCurrent(gen)) return Outcome.ABORTED
@@ -480,7 +496,7 @@ class CompanionEngine(
             return Outcome.ABORTED
         }
         try {
-            return runSession(conn, current, gen, usedHost ?: current.hosts.first())
+            return runSession(conn, record, gen, usedHost ?: record.hosts.first(), usedPort)
         } finally {
             conn.close()
             mutex.withLock { if (connection === conn) connection = null }
@@ -534,13 +550,23 @@ class CompanionEngine(
         }
     }
 
-    private fun runSession(conn: TlsConnection, record: PairedCompanion, gen: Int, usedHost: String): Outcome {
+    /** [usedHost] and [usedPort] reached the companion; they are stored once it authenticated. */
+    private fun runSession(
+        conn: TlsConnection,
+        record: PairedCompanion,
+        gen: Int,
+        usedHost: String,
+        usedPort: Int,
+    ): Outcome {
         val hello = try {
             authenticate(conn, record)
         } catch (e: HandshakeFailure) {
             update {
                 if (generation == gen) {
-                    if (e.halt) haltedId = record.id
+                    if (e.halt) {
+                        haltedId = record.id
+                        haltedReason = e.code
+                    }
                     fail(e.code)
                 }
             }
@@ -564,7 +590,8 @@ class CompanionEngine(
             if (generation != gen || closed || !running) return@update false
             val now = wallClock()
             replaceRecordLocked(record.id) {
-                it.copy(lastSeen = now, name = hello.name.ifBlank { it.name }).withPreferredHost(usedHost)
+                it.copy(lastSeen = now, name = hello.name.ifBlank { it.name }, port = usedPort)
+                    .withPreferredHost(usedHost)
             }
             persistLocked()
             phase = Phase.CONNECTED
@@ -577,7 +604,6 @@ class CompanionEngine(
             true
         }
         if (!accepted) return Outcome.ABORTED
-        post { sess.begin() }
 
         var synced = false
         var protocolError = false
@@ -587,6 +613,7 @@ class CompanionEngine(
                 val receivedAt = wallClock()
                 if (frame is Frame.Control && frame.type == CompanionProtocol.T_SYNC_COMPLETE) synced = true
                 if (!post { sess.handle(frame, receivedAt) }) break
+                sess.keepAlive()
             }
         } catch (e: ProtocolException) {
             Log.w(TAG, "protocol error: ${e.message}")
@@ -626,6 +653,9 @@ class CompanionEngine(
         code: String,
         extraHosts: List<String>,
     ) {
+        // The pairing needs this phone's stored device id, and its result must not overwrite pairings that could not
+        // be read: fail before the companion issues a token.
+        if (!mutex.withLock { ensureLoadedLocked(force = true) }) throw PairingException(PairingException.STORAGE)
         var lastUnreachable: Exception? = null
         for (address in addresses) {
             val conn = try {
@@ -732,7 +762,7 @@ class CompanionEngine(
             records = records.filter { it.id != record.id } +
                 record.copy(machineName = previous?.machineName, tz = previous?.tz)
             activeId = record.id
-            haltedId = null
+            clearHaltLocked()
             // A new token: reconnect with auth even when this companion was already connected.
             dropConnectionLocked()
             wakeRequested = true
@@ -745,7 +775,7 @@ class CompanionEngine(
     // Session (companion-sink thread)
     // ================================================================================================================
 
-    /** One authenticated connection. Every method runs on the sink thread. */
+    /** One authenticated connection. Every method runs on the sink thread, except [keepAlive]. */
     private inner class Session(private val conn: TlsConnection, private val companionId: String) {
         private val sink: LogSink = try {
             sinkProvider()
@@ -764,12 +794,22 @@ class CompanionEngine(
         private var awaitingRestart = false
         private var allowZeroSince = false
         private var waitTask: ScheduledFuture<*>? = null
-        private var pingTask: ScheduledFuture<*>? = null
-        private var receivedDataBytes = 0L
-        private var ackedDataBytes = 0L
 
-        fun begin() {
-            if (!ended) schedulePing(config.pingIdleMs)
+        /** Shared with the loop thread ([keepAlive]). */
+        private val acks = AckCounter()
+
+        /**
+         * Loop thread, after each frame was handed to the sink thread: when nothing was sent for
+         * [CompanionConfig.keepAliveAfterMs], acknowledges the bytes consumed so far or pings. It never waits for the
+         * sink thread, so heartbeats keep being answered while a [LogSink] call runs (PROTOCOL.md §5.9).
+         */
+        fun keepAlive() {
+            if (monotonicMs() - conn.lastSentAtMs < config.keepAliveAfterMs) return
+            try {
+                if (!acks.ackIfAtLeast(1, ::sendAck)) sendPing()
+            } catch (e: IOException) {
+                conn.close()
+            }
         }
 
         fun handle(frame: Frame, receivedAt: Long) {
@@ -809,12 +849,8 @@ class CompanionEngine(
                     onInfoReceived(companionId, info)
                     maybeSubscribe(force = false)
                 }
-                CompanionProtocol.T_HEARTBEAT -> {
-                    if (started) sampleSkew(json.long("pcUtcNowMs") ?: 0L, receivedAt)
-                    if (monotonicMs() - conn.lastSentAtMs >= config.heartbeatReplyAfterMs) {
-                        if (receivedDataBytes > ackedDataBytes) sendAck() else sendPing()
-                    }
-                }
+                // Answered by keepAlive on the loop thread.
+                CompanionProtocol.T_HEARTBEAT -> if (started) sampleSkew(json.long("pcUtcNowMs") ?: 0L, receivedAt)
                 CompanionProtocol.T_SNAPSHOT -> if (started) {
                     awaitingRestart = false
                     val files = parseSnapshot(json)
@@ -841,14 +877,13 @@ class CompanionEngine(
                         sink.onSyncComplete()
                         setSyncing(companionId, false)
                     }
-                    if (receivedDataBytes > ackedDataBytes) sendAck()
+                    acks.ackIfAtLeast(1, ::sendAck)
                 }
                 else -> Unit // unknown and out-of-place types are ignored (PROTOCOL.md §4, §6)
             }
         }
 
         private fun onData(frame: Frame.Data) {
-            receivedDataBytes += frame.wireBytes
             if (started) {
                 when (val d = tracker.onData(frame.name, frame.fileId, frame.offset, frame.bytes.size)) {
                     is OffsetTracker.Decision.Deliver -> {
@@ -859,7 +894,9 @@ class CompanionEngine(
                     is OffsetTracker.Decision.Fetch -> sendFetch(frame.name, frame.fileId, d.fromOffset)
                 }
             }
-            if (receivedDataBytes - ackedDataBytes >= config.ackEveryBytes) sendAck()
+            // Counted once handled, so an ack (from here or from keepAlive) never covers bytes still queued.
+            acks.consume(frame.wireBytes.toLong())
+            acks.ackIfAtLeast(config.ackEveryBytes, ::sendAck)
         }
 
         fun onTillChanged() {
@@ -877,7 +914,6 @@ class CompanionEngine(
             if (ended) return
             ended = true
             waitTask?.cancel(false)
-            pingTask?.cancel(false)
             if (started) {
                 try {
                     sink.onDisconnected()
@@ -924,11 +960,10 @@ class CompanionEngine(
             setSyncing(companionId, true)
         }
 
-        private fun sendAck() {
-            conn.sendControl(control(CompanionProtocol.T_ACK) { put("bytes", receivedDataBytes) })
-            ackedDataBytes = receivedDataBytes
-        }
+        /** Any thread (only through [acks], which orders the totals). */
+        private fun sendAck(total: Long) = conn.sendControl(control(CompanionProtocol.T_ACK) { put("bytes", total) })
 
+        /** Any thread. */
         private fun sendPing() = conn.sendControl(control(CompanionProtocol.T_PING))
 
         private fun sendFetch(name: String, fileId: String, fromOffset: Long) {
@@ -938,19 +973,6 @@ class CompanionEngine(
                 put("fileId", fileId)
                 put("fromOffset", fromOffset)
             })
-        }
-
-        private fun schedulePing(delayMs: Long) {
-            pingTask = schedule(delayMs.coerceAtLeast(1)) {
-                if (ended || failed) return@schedule
-                val idle = monotonicMs() - conn.lastSentAtMs
-                if (idle >= config.pingIdleMs) {
-                    guarded { sendPing() }
-                    schedulePing(config.pingIdleMs)
-                } else {
-                    schedulePing(config.pingIdleMs - idle)
-                }
-            }
         }
 
         private fun sampleSkew(pcUtcNowMs: Long, receivedAt: Long) {
@@ -1001,8 +1023,9 @@ class CompanionEngine(
 
     private fun currentTillTicks(): Long = mutex.withLock { tillTicks }
 
+    /** Only called once the store was read: when authenticating a stored pairing, or after the pairing's check. */
     private fun currentDeviceId(): String = mutex.withLock {
-        ensureLoadedLocked()
+        check(ensureLoadedLocked()) { "pairing store not loaded" }
         deviceId
     }
 
@@ -1010,21 +1033,42 @@ class CompanionEngine(
     // Helpers
     // ================================================================================================================
 
-    private fun ensureLoadedLocked() {
-        if (loaded) return
+    /**
+     * Loads the pairings once; returns whether they are loaded. While the store cannot be read, nothing is assumed
+     * (no new device id, no empty list that a later save would write over the stored one): the load is retried at most
+     * every [CompanionConfig.storeRetryMs], or at once when [force] is set (a user action).
+     */
+    private fun ensureLoadedLocked(force: Boolean = false): Boolean {
+        if (loaded) return true
+        val now = monotonicMs()
+        if (loadFailed && !force && now < nextLoadAtMs) return false
         val snapshot = try {
             repository.load()
         } catch (e: Exception) {
-            Log.e(TAG, "cannot load pairings", e)
-            PairingRepository.Snapshot(emptyList(), null, UUID.randomUUID().toString())
+            Log.w(TAG, "cannot read the pairings; retrying later", e)
+            loadFailed = true
+            nextLoadAtMs = now + config.storeRetryMs
+            return false
         }
         records = snapshot.records
         activeId = snapshot.activeId
         deviceId = snapshot.deviceId
         loaded = true
+        loadFailed = false
+        changed.signalAll()
+        return true
     }
 
+    private fun clearHaltLocked() {
+        haltedId = null
+        haltedReason = null
+    }
+
+    private fun fpMatches(a: String, b: String): Boolean = PairingCrypto.constantTimeEquals(a, b)
+
+    /** Never writes before the stored state was read (it would replace pairings that could not be read). */
     private fun persistLocked() {
+        if (!loaded) return
         try {
             repository.save(records, activeId)
         } catch (e: Exception) {
@@ -1039,11 +1083,6 @@ class CompanionEngine(
         records = records.map { if (it.id == id) change(it).also { c -> out = c } else it }
         return out
     }
-
-    private fun replaceRecord(id: String, change: (PairedCompanion) -> PairedCompanion): PairedCompanion? =
-        update {
-            replaceRecordLocked(id, change).also { if (it != null) persistLocked() }
-        }
 
     /** Ends the current connection and forgets per-companion live state. Mutex held. */
     private fun dropConnectionLocked() {

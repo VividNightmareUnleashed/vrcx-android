@@ -35,6 +35,29 @@ interface LogSink {
     fun onDisconnected()
 }
 
+/**
+ * Log-side hooks the companion client needs outside the stream. Optional: the implementer of [LogSink] (LogWatcher)
+ * also implements this, and the client skips a hook while it does not.
+ */
+interface CompanionMirrorControl {
+    /**
+     * The user forgot [companionId]: drop its mirror (`filesDir/logmirror/<companionId>/`) and everything kept for it.
+     * Called after [LogSink.onDisconnected] of that companion's last session; may block briefly.
+     */
+    fun forgetCompanion(companionId: String)
+
+    /**
+     * Registers (null: removes) the receiver of resend requests: when the mirror finds a gap or loses bytes, it calls
+     * [FetchRequester.requestFetch] and the client sends `fetch` (PROTOCOL.md §5.9) on the current session.
+     */
+    fun setFetchRequester(requester: FetchRequester?)
+}
+
+/** Asks the companion to resend [name] from [fromOffset]. Never blocks; ignored while no session is connected. */
+fun interface FetchRequester {
+    fun requestFetch(name: String, fileId: String, fromOffset: Long)
+}
+
 /** `info` message (PROTOCOL.md §5.4). */
 data class CompanionInfo(
     val companionVersion: String,

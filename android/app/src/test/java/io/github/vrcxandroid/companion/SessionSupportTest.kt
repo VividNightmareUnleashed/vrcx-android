@@ -4,8 +4,10 @@ import io.github.vrcxandroid.companion.OffsetTracker.Decision
 import io.github.vrcxandroid.logwatcher.MirroredFile
 import io.github.vrcxandroid.logwatcher.PcFileMeta
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import kotlin.random.Random
 
 class SessionSupportTest {
@@ -113,5 +115,68 @@ class SessionSupportTest {
             val d = b.delayFor(attempt % 12)
             assertTrue(d in 1_000..60_000)
         }
+    }
+
+    @Test
+    fun acksCoverConsumedBytesOnlyAndIncrease() {
+        val acks = AckCounter()
+        val sent = mutableListOf<Long>()
+        assertFalse(acks.ackIfAtLeast(1) { sent += it })
+        acks.consume(300)
+        assertFalse(acks.ackIfAtLeast(1_000) { sent += it })
+        assertTrue(acks.ackIfAtLeast(1) { sent += it })
+        assertFalse("nothing new", acks.ackIfAtLeast(1) { sent += it })
+        acks.consume(800)
+        assertTrue(acks.ackIfAtLeast(500) { sent += it })
+        assertEquals(listOf(300L, 1_100L), sent)
+        // A failed send leaves the total unacknowledged.
+        acks.consume(5)
+        try {
+            acks.ackIfAtLeast(1) { throw IOException("closed") }
+        } catch (_: IOException) {
+        }
+        assertTrue(acks.ackIfAtLeast(1) { sent += it })
+        assertEquals(1_105L, sent.last())
+    }
+
+    @Test
+    fun acksFromTwoThreadsStayInOrder() {
+        val acks = AckCounter()
+        val sent = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val consumer = Thread {
+            repeat(20_000) {
+                acks.consume(1)
+                acks.ackIfAtLeast(100) { total -> sent += total }
+            }
+        }
+        val keepAlive = Thread {
+            repeat(20_000) { acks.ackIfAtLeast(1) { total -> sent += total } }
+        }
+        consumer.start()
+        keepAlive.start()
+        consumer.join()
+        keepAlive.join()
+        acks.ackIfAtLeast(1) { total -> sent += total }
+        assertEquals(sent.sorted(), sent.toList())
+        assertEquals(sent.distinct(), sent.toList())
+        assertEquals(20_000L, sent.last())
+    }
+
+    @Test
+    fun defaultNetworkTrackerIgnoresOnlyTheRegistrationEcho() {
+        val t = DefaultNetworkTracker("wifi")
+        assertFalse("registration echo", t.onAvailable("wifi"))
+        assertTrue("switch to another network", t.onAvailable("cell"))
+        assertFalse("loss of a network that is not the default", t.onLost("wifi"))
+        assertTrue("loss of the default", t.onLost("cell"))
+        assertTrue("the same network coming back", t.onAvailable("cell"))
+    }
+
+    @Test
+    fun defaultNetworkTrackerReportsTheFirstNetworkAfterStartingWithoutOne() {
+        // Started in airplane mode or while Wi-Fi was still connecting: the first callback is a real arrival.
+        val t = DefaultNetworkTracker<String>(null)
+        assertTrue(t.onAvailable("wifi"))
+        assertFalse(t.onAvailable("wifi"))
     }
 }

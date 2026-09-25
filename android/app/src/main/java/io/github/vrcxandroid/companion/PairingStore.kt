@@ -7,17 +7,25 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+
+/** The store cannot be read or written right now; a later call may succeed. Nothing is known about its content. */
+class SecureStoreException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /**
  * Small key/value store for secrets. Android: EncryptedSharedPreferences ([EncryptedPrefsSecureStore]); JVM tests:
  * [InMemorySecureStore].
  */
 interface SecureStore {
+    /** The value of [key], or null when it is absent. Throws [SecureStoreException] when it cannot be read now. */
     fun get(key: String): String?
 
-    /** Stores [value], or removes the key when it is null. Writes are durable when this returns. */
+    /**
+     * Stores [value], or removes the key when it is null. Writes are durable when this returns; throws
+     * [SecureStoreException] when the store cannot be written now.
+     */
     fun put(key: String, value: String?)
 }
 
@@ -71,7 +79,8 @@ data class PairedCompanion(
 
     /** Moves [host] to the front of [hosts] (the address that worked last is tried first). */
     fun withPreferredHost(host: String): PairedCompanion =
-        if (hosts.firstOrNull() == host) this else copy(hosts = listOf(host) + hosts.filter { it != host })
+        if (hosts.firstOrNull() == host) this
+        else copy(hosts = (listOf(host) + hosts.filter { it != host }).take(MAX_HOSTS))
 
     companion object {
         /** Addresses remembered per companion (newest first); older DHCP leases fall off the end. */
@@ -97,25 +106,32 @@ data class PairedCompanion(
     }
 }
 
-/** Everything the client persists: pairings, the active companion and this phone's device id. */
+/**
+ * Everything the client persists: pairings, the active companion and this phone's device id.
+ *
+ * [load] lets a [SecureStoreException] through: a store that cannot be read now is never mistaken for an empty one, so
+ * no new device id replaces the stored one (which would break every pairing) and nothing is overwritten.
+ */
 class PairingRepository(private val store: SecureStore) {
     data class Snapshot(val records: List<PairedCompanion>, val activeId: String?, val deviceId: String)
 
+    /** @throws SecureStoreException when the store cannot be read now */
     fun load(): Snapshot {
+        val rawPaired = store.get(KEY_PAIRED)
+        val storedDeviceId = store.get(KEY_DEVICE_ID)
+        val storedActive = store.get(KEY_ACTIVE)
         val records = try {
-            (store.get(KEY_PAIRED)?.let { CompanionJson.parseToJsonElement(it) } as? JsonArray)
+            (rawPaired?.let { CompanionJson.parseToJsonElement(it) } as? JsonArray)
                 ?.mapNotNull { (it as? JsonObject)?.let(PairedCompanion::fromStoredJson) }
                 .orEmpty()
         } catch (e: Exception) {
+            // Readable but not valid JSON: it will never parse, so the next save replaces it.
             Log.w(TAG, "stored pairings unreadable, starting empty")
             emptyList()
         }
-        var deviceId = store.get(KEY_DEVICE_ID)
-        if (deviceId.isNullOrBlank()) {
-            deviceId = UUID.randomUUID().toString()
-            store.put(KEY_DEVICE_ID, deviceId)
-        }
-        val activeId = store.get(KEY_ACTIVE)?.takeIf { id -> records.any { it.id == id } } ?: records.firstOrNull()?.id
+        val deviceId = storedDeviceId?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString().also { store.put(KEY_DEVICE_ID, it) }
+        val activeId = storedActive?.takeIf { id -> records.any { it.id == id } } ?: records.firstOrNull()?.id
         return Snapshot(records, activeId, deviceId)
     }
 

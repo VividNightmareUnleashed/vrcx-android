@@ -1,5 +1,6 @@
 package io.github.vrcxandroid.companion
 
+import io.github.vrcxandroid.logwatcher.FetchRequester
 import io.github.vrcxandroid.logwatcher.LogSink
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
@@ -15,8 +16,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.ServerSocket
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class CompanionEngineTest {
@@ -43,9 +47,9 @@ class CompanionEngineTest {
         backoffMaxMs: Long = 300,
         reconnectDiscoveryMs: Long = 0,
         discoveryPort: Int = 9,
-        heartbeatReplyAfterMs: Long = 10_000,
-        pingIdleMs: Long = 30_000,
+        keepAliveAfterMs: Long = 10_000,
         ackEveryBytes: Long = 512L * 1024,
+        storeRetryMs: Long = 5_000,
     ) = CompanionConfig(
         connectTimeoutMs = 2_000,
         readTimeoutMs = 5_000,
@@ -55,9 +59,9 @@ class CompanionEngineTest {
         discoveryPort = discoveryPort,
         discoveryTargets = { listOf(loopback) },
         subscribeWaitMs = subscribeWaitMs,
-        heartbeatReplyAfterMs = heartbeatReplyAfterMs,
-        pingIdleMs = pingIdleMs,
+        keepAliveAfterMs = keepAliveAfterMs,
         ackEveryBytes = ackEveryBytes,
+        storeRetryMs = storeRetryMs,
     )
 
     private fun engine(
@@ -84,8 +88,12 @@ class CompanionEngineTest {
         return this
     }
 
-    private fun pairedStore(server: FakeCompanionServer, deviceId: String = "device-1", hosts: List<String> = listOf("127.0.0.1")): InMemorySecureStore {
-        val store = InMemorySecureStore()
+    private fun pairedStore(
+        server: FakeCompanionServer,
+        deviceId: String = "device-1",
+        hosts: List<String> = listOf("127.0.0.1"),
+        store: InMemorySecureStore = InMemorySecureStore(),
+    ): InMemorySecureStore {
         store.put(PairingRepository.KEY_DEVICE_ID, deviceId)
         val token = PairingCrypto.randomToken()
         server.tokens[deviceId] = token
@@ -369,16 +377,70 @@ class CompanionEngineTest {
     }
 
     @Test
-    fun answersHeartbeatsAndPingsWhenIdle() {
+    fun answersHeartbeatsAfterSilenceWithAPendingAckOrAPing() {
         val server = server().withLogs()
-        engine(pairedStore(server), config(heartbeatReplyAfterMs = 0, pingIdleMs = 400))
+        engine(pairedStore(server), config(keepAliveAfterMs = 1_500))
         val conn = server.nextConnection()
         awaitSyncCount(1)
         conn.awaitMessage("ack")
+        // Right after the ack the phone has just spoken: a heartbeat needs no answer.
+        conn.heartbeat()
+        Thread.sleep(300)
+        assertTrue(conn.messages.none { it.s("t") == "ping" || it.s("t") == "ack" })
+
+        // Live bytes below the ack threshold, then silence: the next heartbeat is answered with their ack.
+        val f = server.files.first { it.name == file1 }
+        val length = f.bytes.size.toLong()
+        f.append("live line\n")
+        conn.sendData(f.name, f.fileId, length, "live line\n".toByteArray())
+        waitFor(message = "live data") { sink.events.contains("data:$file1@$length+10") }
+        Thread.sleep(1_700)
+        conn.heartbeat()
+        val ack = conn.awaitMessage("ack", 3_000)
+        assertEquals(conn.sentDataBytes.get().toString(), (ack["bytes"] as JsonPrimitive).content)
+
+        // Nothing left to acknowledge: a ping.
+        Thread.sleep(1_700)
         conn.heartbeat()
         conn.awaitMessage("ping", 3_000)
-        // Without any traffic the idle timer sends another ping.
-        conn.awaitMessage("ping", 3_000)
+    }
+
+    @Test
+    fun keepAliveContinuesWhileALogSinkCallIsSlow() {
+        val server = server().withLogs()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slowSink = object : LogSink by sink {
+            override fun onProcessState(vrchatRunning: Boolean, steamVrRunning: Boolean, pcUtcNowMs: Long) {
+                entered.countDown()
+                release.await(30, TimeUnit.SECONDS)
+                sink.onProcessState(vrchatRunning, steamVrRunning, pcUtcNowMs)
+            }
+        }
+        engine(pairedStore(server), config(keepAliveAfterMs = 300), logSink = slowSink)
+        val conn = server.nextConnection()
+        assertTrue(entered.await(10, TimeUnit.SECONDS))
+        try {
+            // The sink thread is stuck in onProcessState (like a LogWatcher pass over a large mirror) while the
+            // companion keeps sending heartbeats.
+            repeat(10) {
+                conn.heartbeat()
+                Thread.sleep(150)
+            }
+            val sent = (conn.seen + conn.messages).mapNotNull { it.s("t") }
+            assertTrue("phone messages during the stall: $sent", sent.count { it == "ping" } >= 2)
+            // Nothing was consumed yet (the data frames wait behind the stalled call), so nothing is acknowledged.
+            assertTrue("phone messages during the stall: $sent", "ack" !in sent)
+        } finally {
+            release.countDown()
+        }
+        awaitSyncCount(1)
+        val total = conn.sentDataBytes.get().toString()
+        waitFor(message = "ack of everything") {
+            (conn.seen + conn.messages).any { it.s("t") == "ack" && (it["bytes"] as JsonPrimitive).content == total }
+        }
+        assertFalse(conn.closed)
+        assertMirrorMatches(server, file1, file2)
     }
 
     @Test
@@ -445,7 +507,9 @@ class CompanionEngineTest {
         val f = server.files.first { it.name == file2 }
         val before = sink.dataEvents().size
 
-        engine.requestFetch(file2, "0002", 0)
+        // As the log side calls it (CompanionMirrorControl.setFetchRequester).
+        val requester: FetchRequester = engine
+        requester.requestFetch(file2, "0002", 0)
         val fetch = conn.awaitMessage("fetch")
         assertEquals("0", (fetch["fromOffset"] as JsonPrimitive).content)
         // A live frame sent before the companion saw the fetch is dropped; the answer from 0 is delivered.
@@ -560,6 +624,27 @@ class CompanionEngineTest {
     }
 
     @Test
+    fun revokedReasonSurvivesStoppingAndRestartingTheLoop() {
+        val server = server()
+        val store = pairedStore(server)
+        server.tokens.remove("device-1")
+        val engine = engine(store)
+        awaitStatus(engine, "error")
+        assertEquals(CompanionEngine.REVOKED, engine.state().s("lastError"))
+
+        // Background mode off and the app hidden, then shown again (ARCHITECTURE.md §7).
+        engine.setRunning(false)
+        assertEquals("idle", engine.state().s("status"))
+        engine.setRunning(true)
+        val state = engine.state()
+        assertEquals("error", state.s("status"))
+        assertEquals(CompanionEngine.REVOKED, state.s("lastError"))
+        Thread.sleep(400)
+        assertEquals(1, server.accepted.get())
+        assertEquals(CompanionEngine.REVOKED, emitter.states.last().s("lastError"))
+    }
+
+    @Test
     fun protocolVersionMismatchIsReported() {
         val server = server()
         server.helloVersion = 2
@@ -650,40 +735,62 @@ class CompanionEngineTest {
     @Test
     fun rediscoversTheCompanionWhenStoredHostsFail() {
         val server = server().withLogs()
-        val responder = FakeDiscoveryResponder({
-            buildJsonObject {
-                put("t", "vrcx-companion")
-                put("v", 1)
-                put("id", server.id)
-                put("name", "TESTPC")
-                put("port", server.port)
-                put("fp", server.fp)
-                put("pairing", false)
-            }
-        }).also { closeables += it }
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) })
+            .also { closeables += it }
         val store = pairedStore(server, hosts = listOf("127.0.0.2"))
         val engine = engine(store, config(reconnectDiscoveryMs = 1_500, discoveryPort = responder.port))
         server.nextConnection(15_000)
         awaitStatus(engine, "connected")
         val hosts = PairingRepository(store).load().records.single().hosts
-        assertEquals("127.0.0.1", hosts.first())
-        assertTrue(hosts.contains("127.0.0.2"))
+        assertEquals(listOf("127.0.0.1", "127.0.0.2"), hosts)
     }
 
     @Test
-    fun discoverReturnsCompanionsAndRefreshesKnownHosts() {
+    fun spoofedDiscoveryReplyWithTheSameIdDoesNotHideTheCompanion() {
+        val server = server().withLogs()
+        // Sent just before the genuine reply: same id, another key.
+        val spoof = discoveryReply(server.id, TestKeys.fingerprint("impostor"), server.port).toString().toByteArray()
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) }, listOf(spoof))
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val engine = engine(store, config(reconnectDiscoveryMs = 1_500, discoveryPort = responder.port))
+        server.nextConnection(15_000)
+        awaitStatus(engine, "connected")
+        assertEquals(listOf("127.0.0.1", "127.0.0.2"), PairingRepository(store).load().records.single().hosts)
+    }
+
+    @Test
+    fun discoveredAddressesAreStoredOnlyAfterAPinnedConnectionWorked() {
         val server = server()
-        val responder = FakeDiscoveryResponder({
-            buildJsonObject {
-                put("t", "vrcx-companion")
-                put("v", 1)
-                put("id", server.id)
-                put("name", "TESTPC")
-                put("port", server.port)
-                put("fp", server.fp)
-                put("pairing", true)
-            }
-        }).also { closeables += it }
+        val closedPort = ServerSocket(0).use { it.localPort }
+        // Right id and fingerprint, but nothing that proves the key listens there.
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, closedPort) })
+            .also { closeables += it }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val before = PairingRepository(store).load().records.single()
+        val engine = engine(
+            store,
+            config(
+                reconnectDiscoveryMs = 1_000,
+                discoveryPort = responder.port,
+                backoffBaseMs = 30_000,
+                backoffMaxMs = 30_000,
+            ),
+        )
+        waitFor(message = "failed attempt, state ${engine.state()}") {
+            responder.requests.isNotEmpty() && engine.state().s("lastError") == PairingException.UNREACHABLE
+        }
+        val after = PairingRepository(store).load().records.single()
+        assertEquals(before.hosts, after.hosts)
+        assertEquals(before.port, after.port)
+        assertEquals(0, server.accepted.get())
+    }
+
+    @Test
+    fun discoverReturnsCompanionsWithoutStoringTheirAddresses() {
+        val server = server()
+        val responder = FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port, pairing = true) })
+            .also { closeables += it }
         val store = pairedStore(server, hosts = listOf("192.168.77.1"))
         val engine = engine(store, config(discoveryPort = responder.port).copy(startRunning = false))
         val found = runBlocking { engine.discover(500) }
@@ -691,6 +798,56 @@ class CompanionEngineTest {
         assertEquals(server.id, entry.s("id"))
         assertEquals("127.0.0.1", entry.s("host"))
         assertEquals(true, entry.b("pairing"))
-        assertEquals(listOf("127.0.0.1", "192.168.77.1"), PairingRepository(store).load().records.single().hosts)
+        assertEquals(listOf("192.168.77.1"), PairingRepository(store).load().records.single().hosts)
+        assertEquals(0, server.accepted.get())
+    }
+
+    @Test
+    fun discoveringTheActiveCompanionEndsTheBackoffWait() {
+        val server = server().withLogs()
+        val port = DatagramSocket(0).use { it.localPort }
+        val store = pairedStore(server, hosts = listOf("127.0.0.2"))
+        val engine = engine(
+            store,
+            config(reconnectDiscoveryMs = 800, discoveryPort = port, backoffBaseMs = 60_000, backoffMaxMs = 60_000),
+        )
+        // Nobody answers the first attempt's discovery: the loop then waits a minute.
+        waitFor(message = "failed attempt, state ${engine.state()}") {
+            engine.state().s("lastError") == PairingException.UNREACHABLE
+        }
+        FakeDiscoveryResponder({ discoveryReply(server.id, server.fp, server.port) }, port = port)
+            .also { closeables += it }
+        val found = runBlocking { engine.discover(500) }
+        assertEquals(1, found.size)
+        server.nextConnection(15_000)
+        awaitStatus(engine, "connected")
+    }
+
+    // ---- pairing store ------------------------------------------------------------------------------------------
+
+    @Test
+    fun unreadableStoreIsRetriedWithoutReplacingTheDeviceId() {
+        val server = server().withLogs()
+        val store = FlakySecureStore()
+        pairedStore(server, store = store.inner)
+        store.broken = true
+        val engine = engine(store, config(storeRetryMs = 200))
+
+        val state = engine.state()
+        assertEquals("error", state.s("status"))
+        assertEquals(PairingException.STORAGE, state.s("lastError"))
+        assertEquals(0, (state["paired"] as JsonArray).size)
+        // A pairing would need the stored device id and would overwrite the unreadable pairings.
+        assertEquals(PairingException.STORAGE, pairingError { engine.pair(target(server), "ABCDE12345") })
+        Thread.sleep(500)
+        assertEquals(0, server.accepted.get())
+        assertEquals(0, store.writes.get())
+
+        // The Keystore is back: the loop picks the stored pairing up by itself and authenticates with the old id.
+        store.broken = false
+        server.nextConnection()
+        awaitStatus(engine, "connected")
+        assertEquals("device-1", store.inner.get(PairingRepository.KEY_DEVICE_ID))
+        assertEquals(1, (engine.state()["paired"] as JsonArray).size)
     }
 }

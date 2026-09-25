@@ -27,7 +27,11 @@ interface MulticastLockHandle {
     }
 }
 
-/** One discovery reply (PROTOCOL.md §2). [hosts] lists every local address the same companion answered from. */
+/**
+ * One discovery reply (PROTOCOL.md §2). [hosts] lists every local address that answered with the same id and
+ * fingerprint. Nothing in a reply is authenticated: only a pinned TLS connection proves that an address is the
+ * companion.
+ */
 data class DiscoveredCompanion(
     val id: String,
     val name: String,
@@ -51,7 +55,9 @@ data class DiscoveredCompanion(
 
 /**
  * UDP discovery: sends `{"t":"vrcx-discover","v":1}` to 255.255.255.255 and every interface's directed broadcast, then
- * collects replies until the timeout. Replies from non-local sources are ignored.
+ * collects replies until the timeout. Replies from non-local sources are ignored. Replies are grouped by id and
+ * fingerprint, so a second responder that claims a known id with another key (a spoofer, or a reinstalled companion)
+ * is listed on its own and never hides the genuine one.
  */
 class CompanionDiscovery(
     private val multicastLock: MulticastLockHandle,
@@ -63,7 +69,7 @@ class CompanionDiscovery(
      * The request is repeated once after a third of the timeout because UDP broadcasts get lost on busy Wi-Fi.
      */
     fun discover(timeoutMs: Long, stopWhen: ((DiscoveredCompanion) -> Boolean)? = null): List<DiscoveredCompanion> {
-        val found = LinkedHashMap<String, DiscoveredCompanion>()
+        val found = LinkedHashMap<Pair<String, String>, DiscoveredCompanion>()
         val acquired = multicastLock.acquire()
         try {
             DatagramSocket(null).use { socket ->
@@ -92,8 +98,9 @@ class CompanionDiscovery(
                         continue
                     }
                     val reply = parseReply(packet) ?: continue
-                    val existing = found[reply.id]
-                    found[reply.id] = if (existing == null) reply else
+                    val key = reply.id to reply.fp
+                    val existing = found[key]
+                    found[key] = if (existing == null) reply else
                         existing.copy(hosts = (existing.hosts + reply.host).distinct())
                     if (stopWhen?.invoke(reply) == true) break
                 }

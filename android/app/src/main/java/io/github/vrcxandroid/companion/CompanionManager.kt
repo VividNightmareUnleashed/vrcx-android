@@ -6,10 +6,10 @@ import android.util.Log
 import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.CompanionController
 import io.github.vrcxandroid.EventEmitter
+import io.github.vrcxandroid.logwatcher.CompanionMirrorControl
 import io.github.vrcxandroid.logwatcher.LogSink
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import java.io.File
 
 /**
  * LAN client for the Windows companion (docs/PROTOCOL.md). The protocol logic lives in [CompanionEngine]; this class
@@ -20,9 +20,13 @@ import java.io.File
  * - [state]: `{status: 'unpaired'|'idle'|'searching'|'connecting'|'connected'|'error', activeId,
  *   paired: [{id, name, hosts, port, fp, pairedAt, lastSeen}], machineName, tz, vrchatRunning, steamVrRunning,
  *   syncing, lastError}`; `pairedAt`/`lastSeen` are epoch milliseconds. `lastError` is null or one of `unreachable`,
- *   `fingerprint`, `not-local`, `version`, `protocol`, `revoked` (pairing removed on the PC).
+ *   `fingerprint`, `not-local`, `version`, `protocol`, `revoked` (pairing removed on the PC), `storage` (the pairing
+ *   store cannot be read right now; status is then `error`).
  * - [discover]: `[{id, name, host, port, fp, pairing, hosts}]`.
  * - [pair] / [pairWithQr] reject with [PairingException] (`PairingException: <code>`).
+ *
+ * The log side is reached through [LogSink] for the stream and, when the LogWatcher implements it,
+ * [CompanionMirrorControl] for `forget` (its mirror is dropped) and for gaps the mirror finds (answered with `fetch`).
  *
  * The connection loop starts with the process (no network traffic without a pairing); the host stops it with
  * `setRunning(false)` when background mode is off and the app has been hidden for a while (ARCHITECTURE.md §7).
@@ -42,10 +46,15 @@ class CompanionManager(private val context: Context) : CompanionController {
         },
         deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android",
         multicastLock = AndroidMulticastLock(appContext),
-        mirrorCleaner = ::deleteMirror,
+        mirrorCleaner = ::forgetMirror,
     )
 
     private val networkMonitor = AndroidNetworkMonitor(appContext, engine::onNetworkChanged).also { it.start() }
+
+    init {
+        // AppGraph creates the LogWatcher first; resolveLogSink repeats this for any later order.
+        mirrorControl()?.setFetchRequester(engine)
+    }
 
     override fun state(): JsonObject = engine.state()
     override suspend fun discover(timeoutMs: Long): JsonArray = engine.discover(timeoutMs)
@@ -56,37 +65,37 @@ class CompanionManager(private val context: Context) : CompanionController {
     override fun setRunning(running: Boolean) = engine.setRunning(running)
     override fun onTillDateChanged(utcTicks: Long) = engine.onTillDateChanged(utcTicks)
 
-    /** Lets the log mirror ask for a resend after it found a gap or lost a file (PROTOCOL.md §5.9 `fetch`). */
+    /** Asks for a resend after the log mirror found a gap or lost a file (PROTOCOL.md §5.9 `fetch`). */
     fun requestFetch(name: String, fileId: String, fromOffset: Long) = engine.requestFetch(name, fileId, fromOffset)
 
+    private fun logWatcher(): Any? = try {
+        AppGraph.logWatcher
+    } catch (e: UninitializedPropertyAccessException) {
+        null
+    }
+
+    private fun mirrorControl(): CompanionMirrorControl? = logWatcher() as? CompanionMirrorControl
+
+    /** Called once per session, on the sink thread. */
     private fun resolveLogSink(): LogSink {
-        val watcher: Any = try {
-            AppGraph.logWatcher
-        } catch (e: UninitializedPropertyAccessException) {
-            return NullLogSink
-        }
+        val watcher = logWatcher() ?: return NullLogSink
+        (watcher as? CompanionMirrorControl)?.setFetchRequester(engine)
         return watcher as? LogSink ?: NullLogSink.also {
             Log.w(TAG, "LogWatcher does not implement LogSink yet; the companion stream is not subscribed")
         }
     }
 
-    /** `forget`: the mirror of a forgotten companion (ARCHITECTURE.md §8: filesDir/logmirror/<companionId>/). */
-    private fun deleteMirror(companionId: String) {
-        val owner = try {
-            AppGraph.logWatcher as Any
-        } catch (e: UninitializedPropertyAccessException) {
-            null
-        }
-        if (owner is CompanionMirrorOwner) {
-            owner.forgetCompanion(companionId)
+    /**
+     * `forget`: the log side owns the mirror (ARCHITECTURE.md §8: filesDir/logmirror/<companionId>/) and may have it
+     * open, so only it deletes the files.
+     */
+    private fun forgetMirror(companionId: String) {
+        val control = mirrorControl()
+        if (control == null) {
+            Log.w(TAG, "LogWatcher does not implement CompanionMirrorControl; the forgotten companion's mirror stays")
             return
         }
-        if (!CompanionProtocol.isSafeId(companionId)) return
-        val root = File(appContext.filesDir, "logmirror")
-        val dir = File(root, companionId)
-        if (dir.parentFile == root && dir.exists() && !dir.deleteRecursively()) {
-            Log.w(TAG, "could not delete the mirror of a forgotten companion")
-        }
+        control.forgetCompanion(companionId)
     }
 
     private companion object {

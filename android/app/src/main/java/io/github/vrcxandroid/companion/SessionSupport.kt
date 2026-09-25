@@ -2,6 +2,7 @@ package io.github.vrcxandroid.companion
 
 import io.github.vrcxandroid.logwatcher.MirroredFile
 import io.github.vrcxandroid.logwatcher.PcFileMeta
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 /**
@@ -116,5 +117,61 @@ class Backoff(private val baseMs: Long, private val maxMs: Long, private val ran
         val raw = minOf(maxMs, baseMs shl shift)
         val jittered = (raw * (0.85 + random.nextDouble() * 0.3)).toLong()
         return jittered.coerceIn(baseMs, maxMs)
+    }
+}
+
+/**
+ * `ack` bookkeeping of one connection (PROTOCOL.md §5.9): the data-frame bytes the log side has consumed, and the
+ * total last acknowledged. [consume] runs on the sink thread after a frame was handled; [ackIfAtLeast] may run on any thread
+ * (the connection loop sends acks with its keep-alives), and its sends are serialized so the companion always sees
+ * increasing totals.
+ */
+class AckCounter {
+    private val consumed = AtomicLong()
+    private val lock = Any()
+    private var acked = 0L // guarded by lock
+
+    val consumedBytes: Long get() = consumed.get()
+
+    fun consume(bytes: Long) {
+        consumed.addAndGet(bytes)
+    }
+
+    /**
+     * Calls [send] with the consumed total when at least [minBytes] (at least 1) were consumed since the last ack, and
+     * returns whether it did. An exception from [send] leaves the counter unchanged.
+     */
+    fun ackIfAtLeast(minBytes: Long, send: (Long) -> Unit): Boolean = synchronized(lock) {
+        val total = consumed.get()
+        if (total - acked < minBytes.coerceAtLeast(1)) return false
+        send(total)
+        acked = total
+        true
+    }
+}
+
+/**
+ * Tells which `ConnectivityManager` default-network callbacks are real changes. [initial] is the default network when
+ * the callback is registered (null when there is none): only a callback for that same network is the echo of the
+ * registration. Any other arrival, including the first network after starting without one, is a change, and so is the
+ * loss of the current network.
+ */
+class DefaultNetworkTracker<N : Any>(initial: N?) {
+    private var current: N? = initial
+
+    /** Returns whether [network] replaces the current default network. */
+    @Synchronized
+    fun onAvailable(network: N): Boolean {
+        val changed = network != current
+        current = network
+        return changed
+    }
+
+    /** Returns whether the current default network was lost. */
+    @Synchronized
+    fun onLost(network: N): Boolean {
+        if (network != current) return false
+        current = null
+        return true
     }
 }

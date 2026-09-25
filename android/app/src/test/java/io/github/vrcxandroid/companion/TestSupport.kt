@@ -432,12 +432,17 @@ class FakeCompanionServer(
     }
 }
 
-/** UDP responder answering discovery requests like the companion (PROTOCOL.md §2). */
+/**
+ * UDP responder answering discovery requests like the companion (PROTOCOL.md §2). [extraReplies] are sent before the
+ * reply, from the same address.
+ */
 class FakeDiscoveryResponder(
     private val reply: () -> JsonObject,
     private val extraReplies: List<ByteArray> = emptyList(),
+    address: String = "127.0.0.1",
+    port: Int = 0,
 ) : Closeable {
-    private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
+    private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName(address), port))
     val port: Int get() = socket.localPort
     val requests = CopyOnWriteArrayList<String>()
     private val thread = Thread({ loop() }, "fake-discovery").apply { isDaemon = true; start() }
@@ -459,6 +464,38 @@ class FakeDiscoveryResponder(
     }
 
     override fun close() = socket.close()
+}
+
+/** `vrcx-companion` discovery reply. */
+fun discoveryReply(id: String, fp: String, port: Int, pairing: Boolean = false, name: String = "TESTPC") =
+    buildJsonObject {
+        put("t", "vrcx-companion")
+        put("v", 1)
+        put("id", id)
+        put("name", name)
+        put("port", port)
+        put("fp", fp)
+        put("pairing", pairing)
+    }
+
+/**
+ * [SecureStore] that fails every read and write while [broken] is set, like a store whose Keystore is unavailable.
+ * [writes] counts the writes that went through.
+ */
+class FlakySecureStore(val inner: InMemorySecureStore = InMemorySecureStore()) : SecureStore {
+    @Volatile var broken = false
+    val writes = AtomicInteger()
+
+    override fun get(key: String): String? {
+        if (broken) throw SecureStoreException("store unavailable")
+        return inner.get(key)
+    }
+
+    override fun put(key: String, value: String?) {
+        if (broken) throw SecureStoreException("store unavailable")
+        writes.incrementAndGet()
+        inner.put(key, value)
+    }
 }
 
 class CountingLock : MulticastLockHandle {

@@ -140,4 +140,37 @@ class PairingTest {
         repo.save(emptyList(), null)
         assertNull(repo.load().activeId)
     }
+
+    @Test
+    fun unreadableStoreIsNotMistakenForAnEmptyOne() {
+        val store = FlakySecureStore()
+        val rec = PairedCompanion("abc", "PC", "fp", "secret", listOf("192.168.0.2"), 49460, 1, 2)
+        store.inner.put(PairingRepository.KEY_DEVICE_ID, "device-1")
+        PairingRepository(store.inner).save(listOf(rec), "abc")
+        store.broken = true
+        try {
+            PairingRepository(store).load()
+            fail("expected SecureStoreException")
+        } catch (e: SecureStoreException) {
+            // no new device id, nothing written
+        }
+        store.broken = false
+        val loaded = PairingRepository(store).load()
+        assertEquals("device-1", loaded.deviceId)
+        assertEquals(listOf(rec), loaded.records)
+        assertEquals(0, store.writes.get())
+    }
+
+    @Test
+    fun preferredHostComesFirstAndTheListStaysBounded() {
+        val hosts = (1..PairedCompanion.MAX_HOSTS).map { "192.168.0.$it" }
+        val rec = PairedCompanion("abc", "PC", "fp", "t", hosts, 49460, 1, 2)
+        val moved = rec.withPreferredHost("192.168.0.3")
+        assertEquals("192.168.0.3", moved.hosts.first())
+        assertEquals(hosts.toSet(), moved.hosts.toSet())
+        val added = rec.withPreferredHost("10.0.0.9")
+        assertEquals("10.0.0.9", added.hosts.first())
+        assertEquals(PairedCompanion.MAX_HOSTS, added.hosts.size)
+        assertFalse(added.hosts.contains(hosts.last()))
+    }
 }

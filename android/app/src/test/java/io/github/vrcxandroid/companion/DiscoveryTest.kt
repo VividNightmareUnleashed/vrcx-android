@@ -62,6 +62,35 @@ class DiscoveryTest {
     }
 
     @Test
+    fun repliesAreGroupedByIdAndFingerprint() {
+        val genuine = { discoveryReply("companion-1", "fp-genuine", 49470) }
+        // A second responder claims the same id with another key and answers first.
+        val spoof = listOf(discoveryReply("companion-1", "fp-spoof", 49470).toString().toByteArray())
+        FakeDiscoveryResponder(genuine, spoof).use { first ->
+            // The same companion also answers from a second local address.
+            FakeDiscoveryResponder(genuine, address = "127.0.0.2", port = first.port).use {
+                val targets = listOf(loopback, InetAddress.getByName("127.0.0.2"))
+                val found = CompanionDiscovery(MulticastLockHandle.NONE, first.port) { targets }.discover(600)
+                    .associateBy { it.fp }
+                assertEquals(setOf("fp-spoof", "fp-genuine"), found.keys)
+                assertEquals(listOf("127.0.0.1"), found.getValue("fp-spoof").hosts)
+                assertEquals(listOf("127.0.0.1", "127.0.0.2"), found.getValue("fp-genuine").hosts.sorted())
+            }
+        }
+    }
+
+    @Test
+    fun earlyStopWaitsForTheWantedFingerprint() {
+        val spoof = listOf(discoveryReply("companion-1", "fp-spoof", 49470).toString().toByteArray())
+        FakeDiscoveryResponder({ discoveryReply("companion-1", "fp-genuine", 49470) }, spoof).use { responder ->
+            val discovery = CompanionDiscovery(MulticastLockHandle.NONE, responder.port) { listOf(loopback) }
+            val wanted = { c: DiscoveredCompanion -> c.id == "companion-1" && c.fp == "fp-genuine" }
+            val found = discovery.discover(5_000, wanted)
+            assertEquals("fp-genuine", found.first(wanted).fp)
+        }
+    }
+
+    @Test
     fun noAnswerReturnsEmptyAfterTheTimeout() {
         val discovery = CompanionDiscovery(MulticastLockHandle.NONE, 9) { listOf(loopback) }
         assertTrue(discovery.discover(300).isEmpty())

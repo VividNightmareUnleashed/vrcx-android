@@ -61,8 +61,9 @@ open class ProtocolException(message: String) : IOException(message)
 /**
  * Rejection for `AndroidHost.CompanionPair` / `CompanionScanQr`: the page sees `PairingException: <code>`
  * (ARCHITECTURE.md §5.1). Codes: `code`, `expired`, `closed`, `unreachable`, `not-local`, `fingerprint`, plus
- * `version` (the companion speaks another protocol version), `invalid-qr` (not a vrcxc://pair payload) and `protocol`
- * (malformed companion messages).
+ * `version` (the companion speaks another protocol version), `invalid-qr` (not a vrcxc://pair payload), `protocol`
+ * (malformed companion messages) and `storage` (the encrypted pairing store cannot be read right now; also the state's
+ * `lastError` meanwhile).
  */
 class PairingException(val code: String, cause: Throwable? = null) : DotNetException("PairingException", code) {
     init {
@@ -79,6 +80,7 @@ class PairingException(val code: String, cause: Throwable? = null) : DotNetExcep
         const val VERSION = "version"
         const val INVALID_QR = "invalid-qr"
         const val PROTOCOL = "protocol"
+        const val STORAGE = "storage"
 
         /** `pairFail.reason` values the companion may send; anything else is reported as [CODE]. */
         fun fromPairFail(reason: String?): PairingException = PairingException(
