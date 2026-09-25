@@ -1,0 +1,26 @@
+# BOMs, line terminators, malformed UTF-8 (maximal subparts), characters split across polls.
+holdtail
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-10_16-00-00.txt 2024-05-10T14:00:00Z
+write output_log_2024-05-10_16-00-00.txt 2024-05-10T16:00:01Z encoding-1.bin
+get
+lines
+flag
+write output_log_2024-05-10_16-00-00.txt 2024-05-10T16:00:02Z encoding-2.bin
+get
+lines
+flag
+write output_log_2024-05-10_16-00-00.txt 2024-05-10T16:00:03Z encoding-3.bin
+get
+lines
+flag
+write output_log_2024-05-10_16-00-00.txt 2024-05-10T16:00:04Z encoding-4.bin
+get
+lines
+flag
+file output_log_2024-05-10_16-30-00.txt 2024-05-10T16:30:00Z
+write output_log_2024-05-10_16-30-00.txt 2024-05-10T16:30:01Z encoding-5.bin
+get
+lines
+flag

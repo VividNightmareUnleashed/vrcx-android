@@ -1,0 +1,12 @@
+# Branch A parsers A1-A26 with their edge cases, Europe/Berlin (UTC+2 in May).
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-10_11-59-00.txt 2024-05-10T09:59:00Z
+write output_log_2024-05-10_11-59-00.txt 2024-05-10T10:05:00Z parsers-a.bin
+get
+lines
+flag
+text output_log_2024-05-10_11-59-00.txt 2024-05-10T10:10:00Z 2024.05.10 12:10:00 Log        -  [Behaviour] OnPlayerJoined Live (usr_live)\n2024.05.10 12:10:01 Log        -  [Behaviour] OnLeftRoom\n
+get
+lines
+flag

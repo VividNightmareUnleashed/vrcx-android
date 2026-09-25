@@ -1,0 +1,41 @@
+--- get
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:00.000Z","player-joined","BomFirst","usr_bom"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:01.000Z","player-joined","CrLf","usr_crlf"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:02.000Z","player-joined","Lf","usr_lf"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:03.000Z","player-joined","Cr","usr_cr"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:04.000Z","player-joined","AfterEmpty","usr_e"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:05.000Z","vrcx","a\uFFFDb\uFFFDc\uFFFD\uFFFDd\uFFFD\uFFFD\uFFFDe\uFFFD\uFFFDf\uFFFDg\uFFFD\uFFFD\uFFFD\uFFFDh\uFFFD\uFFFD\uFFFDi\uD83D\uDE00j"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:06.000Z","player-joined","Bad\uFFFDName","usr_bad"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:07.000Z","vrcx","nel\u0085ls\u2028ps\u2029vt\u000Bff\fnul\u0000end"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:08.000Z","vrcx","tab\there"]
+--- end get calls=2
+--- lines count=0
+--- flag false
+--- get
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:10.000Z","player-joined","Split\u2661Heart","usr_split"]
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:11.000Z","player-joined","ChunkCr","usr_chunkcr"]
+--- end get calls=2
+--- lines count=2
+Q ["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:10.000Z","player-joined","Split\u2661Heart","usr_split"]
+Q ["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:11.000Z","player-joined","ChunkCr","usr_chunkcr"]
+--- flag false
+--- get
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:12.000Z","player-joined","AfterCr","usr_aftercr"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:12.000Z","player-joined","AfterCr","usr_aftercr"]
+--- flag false
+--- get
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:13.000Z","player-joined","ChunkBom","usr_chunkbom"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:13.000Z","player-joined","ChunkBom","usr_chunkbom"]
+--- flag false
+--- get
+["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:14.000Z","vrcx","cut at end \uFFFD"]
+["output_log_2024-05-10_16-30-00.txt","2024-05-10T16:00:15.000Z","player-joined","SecondFile","usr_second"]
+--- end get calls=2
+--- lines count=2
+Q ["output_log_2024-05-10_16-00-00.txt","2024-05-10T16:00:14.000Z","vrcx","cut at end \uFFFD"]
+Q ["output_log_2024-05-10_16-30-00.txt","2024-05-10T16:00:15.000Z","player-joined","SecondFile","usr_second"]
+--- flag false

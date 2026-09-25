@@ -1,0 +1,35 @@
+# Several files: creation order, per-file contexts, delete and re-create, concurrent writers.
+holdtail
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-12_10-00-00.txt 2024-05-12T08:00:00Z
+text output_log_2024-05-12_10-00-00.txt 2024-05-12T08:30:00Z 2024.05.12 10:00:00 Log        -  [Behaviour] Destination fetching: wrld_a\n2024.05.12 10:00:01 Log        -  [Behaviour] Entering Room: World A\n2024.05.12 10:00:02 Log        -  [Behaviour] Joining wrld_a:1\n2024.05.12 10:00:03 Error      -  Maximum number (384) of shader global keywords exceeded, keyword A will be ignored.\n
+file output_log_2024-05-12_09-00-00.txt 2024-05-12T09:00:00Z
+text output_log_2024-05-12_09-00-00.txt 2024-05-12T09:10:00Z 2024.05.12 09:00:00 Log        -  [Behaviour] OnLeftRoom\n2024.05.12 09:00:01 Log        -  [Behaviour] Joining wrld_b:1\n2024.05.12 09:00:02 Error      -  Maximum number (384) of shader global keywords exceeded, keyword B will be ignored.\n
+get
+lines
+flag
+text output_log_2024-05-12_10-00-00.txt 2024-05-12T09:20:00Z 2024.05.12 11:20:00 Log        -  [Behaviour] OnPlayerJoined A-Late (usr_al)\n2024.05.12 11:20:01 Log        -  [Behaviour] OnLeftRoom\n
+text output_log_2024-05-12_09-00-00.txt 2024-05-12T09:20:01Z 2024.05.12 11:20:00 Log        -  [Behaviour] OnPlayerJoined B-Late (usr_bl)\n2024.05.12 11:20:02 Log        -  [Behaviour] Joining wrld_b:2\n
+get
+lines
+flag
+text output_log_2024-05-12_10-00-00.txt 2024-05-12T09:30:00Z 2024.05.12 11:30:00 Log        -  [Behaviour] OnPlayerJoined A-Partial (usr_ap)
+get
+lines
+flag
+text output_log_2024-05-12_10-00-00.txt 2024-05-12T09:30:01Z \n
+get
+lines
+flag
+delete output_log_2024-05-12_09-00-00.txt
+get
+lines
+flag
+file output_log_2024-05-12_09-00-00.txt 2024-05-12T10:00:00Z
+text output_log_2024-05-12_09-00-00.txt 2024-05-12T10:00:01Z 2024.05.12 12:00:00 Log        -  [Behaviour] Joining wrld_b:3\n2024.05.12 12:00:01 Error      -  Maximum number (384) of shader global keywords exceeded, keyword C will be ignored.\n
+file output_log_2024-05-12_12-00-00.txt 2024-04-01T00:00:00Z
+text output_log_2024-05-12_12-00-00.txt 2024-04-01T00:00:01Z 2024.05.12 12:00:00 Log        -  [Behaviour] OnPlayerJoined NeverSeen (usr_ns)\n
+get
+lines
+flag

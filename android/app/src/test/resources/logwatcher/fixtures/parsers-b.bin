@@ -1,0 +1,26 @@
+2024.05.10 13:00:00 Error      -  Maximum number (384) of shader global keywords exceeded, keyword _FOG_EXP2 will be ignored.
+2024.05.10 13:00:01 Error      -  Maximum number (384) of shader global keywords exceeded, keyword _FOG_EXP3 will be ignored.
+2024.05.10 13:00:02 Error      -  Maximum number (256) of shader keywords exceeded, keyword X will be ignored.
+2024.05.10 13:00:03 Log        -  User Natsumi-sama added URL https://www.youtube.com/watch?v=dQw4w9WgXcQ
+2024.05.10 13:00:04 Log        -  User  added URL https://empty.name
+2024.05.10 13:00:05 Log        -  User A added URL x added URL y
+2024.05.10 13:00:06 Log        -  User without url
+2024.05.10 13:00:07 Log        -  Users added URL https://prefix.mismatch
+2024.05.10 13:00:08 Log        -  VRCApplication: OnApplicationQuit at 1603.499
+2024.05.10 13:00:09 Log        -  VRCApplication: HandleApplicationQuit at 936.5161
+2024.05.10 13:00:10 Log        -  VRCApplication: Quit at 1
+2024.05.10 13:00:11 Log        -  Initializing VRSDK.
+2024.05.10 13:00:12 Log        -  Initializing VRSDK. More text
+2024.05.10 13:00:13 Log        -  Initializing VRSDK
+2024.05.10 13:00:14 Log        -  STEAMVR HMD Model: Index
+2024.05.10 13:00:15 Log        -  STEAMVR HMD Model: 
+2024.05.10 13:00:16 Log        -  VR Disabled
+2024.05.10 13:00:17 Log        -  VR Disabled because reasons
+2024.05.10 13:00:18 Log        -  VR Disable
+2024.05.10 13:00:19 Warning    -  Could not Start OSC: Address already in use
+2024.05.10 13:00:20 Warning    -  Could not Start OSC: 
+2024.05.10 13:00:21 Error      -  Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances.
+2024.05.10 13:00:22 Error      -  Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances.
+2024.05.10 13:00:23 Error      -  Prefix: Attempted to play an untrusted URL (Domain: x)
+2024.05.10 13:00:24 Log        -  Joining wrld_b:1 [Behaviour] Joining wrld_b:2
+2024.05.10 13:00:25 Log        -  plain text line that matches nothing

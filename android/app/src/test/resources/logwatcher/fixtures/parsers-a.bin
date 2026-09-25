@@ -1,0 +1,109 @@
+2024.05.10 12:00:00 Log        -  [Behaviour] OnPlayerJoined Natsumi-sama (usr_032383a7-748c-4fb2-94e4-bcb928e5de6b)
+2024.05.10 12:00:01 Log        -  [Behaviour] OnPlayerJoined OldFormatName
+2024.05.10 12:00:02 Log        -  [Behaviour] OnPlayerJoined:Unnamed
+2024.05.10 12:00:03 Log        -  [Behaviour] OnPlayerJoined
+2024.05.10 12:00:04 Log        -  [Behaviour] OnPlayerJoined 
+2024.05.10 12:00:05 Log        -  [Behaviour] OnPlayerJoinedX Name (usr_x)
+2024.05.10 12:00:06 Log        -  [Behaviour] OnPlayerJoined Rize♡ (JP) (usr_éx-y~z:(a)Ａ 1)
+2024.05.10 12:00:07 Log        -  [Behaviour] OnPlayerJoined Name (usr_trailing) extra words
+2024.05.10 12:00:08 Log        -  [Network] [Behaviour] OnPlayerJoined Nested (usr_nested)
+2024.05.10 12:00:09 Log        -  Foo [Behaviour] OnPlayerJoined BranchB (usr_b)
+2024.05.10 12:00:10 Log        -  [Behaviour] OnPlayerJoined Two ] OnPlayerJoined Last (usr_last)
+2024.05.10 12:00:11 Log        -  [Behaviour] OnPlayerLeft Natsumi-sama (usr_032383a7-748c-4fb2-94e4-bcb928e5de6b)
+2024.05.10 12:00:12 Log        -  [Behaviour] OnPlayerLeftRoom
+2024.05.10 12:00:13 Log        -  [Behaviour] OnPlayerLeft:Unnamed
+2024.05.10 12:00:14 Log        -  [Behaviour] OnPlayerLeft OldFormatName
+2024.05.10 12:00:15 Log        -  [Behaviour] OnPlayerLeft
+2024.05.10 12:00:16 Log        -  [Behaviour] OnPlayerLeft 
+2024.05.10 12:00:17 Log        -  [Behaviour] OnLeftRoom
+2024.05.10 12:00:18 Log        -  [Behaviour] Joining wrld_first:1~region(us)
+2024.05.10 12:00:19 Log        -  [Behaviour] Entering Room: 
+2024.05.10 12:00:20 Log        -  [Behaviour] Joining wrld_emptyname:2
+2024.05.10 12:00:21 Log        -  [Behaviour] Entering Room: A/B World ♡
+2024.05.10 12:00:22 Log        -  [Behaviour] Joining or Creating Room: A/B World
+2024.05.10 12:00:23 Log        -  [Behaviour] Joining friend: Someone
+2024.05.10 12:00:24 Log        -  [Behaviour] Joining 
+2024.05.10 12:00:25 Log        -  [Behaviour] Joining wrld_a/b/c:3~hidden(usr_1)~region(jp)
+2024.05.10 12:00:26 Log        -  [RoomManager] Joining wrld_old:4
+2024.05.10 12:00:27 Log        -  [Behaviour] Destination fetching: 
+2024.05.10 12:00:28 Log        -  [Behaviour] Destination fetching: wrld_dest/x:5
+2024.05.10 12:00:29 Log        -  [Behaviour] Destination set: wrld_ignored:6
+2024.05.10 12:00:30 Debug      -  [Behaviour] OnLeftRoom
+2024.05.10 12:00:31 Log        -  [Behaviour] OnLeftRoom
+2024.05.10 12:00:32 Log        -  [Behaviour] OnLeftRoomExtra
+2024.05.10 12:00:33 Log        -  [Behaviour] Instantiated a (Clone [800004] Portals/PortalInternalDynamic)
+2024.05.10 12:00:34 Log        -  [Behaviour] Instantiated a (Clone [800005] Portals/Other)
+2024.05.10 12:00:35 Log        -  [API] Received Notification: < Notification from username:pypy, id: not_1, message: ""> received at 01/02/2021 16:48:58 UTC
+2024.05.10 12:00:36 Log        -  [API] Received Notification: < no terminator
+2024.05.10 12:00:37 Log        -  [API] Received Notification: <> received at > received at x
+2024.05.10 12:00:38 Log        -  [API] [110] Sending Get request to https://api.vrchat.cloud/api/1/users/usr_x?apiKey=abc&organization=vrchat
+2024.05.10 12:00:39 Log        -  [API] [111] Sending Post request to https://api.vrchat.cloud/api/1/x
+2024.05.10 12:00:40 Log        -  [API] Sending Get request to https://nope
+2024.05.10 12:00:41 Log        -  [API] [112] Sending Get request to 
+2024.05.10 12:00:42 Log        -  [Behaviour] Switching K․MOG to avatar MoeSera
+2024.05.10 12:00:43 Log        -  [Behaviour] Switching X to avatar A to avatar B
+2024.05.10 12:00:44 Log        -  [Behaviour] Switching nobody
+2024.05.10 12:00:45 Error      -  [Behaviour] Master is not sending any events! Moving to a new instance.
+2024.05.10 12:00:46 Log        -  [Network Processing] RPC invoked SwitchAvatar on AvatarPedestal for User
+2024.05.10 12:00:47 Log        -  [Network Processing] RPC invoked SwitchAvatar on AvatarPedestal for 
+2024.05.10 12:00:48 Error      -  [Video Playback] ERROR: Video unavailable
+2024.05.10 12:00:49 Error      -  [Video Playback] ERROR: Video unavailable
+2024.05.10 12:00:50 Error      -  [Video Playback] ERROR: Sign in to confirm you're not a bot
+2024.05.10 12:00:51 Error      -  [AVProVideo] Error: Loading failed.  File not found.
+2024.05.10 12:00:52 Error      -  [AVProVideo] Error: Loading failed.  File not found.
+2024.05.10 12:00:53 Error      -  [X] [Video Playback] ERROR: shifted tag text here
+2024.05.10 12:00:54 Error      -  [Video Playback] ERROR: 
+2024.05.10 12:00:55 Log        -  [Behaviour] Joining wrld_clear:7
+2024.05.10 12:00:56 Error      -  [Video Playback] ERROR: Video unavailable
+2024.05.10 12:00:57 Log        -  [Video Playback] Attempting to resolve URL 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+2024.05.10 12:00:58 Log        -  [Video Playback] Attempting to resolve URL 'no-closing-quote
+2024.05.10 12:00:59 Log        -  [Video Playback] Resolving URL 'rtspt://topaz.chat/live/kiriri520'
+2024.05.10 12:01:00 Log        -  [Video Playback] Resolving URL 'x
+2024.05.10 12:01:01 Log        -  [USharpVideo] Started video load for URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1s, requested by ʜ ᴀ
+2024.05.10 12:01:02 Log        -  [USharpVideo] Started video load for URL: https://nope
+2024.05.10 12:01:03 Log        -  [USharpVideo] Started video load for URL: , requested by 
+2024.05.10 12:01:04 Log        -  [USharpVideo] Syncing video to 2.52
+2024.05.10 12:01:05 Log        -  [USharpVideo] Syncing video to 
+2024.05.10 12:01:06 Log        -  [VRCX] VideoPlay(PyPyDance) "https://jd.pypy.moe/api/v1/videos/x.mp4",0.5,260.6,"1339 : Le Freak (Random)"
+2024.05.10 12:01:07 Log        -  [VRCX] 
+2024.05.10 12:01:08 Log        -  [VRCX-World] store:test:testvalue
+2024.05.10 12:01:09 Log        -  [VRCXWorld] not deprecated tag
+2024.05.10 12:01:10 Log        -  [Always] uSpeak: SetInputDevice 0 (3 total) 'Index HMD Mic (Valve VR Radio & HMD Mic)'
+2024.05.10 12:01:11 Log        -  [Always] uSpeak: SetInputDevice 0 (3 total) 'Other Mic'
+2024.05.10 12:01:12 Log        -  [Always] uSpeak: OnAudioConfigurationChanged - devicesChanged = True, resetting mic..
+2024.05.10 12:01:13 Log        -  [Always] uSpeak: SetInputDevice 0 (3 total) 'Index HMD Mic (Valve VR Radio & HMD Mic)'
+2024.05.10 12:01:14 Log        -  [Always] uSpeak: OnAudioConfigurationChanged - devicesChanged = True, resetting mic..
+2024.05.10 12:01:15 Log        -  [Always] uSpeak: SetInputDevice 0 (2 total) 'Microphone (NVIDIA Broadcast)'
+2024.05.10 12:01:16 Log        -  [Always] uSpeak: OnAudioConfigurationChanged - devicesChanged = True, resetting mic..
+2024.05.10 12:01:17 Log        -  [Always] uSpeak: SetInputDevice 0 (2 total) 'Microphone (NVIDIA Broadcast)'
+2024.05.10 12:01:18 Log        -  [Always] uSpeak: SetInputDevice by name 'Other' (3 total)
+2024.05.10 12:01:19 Log        -  [Always] uSpeak: SetInputDevice 0 no quote
+2024.05.10 12:01:20 Log        -  [Always] uSpeak: SetInputDevice 0 (1 total) '
+2024.05.10 12:01:21 Log        -  [Always] uSpeak: SetInputDevice 0 (1 total) ') '
+2024.05.10 12:01:22 Log        -  [VRC Camera] Took screenshot to: C:\Users\Tea\Pictures\VRChat\a.png
+2024.05.10 12:01:23 Log        -  [VRC Camera] Took screenshot to: 
+2024.05.10 12:01:24 Log        -  [String Download] Attempting to load String from URL 'https://pastebin.com/raw/BaW6NL2L'
+2024.05.10 12:01:25 Log        -  [String Download] Attempting to load String from URL 'http://127.0.0.1:22500/vrcx/data'
+2024.05.10 12:01:26 Log        -  [String Download] Attempting to load String from URL 'http://localhost:22500/x'
+2024.05.10 12:01:27 Log        -  [String Download] Attempting to load String from URL '​http://127.0.0.1:22500/zwsp'
+2024.05.10 12:01:28 Log        -  [String Download] Attempting to load String from URL 'http://127.0.0­.1:22500/shy'
+2024.05.10 12:01:29 Log        -  [String Download] Attempting to load String from URL 'http://127.0.0.1:22500́/acute'
+2024.05.10 12:01:30 Log        -  [String Download] Attempting to load String from URL 'HTTP://127.0.0.1:22500/upper'
+2024.05.10 12:01:31 Log        -  [String Download] Attempting to load String from URL 'http://127.0.0.1:2250/short'
+2024.05.10 12:01:32 Log        -  [String Download] Attempting to load String from URL 'x' then ] Attempting to load String from URL 'last'
+2024.05.10 12:01:33 Log        -  [Image Download] Attempting to load image from URL 'https://i.imgur.com/lCfUMX0.jpeg'
+2024.05.10 12:01:34 Log        -  [Image Download] Attempting to load image from URL 'http://localhost:22500/img'
+2024.05.10 12:01:35 Log        -  [Image Download] Attempting to load image from URL 'http://localhost:22500‍/zwj'
+2024.05.10 12:01:36 Log        -  [Behaviour] Received executive message: You have been kicked from the instance by majority vote
+2024.05.10 12:01:37 Log        -  [Behaviour] Received executive message: 
+2024.05.10 12:01:38 Warning    -  [Behaviour] Failed to join instance 'wrld_78eb:82384~region(eu)' due to 'outdated'
+2024.05.10 12:01:39 Log        -  [ModerationManager] This instance will be reset in 60 minutes due to its age.
+2024.05.10 12:01:40 Log        -  [ModerationManager] A vote kick has been initiated against בור 849d, do you agree?
+2024.05.10 12:01:41 Log        -  [ModerationManager] Vote to kick X succeeded
+2024.05.10 12:01:42 Log        -  [Other] [ModerationManager] Vote to kick Y succeeded
+2024.05.10 12:01:43 Log        -  [StickersManager] User usr_032383a7-748c-4fb2-94e4-bcb928e5de6b (Natsumi-sama ♡) spawned sticker inv_8b380ee4-9a8a-484e-a0c3-b01290b92c6a
+2024.05.10 12:01:44 Log        -  [StickersManager] User usr_x spawned sticker inv_1 extra
+2024.05.10 12:01:45 Log        -  [x] inv_1 spawned sticker [StickersManager] User 
+2024.05.10 12:01:46 Log        -  [StickersManager] User usr_y (Name) placed inv_2
+2024.05.10 12:01:47 Log        -  [Behaviour] Something else entirely
+2024.05.10 12:01:48 Log        -  [Behaviour]

@@ -1,0 +1,28 @@
+# A file that shrinks keeps its read position. Original size 375.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:00Z
+text output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:05Z 2024.05.13 10:00:00 Log        -  [Behaviour] OnPlayerJoined Line0 (usr_0)\n2024.05.13 10:00:01 Log        -  [Behaviour] OnPlayerJoined Line1 (usr_1)\n2024.05.13 10:00:02 Log        -  [Behaviour] OnPlayerJoined Line2 (usr_2)\n2024.05.13 10:00:03 Log        -  [Behaviour] OnPlayerJoined Line3 (usr_3)\n2024.05.13 10:00:04 Log        -  [Behaviour] OnPlayerJoined Line4 (usr_4)\n
+get
+lines
+flag
+truncate output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:10Z 180
+get
+lines
+flag
+text output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:11Z x\n2024.05.13 10:00:11 Log        -  [Behaviour] OnPlayerJoined Short (usr_short)\n
+get
+lines
+flag
+text output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:12Z 2024.05.13 10:00:12 Log        -  [Behaviour] OnPlayerJoined Grow12 (usr_g12)\n2024.05.13 10:00:13 Log        -  [Behaviour] OnPlayerJoined Grow13 (usr_g13)\n2024.05.13 10:00:14 Log        -  [Behaviour] OnPlayerJoined Grow14 (usr_g14)\n2024.05.13 10:00:15 Log        -  [Behaviour] OnPlayerJoined Grow15 (usr_g15)\n
+get
+lines
+flag
+truncate output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:20Z 0
+get
+lines
+flag
+text output_log_2024-05-13_10-00-00.txt 2024-05-13T08:00:21Z 2024.05.13 10:00:21 Log        -  [Behaviour] OnPlayerJoined Fresh21 (usr_f21)\n2024.05.13 10:00:22 Log        -  [Behaviour] OnPlayerJoined Fresh22 (usr_f22)\n2024.05.13 10:00:23 Log        -  [Behaviour] OnPlayerJoined Fresh23 (usr_f23)\n2024.05.13 10:00:24 Log        -  [Behaviour] OnPlayerJoined Fresh24 (usr_f24)\n2024.05.13 10:00:25 Log        -  [Behaviour] OnPlayerJoined Fresh25 (usr_f25)\n2024.05.13 10:00:26 Log        -  [Behaviour] OnPlayerJoined Fresh26 (usr_f26)\n2024.05.13 10:00:27 Log        -  [Behaviour] OnPlayerJoined Fresh27 (usr_f27)\n2024.05.13 10:00:28 Log        -  [Behaviour] OnPlayerJoined Fresh28 (usr_f28)\n2024.05.13 10:00:29 Log        -  [Behaviour] OnPlayerJoined Fresh29 (usr_f29)\n2024.05.13 10:00:30 Log        -  [Behaviour] OnPlayerJoined Fresh30 (usr_f30)\n2024.05.13 10:00:31 Log        -  [Behaviour] OnPlayerJoined Fresh31 (usr_f31)\n2024.05.13 10:00:32 Log        -  [Behaviour] OnPlayerJoined Fresh32 (usr_f32)\n2024.05.13 10:00:33 Log        -  [Behaviour] OnPlayerJoined Fresh33 (usr_f33)\n
+get
+lines
+flag

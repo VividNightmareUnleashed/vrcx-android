@@ -1,0 +1,18 @@
+--- get
+["output_log_dst.txt","2024-03-10T06:00:00.000Z","player-joined","T2024.03.10_01-00-00","usr_0"]
+["output_log_dst.txt","2024-03-10T06:59:59.000Z","player-joined","T2024.03.10_01-59-59","usr_1"]
+["output_log_dst.txt","2024-03-10T07:00:00.000Z","player-joined","T2024.03.10_02-00-00","usr_2"]
+["output_log_dst.txt","2024-03-10T07:30:00.000Z","player-joined","T2024.03.10_02-30-00","usr_3"]
+["output_log_dst.txt","2024-03-10T07:59:59.000Z","player-joined","T2024.03.10_02-59-59","usr_4"]
+["output_log_dst.txt","2024-03-10T07:00:00.000Z","player-joined","T2024.03.10_03-00-00","usr_5"]
+["output_log_dst.txt","2024-11-03T04:30:00.000Z","player-joined","T2024.11.03_00-30-00","usr_6"]
+["output_log_dst.txt","2024-11-03T04:59:59.000Z","player-joined","T2024.11.03_00-59-59","usr_7"]
+["output_log_dst.txt","2024-11-03T06:00:00.000Z","player-joined","T2024.11.03_01-00-00","usr_8"]
+["output_log_dst.txt","2024-11-03T06:30:00.000Z","player-joined","T2024.11.03_01-30-00","usr_9"]
+["output_log_dst.txt","2024-11-03T06:59:59.000Z","player-joined","T2024.11.03_01-59-59","usr_10"]
+["output_log_dst.txt","2024-11-03T07:00:00.000Z","player-joined","T2024.11.03_02-00-00","usr_11"]
+["output_log_dst.txt","2024-11-03T07:30:00.000Z","player-joined","T2024.11.03_02-30-00","usr_12"]
+["output_log_dst.txt","2025-03-09T07:15:00.000Z","player-joined","T2025.03.09_02-15-00","usr_13"]
+["output_log_dst.txt","2025-11-02T06:15:00.000Z","player-joined","T2025.11.02_01-15-00","usr_14"]
+["output_log_dst.txt","2024-07-04T16:00:00.000Z","player-joined","T2024.07.04_12-00-00","usr_15"]
+--- end get calls=2

@@ -1,0 +1,26 @@
+# Udon/PyPyDance pre-filter (P0), strict dates, the future check and every tillDate rule.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-10T10:00:00.000Z
+file output_log_2024-05-10_11-00-00.txt 2024-05-10T09:00:00Z
+text output_log_2024-05-10_11-00-00.txt 2024-05-10T09:59:59.9999999Z 2024.05.10 11:59:58 Log        -  [Behaviour] OnPlayerJoined A-Before (usr_a1)\n2023.01.01 00:00:00 Log        -  [PyPyDance] old but always emitted\n2024.05.10 12:00:05 Log        -  [Behaviour] OnPlayerJoined A-After (usr_a2)\n
+file output_log_2024-05-10_11-30-00.txt 2024-05-10T09:30:00Z
+text output_log_2024-05-10_11-30-00.txt 2024-05-10T10:00:00Z 2024.05.10 11:59:59 Log        -  [Behaviour] OnPlayerJoined B-Before (usr_b1)\n2024.05.10 12:00:00 Log        -  [Behaviour] OnPlayerJoined B-Equal (usr_b2)\n2024.05.10 12:00:01 Log        -  [Behaviour] OnPlayerJoined B-After (usr_b3)\n2024.05.10 12:00:02 Error      -  [UdonBehaviour] An exception occurred during Udon execution, this UdonBehaviour will be halted.\nVRC.Udon.VM.UdonVMException: An exception occurred in an UdonVM, execution will be halted. ---> VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to 'X'. --->System.NullReferenceException\n2024.05.10 12:00:03 Log        -  text ---> VRC.Udon.VM.UdonVMException: dated continuation\n2024.05.10 12:00:04 Log        -  [PyPyDance] [Behaviour] OnPlayerJoined NotAJoin (usr_c)\n[PyPyDance] no date prefix but long enough\nx ---> VRC.Udon.VM.UdonVMException: \n2021.08.20 04:20:69 Log        -  [Behaviour] OnPlayerJoined BadDate\n2024.13.01 00:00:00 Log        -  [Behaviour] OnPlayerJoined BadMonth\n2024-05-10 12:00:05 Log        -  [Behaviour] OnPlayerJoined BadSeparators\n2099.01.01 00:00:00 Log        -  [Behaviour] OnPlayerJoined FromTheFuture\n2025.12.31 23:59:59 Log        -  [Behaviour] OnPlayerJoined PastYear (usr_d)\n2024.05.10 12:00:06 Log    -  [Behaviour] OnPlayerJoined WrongPadding\n2024.05.10 12:00:06 Log        -  [Behaviour] X\n2024.05.10 12:00:06 Log        -  [Behaviour] XY\n2024.05.10 12:00:07 Log        -  [Behaviour] OnPlayerJoined B-Last (usr_b4)\n
+get
+lines
+flag
+touch output_log_2024-05-10_11-00-00.txt 2024-05-10T10:00:10Z
+get
+lines
+flag
+till 2024-05-10T10:00:03.5Z
+get
+lines
+flag
+text output_log_2024-05-10_11-30-00.txt 2024-05-10T10:00:20Z 2024.05.10 12:00:03 Log        -  [Behaviour] OnPlayerJoined B-Old (usr_b5)\n2024.05.10 12:00:04 Log        -  [Behaviour] OnPlayerJoined B-New (usr_b6)\n
+get
+lines
+flag
+text output_log_2024-05-10_11-00-00.txt 2024-05-10T10:00:30Z 2024.05.10 12:00:02 Log        -  [Behaviour] OnPlayerJoined A-Old (usr_a3)\n2024.05.10 12:00:30 Log        -  [Behaviour] OnPlayerJoined A-New (usr_a4)\n
+get
+lines
+flag

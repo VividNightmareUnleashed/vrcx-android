@@ -1,0 +1,2 @@
+# Fixtures are raw VRChat log bytes (CRLF, BOMs, malformed UTF-8): never normalise them.
+*.bin binary

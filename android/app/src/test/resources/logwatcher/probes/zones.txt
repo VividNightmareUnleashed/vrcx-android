@@ -1,0 +1,140 @@
+AUS Central Standard Time	Australia/Darwin	nodst	570
+AUS Eastern Standard Time	Australia/Sydney	dst	600
+Afghanistan Standard Time	Asia/Kabul	nodst	270
+Alaskan Standard Time	America/Anchorage	dst	-540
+Aleutian Standard Time	America/Adak	dst	-600
+Altai Standard Time	Asia/Barnaul	dst	420
+Arab Standard Time	Asia/Riyadh	nodst	180
+Arabian Standard Time	Asia/Dubai	nodst	240
+Arabic Standard Time	Asia/Baghdad	dst	180
+Argentina Standard Time	America/Buenos_Aires	dst	-180
+Astrakhan Standard Time	Europe/Astrakhan	dst	240
+Atlantic Standard Time	America/Halifax	dst	-240
+Aus Central W. Standard Time	Australia/Eucla	nodst	525
+Azerbaijan Standard Time	Asia/Baku	dst	240
+Azores Standard Time	Atlantic/Azores	dst	-60
+Bahia Standard Time	America/Bahia	dst	-180
+Bangladesh Standard Time	Asia/Dhaka	dst	360
+Belarus Standard Time	Europe/Minsk	dst	180
+Bougainville Standard Time	Pacific/Bougainville	dst	660
+Canada Central Standard Time	America/Regina	nodst	-360
+Cape Verde Standard Time	Atlantic/Cape_Verde	nodst	-60
+Caucasus Standard Time	Asia/Yerevan	dst	240
+Cen. Australia Standard Time	Australia/Adelaide	dst	570
+Central America Standard Time	America/Guatemala	nodst	-360
+Central Asia Standard Time	Asia/Almaty	nodst	360
+Central Brazilian Standard Time	America/Cuiaba	dst	-240
+Central Europe Standard Time	Europe/Budapest	dst	60
+Central European Standard Time	Europe/Warsaw	dst	60
+Central Pacific Standard Time	Pacific/Guadalcanal	nodst	660
+Central Standard Time	America/Chicago	dst	-360
+Central Standard Time (Mexico)	America/Mexico_City	dst	-360
+Chatham Islands Standard Time	Pacific/Chatham	dst	765
+China Standard Time	Asia/Shanghai	nodst	480
+Cuba Standard Time	America/Havana	dst	-300
+Dateline Standard Time	Etc/GMT+12	nodst	-720
+E. Africa Standard Time	Africa/Nairobi	nodst	180
+E. Australia Standard Time	Australia/Brisbane	nodst	600
+E. Europe Standard Time	Europe/Chisinau	dst	120
+E. South America Standard Time	America/Sao_Paulo	dst	-180
+Easter Island Standard Time	Pacific/Easter	dst	-360
+Eastern Standard Time	America/New_York	dst	-300
+Eastern Standard Time (Mexico)	America/Cancun	dst	-300
+Egypt Standard Time	Africa/Cairo	dst	120
+Ekaterinburg Standard Time	Asia/Yekaterinburg	dst	300
+FLE Standard Time	Europe/Kiev	dst	120
+Fiji Standard Time	Pacific/Fiji	dst	720
+GMT Standard Time	Europe/London	dst	0
+GTB Standard Time	Europe/Bucharest	dst	120
+Georgian Standard Time	Asia/Tbilisi	nodst	240
+Greenland Standard Time	America/Godthab	dst	-120
+Greenwich Standard Time	Atlantic/Reykjavik	nodst	0
+Haiti Standard Time	America/Port-au-Prince	dst	-300
+Hawaiian Standard Time	Pacific/Honolulu	nodst	-600
+India Standard Time	Asia/Calcutta	nodst	330
+Iran Standard Time	Asia/Tehran	dst	210
+Israel Standard Time	Asia/Jerusalem	dst	120
+Jordan Standard Time	Asia/Amman	dst	180
+Kaliningrad Standard Time	Europe/Kaliningrad	dst	120
+Kamchatka Standard Time		dst	720
+Korea Standard Time	Asia/Seoul	nodst	540
+Libya Standard Time	Africa/Tripoli	dst	120
+Line Islands Standard Time	Pacific/Kiritimati	nodst	840
+Lord Howe Standard Time	Australia/Lord_Howe	dst	630
+Magadan Standard Time	Asia/Magadan	dst	660
+Magallanes Standard Time	America/Punta_Arenas	dst	-180
+Marquesas Standard Time	Pacific/Marquesas	nodst	-570
+Mauritius Standard Time	Indian/Mauritius	dst	240
+Mid-Atlantic Standard Time		dst	-120
+Middle East Standard Time	Asia/Beirut	dst	120
+Montevideo Standard Time	America/Montevideo	dst	-180
+Mountain Standard Time	America/Denver	dst	-420
+Mountain Standard Time (Mexico)	America/Chihuahua	dst	-420
+Myanmar Standard Time	Asia/Rangoon	nodst	390
+N. Central Asia Standard Time	Asia/Novosibirsk	dst	420
+Namibia Standard Time	Africa/Windhoek	dst	120
+Nepal Standard Time	Asia/Katmandu	nodst	345
+New Zealand Standard Time	Pacific/Auckland	dst	720
+Newfoundland Standard Time	America/St_Johns	dst	-210
+Norfolk Standard Time	Pacific/Norfolk	dst	660
+North Asia East Standard Time	Asia/Irkutsk	dst	480
+North Asia Standard Time	Asia/Krasnoyarsk	dst	420
+North Korea Standard Time	Asia/Pyongyang	dst	540
+Omsk Standard Time	Asia/Omsk	dst	360
+Pacific SA Standard Time	America/Santiago	dst	-240
+Pacific Standard Time	America/Los_Angeles	dst	-480
+Pacific Standard Time (Mexico)	America/Tijuana	dst	-480
+Pakistan Standard Time	Asia/Karachi	dst	300
+Paraguay Standard Time	America/Asuncion	dst	-180
+Qyzylorda Standard Time	Asia/Qyzylorda	dst	300
+Romance Standard Time	Europe/Paris	dst	60
+Russia Time Zone 10	Asia/Srednekolymsk	dst	660
+Russia Time Zone 11	Asia/Kamchatka	dst	720
+Russia Time Zone 3	Europe/Samara	dst	240
+Russian Standard Time	Europe/Moscow	dst	180
+SA Eastern Standard Time	America/Cayenne	nodst	-180
+SA Pacific Standard Time	America/Bogota	nodst	-300
+SA Western Standard Time	America/La_Paz	nodst	-240
+SE Asia Standard Time	Asia/Bangkok	nodst	420
+Saint Pierre Standard Time	America/Miquelon	dst	-180
+Sakhalin Standard Time	Asia/Sakhalin	dst	660
+Samoa Standard Time	Pacific/Apia	dst	780
+Sao Tome Standard Time	Africa/Sao_Tome	dst	0
+Saratov Standard Time	Europe/Saratov	dst	240
+Singapore Standard Time	Asia/Singapore	nodst	480
+South Africa Standard Time	Africa/Johannesburg	nodst	120
+South Sudan Standard Time	Africa/Juba	dst	120
+Sri Lanka Standard Time	Asia/Colombo	nodst	330
+Sudan Standard Time	Africa/Khartoum	dst	120
+Syria Standard Time	Asia/Damascus	dst	180
+Taipei Standard Time	Asia/Taipei	nodst	480
+Tasmania Standard Time	Australia/Hobart	dst	600
+Tocantins Standard Time	America/Araguaina	dst	-180
+Tokyo Standard Time	Asia/Tokyo	nodst	540
+Tomsk Standard Time	Asia/Tomsk	dst	420
+Tonga Standard Time	Pacific/Tongatapu	dst	780
+Transbaikal Standard Time	Asia/Chita	dst	540
+Turkey Standard Time	Europe/Istanbul	dst	180
+Turks And Caicos Standard Time	America/Grand_Turk	dst	-300
+US Eastern Standard Time	America/Indianapolis	dst	-300
+US Mountain Standard Time	America/Phoenix	nodst	-420
+UTC	Etc/UTC	nodst	0
+UTC+12	Etc/GMT-12	nodst	720
+UTC+13	Etc/GMT-13	nodst	780
+UTC-02	Etc/GMT+2	nodst	-120
+UTC-08	Etc/GMT+8	nodst	-480
+UTC-09	Etc/GMT+9	nodst	-540
+UTC-11	Etc/GMT+11	nodst	-660
+Ulaanbaatar Standard Time	Asia/Ulaanbaatar	dst	480
+Venezuela Standard Time	America/Caracas	dst	-240
+Vladivostok Standard Time	Asia/Vladivostok	dst	600
+Volgograd Standard Time	Europe/Volgograd	dst	180
+W. Australia Standard Time	Australia/Perth	dst	480
+W. Central Africa Standard Time	Africa/Lagos	nodst	60
+W. Europe Standard Time	Europe/Berlin	dst	60
+W. Mongolia Standard Time	Asia/Hovd	dst	420
+West Asia Standard Time	Asia/Tashkent	nodst	300
+West Bank Standard Time	Asia/Hebron	dst	120
+West Pacific Standard Time	Pacific/Port_Moresby	nodst	600
+Yakutsk Standard Time	Asia/Yakutsk	dst	540
+Yukon Standard Time	America/Whitehorse	dst	-420
