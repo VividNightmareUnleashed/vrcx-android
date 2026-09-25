@@ -157,7 +157,7 @@
                     v-model="notificationTTSTest"
                     :placeholder="t('view.settings.notifications.notifications.text_to_speech.tts_test_placeholder')"
                     :rows="1"
-                    class="w-44"
+                    class="w-44 compact:w-auto compact:min-w-0 compact:flex-1"
                     input-class="resize-none min-h-0" />
                 <Button size="sm" variant="outline" @click="testNotificationTTS">{{
                     t('view.settings.notifications.notifications.text_to_speech.play')

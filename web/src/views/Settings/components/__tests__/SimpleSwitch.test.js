@@ -14,7 +14,37 @@ vi.mock('lucide-vue-next', () => ({
     Info: { template: '<i data-testid="info" />' }
 }));
 
+const layout = vi.hoisted(() => ({ compact: false }));
+
+vi.mock('../../../../composables/useCompactLayout', async () => {
+    const { computed } = await import('vue');
+    return { useCompactLayout: () => ({ isCompact: computed(() => layout.compact) }) };
+});
+
 import SimpleSwitch from '../SimpleSwitch.vue';
+
+describe('SimpleSwitch.vue on phones', () => {
+    const tooltipStub = { TooltipWrapper: { template: '<span data-testid="tooltip"><slot /></span>' } };
+
+    it('shows the tooltip text under the label in the compact layout', () => {
+        layout.compact = true;
+        const wrapper = mount(SimpleSwitch, {
+            props: { label: 'Label', value: false, tooltip: 'Explains the switch' },
+            global: { stubs: tooltipStub }
+        });
+        expect(wrapper.get('.tooltip-text').text()).toBe('Explains the switch');
+        layout.compact = false;
+    });
+
+    it('keeps the PC markup without the inline tooltip text', () => {
+        layout.compact = false;
+        const wrapper = mount(SimpleSwitch, {
+            props: { label: 'Label', value: false, tooltip: 'Explains the switch' },
+            global: { stubs: tooltipStub }
+        });
+        expect(wrapper.find('.tooltip-text').exists()).toBe(false);
+    });
+});
 
 describe('SimpleSwitch.vue', () => {
     it('emits change when inner switch updates', async () => {

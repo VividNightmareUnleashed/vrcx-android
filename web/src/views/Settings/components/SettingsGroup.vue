@@ -7,7 +7,9 @@
             </div>
         </div>
         <Card class="p-0">
-            <CardContent class="flex flex-col gap-1 py-4.5 px-5.5">
+            <!-- Phones: narrower padding, and wide toggle groups scroll sideways instead of spilling out. -->
+            <CardContent
+                class="flex flex-col gap-1 py-4.5 px-5.5 compact:gap-3 compact:px-4compact:[&_[data-slot=toggle-group]]:max-w-full compact:[&_[data-slot=toggle-group]]:overflow-x-auto compact:[&_[data-slot=toggle-group]]:[scrollbar-width:none]">
                 <slot />
             </CardContent>
         </Card>

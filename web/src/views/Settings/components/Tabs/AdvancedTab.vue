@@ -128,7 +128,7 @@
                     @update:modelValue="setShowConfirmationOnSwitchAvatar" />
             </SettingsItem>
 
-            <div class="flex gap-2">
+            <div class="flex gap-2 compact:flex-wrap">
                 <Button
                     size="sm"
                     variant="outline"
@@ -390,7 +390,7 @@
                 :data="configTreeData"
                 :deep="2"
                 :theme="isDarkMode ? 'dark' : 'light'"
-                :height="800"
+                :height="configTreeHeight"
                 :dynamic-height="false"
                 virtual
                 show-icon />
@@ -443,6 +443,7 @@
     import { clearVRCXCache } from '@/coordinators/vrcxCoordinator';
     import { openExternalLink } from '@/shared/utils';
     import { hasDesktopShell, hasLocalGame, hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     import PhotonSettings from '../PhotonSettings.vue';
     import RegistryBackupDialog from '../../../Tools/dialogs/RegistryBackupDialog.vue';
@@ -476,6 +477,10 @@
     const { branch } = storeToRefs(useVRCXUpdaterStore());
 
     const { isDarkMode } = storeToRefs(useAppearanceSettingsStore());
+
+    // The config.json tree is virtualised at a fixed height: 800 px on PC, most of the screen on phones.
+    const { isCompact } = useCompactLayout();
+    const configTreeHeight = computed(() => (isCompact.value ? Math.round(window.innerHeight * 0.6) : 800));
 
     const {
         enablePrimaryPassword,
