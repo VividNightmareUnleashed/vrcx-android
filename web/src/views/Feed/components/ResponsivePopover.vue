@@ -1,0 +1,66 @@
+<template>
+    <!-- Phones: the same content in a bottom sheet (docs/DESIGN.md §3.4). Desktop: the upstream popover, unchanged. -->
+    <Sheet v-if="isCompact" v-model:open="openModel">
+        <SheetTrigger as-child>
+            <slot name="trigger" />
+        </SheetTrigger>
+        <SheetContent
+            side="bottom"
+            class="z-[10001] gap-0 rounded-t-lg p-0"
+            overlay-class="z-[10001]"
+            data-testid="responsive-popover-sheet">
+            <SheetHeader class="border-b pb-3">
+                <SheetTitle>{{ title }}</SheetTitle>
+                <SheetDescription class="sr-only">{{ description || title }}</SheetDescription>
+            </SheetHeader>
+            <div :class="['overflow-y-auto p-4', sheetBodyClass]">
+                <slot />
+            </div>
+        </SheetContent>
+    </Sheet>
+    <Popover v-else v-model:open="openModel">
+        <PopoverTrigger as-child>
+            <slot name="trigger" />
+        </PopoverTrigger>
+        <PopoverContent :class="contentClass" :side="side" :align="align">
+            <slot />
+        </PopoverContent>
+    </Popover>
+</template>
+
+<script setup>
+    // A popover on PC, a bottom sheet in the phone layout. Shared by the views of this area (Feed and Game Log date
+    // filters, Friends Locations settings).
+    import { computed } from 'vue';
+
+    import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+    import {
+        Sheet,
+        SheetContent,
+        SheetDescription,
+        SheetHeader,
+        SheetTitle,
+        SheetTrigger
+    } from '../../../components/ui/sheet';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+
+    const props = defineProps({
+        open: { type: Boolean, default: undefined },
+        /** Sheet title (phones only; the PC popover has no header). */
+        title: { type: String, default: '' },
+        description: { type: String, default: '' },
+        contentClass: { type: null, default: undefined },
+        side: { type: String, default: undefined },
+        align: { type: String, default: undefined },
+        sheetBodyClass: { type: null, default: undefined }
+    });
+
+    const emit = defineEmits(['update:open']);
+
+    const { isCompact } = useCompactLayout();
+
+    const openModel = computed({
+        get: () => props.open,
+        set: (value) => emit('update:open', value)
+    });
+</script>

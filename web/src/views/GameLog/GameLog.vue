@@ -43,7 +43,72 @@
                 :total-items="totalItems"
                 :on-page-size-change="handlePageSizeChange">
                 <template #toolbar>
-                    <div class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
+                    <!-- Phones (docs/DESIGN.md §3.4): search on its own row, then the mode, VIP and type filters. -->
+                    <div v-if="isCompact" class="flex w-full min-w-0 flex-col gap-2" data-testid="game-log-compact-toolbar">
+                        <InputGroupField
+                            v-model="gameLogTable.search"
+                            class="min-w-0"
+                            :placeholder="t('view.game_log.search_placeholder')"
+                            clearable
+                            enterkeyhint="search"
+                            @keyup.enter="gameLogTableLookup"
+                            @change="gameLogTableLookup" />
+                        <div class="flex min-w-0 items-center gap-2">
+                            <ToggleGroup
+                                type="single"
+                                variant="outline"
+                                size="sm"
+                                class="shrink-0"
+                                :model-value="sessionsViewMode"
+                                @update:model-value="handleViewModeChange">
+                                <ToggleGroupItem
+                                    value="sessions"
+                                    class="px-2"
+                                    :class="sessionsViewMode === 'sessions' && 'bg-accent text-accent-foreground'"
+                                    :ariaLabel="t('view.game_log.sessions.switch_to_sessions')">
+                                    <Logs class="size-4" />
+                                </ToggleGroupItem>
+                                <ToggleGroupItem
+                                    value="table"
+                                    class="px-2"
+                                    :class="sessionsViewMode === 'table' && 'bg-accent text-accent-foreground'"
+                                    :ariaLabel="t('view.game_log.sessions.switch_to_table')">
+                                    <Table2 class="size-4" />
+                                </ToggleGroupItem>
+                            </ToggleGroup>
+                            <Toggle
+                                variant="outline"
+                                size="sm"
+                                class="shrink-0"
+                                :model-value="gameLogTable.vip"
+                                :ariaLabel="t('view.feed.favorites_only_tooltip')"
+                                @update:modelValue="
+                                    (v) => {
+                                        gameLogTable.vip = v;
+                                        gameLogTableLookup();
+                                    }
+                                ">
+                                <Star fill="currentColor" v-if="gameLogTable.vip" />
+                                <Star v-else />
+                            </Toggle>
+                            <Select
+                                multiple
+                                :model-value="Array.isArray(gameLogTable.filter) ? gameLogTable.filter : []"
+                                @update:modelValue="handleGameLogFilterChange">
+                                <SelectTrigger size="sm" class="min-w-0 flex-1">
+                                    <SelectValue :placeholder="t('view.game_log.filter_placeholder')" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectGroup>
+                                        <SelectItem v-for="type in GAME_LOG_TABLE_TYPES" :key="type" :value="type">
+                                            {{ t('view.game_log.filters.' + type) }}
+                                        </SelectItem>
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <div v-else class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
                         <div class="mr-2" style="flex: none; display: flex; align-items: center">
                             <ToggleGroup
                                 type="single"
@@ -155,10 +220,29 @@
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
     import GameLogSessions from './components/GameLogSessions.vue';
     import { isAndroid } from '../../shared/utils/platform';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+    import { applyAndroidGameLogViewDefault } from './gameLogViewDefaults';
 
     const CompanionEmptyState = isAndroid
         ? defineAsyncComponent(() => import('../../platform/android/components/CompanionEmptyState.vue'))
         : null;
+
+    const GAME_LOG_TABLE_TYPES = [
+        'Location',
+        'OnPlayerJoined',
+        'OnPlayerLeft',
+        'VideoPlay',
+        'Event',
+        'External',
+        'StringLoad',
+        'ImageLoad'
+    ];
+
+    const { isCompact } = useCompactLayout();
+
+    if (isAndroid) {
+        applyAndroidGameLogViewDefault(useGameLogStore());
+    }
 
     const { gameLogTableLookup, setSessionsViewMode } = useGameLogStore();
     const { gameLogTable, gameLogTableData, sessionsViewMode } = storeToRefs(useGameLogStore());

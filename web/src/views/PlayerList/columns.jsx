@@ -61,23 +61,26 @@ export const createColumns = ({
             header: () => t('table.playerList.avatar'),
             size: 70,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.avatar') },
+            meta: { label: () => t('table.playerList.avatar'), mobile: { slot: 'leading' } },
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const src = userImage(userRef);
                 if (!src) return null;
                 return (
-                    <div class="flex items-center pl-2">
+                    <div class="flex items-center pl-2 compact:pl-0">
                         <img
                             src={src}
-                            class="h-4 w-4 rounded-sm object-cover"
+                            class="h-4 w-4 rounded-sm object-cover compact:size-8 compact:rounded"
                             loading="lazy"
                             onError={(e) => {
                                 e.target.style.display = 'none';
                                 e.target.nextElementSibling.style.display = '';
                             }}
                         />
-                        <div class="h-4 w-4 rounded-sm bg-muted flex items-center justify-center" style="display: none">
+                        <div
+                            class="h-4 w-4 rounded-sm bg-muted flex items-center justify-center compact:size-8 compact:rounded"
+                            style="display: none"
+                        >
                             <User class="h-3 w-3 text-muted-foreground" />
                         </div>
                     </div>
@@ -93,7 +96,7 @@ export const createColumns = ({
                     label: () => t('table.playerList.timer')
                 }),
             size: 90,
-            meta: { label: () => t('table.playerList.timer') },
+            meta: { label: () => t('table.playerList.timer'), mobile: { slot: 'trailing', order: 2 } },
             sortingFn: (rowA, rowB) => (rowA.original?.timer ?? 0) - (rowB.original?.timer ?? 0),
             cell: ({ row }) => <Timer epoch={row.original?.timer} />
         },
@@ -106,7 +109,7 @@ export const createColumns = ({
                     label: () => t('table.playerList.displayName')
                 }),
             size: 200,
-            meta: { label: () => t('table.playerList.displayName') },
+            meta: { label: () => t('table.playerList.displayName'), mobile: { slot: 'title' } },
             sortingFn: (rowA, rowB) => sortAlphabetically(rowA.original, rowB.original, 'displayName'),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
@@ -119,7 +122,7 @@ export const createColumns = ({
             accessorFn: (row) => row?.ref?.$trustSortNum,
             header: ({ column }) => sortButton({ column, label: () => t('table.playerList.rank') }),
             size: 110,
-            meta: { label: () => t('table.playerList.rank') },
+            meta: { label: () => t('table.playerList.rank'), mobile: { slot: 'trailing', order: 1 } },
             sortingFn: (rowA, rowB) =>
                 (rowA.original?.ref?.$trustSortNum ?? 0) - (rowB.original?.ref?.$trustSortNum ?? 0),
             cell: ({ row }) => {
@@ -139,7 +142,8 @@ export const createColumns = ({
             minSize: 100,
             meta: {
                 stretch: true,
-                label: () => t('table.playerList.status')
+                label: () => t('table.playerList.status'),
+                mobile: { slot: 'body' }
             },
             enableSorting: false,
             cell: ({ row }) => {
@@ -166,7 +170,8 @@ export const createColumns = ({
             meta: {
                 label: () => t('table.playerList.photonId'),
                 disableVisibilityToggle: true,
-                defaultHidden: true
+                defaultHidden: true,
+                mobile: { slot: 'hidden' }
             },
             sortingFn: (rowA, rowB) => (rowA.original?.photonId ?? 0) - (rowB.original?.photonId ?? 0),
             cell: ({ row }) => {
@@ -212,7 +217,8 @@ export const createColumns = ({
             accessorFn: (row) => getInstanceIconWeight(row),
             meta: {
                 class: 'text-center',
-                label: () => t('table.playerList.icon')
+                label: () => t('table.playerList.icon'),
+                mobile: { slot: 'titleSuffix' }
             },
             sortingFn: (rowA, rowB, _columnId) => {
                 const a = rowA.original;
@@ -277,7 +283,7 @@ export const createColumns = ({
             header: () => t('table.playerList.platform'),
             size: 90,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.platform') },
+            meta: { label: () => t('table.playerList.platform'), mobile: { slot: 'footer' } },
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const platform = userRef?.$platform;
@@ -316,7 +322,7 @@ export const createColumns = ({
             header: () => t('table.playerList.language'),
             size: 100,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.language') },
+            meta: { label: () => t('table.playerList.language'), mobile: { slot: 'footer' } },
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const langs = userRef?.$languages ?? [];
@@ -346,7 +352,7 @@ export const createColumns = ({
             header: () => t('table.playerList.bioLink'),
             size: 100,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.bioLink') },
+            meta: { label: () => t('table.playerList.bioLink'), mobile: { slot: 'footer' } },
             cell: ({ row }) => {
                 const links = row.original?.profileRef?.bioLinks?.filter(Boolean) ?? [];
                 return (
@@ -381,7 +387,9 @@ export const createColumns = ({
             minSize: 20,
             meta: {
                 stretch: true,
-                label: () => t('table.playerList.note')
+                label: () => t('table.playerList.note'),
+                // Own line under the platform, languages and links.
+                mobile: { slot: 'footer', class: 'basis-full' }
             },
             enableSorting: false,
             cell: ({ row }) => {

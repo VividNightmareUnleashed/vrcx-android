@@ -9,6 +9,7 @@ import { i18n } from '../../plugins/i18n';
 import { useGalleryStore, useFriendStore } from '../../stores';
 import { showUserDialog } from '../../coordinators/userCoordinator';
 import UserContextMenu from '../../components/UserContextMenu.vue';
+import { useCompactLayout } from '../../composables/useCompactLayout';
 
 const { t } = i18n.global;
 let friendStore;
@@ -84,12 +85,12 @@ const expandedRow = ({ row }) => {
         return (
             <div class="pl-5 text-sm">
                 <div class="flex items-center">
-                    <div class="inline-block align-top w-40">
+                    <div class="inline-block align-top w-40 compact:w-32">
                         {original.previousCurrentAvatarThumbnailImageUrl ? (
                             <>
                                 <img
                                     src={original.previousCurrentAvatarThumbnailImageUrl}
-                                    class="cursor-pointer h-30 w-40 rounded pointer"
+                                    class="cursor-pointer h-30 w-40 rounded pointer compact:h-24 compact:w-32"
                                     loading="lazy"
                                     onClick={() => showFullscreenImageDialog(original.previousCurrentAvatarImageUrl)}
                                 />
@@ -107,12 +108,12 @@ const expandedRow = ({ row }) => {
                     <span class="mx-2">
                         <ArrowRight />
                     </span>
-                    <div class="inline-block align-top w-40">
+                    <div class="inline-block align-top w-40 compact:w-32">
                         {original.currentAvatarThumbnailImageUrl ? (
                             <>
                                 <img
                                     src={original.currentAvatarThumbnailImageUrl}
-                                    class="cursor-pointer h-30 w-40 rounded pointer"
+                                    class="cursor-pointer h-30 w-40 rounded pointer compact:h-24 compact:w-32"
                                     loading="lazy"
                                     onClick={() => showFullscreenImageDialog(original.currentAvatarImageUrl)}
                                 />
@@ -161,6 +162,29 @@ const expandedRow = ({ row }) => {
     return null;
 };
 
+/**
+ * Phone layout: the expanded card also shows the exact date, which PC shows in the date cell's hover tooltip
+ * (docs/DESIGN.md §3.3). Desktop renders the upstream expanded row unchanged.
+ *
+ * @param {{ row: object }} context
+ * @returns {import('vue').VNode | null}
+ */
+const expandedRowWithDate = (context) => {
+    const content = expandedRow(context);
+    if (!useCompactLayout().isCompact.value) {
+        return content;
+    }
+    const longText = formatDateFilter(context.row.original?.created_at, 'long');
+    return (
+        <div class="flex flex-col gap-1.5">
+            <div class="pl-5 text-xs text-muted-foreground tabular-nums" data-testid="feed-expanded-date">
+                {longText}
+            </div>
+            {content}
+        </div>
+    );
+};
+
 export const columns = [
     {
         id: 'expander',
@@ -170,7 +194,7 @@ export const columns = [
         minSize: 0,
         maxSize: 20,
         meta: {
-            expandedRow,
+            expandedRow: expandedRowWithDate,
             // Phone card slots (docs/DESIGN.md §3.1): reference implementation for the other tables.
             mobile: { slot: 'leading' }
         },

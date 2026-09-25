@@ -8,7 +8,85 @@
             :total-items="totalItems"
             :on-page-size-change="handlePageSizeChange">
             <template #toolbar>
-                <div class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
+                <!-- Phones (docs/DESIGN.md §3.4): search first, then the filters as a scrollable strip; the date range
+                     opens in a bottom sheet with one month. -->
+                <div v-if="isCompact" class="flex w-full min-w-0 flex-col gap-2" data-testid="feed-compact-toolbar">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <InputGroupField
+                            v-model="feedTable.search"
+                            class="min-w-0 flex-1"
+                            :placeholder="t('view.feed.search_placeholder')"
+                            clearable
+                            enterkeyhint="search"
+                            @keyup.enter="feedTableLookup"
+                            @change="feedTableLookup" />
+                        <ResponsivePopover v-model:open="popoverOpen" :title="t('view.my_avatars.filter')">
+                            <template #trigger>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="h-8 shrink-0 gap-1 px-2"
+                                    :aria-label="t('view.my_avatars.filter')">
+                                    <ListFilter class="size-4" />
+                                    <Badge
+                                        v-if="activeFilterCount"
+                                        variant="secondary"
+                                        class="h-4.5 min-w-4.5 rounded-full px-1 text-xs">
+                                        {{ activeFilterCount }}
+                                    </Badge>
+                                </Button>
+                            </template>
+                            <div class="flex flex-col items-center">
+                                <RangeCalendar
+                                    v-model="dateRange"
+                                    :locale="locale"
+                                    :max-value="todayDate"
+                                    :number-of-months="1"
+                                    :week-starts-on="weekStartsOn" />
+                                <div class="mt-3 flex w-full justify-end gap-2">
+                                    <Button variant="outline" @click="clearDateFilter">
+                                        {{ t('common.actions.clear') }}
+                                    </Button>
+                                    <Button @click="applyDateFilter">
+                                        {{ t('common.actions.confirm') }}
+                                    </Button>
+                                </div>
+                            </div>
+                        </ResponsivePopover>
+                    </div>
+                    <div class="flex min-w-0 items-center gap-2 overflow-x-auto scrollbar-hidden">
+                        <Toggle
+                            variant="outline"
+                            size="sm"
+                            class="shrink-0"
+                            :model-value="feedTable.vip"
+                            :ariaLabel="t('view.feed.favorites_only_tooltip')"
+                            @update:modelValue="
+                                (v) => {
+                                    feedTable.vip = v;
+                                    feedTableLookup();
+                                }
+                            ">
+                            <Star fill="currentColor" v-if="feedTable.vip" />
+                            <Star v-else />
+                        </Toggle>
+                        <ToggleGroup
+                            type="multiple"
+                            variant="outline"
+                            size="sm"
+                            :model-value="activeFilterSelection"
+                            @update:model-value="handleFeedFilterChange"
+                            class="shrink-0 justify-start">
+                            <ToggleGroupItem value="All">
+                                {{ t('view.search.avatar.all') }}
+                            </ToggleGroupItem>
+                            <ToggleGroupItem v-for="type in feedFilterTypes" :key="type" :value="type">
+                                {{ t('view.feed.filters.' + type) }}
+                            </ToggleGroupItem>
+                        </ToggleGroup>
+                    </div>
+                </div>
+                <div v-else class="mt-0 mx-0 mb-2" style="display: flex; align-items: center">
                     <div style="flex: none; display: flex; align-items: center" class="mr-2">
                         <Popover v-model:open="popoverOpen">
                             <PopoverTrigger as-child>
@@ -108,6 +186,10 @@
     import { Toggle } from '../../components/ui/toggle';
     import { columns as baseColumns } from './columns.jsx';
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+    import ResponsivePopover from './components/ResponsivePopover.vue';
+
+    const { isCompact } = useCompactLayout();
 
     const { feedTable, feedTableData } = storeToRefs(useFeedStore());
     const { feedTableLookup } = useFeedStore();

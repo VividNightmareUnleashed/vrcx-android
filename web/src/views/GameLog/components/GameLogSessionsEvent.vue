@@ -7,14 +7,15 @@
                     <button
                         type="button"
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
-                        <span class="shrink-0 min-w-22 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
-                        <div class="min-w-28 shrink-0">
+                        <div class="min-w-28 shrink-0 compact:hidden">
                             <Badge variant="outline" class="justify-center text-muted-foreground">
                                 {{ t('view.game_log.filters.OnPlayerJoined') }}
                             </Badge>
                         </div>
+                        <LogIn v-if="isCompact" class="shrink-0 text-xs" />
                         <span class="flex-1 font-medium">
                             {{ t('view.game_log.sessions.players_joined', { count: event.count }) }}
                         </span>
@@ -24,7 +25,7 @@
                     </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                    <div class="pl-20 py-0.5 pb-1">
+                    <div class="pl-20 compact:pl-12 py-0.5 pb-1">
                         <div
                             v-for="(member, idx) in event.members"
                             :key="idx"
@@ -46,14 +47,15 @@
                     <button
                         type="button"
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
-                        <span class="shrink-0 min-w-22 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
-                        <div class="min-w-28 shrink-0">
+                        <div class="min-w-28 shrink-0 compact:hidden">
                             <Badge variant="outline" class="justify-center text-muted-foreground">
                                 {{ t('view.game_log.filters.OnPlayerLeft') }}
                             </Badge>
                         </div>
+                        <LogOut v-if="isCompact" class="shrink-0 text-xs" />
                         <span class="flex-1 font-medium">
                             {{ t('view.game_log.sessions.players_left', { count: event.count }) }}
                         </span>
@@ -63,7 +65,7 @@
                     </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                    <div class="pl-20 py-0.5 pb-1">
+                    <div class="pl-20 compact:pl-12 py-0.5 pb-1">
                         <div
                             v-for="(member, idx) in event.members"
                             :key="idx"
@@ -81,10 +83,10 @@
         <!-- Single session join -->
         <template v-else-if="event.type === 'OnPlayerJoined'">
             <div class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50">
-                <span class="shrink-0 min-w-22 text-muted-foreground text-[0.75rem] tabular-nums">
+                <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                     {{ formatTime(event.created_at) }}
                 </span>
-                <div class="min-w-28 shrink-0">
+                <div class="min-w-28 shrink-0 compact:hidden">
                     <Badge variant="outline" class="justify-center text-muted-foreground">
                         {{ t('view.game_log.filters.OnPlayerJoined') }}
                     </Badge>
@@ -101,10 +103,10 @@
         <template v-else-if="event.type === 'OnPlayerLeft'">
             <div
                 class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50 text-muted-foreground">
-                <span class="shrink-0 min-w-22 text-muted-foreground text-[0.75rem] tabular-nums">
+                <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                     {{ formatTime(event.created_at) }}
                 </span>
-                <div class="min-w-28 shrink-0">
+                <div class="min-w-28 shrink-0 compact:hidden">
                     <Badge variant="outline" class="justify-center text-muted-foreground">
                         {{ t('view.game_log.filters.OnPlayerLeft') }}
                     </Badge>
@@ -123,10 +125,10 @@
                 <ContextMenuTrigger as-child>
                     <div
                         class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50 cursor-default">
-                        <span class="shrink-0 min-w-22 text-muted-foreground text-[0.75rem] tabular-nums">
+                        <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
                         </span>
-                        <div class="min-w-28 shrink-0">
+                        <div class="min-w-28 shrink-0 compact:hidden">
                             <Badge variant="outline" class="justify-center text-muted-foreground">
                                 {{ t('view.game_log.filters.VideoPlay') }}
                             </Badge>
@@ -147,9 +149,10 @@
                                 {{ t('view.game_log.sessions.play_count', { count: event.playCount }) }}
                             </Badge>
                         </span>
-                        <span v-if="event.displayName" class="shrink-0 text-muted-foreground text-[0.75rem]">
+                        <span v-if="event.displayName" class="shrink-0 text-muted-foreground text-[0.75rem] compact:max-w-24 compact:truncate">
                             {{ event.displayName }}
                         </span>
+                        <GameLogRowMenu v-if="isCompact" :entry="event" />
                     </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
@@ -184,6 +187,10 @@
     } from '../../../components/ui/context-menu';
     import { copyToClipboard, formatDateFilter, openExternalLink } from '../../../shared/utils';
     import { lookupUser } from '../../../coordinators/userCoordinator';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+    import GameLogRowMenu from './GameLogRowMenu.vue';
+
+    const { isCompact } = useCompactLayout();
 
     const { t } = useI18n();
 
@@ -206,7 +213,8 @@
         return props.event.videoName || props.event.videoUrl;
     });
 
+    // Phones show the time only: the segment header above already carries the date.
     function formatTime(dateStr) {
-        return formatDateFilter(dateStr, 'short');
+        return formatDateFilter(dateStr, isCompact.value ? 'time' : 'short');
     }
 </script>

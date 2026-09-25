@@ -16,11 +16,19 @@ import { copyToClipboard, formatDateFilter, openExternalLink } from '../../share
 import { i18n } from '../../plugins';
 import { useInstanceStore, useUiStore } from '../../stores';
 import { lookupUser } from '../../coordinators/userCoordinator';
+import { useCompactLayout } from '../../composables/useCompactLayout';
+import GameLogRowMenu from './components/GameLogRowMenu.vue';
+import { hasGameLogMenu } from './gameLogMenu';
 import { showWorldDialog } from '../../coordinators/worldCoordinator';
 
 const { t } = i18n.global;
 
 const UNACTIONABLE_TYPES = new Set(['OnPlayerJoined', 'OnPlayerLeft', 'Location', 'PortalSpawn']);
+
+const cellTextClass = () =>
+    useCompactLayout().isCompact.value
+        ? 'block w-full min-w-0 whitespace-normal break-words'
+        : 'block w-full min-w-0 truncate';
 
 export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
     const { showPreviousInstancesInfoDialog } = useInstanceStore();
@@ -34,13 +42,14 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
             size: 20,
             minSize: 0,
             maxSize: 20,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         },
         {
             accessorFn: (row) => getCreatedAt(row),
             id: 'created_at',
             size: 140,
-            meta: { label: () => t('table.gameLog.date') },
+            meta: { label: () => t('table.gameLog.date'), mobile: { slot: 'trailing' } },
             header: ({ column }) => (
                 <Button
                     variant="ghost"
@@ -67,7 +76,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
             accessorKey: 'type',
             size: 150,
             header: () => t('table.gameLog.type'),
-            meta: { label: () => t('table.gameLog.type') },
+            meta: { label: () => t('table.gameLog.type'), mobile: { slot: 'badge' } },
             cell: ({ row }) => {
                 const original = row.original;
                 const label = t(`view.game_log.filters.${original.type}`);
@@ -89,7 +98,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
             accessorKey: 'displayName',
             size: 200,
             header: () => t('table.gameLog.user'),
-            meta: { label: () => t('table.gameLog.user') },
+            meta: { label: () => t('table.gameLog.user'), mobile: { slot: 'title' } },
             cell: ({ row }) => {
                 const original = row.original;
                 const isFriend = original.isFriend;
@@ -113,10 +122,13 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
             minSize: 150,
             meta: {
                 stretch: true,
-                label: () => t('table.gameLog.detail')
+                label: () => t('table.gameLog.detail'),
+                mobile: { slot: 'body' }
             },
             cell: ({ row }) => {
                 const original = row.original;
+                // Phones show the full text on up to two lines (the card clamps it) instead of a hover tooltip.
+                const textClass = cellTextClass();
                 if (original.type === 'Location') {
                     return (
                         <div class="w-full min-w-0 truncate">
@@ -148,7 +160,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                         <ContextMenu>
                             <ContextMenuTrigger asChild>
                                 <TooltipWrapper content={original.data} side="bottom">
-                                    <span class="block w-full min-w-0 truncate">{original.data}</span>
+                                    <span class={textClass}>{original.data}</span>
                                 </TooltipWrapper>
                             </ContextMenuTrigger>
                             <ContextMenuContent>
@@ -164,7 +176,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                 if (original.type === 'External') {
                     return (
                         <TooltipWrapper content={original.message} side="bottom">
-                            <span class="block w-full min-w-0 truncate">{original.message}</span>
+                            <span class={textClass}>{original.message}</span>
                         </TooltipWrapper>
                     );
                 }
@@ -177,7 +189,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                         <ContextMenu>
                             <ContextMenuTrigger asChild>
                                 <TooltipWrapper content={tooltipText} side="bottom">
-                                    <span class="block w-full min-w-0 truncate cursor-pointer">
+                                    <span class={`${textClass} cursor-pointer`}>
                                         {original.videoId ? <span class="mr-1.5">{original.videoId}:</span> : null}
                                         {showLink ? (
                                             <span
@@ -216,7 +228,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                         <ContextMenu>
                             <ContextMenuTrigger asChild>
                                 <TooltipWrapper content={original.resourceUrl} side="bottom">
-                                    <span class="block w-full min-w-0 truncate cursor-pointer">
+                                    <span class={`${textClass} cursor-pointer`}>
                                         <span
                                             class="cursor-pointer"
                                             onClick={() => openExternalLink(original.resourceUrl)}
@@ -251,7 +263,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
 
                 return (
                     <TooltipWrapper content={original.data} side="bottom">
-                        <span class="block w-full min-w-0 truncate">{original.data}</span>
+                        <span class={textClass}>{original.data}</span>
                     </TooltipWrapper>
                 );
             }
@@ -260,7 +272,8 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
             id: 'action',
             meta: {
                 class: 'text-right',
-                label: () => t('table.gameLog.action')
+                label: () => t('table.gameLog.action'),
+                mobile: { slot: 'actions' }
             },
             size: 90,
             minSize: 90,
@@ -271,8 +284,10 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                 const original = row.original;
                 const canDelete = !UNACTIONABLE_TYPES.has(original.type);
                 const canShowPrevious = original.type === 'Location';
+                // Phones: the right-click menus of the row's cells as an explicit "more" button.
+                const showMenu = useCompactLayout().isCompact.value && hasGameLogMenu(original);
 
-                if (!canDelete && !canShowPrevious) {
+                if (!canDelete && !canShowPrevious && !showMenu) {
                     return null;
                 }
 
@@ -298,6 +313,7 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                                 </button>
                             </TooltipWrapper>
                         ) : null}
+                        {showMenu ? <GameLogRowMenu entry={original} /> : null}
                     </div>
                 );
             }

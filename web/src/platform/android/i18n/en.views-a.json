@@ -1,0 +1,22 @@
+{
+    "android": {
+        "views_a": {
+            "more_actions": "More actions",
+            "date_range": "Date range",
+            "filters": "Filters",
+            "search": "Search",
+            "settings": "Settings",
+            "player_icons": {
+                "master": "Instance Master",
+                "moderator": "Moderator",
+                "friend": "Friend",
+                "blocked": "Blocked",
+                "muted": "Muted",
+                "avatar_interaction": "Avatar Interaction Disabled",
+                "chatbox_muted": "Chatbox Muted",
+                "timeout": "Timeout",
+                "age_verified": "18+ Verified"
+            }
+        }
+    }
+}
