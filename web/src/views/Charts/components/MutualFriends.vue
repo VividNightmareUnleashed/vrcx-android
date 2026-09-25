@@ -6,7 +6,7 @@
             <!-- Phones: the toolbar wraps and the friend picker takes the free width (docs/DESIGN.md §3.4). -->
             <div class="flex items-center w-full compact:flex-wrap compact:gap-2">
                 <div
-                    class="options-container flex items-center gap-3 bg-transparent pb-3 shadow-none compact:min-w-0 compact:flex-1 compact:px-0 compact:pb-0 compact:mt-0">
+                    class="options-container flex items-center gap-3 bg-transparent pb-3 shadow-none compact:min-w-0 compact:flex-1 compact:px-0 compact:pb-0 compact:mt-0 compact:[&>[role=combobox]]:w-auto compact:[&>[role=combobox]]:min-w-0 compact:[&>[role=combobox]]:flex-1">
                     <div>
                         <TooltipWrapper
                             v-if="isFetching"
@@ -26,7 +26,7 @@
                     </div>
                     <VirtualCombobox
                         v-if="graphReady"
-                        class="min-w-60 compact:min-w-0 compact:flex-1"
+                        class="min-w-60"
                         :model-value="selectedFriendId"
                         @update:modelValue="navigateToFriend"
                         :groups="excludePickerGroups"
@@ -1012,6 +1012,8 @@
             sigmaInstance = new Sigma(graph, container, {
                 // Sentry: VRCX-WEB-2EG
                 allowInvalidContainer: true,
+                // Phones: a narrow canvas cuts the names of the outermost nodes; leave room for them.
+                ...(isCompact.value ? { stagePadding: 56 } : {}),
                 renderLabels: true,
                 labelRenderedSizeThreshold: DEFAULT_LABEL_THRESHOLD,
                 labelColor: { color: labelColor },

@@ -188,12 +188,12 @@
     }
 
     /* Phones: a 7 × 40 px grid that fits a 360 px screen. */
-    :global(html.vrcx-compact) .group-calendar-month {
+    html.vrcx-compact .group-calendar-month {
         padding: 0;
         justify-content: center;
     }
 
-    :global(html.vrcx-compact) .calendar-date-content {
+    html.vrcx-compact .calendar-date-content {
         font-size: 15px;
     }
 

@@ -659,22 +659,22 @@
 
     /* ---- Phones (html.vrcx-compact, Android only) ---- */
 
-    :global(html.vrcx-compact) .x-dialog .top-content {
+    html.vrcx-compact .x-dialog .top-content {
         height: auto;
         overflow: visible;
     }
 
-    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view {
+    html.vrcx-compact .x-dialog .top-content .timeline-view {
         flex-direction: column;
         align-items: stretch;
         gap: 12px;
     }
 
-    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .calendar-container {
+    html.vrcx-compact .x-dialog .top-content .timeline-view .calendar-container {
         order: -1;
     }
 
-    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container {
+    html.vrcx-compact .x-dialog .top-content .timeline-view .timeline-container {
         height: auto;
         min-width: 0;
         margin: 0;
@@ -682,27 +682,27 @@
         overflow: visible;
     }
 
-    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container .timeline-group {
+    html.vrcx-compact .x-dialog .top-content .timeline-view .timeline-container .timeline-group {
         padding: 0 10px 8px 0;
     }
 
-    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container .timeline-empty {
+    html.vrcx-compact .x-dialog .top-content .timeline-view .timeline-container .timeline-empty {
         padding: 24px 0;
     }
 
-    :global(html.vrcx-compact) .grid-view {
+    html.vrcx-compact .grid-view {
         position: static;
     }
 
-    :global(html.vrcx-compact) .grid-view .search-container {
+    html.vrcx-compact .grid-view .search-container {
         padding: 0 0 8px;
     }
 
-    :global(html.vrcx-compact) .grid-view .search-container .search-input {
+    html.vrcx-compact .grid-view .search-container .search-input {
         width: 100%;
     }
 
-    :global(html.vrcx-compact) .grid-view .groups-grid {
+    html.vrcx-compact .grid-view .groups-grid {
         padding: 8px 10px 8px 0;
         overflow: visible;
     }

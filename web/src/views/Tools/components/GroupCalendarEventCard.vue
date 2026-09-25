@@ -381,7 +381,7 @@
     }
 
     /* Phones: grid cards take the full row. */
-    :global(html.vrcx-compact) .event-card.grid-card {
+    html.vrcx-compact .event-card.grid-card {
         flex: 1 1 100%;
         max-width: none;
     }

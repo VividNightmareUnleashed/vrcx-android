@@ -62,18 +62,18 @@
     }
 
     /* Phones: the label takes the free width (the fixed 225/300 px column does not fit next to the switch). */
-    :global(html.vrcx-compact) .simple-switch {
+    html.vrcx-compact .simple-switch {
         justify-content: space-between;
         gap: 12px;
     }
-    :global(html.vrcx-compact) .simple-switch > .name {
+    html.vrcx-compact .simple-switch > .name {
         width: auto !important;
         min-width: 0;
         flex: 1 1 auto;
         flex-wrap: wrap;
         padding-top: 0;
     }
-    :global(html.vrcx-compact) .simple-switch > .switch {
+    html.vrcx-compact .simple-switch > .switch {
         margin-left: 0;
         flex-shrink: 0;
     }
