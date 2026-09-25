@@ -413,7 +413,7 @@
 
 <script setup>
     import { Trash2, TriangleAlert } from 'lucide-vue-next';
-    import { computed, reactive, ref } from 'vue';
+    import { computed, defineAsyncComponent, reactive, ref } from 'vue';
     import { Button } from '@/components/ui/button';
     import { Switch } from '@/components/ui/switch';
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -443,12 +443,16 @@
     import { clearVRCXCache } from '@/coordinators/vrcxCoordinator';
     import { openExternalLink } from '@/shared/utils';
     import { hasDesktopShell, hasLocalGame, hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
-    import AndroidCustomFilesSettings from '@/platform/android/components/settings/AndroidCustomFilesSettings.vue';
 
     import PhotonSettings from '../PhotonSettings.vue';
     import RegistryBackupDialog from '../../../Tools/dialogs/RegistryBackupDialog.vue';
     import SettingsGroup from '../SettingsGroup.vue';
     import SettingsItem from '../SettingsItem.vue';
+
+    // Android: reload custom.css / custom.js without the Alt+Shift+R hotkey (docs/ARCHITECTURE.md §9).
+    const AndroidCustomFilesSettings = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/settings/AndroidCustomFilesSettings.vue'))
+        : null;
 
     const { t } = useI18n();
 
