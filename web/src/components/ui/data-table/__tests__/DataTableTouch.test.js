@@ -58,7 +58,7 @@ function buildColumns({ hints = true, quickActions = false } = {}) {
     ];
 }
 
-function mountLayout({ columns = buildColumns(), props = {}, tableOptions = {}, meta = {} } = {}) {
+function mountLayout({ columns = buildColumns(), props = {}, tableOptions = {}, meta = {}, slots = undefined } = {}) {
     let table;
     const Host = defineComponent({
         setup() {
@@ -75,7 +75,7 @@ function mountLayout({ columns = buildColumns(), props = {}, tableOptions = {}, 
             // App.vue provides the tooltip context in the app.
             return () =>
                 h(TooltipProvider, null, () =>
-                    h(DataTableLayout, { table, pageSizes: [10, 20], totalItems: rows.length, ...props })
+                    h(DataTableLayout, { table, pageSizes: [10, 20], totalItems: rows.length, ...props }, slots)
                 );
         }
     });
@@ -198,5 +198,20 @@ describe('DataTableLayout on phones', () => {
         expect(ui.store.shiftHeld).toBe(true);
         wrapper.unmount();
         expect(ui.store.shiftHeld).toBe(false);
+    });
+
+    it('puts the toggle beside the toolbar of a table that opts in with the quick-actions prop, on tablets too', () => {
+        layout.compact.value = false;
+        const { wrapper } = mountLayout({
+            columns: buildColumns({ hints: false }),
+            props: { quickActions: true },
+            slots: { toolbar: () => h('div', { class: 'view-toolbar' }, 'Filters') }
+        });
+
+        const row = wrapper.find('[data-slot="data-table-toolbar"]');
+        expect(row.exists()).toBe(true);
+        expect(row.find('.view-toolbar').exists()).toBe(true);
+        expect(row.find('[data-slot="quick-actions-toggle"]').exists()).toBe(true);
+        wrapper.unmount();
     });
 });

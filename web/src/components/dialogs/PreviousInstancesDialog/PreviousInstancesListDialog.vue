@@ -8,6 +8,7 @@
             class="min-w-0 w-full"
             :table="table"
             :loading="loading"
+            quick-actions
             :table-style="tableStyle"
             :page-sizes="pageSizes"
             :total-items="totalItems"
