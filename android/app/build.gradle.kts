@@ -72,6 +72,4 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("junit:junit:4.13.2")
-    // appapi: instrumented tests need the AndroidX runner (belongs in defaultConfig; kept here to stay in the appapi block)
-    android.defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 }
