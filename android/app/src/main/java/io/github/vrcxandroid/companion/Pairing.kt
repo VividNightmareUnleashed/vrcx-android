@@ -103,7 +103,8 @@ object PairingQr {
         }
         val version = params["v"]?.toIntOrNull() ?: throw PairingException(PairingException.INVALID_QR)
         if (version != CompanionProtocol.VERSION) throw PairingException(PairingException.VERSION)
-        val id = params["id"]?.takeIf(CompanionProtocol::isSafeId) ?: throw PairingException(PairingException.INVALID_QR)
+        val id = params["id"]?.takeIf(CompanionProtocol::isSafeId)
+            ?: throw PairingException(PairingException.INVALID_QR)
         val fp = params["fp"]?.takeIf { it.isNotBlank() } ?: throw PairingException(PairingException.INVALID_QR)
         val port = params["p"]?.toIntOrNull()?.takeIf { it in 1..65535 }
             ?: throw PairingException(PairingException.INVALID_QR)
@@ -112,6 +113,13 @@ object PairingQr {
         if (listed.isEmpty()) throw PairingException(PairingException.INVALID_QR)
         val hosts = listed.filter(LocalAddressFilter::isLocalLiteral).map { it.removePrefix("[").removeSuffix("]") }
         if (hosts.isEmpty()) throw PairingException(PairingException.NOT_LOCAL)
-        return QrPairing(id = id, name = params["n"].orEmpty(), hosts = hosts.distinct(), port = port, fp = fp, code = code)
+        return QrPairing(
+            id = id,
+            name = params["n"].orEmpty(),
+            hosts = hosts.distinct(),
+            port = port,
+            fp = fp,
+            code = code,
+        )
     }
 }

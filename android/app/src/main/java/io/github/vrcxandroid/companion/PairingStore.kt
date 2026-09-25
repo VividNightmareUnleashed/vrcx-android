@@ -74,6 +74,9 @@ data class PairedCompanion(
         if (hosts.firstOrNull() == host) this else copy(hosts = listOf(host) + hosts.filter { it != host })
 
     companion object {
+        /** Addresses remembered per companion (newest first); older DHCP leases fall off the end. */
+        const val MAX_HOSTS = 8
+
         internal fun fromStoredJson(json: JsonObject): PairedCompanion? {
             val id = json.str("id")?.takeIf(CompanionProtocol::isSafeId) ?: return null
             val fp = json.str("fp") ?: return null

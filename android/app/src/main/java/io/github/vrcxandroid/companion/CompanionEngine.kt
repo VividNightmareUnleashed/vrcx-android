@@ -155,6 +155,9 @@ class CompanionEngine(
 
     private val loopThread = Thread(::runLoop, "companion-loop").apply { isDaemon = true }
 
+    /** Loop thread only. */
+    private var graceTask: ScheduledFuture<*>? = null
+
     // ================================================================================================================
     // CompanionController
     // ================================================================================================================
@@ -201,7 +204,7 @@ class CompanionEngine(
             records = records.map { rec ->
                 val hit = found.firstOrNull { it.id == rec.id && PairingCrypto.constantTimeEquals(it.fp, rec.fp) }
                     ?: return@map rec
-                val hosts = (hit.hosts + rec.hosts).distinct()
+                val hosts = (hit.hosts + rec.hosts).distinct().take(PairedCompanion.MAX_HOSTS)
                 if (hosts == rec.hosts && hit.port == rec.port) rec else rec.copy(hosts = hosts, port = hit.port)
                     .also { dirty = true }
             }
@@ -444,7 +447,8 @@ class CompanionEngine(
             val hit = found.firstOrNull { it.id == current.id && PairingCrypto.constantTimeEquals(it.fp, current.fp) }
             if (hit != null) {
                 current = replaceRecord(current.id) {
-                    it.copy(hosts = (hit.hosts + it.hosts).distinct(), port = hit.port)
+                    val hosts = (hit.hosts + it.hosts).distinct().take(PairedCompanion.MAX_HOSTS)
+                    it.copy(hosts = hosts, port = hit.port)
                 } ?: current
                 conn = tryHosts(hit.hosts, current.fp, current.port)
             }
@@ -485,7 +489,9 @@ class CompanionEngine(
 
     /** Stored hosts are IP literals; names (manual pairing by host name) are resolved and filtered. */
     private fun resolveForLoop(host: String): List<InetAddress> {
-        LocalAddressFilter.parseLiteral(host)?.let { return if (LocalAddressFilter.isLocal(it)) listOf(it) else emptyList() }
+        LocalAddressFilter.parseLiteral(host)?.let {
+            return if (LocalAddressFilter.isLocal(it)) listOf(it) else emptyList()
+        }
         return try {
             InetAddress.getAllByName(host).filter(LocalAddressFilter::isLocal)
         } catch (e: IOException) {
@@ -507,7 +513,9 @@ class CompanionEngine(
     /** `hello` → `auth` → `authOk` (PROTOCOL.md §5.1, §5.3). */
     private fun authenticate(conn: TlsConnection, record: PairedCompanion): HelloMessage {
         val first = conn.readFrame()
-        if (first !is Frame.Control || first.type != CompanionProtocol.T_HELLO) throw ProtocolException("expected hello")
+        if (first !is Frame.Control || first.type != CompanionProtocol.T_HELLO) {
+            throw ProtocolException("expected hello")
+        }
         val hello = HelloMessage.parse(first.json)
         if (hello.version != CompanionProtocol.VERSION) throw HandshakeFailure(PairingException.VERSION)
         if (hello.id != record.id) throw HandshakeFailure(PairingException.FINGERPRINT)
@@ -597,8 +605,9 @@ class CompanionEngine(
                     if (protocolError) fail(PairingException.PROTOCOL) else phase = Phase.CONNECTING
                 }
             }
-            // Re-evaluate the process flags once the grace period is over.
-            schedule(config.processGraceMs + 100) { emitState() }
+            // Re-evaluate the process flags once the grace period is over (one pending timer at most).
+            graceTask?.cancel(false)
+            graceTask = schedule(config.processGraceMs + 100) { emitState() }
         }
         if (!isCurrent(gen)) return Outcome.ABORTED
         return if (synced && !protocolError) Outcome.SYNCED else Outcome.FAILED
@@ -702,7 +711,7 @@ class CompanionEngine(
                             name = hello.name.ifBlank { nameHint.orEmpty() },
                             fp = pinnedFp,
                             token = token,
-                            hosts = (listOf(usedHost) + extraHosts).distinct(),
+                            hosts = (listOf(usedHost) + extraHosts).distinct().take(PairedCompanion.MAX_HOSTS),
                             port = port,
                             pairedAt = now,
                             lastSeen = now,

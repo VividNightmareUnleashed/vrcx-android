@@ -138,9 +138,9 @@ class TlsConnector(private val connectTimeoutMs: Int, private val readTimeoutMs:
                 ssl.startHandshake()
             } catch (e: IOException) {
                 val presented = trustManager.presentedFp
-                if (expectedFp != null && presented != null && !PairingCrypto.constantTimeEquals(presented, expectedFp)) {
-                    throw FingerprintMismatchException(presented)
-                }
+                val mismatch = expectedFp != null && presented != null &&
+                    !PairingCrypto.constantTimeEquals(presented, expectedFp)
+                if (mismatch) throw FingerprintMismatchException(presented)
                 throw e
             }
             val fp = trustManager.presentedFp ?: throw IOException("no server certificate")

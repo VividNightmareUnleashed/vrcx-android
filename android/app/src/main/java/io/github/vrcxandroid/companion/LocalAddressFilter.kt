@@ -41,7 +41,8 @@ object LocalAddressFilter {
         if ((b0 and 0xFE) == 0xFC) return true // fc00::/7 unique local
         val firstTenZero = (0 until 10).all { b[it].toInt() == 0 }
         if (firstTenZero && (0 until 15).all { b[it].toInt() == 0 } && b[15].toInt() == 1) return true // ::1
-        if (firstTenZero && b[10] == 0xFF.toByte() && b[11] == 0xFF.toByte()) return isLocalV4(b[12], b[13]) // ::ffff:v4
+        // ::ffff:a.b.c.d
+        if (firstTenZero && b[10] == 0xFF.toByte() && b[11] == 0xFF.toByte()) return isLocalV4(b[12], b[13])
         return false
     }
 
@@ -106,7 +107,7 @@ object LocalAddressFilter {
                 out += ((v4[2].toInt() and 0xFF) shl 8) or (v4[3].toInt() and 0xFF)
                 continue
             }
-            if (p.isEmpty() || p.length > 4 || !p.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+            if (p.isEmpty() || p.length > 4 || !p.all(::isHexDigit)) return null
             out += p.toInt(16)
         }
         return out
@@ -125,6 +126,8 @@ object LocalAddressFilter {
         }
         return out
     }
+
+    private fun isHexDigit(c: Char): Boolean = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
 
     /** True when [host] is an IP literal in a local range. Host names are not resolved here. */
     fun isLocalLiteral(host: String): Boolean = parseLiteral(host)?.let(::isLocal) ?: false
