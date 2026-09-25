@@ -1,5 +1,9 @@
 <template>
-    <SidebarProvider :mobile="true" class="vrcx-shell vrcx-phone-shell h-full min-h-0 min-w-0 flex-1">
+    <!-- The phone nav is always the expanded PC nav inside the sheet, whatever the tablet/PC collapsed setting is. -->
+    <SidebarProvider
+        :mobile="true"
+        :default-open="true"
+        class="vrcx-shell vrcx-phone-shell h-full min-h-0 min-w-0 flex-1">
         <!-- NavMenu: rendered by the provider as the left nav sheet. -->
         <slot name="nav" />
         <NavSheetBridge />

@@ -142,6 +142,30 @@ describe('Android back handler (DESIGN.md §6)', () => {
         expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
     });
 
+    it('skips a layer that is playing its exit animation', () => {
+        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
+        const dialog = addLayer({ attrs: { 'data-vrcx-main-dialog': '', 'data-state': 'open' } });
+        // A menu closed a moment ago: reka keeps it mounted with data-state="closed" until the animation ends.
+        addLayer({ attrs: { role: 'menu', 'data-state': 'closed' } });
+
+        expect(findTopLayer(document)).toBe(dialog);
+        expect(setup.handleBack()).toBe(true);
+        expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
+        expect(setup.escapes).toHaveLength(0);
+    });
+
+    it('skips hidden layers and falls through to the shell when nothing visible is open', () => {
+        setup = createSetup();
+        setup.shell.navSheetOpen = true;
+        const tooltip = addLayer({ attrs: { 'data-slot': 'tooltip-content', hidden: '' } });
+
+        expect(findTopLayer(document)).toBeNull();
+        expect(setup.handleBack()).toBe(true);
+        expect(setup.closeShellPanels).toHaveBeenCalledTimes(1);
+        expect(setup.escapes).toHaveLength(0);
+        expect(tooltip.isConnected).toBe(true);
+    });
+
     it('counts the press as handled even when the layer refuses Escape', () => {
         setup = createSetup();
         const layer = addLayer({ attrs: { 'data-slot': 'alert-dialog-content' } });

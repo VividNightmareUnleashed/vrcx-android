@@ -73,6 +73,21 @@ html.is-android [data-sonner-toaster][data-y-position='bottom'] {
     bottom: calc(var(--offset-bottom, 24px) + var(--vrcx-bottom-inset));
 }
 
+/* Noty (bottom-left on PC) stays above the dock and the gesture bar. */
+html.is-android :is(#noty_layout__bottomLeft, #noty_layout__bottom, #noty_layout__bottomRight) {
+    bottom: calc(20px + var(--vrcx-fixed-bottom));
+    max-width: calc(100vw - 40px - var(--safe-left) - var(--safe-right));
+}
+
+html.is-android :is(#noty_layout__topLeft, #noty_layout__top, #noty_layout__topRight) {
+    top: calc(20px + var(--safe-top));
+}
+
+/* In landscape the rail takes the left edge. */
+html.vrcx-compact-landscape :is(#noty_layout__bottomLeft, #noty_layout__topLeft) {
+    left: calc(20px + var(--rail-w) + var(--safe-left));
+}
+
 /* ---------------------------------------------------------------- page card (DESIGN.md §2) */
 
 /* The routed view keeps its PC card, floating in the frame colour at 6px margins. */
@@ -134,18 +149,37 @@ html.vrcx-compact [data-slot='dialog-content'] [data-slot='dialog-header'] {
     padding-right: 36px;
 }
 
-/* Sticky footer: stays at the bottom of the page while the body scrolls, clear of the gesture bar and keyboard. */
+/* A page with a footer is a column that runs to the screen edge; the footer sits at the bottom even when the body is
+ * short, stays visible while the body scrolls (sticky), and its own padding keeps the buttons clear of the gesture bar
+ * and the keyboard. */
+html.vrcx-compact [data-slot='dialog-content']:not([data-mobile='card']):has(> [data-slot='dialog-footer']) {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+}
+
 html.vrcx-compact [data-slot='dialog-content']:not([data-mobile='card']) > [data-slot='dialog-footer'] {
     position: sticky;
     bottom: 0;
     z-index: 1;
-    margin-bottom: calc(-12px - var(--vrcx-bottom-inset));
+    margin-top: auto;
     padding-top: 8px;
     padding-bottom: calc(12px + var(--vrcx-bottom-inset));
     background: var(--background);
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: flex-end;
+}
+
+/* PC footers that group their buttons in nested rows (secondary actions left, Cancel/Confirm right) wrap instead of
+ * running off the screen; the last group stays on the right, as on PC. */
+html.vrcx-compact [data-slot='dialog-footer'] .flex {
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+html.vrcx-compact [data-slot='dialog-footer'] .justify-between > :last-child {
+    margin-left: auto;
 }
 
 /* Centred cards. */
@@ -178,17 +212,18 @@ html.vrcx-compact [data-slot='dialog-content'] [data-slot='toggle-group'] {
 
 /* ---------------------------------------------------------------- sheets */
 
-html.is-android [data-slot='sheet-content'].right-0,
-html.is-android [data-slot='sheet-content'].left-0 {
+/* Sheets carry data-slot=sheet-content, except the nav sheet (components/ui/sidebar/Sidebar.vue), which carries
+ * data-slot=sidebar data-mobile=true. */
+html.is-android :is([data-slot='sheet-content'], [data-slot='sidebar'][data-mobile='true']):is(.right-0, .left-0) {
     padding-top: var(--safe-top);
     padding-bottom: var(--vrcx-bottom-inset);
 }
 
-html.is-android [data-slot='sheet-content'].left-0 {
+html.is-android :is([data-slot='sheet-content'], [data-slot='sidebar'][data-mobile='true']).left-0 {
     padding-left: var(--safe-left);
 }
 
-html.is-android [data-slot='sheet-content'].right-0 {
+html.is-android :is([data-slot='sheet-content'], [data-slot='sidebar'][data-mobile='true']).right-0 {
     padding-right: var(--safe-right);
 }
 
@@ -202,18 +237,17 @@ html.is-android [data-slot='sheet-content'].top-0 {
     padding-top: var(--safe-top);
 }
 
-html.is-android [data-slot='sheet-content'].right-0 > button.absolute,
-html.is-android [data-slot='sheet-content'].left-0 > button.absolute {
+html.is-android [data-slot='sheet-content']:is(.right-0, .left-0) > button.absolute {
     top: calc(1rem + var(--safe-top));
 }
 
-/* Side sheets are full width on phones; the nav sheet keeps the PC nav width. */
-html.vrcx-compact [data-slot='sheet-content'] {
+/* Side sheets are full width on phones and open in 250 ms (upstream 500 ms). */
+html.vrcx-compact :is([data-slot='sheet-content'], [data-slot='sidebar'][data-mobile='true']) {
     max-width: none;
     --tw-duration: 250ms;
 }
 
-html.vrcx-compact [data-slot='sheet-content'][data-state='closed'] {
+html.vrcx-compact :is([data-slot='sheet-content'], [data-slot='sidebar'][data-mobile='true'])[data-state='closed'] {
     --tw-duration: 200ms;
 }
 
@@ -225,7 +259,8 @@ html.vrcx-compact-landscape [data-slot='sheet-content'].inset-y-0 {
     width: min(100vw, 480px);
 }
 
-html.vrcx-compact [data-slot='sheet-content'][data-sidebar='sidebar'] {
+/* The nav sheet keeps the PC nav width. */
+html.vrcx-compact [data-slot='sidebar'][data-mobile='true'].inset-y-0 {
     width: min(288px, 85vw);
 }
 
@@ -246,6 +281,7 @@ html.vrcx-compact [data-slot$='overlay'] {
 
 @media (prefers-reduced-motion: reduce) {
     html.is-android [data-slot='sheet-content'],
+    html.is-android [data-slot='sidebar'][data-mobile='true'],
     html.is-android [data-slot='dialog-content'] {
         animation-duration: 1ms;
     }

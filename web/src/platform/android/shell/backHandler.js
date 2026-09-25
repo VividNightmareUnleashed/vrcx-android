@@ -10,14 +10,26 @@
 const LAYER_SELECTOR = '[data-dismissable-layer]';
 
 /**
- * The top-most reka dismissable layer: the layer holding focus (reka moves focus into the newest modal layer), else
- * the last one in document order (popovers, menus and sheets are appended to <body> as they open).
+ * A layer the user can see: not playing its exit animation (reka keeps a closing layer mounted with
+ * data-state="closed" until the animation ends) and not hidden.
+ *
+ * @param {Element} layer
+ * @returns {boolean}
+ */
+export function isLiveLayer(layer) {
+    if (layer.getAttribute('data-state') === 'closed') return false;
+    return !layer.closest('[hidden]');
+}
+
+/**
+ * The top-most open reka dismissable layer: the layer holding focus (reka moves focus into the newest modal layer),
+ * else the last one in document order (popovers, menus and sheets are appended to <body> as they open).
  *
  * @param {Document} doc
  * @returns {Element | null}
  */
 export function findTopLayer(doc) {
-    const layers = Array.from(doc.querySelectorAll(LAYER_SELECTOR));
+    const layers = Array.from(doc.querySelectorAll(LAYER_SELECTOR)).filter(isLiveLayer);
     if (layers.length === 0) {
         return null;
     }

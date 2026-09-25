@@ -81,6 +81,7 @@
     import { useQuickSearchStore } from '../../../stores/quickSearch';
     import { resolveRouteTitle } from './shellNav';
     import { shellState } from './shellState';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     import GameIndicator from './GameIndicator.vue';
 
@@ -90,6 +91,7 @@
     const route = useRoute();
     const router = useRouter();
     const navModel = useNavMenuModel();
+    const { isCompactLandscape } = useCompactLayout();
     const quickSearchStore = useQuickSearchStore();
     const notificationStore = useNotificationStore();
     const { isNotificationCenterOpen, hasUnseenNotifications } = storeToRefs(notificationStore);
@@ -97,7 +99,8 @@
     const { notifiedMenus } = storeToRefs(useUiStore());
 
     const title = computed(() => {
-        if (shellState.friendsPanelOpen) {
+        // Portrait: the friends panel covers the page, so the bar names it. Landscape shows both side by side.
+        if (shellState.friendsPanelOpen && !isCompactLandscape.value) {
             return { icon: 'ri-team-line', label: t('side_panel.friends') };
         }
         const definitions = navModel.value?.allNavDefinitions?.value ?? navDefinitions;

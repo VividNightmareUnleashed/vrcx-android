@@ -5,7 +5,8 @@
         </div>
         <!-- Touch layouts: View options (the PC header menu) and the Shift stand-in next to the toolbar. -->
         <div v-else-if="showTouchTools" class="mb-2 flex items-start gap-2" data-slot="data-table-toolbar">
-            <div v-if="$slots.toolbar" class="min-w-0 flex-1">
+            <!-- A PC toolbar row that is wider than the phone scrolls sideways instead of spilling out. -->
+            <div v-if="$slots.toolbar" class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden">
                 <slot name="toolbar"></slot>
             </div>
             <div class="ml-auto flex shrink-0 items-center gap-1">

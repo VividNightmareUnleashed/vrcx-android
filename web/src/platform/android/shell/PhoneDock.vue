@@ -114,7 +114,7 @@
     import { getDockEntries, getEntryLabel, isEntryActive } from './shellNav';
     import { setFriendsPanelOpen, shellState, toggleFriendsPanel } from './shellState';
 
-    defineProps({
+    const props = defineProps({
         rail: {
             type: Boolean,
             default: false
@@ -133,7 +133,8 @@
     const friendsOpen = computed(() => shellState.friendsPanelOpen);
     const menuOpen = computed(() => Boolean(sidebar.openMobile.value));
 
-    const isActive = (entry) => !friendsOpen.value && isEntryActive(entry, activeIndex.value);
+    // Portrait: the friends panel covers the page, so only Friends is active. The rail shows both side by side.
+    const isActive = (entry) => (!friendsOpen.value || props.rail) && isEntryActive(entry, activeIndex.value);
     const isNotified = (entry) => Boolean(navModel.value?.isNavItemNotified?.(entry));
 
     // Entries that only live in the nav sheet still get a dot, on the Menu slot.

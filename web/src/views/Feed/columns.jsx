@@ -2,7 +2,7 @@ import AvatarInfo from '../../components/AvatarInfo.vue';
 import Location from '../../components/Location.vue';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { TooltipWrapper } from '../../components/ui/tooltip';
 import { ArrowDown, ArrowRight, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { formatDateFilter, statusClass, timeToText } from '../../shared/utils';
 import { i18n } from '../../plugins/i18n';
@@ -207,15 +207,11 @@ export const columns = [
             const shortText = formatDateFilter(createdAt, 'short');
             const longText = formatDateFilter(createdAt, 'long');
 
+            // TooltipWrapper: on phones a long-press shows the full date (docs/DESIGN.md §3.3).
             return (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <span>{shortText}</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                        <span>{longText}</span>
-                    </TooltipContent>
-                </Tooltip>
+                <TooltipWrapper side="right" content={longText}>
+                    <span>{shortText}</span>
+                </TooltipWrapper>
             );
         }
     },

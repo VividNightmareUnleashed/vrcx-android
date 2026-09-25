@@ -16,7 +16,7 @@
                     <!-- toolbar -->
                     <div
                         @click.stop
-                        class="vrcx-viewer-toolbar absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md bg-background/70 backdrop-blur px-2 py-1 border compact:gap-0.5 compact:px-1">
+                        class="vrcx-viewer-toolbar absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md bg-background/70 backdrop-blur px-2 py-1 border compact:gap-0.5 compact:px-1 compact:top-[calc(var(--safe-top,0px)+8px)] compact:right-[calc(var(--safe-right,0px)+8px)]">
                         <Button
                             variant="ghost"
                             size="icon"
@@ -462,10 +462,5 @@
     }
     .x-viewer-img:active {
         cursor: grabbing;
-    }
-
-    :global(html.vrcx-compact) .vrcx-viewer-toolbar {
-        top: calc(var(--safe-top, 0px) + 8px);
-        right: calc(var(--safe-right, 0px) + 8px);
     }
 </style>
