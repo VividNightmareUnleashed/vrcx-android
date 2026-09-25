@@ -77,15 +77,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Restart trampoline: runs in its own short-lived process so the main process can exit (AndroidHost.RestartApp). -->
-        <activity
-            android:name=".host.RestartActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:process=":restart"
-            android:theme="@style/Theme.VRCX.NoDisplay" />
-
         <service
             android:name=".host.VrcxForegroundService"
             android:exported="false"

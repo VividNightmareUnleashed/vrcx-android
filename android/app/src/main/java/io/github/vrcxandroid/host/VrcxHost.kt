@@ -2,6 +2,7 @@ package io.github.vrcxandroid.host
 
 import android.app.Application
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -14,7 +15,6 @@ import io.github.vrcxandroid.AppGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -237,49 +237,80 @@ object VrcxHost {
         return result.get()
     }
 
-    // ---- Restart and quit ----
+    // ---- Restart, quit and database import ----
 
     @Volatile
     private var shuttingDown = false
 
+    private val steps by lazy {
+        ShutdownSteps(
+            drain = {
+                WebViewHolder.awaitInbound()
+                AppGraph.dispatcher.drain()
+            },
+            flushStorage = { AppGraph.storage.flush() },
+            flushCookies = { AppGraph.http.flushCookies() },
+            closeDatabase = { AppGraph.database.close() },
+            warn = { message, t -> Log.w(TAG, message, t) },
+        )
+    }
+
     /** Drains the bridge, flushes VRCXStorage, cookies and the database, then restarts the process. */
-    fun restartApp() = shutdown(restart = true)
+    fun restartApp() = shutdown(restart = true, saveState = true)
 
     /** Notification "Quit": the same flush, then stops the service and ends the process. */
-    fun quit() = shutdown(restart = false)
+    fun quit() = shutdown(restart = false, saveState = true)
 
-    private fun shutdown(restart: Boolean) {
+    /**
+     * Database import, before `importFrom`: holds the page's bridge calls (queued, not dropped, in case the import
+     * fails), finishes the queued ones and saves VRCXStorage and the cookie jar into the files the import replaces.
+     * False when a restart or quit is already running.
+     */
+    suspend fun prepareDatabaseImport(): Boolean {
+        if (shuttingDown || !WebViewHolder.holdBridge()) return false
+        steps.beforeImport()
+        return true
+    }
+
+    /** The import failed: the held page calls go through. */
+    fun resumeAfterFailedImport() = WebViewHolder.releaseBridge()
+
+    /**
+     * The import succeeded: restart without flushing VRCXStorage or the cookie jar, which would write this process's
+     * pre-import state over the imported VRCX.json and `cookies` row.
+     */
+    fun restartAfterImport() = shutdown(restart = true, saveState = false)
+
+    private fun shutdown(restart: Boolean, saveState: Boolean) {
         if (shuttingDown) return
         shuttingDown = true
         Log.i(TAG, if (restart) "restarting" else "quitting")
         WebViewHolder.blockBridge()
         AppGraph.scope.launch {
-            flushAll()
+            steps.beforeExit(saveState)
             withContext(Dispatchers.Main) {
                 if (restart) {
-                    RestartActivity.start(app, Process.myPid())
+                    relaunch()
                 } else {
                     VrcxForegroundService.stop(app)
                     activity?.finishAndRemoveTask()
                 }
+                // Still on the main thread, so the relaunched MainActivity cannot start in this process: the system
+                // starts a fresh process for it, where every native singleton, the proxy and the database are new.
+                Process.killProcess(Process.myPid())
+                exitProcess(0)
             }
-            Process.killProcess(Process.myPid())
-            exitProcess(0)
         }
     }
 
-    private suspend fun flushAll() {
-        step("drain", 5_000) { AppGraph.dispatcher.drain() }
-        step("storage", 3_000) { AppGraph.storage.flush() }
-        step("cookies", 3_000) { AppGraph.http.flushCookies() }
-        step("database", 3_000) { AppGraph.database.close() }
-    }
-
-    private suspend fun step(name: String, timeoutMs: Long, block: suspend () -> Unit) {
+    /** `Intent.makeRestartActivityTask`: clears the task and starts MainActivity again. Main thread. */
+    private fun relaunch() {
+        val intent = Intent.makeRestartActivityTask(ComponentName(app, MainActivity::class.java))
+        val a = activity?.takeUnless { it.isFinishing || it.isDestroyed }
         try {
-            if (withTimeoutOrNull(timeoutMs) { block(); true } == null) Log.w(TAG, "$name timed out")
-        } catch (t: Throwable) {
-            Log.w(TAG, "$name failed", t)
+            if (a != null) a.startActivity(intent) else app.startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not relaunch", e)
         }
     }
 }

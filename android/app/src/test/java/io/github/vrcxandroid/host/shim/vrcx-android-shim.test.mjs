@@ -482,6 +482,46 @@ test('speechSynthesis polyfill: voices, ordering, speak and progress events', as
     assert.deepEqual(events, ['start', 'end']);
 });
 
+test('speechSynthesis asks native again while the voice list is empty', async () => {
+    const env = createEnv();
+    const synth = env.win.speechSynthesis;
+    const asks = () => env.calls().filter((c) => c.m === 'TtsGetVoices');
+
+    synth.getVoices();
+    synth.getVoices();
+    assert.equal(asks().length, 1, 'one request in flight at a time');
+    env.reply(asks()[0], []);
+    await tick();
+    await tick();
+
+    synth.getVoices();
+    assert.equal(asks().length, 1, 'not again right away');
+    env.clock.now += 10_000;
+    assert.deepEqual(Array.from(synth.getVoices()), []);
+    assert.equal(asks().length, 2, 'the engine may have voices by now');
+    env.reply(asks()[1], [{ name: 'en-us-1', lang: 'en-US', voiceURI: 'en-us-1', default: true, localService: true }]);
+    await tick();
+    await tick();
+    assert.deepEqual(plain(synth.getVoices().map((v) => v.name)), ['en-us-1']);
+
+    env.clock.now += 60_000;
+    synth.getVoices();
+    assert.equal(asks().length, 2, 'no more requests once voices are known');
+});
+
+test('a failed voice request is retried later', async () => {
+    const env = createEnv();
+    const synth = env.win.speechSynthesis;
+    const asks = () => env.calls().filter((c) => c.m === 'TtsGetVoices');
+    synth.getVoices();
+    env.fail(asks()[0], 'boom');
+    await tick();
+    await tick();
+    env.clock.now += 10_000;
+    synth.getVoices();
+    assert.equal(asks().length, 2);
+});
+
 test('speechSynthesis.cancel reports dropped utterances as errors', async () => {
     const env = createEnv();
     const synth = env.win.speechSynthesis;
@@ -606,12 +646,27 @@ test('the pipeline socket is kicked when visible again after more than 60 s with
     env.event('visibility', { visible: false });
     env.clock.now += 120_000;
     ws.dispatchEvent(new Event('message'));
+    env.clock.now += 5_000;
     env.event('visibility', { visible: true, paused: false });
-    assert.deepEqual(closes, [], 'messages arrived while hidden: the socket is alive');
+    assert.deepEqual(closes, [], 'a message in the last 60 s: the socket works right now');
 
     env.clock.now += 1_000;
     env.event('visibility', { visible: false });
     env.clock.now += 120_000;
+    env.event('visibility', { visible: true, paused: false });
+    assert.deepEqual(closes, [4000]);
+});
+
+test('a message early in a long background does not spare the socket', () => {
+    const env = createEnv();
+    const ws = new env.win.WebSocket('wss://pipeline.vrchat.cloud/?auth=a');
+    const closes = [];
+    ws.onclose = (e) => closes.push(e.code);
+    env.event('visibility', { visible: false });
+    env.clock.now += 3_000;
+    ws.dispatchEvent(new Event('message'));
+    // Hours later a NAT or idle timeout may have left the socket half-open.
+    env.clock.now += 3 * 3600_000;
     env.event('visibility', { visible: true, paused: false });
     assert.deepEqual(closes, [4000]);
 });

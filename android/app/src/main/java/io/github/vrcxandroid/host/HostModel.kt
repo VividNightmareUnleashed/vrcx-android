@@ -167,3 +167,102 @@ object TtsVoiceOrder {
         return firsts + voices.filter { it !in promoted }
     }
 }
+
+/**
+ * When [AndroidTtsController] lists the voices again while it has none. Some engines report no voices right after
+ * init; without another look the page would never get any (the notification speech returns early on an empty list).
+ */
+object TtsVoiceRetry {
+    enum class Engine { NONE, INITIALIZING, READY }
+    enum class Action { NONE, BIND, RELIST }
+
+    /** Re-lists after an init that found no voices, counted from the init. */
+    val RELIST_DELAYS_MS = listOf(2_000L, 10_000L, 30_000L)
+
+    /** After a failed init, the page's next request binds the engine again only after this long. */
+    const val INIT_RETRY_MS = 60_000L
+
+    /** What `AndroidHost.TtsGetVoices` does besides returning the cached list. */
+    fun onPageRequest(haveVoices: Boolean, engine: Engine, msSinceInitFailure: Long?): Action = when {
+        haveVoices -> Action.NONE
+        engine == Engine.READY -> Action.RELIST
+        engine == Engine.INITIALIZING -> Action.NONE
+        msSinceInitFailure != null && msSinceInitFailure < INIT_RETRY_MS -> Action.NONE
+        else -> Action.BIND
+    }
+}
+
+/**
+ * POST_NOTIFICATIONS state for `AndroidHost.GetNotificationPermission` on Android 13+: 'granted', 'default' (the
+ * prompt can still be shown) or 'denied' (only system settings can change it). Android shows the prompt again after
+ * one denial or a dismissal and stops after the second denial. It only says so through
+ * shouldShowRequestPermissionRationale, which is true after exactly one denial.
+ */
+object NotificationPermissionPolicy {
+    /** What earlier requests told us. [silentDenials]: answered "no" with no rationale before or after, in a row. */
+    data class Record(val blocked: Boolean = false, val silentDenials: Int = 0)
+
+    fun state(granted: Boolean, enabled: Boolean, record: Record): String = when {
+        granted -> if (enabled) "granted" else "denied"
+        record.blocked -> "denied"
+        else -> "default"
+    }
+
+    fun afterRequest(record: Record, granted: Boolean, rationaleBefore: Boolean, rationaleAfter: Boolean): Record = when {
+        granted -> Record()
+        // Denied once: the prompt comes back.
+        rationaleAfter -> Record()
+        // The second denial: the system stops showing the prompt.
+        rationaleBefore -> Record(blocked = true)
+        // Neither: a dismissed first prompt (it comes back) or a prompt the system no longer shows. Twice in a row
+        // counts as blocked, so the page stops offering a button that does nothing.
+        else -> (record.silentDenials + 1).let { Record(blocked = it >= 2, silentDenials = it) }
+    }
+}
+
+/**
+ * Page → native message gate of [WebViewHolder]: open, holding (messages queue in arrival order until [release], used
+ * during a database import) or blocked (messages are dropped, restart or quit in progress). Thread-safe.
+ */
+class BridgeGate<T> {
+    private enum class State { OPEN, HOLDING, BLOCKED }
+
+    private var state = State.OPEN
+    private val held = ArrayList<T>()
+
+    /** Dispatches [message] now, queues it, or drops it. [dispatch] runs under the gate's lock, so order is kept. */
+    @Synchronized
+    fun submit(message: T, dispatch: (T) -> Unit) {
+        when (state) {
+            State.OPEN -> dispatch(message)
+            State.HOLDING -> held += message
+            State.BLOCKED -> Unit
+        }
+    }
+
+    /** Starts queueing. False when the gate is already blocked. */
+    @Synchronized
+    fun hold(): Boolean {
+        if (state == State.BLOCKED) return false
+        state = State.HOLDING
+        return true
+    }
+
+    /** Dispatches the queued messages in order and opens the gate. No-op unless holding. */
+    @Synchronized
+    fun release(dispatch: (T) -> Unit) {
+        if (state != State.HOLDING) return
+        state = State.OPEN
+        held.forEach(dispatch)
+        held.clear()
+    }
+
+    /** Drops everything from now on, including the queued messages. */
+    @Synchronized
+    fun block() {
+        state = State.BLOCKED
+        held.clear()
+    }
+
+    val heldCount: Int @Synchronized get() = held.size
+}

@@ -13,6 +13,7 @@ import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.BuildConfig
 import io.github.vrcxandroid.R
 import io.github.vrcxandroid.host.AndroidHostServices
+import io.github.vrcxandroid.host.DatabaseImportFlow
 import io.github.vrcxandroid.host.HostFiles
 import io.github.vrcxandroid.host.HostNotifications
 import io.github.vrcxandroid.host.VrcxHost
@@ -174,18 +175,34 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
         }
     }
 
-    /** SAF pick of VRCX.sqlite3 and optionally VRCX.json, import, then restart on success. */
+    /**
+     * SAF pick of VRCX.sqlite3 and optionally VRCX.json, then import. The page's other calls are held
+     * during the import and VRCXStorage and the cookie jar are saved before it; on success the app restarts without
+     * saving them again, so the imported VRCX.json and cookies survive (see [DatabaseImportFlow]).
+     */
     private suspend fun importDatabase(): JsonElement {
         VrcxHost.setKeepScreenOn(KEEP_ON_IMPORT, true)
         try {
-            toast(R.string.import_pick_database)
-            val database = host.pickDocument(listOf("*/*")) ?: return result(false, "Cancelled")
-            toast(R.string.import_pick_json)
-            val json = host.pickDocument(listOf("*/*"))
-            val outcome = AppGraph.database.importFrom(database, json)
-            val ok = (outcome["ok"] as? JsonPrimitive)?.content == "true"
-            if (ok) host.restartApp()
-            return outcome
+            val flow = DatabaseImportFlow(
+                pickDatabase = {
+                    toast(R.string.import_pick_database)
+                    host.pickDocument(listOf("*/*"))
+                },
+                pickJson = {
+                    toast(R.string.import_pick_json)
+                    host.pickDocument(listOf("*/*"))
+                },
+                prepare = VrcxHost::prepareDatabaseImport,
+                import = { database, json -> AppGraph.database.importFrom(database, json) },
+                succeeded = { (it["ok"] as? JsonPrimitive)?.content == "true" },
+                resume = VrcxHost::resumeAfterFailedImport,
+                restartAfterImport = VrcxHost::restartAfterImport,
+            )
+            return when (val r = flow.run()) {
+                DatabaseImportFlow.Result.Cancelled -> result(false, "Cancelled")
+                DatabaseImportFlow.Result.Busy -> result(false, "The app is restarting")
+                is DatabaseImportFlow.Result.Done -> r.value
+            }
         } finally {
             VrcxHost.setKeepScreenOn(KEEP_ON_IMPORT, false)
         }

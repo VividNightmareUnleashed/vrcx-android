@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -30,6 +31,7 @@ import java.util.Locale
  * The engine is bound lazily (first speak, or when no voice list is cached yet) and released after two idle minutes,
  * so the TTS service does not stay resident for users who never enable notification speech. The voice list is cached
  * in SharedPreferences and pushed as the `tts-voices` event; progress goes out as `tts-event` `{id, type}`.
+ * While the list is empty it is read again a few times after init and whenever the page asks ([TtsVoiceRetry]).
  * All engine calls run on the main thread.
  */
 class AndroidTtsController(private val context: Context) : TtsController {
@@ -41,7 +43,8 @@ class AndroidTtsController(private val context: Context) : TtsController {
     private val queued = ArrayList<JsonObject>()
     private val active = LinkedHashMap<String, JsonElement>()
     private var focusRequest: AudioFocusRequest? = null
-    private var listedThisProcess = false
+    private var initFailedAt: Long? = null
+    private val relists = TtsVoiceRetry.RELIST_DELAYS_MS.map { Runnable { relist() } }
 
     @Volatile
     private var cachedVoices: JsonArray = loadCachedVoices()
@@ -57,8 +60,28 @@ class AndroidTtsController(private val context: Context) : TtsController {
     }
 
     override fun voices(): JsonArray {
-        if (cachedVoices.isEmpty() && !listedThisProcess) main.post { ensureEngine() }
+        if (cachedVoices.isEmpty()) main.post { onPageRequest() }
         return cachedVoices
+    }
+
+    private fun onPageRequest() {
+        val engine = when {
+            tts == null -> TtsVoiceRetry.Engine.NONE
+            ready -> TtsVoiceRetry.Engine.READY
+            else -> TtsVoiceRetry.Engine.INITIALIZING
+        }
+        val sinceFailure = initFailedAt?.let { SystemClock.elapsedRealtime() - it }
+        when (TtsVoiceRetry.onPageRequest(cachedVoices.isNotEmpty(), engine, sinceFailure)) {
+            TtsVoiceRetry.Action.BIND -> ensureEngine()
+            TtsVoiceRetry.Action.RELIST -> relist()
+            TtsVoiceRetry.Action.NONE -> Unit
+        }
+    }
+
+    /** Reads the voices again; the remaining delayed re-lists are dropped once some are found. */
+    private fun relist() {
+        val engine = tts ?: return
+        if (ready && refreshVoices(engine)) relists.forEach { main.removeCallbacks(it) }
     }
 
     override fun speak(utterance: JsonObject) {
@@ -100,21 +123,28 @@ class AndroidTtsController(private val context: Context) : TtsController {
             queued.clear()
             runCatching { engine.shutdown() }
             tts = null
-            listedThisProcess = true
+            initFailedAt = SystemClock.elapsedRealtime()
             return
         }
+        initFailedAt = null
         ready = true
         engine.setAudioAttributes(speechAttributes)
 
         engine.setOnUtteranceProgressListener(progressListener)
-        refreshVoices(engine)
+        if (!refreshVoices(engine)) {
+            relists.forEachIndexed { i, r ->
+                main.removeCallbacks(r)
+                main.postDelayed(r, TtsVoiceRetry.RELIST_DELAYS_MS[i])
+            }
+        }
         val pending = queued.toList()
         queued.clear()
         pending.forEach { speakNow(it) }
         if (pending.isEmpty() && active.isEmpty()) scheduleIdle()
     }
 
-    private fun refreshVoices(engine: TextToSpeech) {
+    /** Lists the engine's voices into the cache and the `tts-voices` event. False when the engine reported none. */
+    private fun refreshVoices(engine: TextToSpeech): Boolean {
         val list = try {
             val defaultName = runCatching { engine.defaultVoice?.name }.getOrNull()
             val all = engine.voices.orEmpty()
@@ -132,15 +162,16 @@ class AndroidTtsController(private val context: Context) : TtsController {
                 }
         } catch (t: Throwable) {
             Log.w(TAG, "could not list voices", t)
-            return
+            return false
         }
-        // An empty list is retried the next time the page asks (engines sometimes report nothing right after init).
-        listedThisProcess = list.isNotEmpty()
+        // Engines sometimes report nothing right after init: keep the voices of an earlier run until a real list comes.
+        if (list.isEmpty()) return false
         val json = JsonArray(TtsVoiceOrder.order(list).map { it.toJson() })
-        if (json == cachedVoices) return
+        if (json == cachedVoices) return true
         cachedVoices = json
         prefs.edit().putString(KEY_VOICES, json.toString()).apply()
         AppGraph.dispatcher.emit(EVENT_VOICES, json)
+        return true
     }
 
     private fun speakNow(u: JsonObject) {
@@ -218,6 +249,7 @@ class AndroidTtsController(private val context: Context) : TtsController {
 
     private fun shutdownIfIdle() {
         if (active.isNotEmpty() || queued.isNotEmpty()) return
+        relists.forEach { main.removeCallbacks(it) }
         tts?.let { runCatching { it.shutdown() } }
         tts = null
         ready = false

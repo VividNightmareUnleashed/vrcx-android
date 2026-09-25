@@ -684,7 +684,11 @@
 
     guard('speechSynthesis', function () {
         var voices = [];
-        var voicesRequested = false;
+        // While the list is empty, getVoices() asks native again at most every VOICES_RETRY_MS (engines sometimes
+        // report no voices right after init; native also pushes tts-voices once it finds some).
+        var VOICES_RETRY_MS = 10000;
+        var voicesRequestedAt = -Infinity;
+        var voicesInFlight = false;
         var utterances = new Map();
         var queue = [];
         var nextUtteranceId = 1;
@@ -792,12 +796,18 @@
             }
 
             getVoices() {
-                if (voices.length === 0 && !voicesRequested) {
-                    voicesRequested = true;
+                if (voices.length === 0 && !voicesInFlight && now() - voicesRequestedAt >= VOICES_RETRY_MS) {
+                    voicesInFlight = true;
+                    voicesRequestedAt = now();
                     hostCall('TtsGetVoices')
-                        .then(setVoices)
-                        .catch(function (e) {
+                        .then(setVoices, function (e) {
                             warn('TtsGetVoices failed', e);
+                        })
+                        .catch(function (e) {
+                            warn('setting the voices failed', e);
+                        })
+                        .then(function () {
+                            voicesInFlight = false;
                         });
                 }
                 return voices.slice();
@@ -1279,9 +1289,10 @@
         if (!since || now() - since <= BACKGROUND_KICK_MS) {
             return;
         }
-        // Visible again after more than 60 s. Kick unless the socket demonstrably worked in the meantime (a message
-        // arrived while hidden and the WebView was not paused), to avoid a full resync on every return to the app.
-        if (data.paused === true || pipeline.lastMessageAt < since) {
+        // Visible again after more than 60 s in the background: kick, so a socket left half-open by a NAT or idle
+        // timeout reconnects. The one exception is a socket that demonstrably works right now (a message within the
+        // last 60 s while the WebView was running), which spares the friends/notifications resync of a reconnect.
+        if (data.paused === true || now() - pipeline.lastMessageAt >= BACKGROUND_KICK_MS) {
             kickPipeline('resumed after background');
         }
     };

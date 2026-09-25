@@ -11,6 +11,7 @@ import android.webkit.WebChromeClient
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import io.github.vrcxandroid.AppGraph
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,10 @@ import java.util.Locale
  * Suspend wrappers around the Activity Result API (docs/ARCHITECTURE.md §6.10). MainActivity registers one
  * StartActivityForResult launcher and one RequestPermission launcher in every instance; results reach the pending
  * request here even if the Activity was recreated meanwhile. One picker at a time. Every request returns null (or
- * false) when no Activity is attached, when nothing handles the intent, or when the user cancels.
+ * false) when no Activity is started, when nothing handles the intent, or when the user cancels.
+ *
+ * Requests are only launched while the Activity is started: a start from a stopped Activity can be blocked by the
+ * background activity start rules, and then no result ever arrives and the picker lock would be held for good.
  */
 object ActivityPickers {
     private const val TAG = "VRCXPickers"
@@ -33,29 +37,42 @@ object ActivityPickers {
 
     // Main thread only.
     private var pendingResult: CompletableDeferred<ActivityResult>? = null
-    private var pendingPermission: CompletableDeferred<Boolean>? = null
+    private var pendingPermission: CompletableDeferred<PermissionAnswer?>? = null
+    private var pendingPermissionName: String? = null
+    private var rationaleBefore = false
+
+    /** A permission request's result, with shouldShowRequestPermissionRationale before and after it. */
+    data class PermissionAnswer(val granted: Boolean, val rationaleBefore: Boolean, val rationaleAfter: Boolean)
+
+    /** The attached Activity if it is started (visible) and can launch a request. Main thread. */
+    private fun launchableActivity(): MainActivity? =
+        VrcxHost.activity?.takeIf { VrcxHost.started && !it.isFinishing && !it.isDestroyed }
 
     fun onActivityResult(result: ActivityResult) {
         pendingResult?.complete(result)
         pendingResult = null
     }
 
-    fun onPermissionResult(granted: Boolean) {
-        pendingPermission?.complete(granted)
+    fun onPermissionResult(activity: Activity, granted: Boolean) {
+        val name = pendingPermissionName
+        val rationaleAfter = name != null && !granted && ActivityCompat.shouldShowRequestPermissionRationale(activity, name)
+        pendingPermission?.complete(PermissionAnswer(granted, rationaleBefore, rationaleAfter))
         pendingPermission = null
+        pendingPermissionName = null
     }
 
     /** The Activity is finishing: nobody will deliver the results any more. */
     fun cancelPending() {
         pendingResult?.complete(ActivityResult(Activity.RESULT_CANCELED, null))
         pendingResult = null
-        pendingPermission?.complete(false)
+        pendingPermission?.complete(null)
         pendingPermission = null
+        pendingPermissionName = null
     }
 
     suspend fun startForResult(intent: Intent): ActivityResult? = mutex.withLock {
         val deferred = withContext(Dispatchers.Main) {
-            val activity = VrcxHost.activity?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@withContext null
+            val activity = launchableActivity() ?: return@withContext null
             val d = CompletableDeferred<ActivityResult>()
             pendingResult = d
             try {
@@ -70,14 +87,24 @@ object ActivityPickers {
         deferred.await()
     }
 
-    suspend fun requestPermission(permission: String): Boolean = mutex.withLock {
+    /** Shows the runtime permission prompt. Null when it was not shown (no started Activity) or never answered. */
+    suspend fun requestPermission(permission: String): PermissionAnswer? = mutex.withLock {
         val deferred = withContext(Dispatchers.Main) {
-            val activity = VrcxHost.activity?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@withContext null
-            val d = CompletableDeferred<Boolean>()
+            val activity = launchableActivity() ?: return@withContext null
+            val d = CompletableDeferred<PermissionAnswer?>()
             pendingPermission = d
-            activity.permissionLauncher.launch(permission)
-            d
-        } ?: return@withLock false
+            pendingPermissionName = permission
+            rationaleBefore = ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            try {
+                activity.permissionLauncher.launch(permission)
+                d
+            } catch (e: ActivityNotFoundException) {
+                Log.w(TAG, "no permission controller for $permission")
+                pendingPermission = null
+                pendingPermissionName = null
+                null
+            }
+        } ?: return@withLock null
         deferred.await()
     }
 
@@ -124,7 +151,7 @@ object ActivityPickers {
 
     /** `<input type=file>`: Photo Picker when only images are accepted, SAF otherwise. */
     suspend fun chooseFiles(acceptTypes: List<String>, multiple: Boolean): List<Uri>? {
-        val context = VrcxHost.activity ?: return null
+        val context = withContext(Dispatchers.Main) { launchableActivity() } ?: return null
         val mimes = FileChooser.mimeTypesFor(acceptTypes)
         if (FileChooser.isImagesOnly(mimes)) {
             val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)

@@ -11,7 +11,4 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:colorAccent">@color/vrcx_on_frame</item>
     </style>
-
-    <!-- Invisible trampoline used by RestartActivity (separate process). -->
-    <style name="Theme.VRCX.NoDisplay" parent="android:Theme.Translucent.NoTitleBar" />
 </resources>

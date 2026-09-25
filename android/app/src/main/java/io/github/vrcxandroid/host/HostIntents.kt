@@ -143,7 +143,9 @@ object HostFiles {
 
 /** File-name helpers (pure). */
 object FileNames {
-    private val FORBIDDEN = Regex("[\\\\/:*?\"<>|\\p{Cntrl}]")
+    // File-system separators and reserved characters, plus '#' and '%': a picked copy's absolute path doubles as an
+    // `<img src>` URL (docs/ARCHITECTURE.md §6.6), where '#' would start a fragment and '%' an escape.
+    private val FORBIDDEN = Regex("[\\\\/:*?\"<>|#%\\p{Cntrl}]")
 
     fun sanitize(name: String?, fallback: String): String {
         val cleaned = name.orEmpty().replace(FORBIDDEN, "_").trim().trimStart('.').take(120)

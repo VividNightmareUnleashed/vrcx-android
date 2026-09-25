@@ -34,7 +34,8 @@ object HostNotifications {
     const val ID_DESKTOP = 1001
     const val ID_ATTENTION = 1002
 
-    private const val KEY_PERMISSION_REQUESTED = "notification_permission_requested"
+    private const val KEY_PERMISSION_BLOCKED = "notification_permission_blocked"
+    private const val KEY_PERMISSION_SILENT_DENIALS = "notification_permission_silent_denials"
     private const val LARGE_ICON_MAX_PX = 256
 
     fun ensureChannels(context: Context) {
@@ -67,29 +68,45 @@ object HostNotifications {
         return NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
 
-    /** 'granted' | 'denied' | 'default' (AndroidHost.GetNotificationPermission). */
+    /**
+     * 'granted' | 'denied' | 'default' (AndroidHost.GetNotificationPermission). 'default' while the prompt can still
+     * be shown, also after one denial or a dismissed prompt ([NotificationPermissionPolicy]).
+     */
     fun permissionState(context: Context): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return if (NotificationManagerCompat.from(context).areNotificationsEnabled()) "granted" else "denied"
-        }
+        val enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return if (enabled) "granted" else "denied"
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        return when {
-            granted -> if (NotificationManagerCompat.from(context).areNotificationsEnabled()) "granted" else "denied"
-            VrcxHost.prefs.getBoolean(KEY_PERMISSION_REQUESTED, false) -> "denied"
-            else -> "default"
-        }
+        // A grant (also one made in system settings) starts over, so a later revocation is judged afresh.
+        if (granted && permissionRecord() != NotificationPermissionPolicy.Record()) savePermissionRecord(NotificationPermissionPolicy.Record())
+        return NotificationPermissionPolicy.state(granted, enabled, permissionRecord())
     }
 
-    /** Shows the runtime permission prompt on Android 13+ (needs the Activity), then returns [permissionState]. */
+    /**
+     * Shows the runtime permission prompt on Android 13+, then returns [permissionState]. Only while the app is
+     * visible: in the background the prompt is not shown and nothing is recorded.
+     */
     suspend fun requestPermission(context: Context): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return permissionState(context)
         if (permissionState(context) == "granted") return "granted"
-        if (VrcxHost.activity == null) return permissionState(context)
-        val granted = ActivityPickers.requestPermission(Manifest.permission.POST_NOTIFICATIONS)
-        VrcxHost.prefs.edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
+        val answer = ActivityPickers.requestPermission(Manifest.permission.POST_NOTIFICATIONS) ?: return permissionState(context)
+        savePermissionRecord(
+            NotificationPermissionPolicy.afterRequest(permissionRecord(), answer.granted, answer.rationaleBefore, answer.rationaleAfter),
+        )
         // The service notification posted before the grant stays hidden until it is posted again.
-        if (granted) VrcxForegroundService.refreshIfRunning()
+        if (answer.granted) VrcxForegroundService.refreshIfRunning()
         return permissionState(context)
+    }
+
+    private fun permissionRecord() = NotificationPermissionPolicy.Record(
+        blocked = VrcxHost.prefs.getBoolean(KEY_PERMISSION_BLOCKED, false),
+        silentDenials = VrcxHost.prefs.getInt(KEY_PERMISSION_SILENT_DENIALS, 0),
+    )
+
+    private fun savePermissionRecord(record: NotificationPermissionPolicy.Record) {
+        VrcxHost.prefs.edit()
+            .putBoolean(KEY_PERMISSION_BLOCKED, record.blocked)
+            .putInt(KEY_PERMISSION_SILENT_DENIALS, record.silentDenials)
+            .apply()
     }
 
     /** electron.desktopNotification(title, body, icon). [iconPath] is a local path or /local/ URL, or empty. */

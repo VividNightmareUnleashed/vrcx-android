@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
     val resultLauncher: ActivityResultLauncher<Intent> =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { ActivityPickers.onActivityResult(it) }
     val permissionLauncher: ActivityResultLauncher<String> =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { ActivityPickers.onPermissionResult(it) }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { ActivityPickers.onPermissionResult(this, it) }
 
     private var hasWebView = false
 

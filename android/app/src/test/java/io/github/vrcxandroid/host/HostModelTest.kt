@@ -1,5 +1,7 @@
 package io.github.vrcxandroid.host
 
+import io.github.vrcxandroid.host.TtsVoiceRetry.Action
+import io.github.vrcxandroid.host.TtsVoiceRetry.Engine
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -163,5 +165,106 @@ class HostModelTest {
         assertEquals("image.png", FileNames.sanitize("  ", "image.png"))
         assertEquals("image.png", FileNames.sanitize(null, "image.png"))
         assertEquals(120, FileNames.sanitize("y".repeat(300), "x").length)
+    }
+
+    @Test
+    fun sanitizedNamesSurviveUseAsAUrlPath() {
+        // The copy's absolute path is used as <img src>: '#' would cut the path, '%41' would decode to 'A'.
+        assertEquals("shot_2.png", FileNames.sanitize("shot#2.png", "x"))
+        assertEquals("a_41.png", FileNames.sanitize("a%41.png", "x"))
+        assertEquals("q_x=1.png", FileNames.sanitize("q?x=1.png", "x"))
+        for (name in listOf("a#b%c?d.png", "#%?", "100% #1 ?.png")) {
+            val cleaned = FileNames.sanitize(name, "image.png")
+            assertFalse(cleaned, cleaned.any { it in "#%?" })
+        }
+        assertEquals("my shot (1).png", FileNames.sanitize("my shot (1).png", "x"))
+    }
+
+    // ---- TTS voice re-listing ----
+
+    @Test
+    fun voicesAreListedAgainWhileEmpty() {
+        assertEquals(Action.NONE, TtsVoiceRetry.onPageRequest(haveVoices = true, engine = Engine.READY, msSinceInitFailure = null))
+        assertEquals(Action.NONE, TtsVoiceRetry.onPageRequest(haveVoices = true, engine = Engine.NONE, msSinceInitFailure = null))
+        // The engine is up but reported nothing: ask it again instead of never returning voices.
+        assertEquals(Action.RELIST, TtsVoiceRetry.onPageRequest(haveVoices = false, engine = Engine.READY, msSinceInitFailure = null))
+        assertEquals(Action.NONE, TtsVoiceRetry.onPageRequest(haveVoices = false, engine = Engine.INITIALIZING, msSinceInitFailure = null))
+        assertEquals(Action.BIND, TtsVoiceRetry.onPageRequest(haveVoices = false, engine = Engine.NONE, msSinceInitFailure = null))
+        // A failed init is not retried on every request, but it is retried.
+        assertEquals(Action.NONE, TtsVoiceRetry.onPageRequest(haveVoices = false, engine = Engine.NONE, msSinceInitFailure = 5_000))
+        assertEquals(Action.BIND, TtsVoiceRetry.onPageRequest(haveVoices = false, engine = Engine.NONE, msSinceInitFailure = TtsVoiceRetry.INIT_RETRY_MS))
+    }
+
+    @Test
+    fun delayedRelistsEndWellBeforeTheIdleShutdown() {
+        assertTrue(TtsVoiceRetry.RELIST_DELAYS_MS.isNotEmpty())
+        assertEquals(TtsVoiceRetry.RELIST_DELAYS_MS.sorted(), TtsVoiceRetry.RELIST_DELAYS_MS)
+        assertTrue(TtsVoiceRetry.RELIST_DELAYS_MS.last() < 120_000L)
+    }
+
+    // ---- notification permission ----
+
+    private val fresh = NotificationPermissionPolicy.Record()
+
+    private fun afterDenial(record: NotificationPermissionPolicy.Record, before: Boolean, after: Boolean) =
+        NotificationPermissionPolicy.afterRequest(record, granted = false, rationaleBefore = before, rationaleAfter = after)
+
+    private fun state(record: NotificationPermissionPolicy.Record, granted: Boolean = false, enabled: Boolean = true) =
+        NotificationPermissionPolicy.state(granted, enabled, record)
+
+    @Test
+    fun notificationPermissionStaysDefaultWhileThePromptCanComeBack() {
+        assertEquals("default", state(fresh))
+        // First denial: Android shows the rationale flag and will prompt again.
+        val once = afterDenial(fresh, before = false, after = true)
+        assertEquals("default", state(once))
+        // Dismissed prompt: no rationale either side, the prompt still comes back.
+        val dismissed = afterDenial(fresh, before = false, after = false)
+        assertEquals("default", state(dismissed))
+        // Dismissed after one denial: the rationale flag stays.
+        assertEquals("default", state(afterDenial(once, before = true, after = true)))
+    }
+
+    @Test
+    fun notificationPermissionIsDeniedOnceTheSystemStopsPrompting() {
+        val once = afterDenial(fresh, before = false, after = true)
+        assertEquals("denied", state(afterDenial(once, before = true, after = false)))
+        // Two answers in a row without any rationale: the prompt is not being shown.
+        val silentTwice = afterDenial(afterDenial(fresh, before = false, after = false), before = false, after = false)
+        assertEquals("denied", state(silentTwice))
+    }
+
+    @Test
+    fun notificationPermissionGrantResetsTheRecord() {
+        val blocked = NotificationPermissionPolicy.Record(blocked = true)
+        assertEquals("granted", state(blocked, granted = true))
+        assertEquals("denied", state(fresh, granted = true, enabled = false))
+        assertEquals(fresh, NotificationPermissionPolicy.afterRequest(blocked, granted = true, rationaleBefore = false, rationaleAfter = false))
+    }
+
+    // ---- bridge gate ----
+
+    @Test
+    fun bridgeGatePassesHoldsInOrderAndBlocks() {
+        val gate = BridgeGate<Int>()
+        val out = ArrayList<Int>()
+        gate.submit(1) { out += it }
+        assertTrue(gate.hold())
+        gate.submit(2) { out += it }
+        gate.submit(3) { out += it }
+        assertEquals(listOf(1), out)
+        assertEquals(2, gate.heldCount)
+        gate.release { out += it }
+        gate.submit(4) { out += it }
+        assertEquals(listOf(1, 2, 3, 4), out)
+
+        assertTrue(gate.hold())
+        gate.submit(5) { out += it }
+        gate.block()
+        gate.release { out += it }
+        gate.submit(6) { out += it }
+        assertFalse(gate.hold())
+        assertEquals(listOf(1, 2, 3, 4), out)
+        assertEquals(0, gate.heldCount)
     }
 }

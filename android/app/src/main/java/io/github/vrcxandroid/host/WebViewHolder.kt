@@ -17,6 +17,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.BuildConfig
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -24,7 +25,7 @@ import java.util.concurrent.Executors
  * The one app-scoped WebView (docs/ARCHITECTURE.md §6.1-6.2). It outlives the Activity: the Activity attaches it in
  * onCreate and detaches it in onDestroy, and a [MutableContextWrapper] points it at the Activity while attached (native
  * `<select>`, date pickers and file choosers need an Activity context). It is only destroyed after a renderer crash.
- * Main thread only, except [blockBridge].
+ * Main thread only, except the bridge gate ([blockBridge], [holdBridge], [releaseBridge], [awaitInbound]).
  */
 @SuppressLint("StaticFieldLeak")
 object WebViewHolder {
@@ -36,8 +37,10 @@ object WebViewHolder {
     private var wrapper: MutableContextWrapper? = null
     private var shimSource: String? = null
 
-    @Volatile
-    private var bridgeBlocked = false
+    /** Open, holding (database import) or blocked (restart/quit). */
+    private val gate = BridgeGate<PageMessage>()
+
+    private class PageMessage(val data: String, val proxy: JavaScriptReplyProxy)
 
     /** Parses page messages off the main thread, in arrival order (BridgeDispatcher.handle parses the JSON). */
     private val inbound: ExecutorService = Executors.newSingleThreadExecutor { r ->
@@ -87,9 +90,20 @@ object WebViewHolder {
         }
     }
 
-    /** Stops routing page calls to the bridge (restart/quit in progress). Any thread. */
-    fun blockBridge() {
-        bridgeBlocked = true
+    /** Stops routing page calls to the bridge; they are dropped (restart/quit in progress). Any thread. */
+    fun blockBridge() = gate.block()
+
+    /** Queues page calls instead of routing them (database import). False when already blocked. Any thread. */
+    fun holdBridge(): Boolean = gate.hold()
+
+    /** Routes the queued page calls, in order, and opens the bridge again. Any thread. */
+    fun releaseBridge() = gate.release(::dispatch)
+
+    /** Waits until the page calls accepted so far have reached the dispatcher (its lanes then hold them). */
+    suspend fun awaitInbound() {
+        val done = CompletableDeferred<Unit>()
+        inbound.execute { done.complete(Unit) }
+        done.await()
     }
 
     fun evaluate(script: String, callback: ((String?) -> Unit)? = null) {
@@ -216,10 +230,14 @@ object WebViewHolder {
             onPageHello(proxy)
             return
         }
-        if (bridgeBlocked) return
+        gate.submit(PageMessage(data, proxy), ::dispatch)
+    }
+
+    @SuppressLint("RequiresFeature")
+    private fun dispatch(message: PageMessage) {
         inbound.execute {
-            AppGraph.dispatcher.handle(data) { reply ->
-                VrcxHost.main.post { runCatching { proxy.postMessage(reply) } }
+            AppGraph.dispatcher.handle(message.data) { reply ->
+                VrcxHost.main.post { runCatching { message.proxy.postMessage(reply) } }
             }
         }
     }
