@@ -82,8 +82,9 @@ internal object DotNetUtf8 {
 /**
  * `System.Text.Json.JsonSerializer.Serialize(string[])` with the default options (`JavaScriptEncoder.Default`), which
  * is how upstream builds the `GetLogLines()` strings (`LogWatcher.cs:292`). Rules, as observed on .NET 10:
- * `"` -> `"`, `\` -> `\\`, `\b \t \n \f \r` as short escapes, other C0 controls, DEL, `& ' + < > backquote`
- * and every non-ASCII UTF-16 code unit as `\uXXXX` (uppercase hex); `null` elements as `null`.
+ * backslash as `\\`; backspace, tab, LF, form feed and CR as the short escapes `\b \t \n \f \r`; the double quote,
+ * `& ' + < >`, backquote, the other C0 controls, DEL and every non-ASCII UTF-16 code unit as a six-character
+ * `\uXXXX` escape (uppercase hex); `null` elements as `null`.
  */
 internal object DotNetJson {
     private const val HEX = "0123456789ABCDEF"
