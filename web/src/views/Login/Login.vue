@@ -1,6 +1,6 @@
 <template>
     <div class="x-login-container">
-        <div class="m-1.5" style="position: absolute; top: 0; left: 0">
+        <div class="x-login-toolbar m-1.5" style="position: absolute; top: 0; left: 0">
             <LoginSettingsDialog />
             <TooltipWrapper v-if="!noUpdater" side="top" :content="t('view.login.updater')">
                 <Button class="rounded-full mr-2 text-xs" size="icon-sm" variant="ghost" @click="showVRCXUpdateDialog">
@@ -57,7 +57,7 @@
                                         <InputGroupField
                                             id="login-form-username"
                                             :model-value="field.value"
-                                            autocomplete="off"
+                                            :autocomplete="isAndroid ? 'username' : 'off'"
                                             name="username"
                                             :placeholder="t('view.login.field.username')"
                                             :aria-invalid="!!errors.length"
@@ -77,7 +77,7 @@
                                             id="login-form-password"
                                             :model-value="field.value"
                                             type="password"
-                                            autocomplete="off"
+                                            :autocomplete="isAndroid ? 'current-password' : 'off'"
                                             name="password"
                                             :placeholder="t('view.login.field.password')"
                                             :aria-invalid="!!errors.length"
@@ -214,6 +214,7 @@
     import { getLanguageName, languageCodes, resolveSystemLanguage } from '../../localization';
     import { tForLocale } from '../../plugins';
     import { openExternalLink } from '../../shared/utils';
+    import { isAndroid } from '../../shared/utils/platform';
 
     import configRepository from '../../services/config';
     import { useUserDisplay } from '../../composables/useUserDisplay';
@@ -461,5 +462,65 @@
 
     .x-legal-notice-container {
         margin-top: 8px;
+    }
+
+    /* Android (docs/DESIGN.md §3.4): the corner buttons clear the status bar and the display cutout. */
+    html.is-android .x-login-toolbar {
+        top: var(--safe-top) !important;
+        left: var(--safe-left) !important;
+        z-index: 1;
+    }
+
+    /* Phones: one scrollable column that clears the system bars and the keyboard, with no fixed heights; the form
+     * comes first, then the saved accounts, then the legal notice, as on PC. */
+    html.vrcx-compact .x-login-container {
+        inset: 0;
+        align-items: flex-start;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: calc(var(--safe-top) + 48px) calc(var(--safe-right) + 16px) calc(var(--vrcx-bottom-inset) + 16px)
+            calc(var(--safe-left) + 16px);
+        box-sizing: border-box;
+    }
+
+    html.vrcx-compact .x-login {
+        width: 100%;
+        max-width: 480px;
+        /* Centred while the page is taller than the column; top-aligned (and scrollable) once it is not. */
+        margin-block: auto;
+    }
+
+    html.vrcx-compact .x-login-form-container {
+        height: auto;
+        gap: 12px;
+    }
+
+    html.vrcx-compact:not(.vrcx-compact-landscape) .x-login-form-container:has(> div:nth-child(3)) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Phone landscape is wide enough for the PC's two columns (form | saved accounts). */
+    html.vrcx-compact-landscape .x-login {
+        max-width: 720px;
+    }
+
+    html.vrcx-compact .x-login-form-container > div {
+        padding: 0;
+        overflow: visible;
+    }
+
+    html.vrcx-compact:not(.vrcx-compact-landscape) hr.x-vertical-divider {
+        height: 1px;
+        background: var(--border);
+    }
+
+    html.vrcx-compact .x-scroll-wrapper {
+        height: auto;
+        overflow: visible;
+    }
+
+    html.vrcx-compact .x-legal-notice-container {
+        margin-top: 24px;
     }
 </style>
