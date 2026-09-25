@@ -34,7 +34,8 @@ describe('CompanionEmptyState', () => {
     test('asks to set up the companion when no PC is paired', async () => {
         const wrapper = mountState();
         expect(wrapper.find('[data-testid="companion-empty-state"]').exists()).toBe(true);
-        expect(wrapper.text()).toContain('android.empty.unpaired_title');
+        expect(wrapper.text()).toContain('android.empty.title');
+        expect(wrapper.text()).toContain('android.empty.action');
         expect(wrapper.text()).toContain('android.empty.game_log_description');
 
         await wrapper.find('[data-testid="companion-empty-action"]').trigger('click');
@@ -46,12 +47,16 @@ describe('CompanionEmptyState', () => {
         expect(wrapper.text()).toContain('android.empty.player_list_description');
     });
 
-    test('says the paired PC is not connected', () => {
+    test('keeps the DESIGN.md title and action when the paired PC is not connected', async () => {
         useCompanionStore().applyState({ status: 'idle', activeId: 'pc-1', paired: [pc] });
         const wrapper = mountState();
-        expect(wrapper.text()).toContain('android.empty.disconnected_title');
+        expect(wrapper.text()).toContain('android.empty.title');
+        expect(wrapper.text()).toContain('android.empty.action');
+        expect(wrapper.text()).toContain('android.empty.disconnected_description');
         expect(wrapper.text()).toContain('"name":"DESKTOP"');
-        expect(wrapper.text()).toContain('android.empty.disconnected_action');
+
+        await wrapper.find('[data-testid="companion-empty-action"]').trigger('click');
+        expect(push).toHaveBeenCalledWith({ name: 'settings', query: { tab: 'companion' } });
     });
 
     test('shows the normal empty state while connected', async () => {
@@ -80,6 +85,6 @@ describe('CompanionEmptyState', () => {
 
     test('widget variant shows the compact companion message', () => {
         const wrapper = mountState({ variant: 'widget', fallbackText: 'No data' });
-        expect(wrapper.find('[data-testid="companion-empty-state"]').text()).toContain('android.empty.unpaired_action');
+        expect(wrapper.find('[data-testid="companion-empty-state"]').text()).toContain('android.empty.action');
     });
 });

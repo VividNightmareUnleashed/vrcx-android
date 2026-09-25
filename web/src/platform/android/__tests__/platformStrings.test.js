@@ -54,6 +54,11 @@ describe('Android platform strings', () => {
         expect(lookup(enPlatform, 'view.settings.category.companion')).toBe('PC companion');
     });
 
+    test('the companion empty state uses the DESIGN.md §4 copy', () => {
+        expect(lookup(enPlatform, 'android.empty.title')).toBe('Game log needs the VRCX Companion on your PC');
+        expect(lookup(enPlatform, 'android.empty.action')).toBe('Set up PC companion');
+    });
+
     test('overrides only replace keys that exist upstream', () => {
         const overrides = [];
         const walk = (node, prefix) => {

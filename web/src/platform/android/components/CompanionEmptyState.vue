@@ -80,9 +80,9 @@
 
     const pcName = computed(() => companion.activePc?.name || companion.machineName || '');
 
-    const title = computed(() =>
-        mode.value === 'disconnected' ? t('android.empty.disconnected_title') : t('android.empty.unpaired_title')
-    );
+    // DESIGN.md §4: one title and one action whether no PC is paired or the paired PC isn't connected; only the
+    // description changes, so it can name the PC.
+    const title = computed(() => t('android.empty.title'));
 
     const description = computed(() => {
         if (mode.value === 'disconnected') {
@@ -93,9 +93,7 @@
             : t('android.empty.game_log_description');
     });
 
-    const actionLabel = computed(() =>
-        mode.value === 'disconnected' ? t('android.empty.disconnected_action') : t('android.empty.unpaired_action')
-    );
+    const actionLabel = computed(() => t('android.empty.action'));
 
     function openSettings() {
         router.push({ ...COMPANION_SETTINGS_ROUTE, query: { ...COMPANION_SETTINGS_ROUTE.query } });

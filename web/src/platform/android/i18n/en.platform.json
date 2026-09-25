@@ -128,14 +128,12 @@
             "notification_settings": "Open settings"
         },
         "empty": {
-            "unpaired_title": "Game log needs the VRCX Companion on your PC",
+            "title": "Game log needs the VRCX Companion on your PC",
             "game_log_description": "Joins, leaves and videos come from VRChat's log on your PC. Places you visit still show up from your VRChat account.",
             "player_list_description": "The players in your instance come from VRChat's log on your PC.",
-            "unpaired_action": "Set up PC companion",
-            "disconnected_title": "Your PC companion isn't connected",
-            "disconnected_description": "VRCX catches up as soon as it can reach {name} again.",
-            "disconnected_action": "PC companion settings",
-            "your_pc": "your PC"
+            "action": "Set up PC companion",
+            "disconnected_description": "{name} is paired but not connected. VRCX catches up as soon as it can reach it again.",
+            "your_pc": "Your PC"
         },
         "launch": {
             "failed": "Couldn't open VRChat on this device.",
