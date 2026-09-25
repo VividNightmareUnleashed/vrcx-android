@@ -3,6 +3,7 @@ package io.github.vrcxandroid.bridge.appapi
 import io.github.vrcxandroid.bridge.DotNetException
 import io.github.vrcxandroid.bridge.appapi.docs.Doc
 import io.github.vrcxandroid.bridge.appapi.docs.DocResolver
+import io.github.vrcxandroid.bridge.appapi.png.PngChunkType
 import io.github.vrcxandroid.bridge.appapi.png.PngFile
 import io.github.vrcxandroid.bridge.appapi.png.PngHelper
 import io.github.vrcxandroid.bridge.appapi.screenshot.ScreenshotMetadata
@@ -296,6 +297,8 @@ class AppApi(
     }
 
     private suspend fun cropPrint(doc: Doc): Boolean = withContext(Dispatchers.IO) {
+        // Prints that were already cropped are the common case in CropAllPrints: skip them from the PNG header alone.
+        if (!mayBePrintSized(doc)) return@withContext false
         val bytes = doc.readBytes()
         val cropped = platform.images.cropPrint(bytes) ?: return@withContext false
         val output = PngHelper.copyITxtChunks(bytes, cropped)
@@ -306,6 +309,17 @@ class AppApi(
             platform.log("Failed to replace cropped print image", e)
             false
         }
+    }
+
+    /** False only when the PNG header says the image is not 2048x1440; anything unreadable is left to the decoder. */
+    private fun mayBePrintSized(doc: Doc): Boolean = try {
+        doc.openRead().use { stream ->
+            val ihdr = PngFile(stream).getChunk(PngChunkType.IHDR) ?: return@use true
+            val (w, h) = ihdr.readIHDRChunkResolution()
+            w == ImageGeometry.PRINT_WIDTH && h == ImageGeometry.PRINT_HEIGHT
+        }
+    } catch (e: Exception) {
+        true
     }
 
     private suspend fun cropAllPrints(ugcFolderPath: String?) {
@@ -416,6 +430,7 @@ class AppApi(
     }
 
     private fun deleteTextMetadata(doc: Doc) {
+        if (!ScreenshotParser.hasDeletableText(doc, true)) return
         val updated = ScreenshotParser.deleteTextMetadata(doc.readBytes(), true) ?: return
         doc.writeBytes(updated)
     }

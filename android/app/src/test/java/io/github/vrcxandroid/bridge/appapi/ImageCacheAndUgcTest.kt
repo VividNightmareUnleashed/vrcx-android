@@ -187,18 +187,30 @@ class ImageCacheAndUgcTest {
 
     @Test
     fun cropPrintImageCopiesTheTextChunksIntoTheCroppedFile() {
+        // the header claims 2048x1440; the fake codec "crops" it to nometa.png
+        val source = Vectors.withSize(Vectors.fixture("multi_itxt.png"), 2048, 1440)
+        var decoded = 0
         platform.images = object : ImageCodec by platform.images {
-            override fun cropPrint(bytes: ByteArray): ByteArray? =
-                if (bytes.contentEquals(Vectors.fixture("multi_itxt.png"))) Vectors.fixture("nometa.png") else null
+            override fun cropPrint(bytes: ByteArray): ByteArray? {
+                decoded++
+                return if (bytes.contentEquals(source)) Vectors.fixture("nometa.png") else null
+            }
         }
-        val print = File(platform.servedDir, "print.png").apply { writeBytes(Vectors.fixture("multi_itxt.png")) }
+        val print = File(platform.servedDir, "print.png").apply { writeBytes(source) }
         assertTrue(call("CropPrintImage", "{dir}/print.png").jsonPrimitive.boolean)
+        // only the iTXt chunks of the source are copied, so the result matches the .NET vector for multi_itxt.png
         val v = Vectors.root["copyITxt"]!! as kotlinx.serialization.json.JsonObject
         assertEquals(v["sha256"]!!.jsonPrimitive.content, Vectors.sha256(print.readBytes()))
-        // not a 2048x1440 print → false, file untouched
+        assertEquals(1, decoded)
+        // not a 2048x1440 print → false, file untouched, and the header alone decides (no decode)
         val other = File(platform.servedDir, "other.png").apply { writeBytes(Vectors.fixture("vrcx_json.png")) }
         assertFalse(call("CropPrintImage", "{dir}/other.png").jsonPrimitive.boolean)
         assertArrayEquals(Vectors.fixture("vrcx_json.png"), other.readBytes())
+        assertEquals(1, decoded)
+        // not a PNG at all → left to the decoder, which refuses it
+        File(platform.servedDir, "other.jpg.png").writeBytes(Vectors.fixture("notpng.png"))
+        assertFalse(call("CropPrintImage", "{dir}/other.jpg.png").jsonPrimitive.boolean)
+        assertEquals(2, decoded)
         assertTrue(rejection("CropPrintImage", "{dir}/missing.png").startsWith("FileNotFoundException: Could not find file"))
     }
 
@@ -212,8 +224,10 @@ class ImageCacheAndUgcTest {
             }
         }
         val dir = File(platform.root, "ugc/default/Prints/2025-09").apply { mkdirs() }
-        File(dir, "a.png").writeBytes(Vectors.fixture("multi_itxt.png"))
-        File(dir, "b.png").writeBytes(Vectors.fixture("vrcx_json.png"))
+        File(dir, "a.png").writeBytes(Vectors.withSize(Vectors.fixture("multi_itxt.png"), 2048, 1440))
+        File(dir, "b.png").writeBytes(Vectors.withSize(Vectors.fixture("vrcx_json.png"), 2048, 1440))
+        // already cropped: skipped from the header
+        File(dir, "c.png").writeBytes(Vectors.withSize(Vectors.fixture("vrcx_json.png"), 1920, 1080))
         File(dir, "notes.txt").writeText("x")
         assertEquals(JsonNull, call("CropAllPrints", ""))
         assertEquals(2, crops)

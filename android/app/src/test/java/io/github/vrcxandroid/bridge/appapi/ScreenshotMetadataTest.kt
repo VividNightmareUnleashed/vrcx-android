@@ -93,6 +93,29 @@ class ScreenshotMetadataTest {
     }
 
     @Test
+    fun deleteAllScreenshotMetadataRewritesOnlyFilesWithMetadata() {
+        platform.photos = FakeAppApiPlatform.FakePhotosLibrary(platform.servedDir)
+        val old = 1_000_000_000_000L
+        platform.servedDir.listFiles()!!.forEach { it.setLastModified(old) }
+        assertEquals(JsonNull, call("DeleteAllScreenshotMetadata"))
+        var untouched = 0
+        for (s in shots) {
+            val name = s["file"]!!.jsonPrimitive.content
+            if (!name.endsWith(".png") || !s["deleteResult"]!!.jsonPrimitive.content.toBoolean()) continue
+            val file = File(platform.servedDir, name)
+            assertEquals(name, s["afterDeleteSha256"]!!.jsonPrimitive.content, Vectors.sha256(file.readBytes()))
+            if (s["afterDeleteSha256"]!!.jsonPrimitive.content == Vectors.sha256(Vectors.fixture(name))) {
+                // nothing to delete: the file was not even rewritten
+                assertEquals(name, old, file.lastModified())
+                untouched++
+            }
+        }
+        assertEquals(true, untouched > 0)
+        // Windows lists *.png case-insensitively, so the batch also cleans upper-case extensions
+        assertEquals(emptyList<String>(), ScreenshotParser.readTextMetadata(LocalFileDoc(File(platform.servedDir, "upper.PNG"))))
+    }
+
+    @Test
     fun findScreenshotsBySearchMatchesDotNet() {
         platform.photos = FakeAppApiPlatform.FakePhotosLibrary(platform.servedDir)
         for (v in Vectors.root["search"]!!.jsonArray) {

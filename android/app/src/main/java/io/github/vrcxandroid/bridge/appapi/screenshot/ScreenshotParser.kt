@@ -102,6 +102,25 @@ object ScreenshotParser {
         return if (changed) stream.toByteArray() else null
     }
 
+    /**
+     * Whether [deleteTextMetadata] may change the file, decided from the metadata chunks alone so a batch over a large
+     * photo folder does not read every image in full. Unreadable chunks count as "may change".
+     */
+    fun hasDeletableText(doc: Doc, deleteVrchatMetadata: Boolean = true): Boolean = try {
+        doc.openRead().use { stream ->
+            PngFile(stream).getChunksOfType(PngChunkType.iTXt).any { chunk ->
+                val keyword = try {
+                    chunk.readITXtChunk()?.first
+                } catch (e: Exception) {
+                    return@use true
+                }
+                keyword == "Description" || (deleteVrchatMetadata && keyword == "XML:com.adobe.xmp")
+            }
+        }
+    } catch (e: Exception) {
+        true
+    }
+
     /** `WriteVRCXMetadata`: inserts a "Description" iTXt chunk. Returns the new bytes, or null when it cannot. */
     fun writeVrcxMetadata(text: String, bytes: ByteArray): ByteArray? {
         val stream = MemorySeekableStream(bytes)
