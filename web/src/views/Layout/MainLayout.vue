@@ -1,8 +1,8 @@
 <template>
     <template v-if="watchState.isLoggedIn">
-        <!-- Phone frame (Android, compact layout): docs/DESIGN.md §2. Only the frame differs; the routed view,
-             dialogs and watchers below are shared. -->
-        <CompactFrame v-if="isCompact && CompactFrame">
+        <!-- Phone frame (Android, compact layout): docs/DESIGN.md §2. Only the frame differs; the routed view, the
+             friends panel (Sidebar), dialogs and watchers below are shared. -->
+        <CompactFrame v-if="isCompact && CompactFrame" @ready="compactFrameReady = true">
             <template #nav>
                 <NavMenu sheet>
                     <template #sheet-footer>
@@ -11,10 +11,10 @@
                 </NavMenu>
             </template>
             <template #main>
-                <RoutedView :max="COMPACT_KEEP_ALIVE_MAX" />
+                <div :id="FRAME_SLOT_IDS.compactMain" class="vrcx-frame-slot contents" />
             </template>
             <template #friends>
-                <Sidebar></Sidebar>
+                <div :id="FRAME_SLOT_IDS.compactFriends" class="vrcx-frame-slot contents" />
             </template>
         </CompactFrame>
 
@@ -46,7 +46,11 @@
                         @layout="handleLayout">
                         <template #default="{ layout }">
                             <ResizablePanel :default-size="mainDefaultSize" :order="1">
-                                <RoutedView />
+                                <div
+                                    v-if="shareFrameChildren"
+                                    :id="FRAME_SLOT_IDS.desktopMain"
+                                    class="vrcx-frame-slot contents" />
+                                <RoutedView v-else />
                             </ResizablePanel>
 
                             <ResizableHandle
@@ -63,7 +67,11 @@
                                 collapsible
                                 :order="2"
                                 :style="{ maxWidth: `${asideMaxPx}px` }">
-                                <Sidebar></Sidebar>
+                                <div
+                                    v-if="shareFrameChildren"
+                                    :id="FRAME_SLOT_IDS.desktopFriends"
+                                    class="vrcx-frame-slot contents" />
+                                <Sidebar v-else></Sidebar>
                             </ResizablePanel>
                         </template>
                     </ResizablePanelGroup>
@@ -71,6 +79,24 @@
             </SidebarProvider>
             <StatusBar />
         </div>
+
+        <!-- Android: one routed view and one Sidebar for the life of the layout, moved between the frames' slots when
+             the frame changes (a small tablet rotating across the compact threshold, split screen, foldables), so the
+             page cache, scroll positions and the dialogs the Sidebar owns survive it (docs/DESIGN.md §2.2). Desktop
+             builds render both inline, as upstream. -->
+        <template v-if="shareFrameChildren && frameChildrenMounted">
+            <div
+                :id="FRAME_SLOT_IDS.parking"
+                class="vrcx-frame-parking pointer-events-none invisible fixed inset-0 -z-10 overflow-hidden opacity-0"
+                aria-hidden="true"
+                inert />
+            <Teleport defer :to="`#${frameSlots.main}`">
+                <RoutedView :max="isCompact ? COMPACT_KEEP_ALIVE_MAX : undefined" />
+            </Teleport>
+            <Teleport defer :to="`#${frameSlots.friends}`">
+                <Sidebar></Sidebar>
+            </Teleport>
+        </template>
 
         <!-- ## Dialogs ## -->
         <MainDialogContainer />
@@ -107,6 +133,7 @@
     import { watchState } from '../../services/watchState';
     import { isAndroid } from '../../shared/utils/platform';
     import { COMPACT_KEEP_ALIVE_MAX } from './keepAlive';
+    import { FRAME_SLOT_IDS, resolveFrameSlots } from './frameSlots';
 
     import AvatarImportDialog from '../Favorites/dialogs/AvatarImportDialog.vue';
     import ChangelogDialog from '../Settings/dialogs/ChangelogDialog.vue';
@@ -142,6 +169,30 @@
     // Android tablets keep the PC frame with its PC nav at every width (upstream switches the nav to a Sheet at
     // 768px, which has no trigger in the PC frame). Desktop builds keep the upstream media query.
     const desktopNavMobile = isAndroid ? false : undefined;
+
+    // Android: the routed view and the Sidebar are rendered once and teleported into the current frame's slots.
+    const shareFrameChildren = isAndroid;
+    // The phone frame is an async chunk: until it has mounted its slots, the shared children wait in a parking slot.
+    const compactFrameReady = ref(false);
+    watch(isCompact, (compact) => {
+        if (!compact) {
+            compactFrameReady.value = false;
+        }
+    });
+    const frameSlots = computed(() =>
+        resolveFrameSlots({ isCompact: isCompact.value, compactFrameReady: compactFrameReady.value })
+    );
+    // Mount the shared children once a real slot exists, so the first page does not start in the parking slot.
+    const frameChildrenMounted = ref(false);
+    watch(
+        frameSlots,
+        (slots) => {
+            if (!slots.parked) {
+                frameChildrenMounted.value = true;
+            }
+        },
+        { immediate: true }
+    );
 
     const appearanceSettingsStore = useAppearanceSettingsStore();
     const { navWidth, isNavCollapsed } = storeToRefs(appearanceSettingsStore);

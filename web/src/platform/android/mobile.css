@@ -90,8 +90,9 @@ html.vrcx-compact-landscape :is(#noty_layout__bottomLeft, #noty_layout__topLeft)
 
 /* ---------------------------------------------------------------- page card (DESIGN.md §2) */
 
-/* The routed view keeps its PC card, floating in the frame colour at 6px margins. */
-html.vrcx-compact .vrcx-phone-main > .x-container {
+/* The routed view keeps its PC card, floating in the frame colour at 6px margins. MainLayout teleports it into a
+   display: contents slot inside the page area. */
+html.vrcx-compact .vrcx-phone-main > .vrcx-frame-slot > .x-container {
     margin: 6px;
     height: calc(100% - 12px);
 }

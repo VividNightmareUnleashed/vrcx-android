@@ -33,7 +33,7 @@
 <script setup>
     // Phone frame of MainLayout (docs/DESIGN.md §2): app bar, page card, dock (rail in landscape), friends panel and
     // nav sheet. MainLayout keeps the dialogs, watchers and the routed view; this component only arranges them.
-    import { ref } from 'vue';
+    import { onMounted, ref } from 'vue';
 
     import { SidebarProvider } from '../../components/ui/sidebar';
     import { useCompactLayout } from '../../composables/useCompactLayout';
@@ -44,8 +44,13 @@
     import PhoneAppBar from '../../platform/android/shell/PhoneAppBar.vue';
     import PhoneDock from '../../platform/android/shell/PhoneDock.vue';
 
+    // MainLayout moves the shared routed view and Sidebar into the #main and #friends slots once they exist.
+    const emit = defineEmits(['ready']);
+
     const { isCompactLandscape } = useCompactLayout();
     const mainRef = ref(null);
+
+    onMounted(() => emit('ready'));
 
     function handleTitleClick() {
         if (shellState.friendsPanelOpen) {
