@@ -30,7 +30,7 @@
             <InputGroupSearch
                 v-model="screenshotMetadataDialog.search"
                 :placeholder="t('dialog.screenshot_metadata.search_placeholder')"
-                class="compact:w-auto! compact:min-w-0 compact:flex-1"
+                class="compact:w-auto! compact:min-w-[50%] compact:flex-1"
                 style="width: 200px"
                 @input="screenshotMetadataSearch" />
             <Select :model-value="screenshotMetadataDialog.searchType" @update:modelValue="handleSearchTypeChange">
