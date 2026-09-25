@@ -5,6 +5,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_CREATE
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_READWRITE
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.AtomicMoveNotSupportedException
@@ -45,9 +46,33 @@ internal object VrcxDatabase {
         connection.prepare(sql).use { while (it.step()) Unit }
     }
 
-    /** `PRAGMA wal_checkpoint(TRUNCATE)`: moves the WAL into the main file so the file alone is a complete copy. */
+    /**
+     * `PRAGMA wal_checkpoint(TRUNCATE)`: moves the WAL into the main file so the file alone is a complete copy.
+     * Throws when SQLite reports the checkpoint as incomplete (busy).
+     */
     fun checkpoint(session: SqliteSession) {
-        session.queryRows("PRAGMA wal_checkpoint(TRUNCATE)")
+        val row = session.queryRows("PRAGMA wal_checkpoint(TRUNCATE)").firstOrNull()
+        if ((row?.firstOrNull() as? Long ?: 0L) != 0L) throw IOException("The database is busy; the WAL could not be checkpointed.")
+    }
+
+    /**
+     * Copies a checkpointed database, setting the header's file format bytes (offsets 18 and 19) from 2 (WAL) to 1
+     * (rollback journal), which is exactly what `PRAGMA journal_mode=DELETE` changes on disk.
+     */
+    fun copyAsRollbackJournal(input: InputStream, output: OutputStream) {
+        val header = ByteArray(100)
+        var read = 0
+        while (read < header.size) {
+            val n = input.read(header, read, header.size - read)
+            if (n < 0) break
+            read += n
+        }
+        if (read == header.size && header[18].toInt() == 2 && header[19].toInt() == 2) {
+            header[18] = 1
+            header[19] = 1
+        }
+        output.write(header, 0, read)
+        copy(input, output)
     }
 
     private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)

@@ -89,12 +89,17 @@ class SQLiteModule internal constructor(
         }
     }
 
+    /**
+     * Checkpoints the WAL into the main file and copies it, on the lane so no write can interleave. The copy is marked
+     * as a rollback-journal database (like upstream's PC files), which is exact because the WAL is empty after
+     * `wal_checkpoint(TRUNCATE)`.
+     */
     override suspend fun exportTo(target: Uri) {
         runNative { s ->
             s.connection()
             VrcxDatabase.checkpoint(s)
             val output = openOutput(target) ?: throw IOException("Cannot write to $target")
-            output.use { out -> dbFile.inputStream().use { VrcxDatabase.copy(it, out) } }
+            output.use { out -> dbFile.inputStream().use { VrcxDatabase.copyAsRollbackJournal(it, out) } }
         }
     }
 
