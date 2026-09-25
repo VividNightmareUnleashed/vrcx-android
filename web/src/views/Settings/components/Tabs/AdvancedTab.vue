@@ -199,6 +199,8 @@
             </SettingsItem>
         </SettingsGroup>
 
+        <AndroidCustomFilesSettings v-if="isAndroid" />
+
         <SettingsGroup :title="t('view.settings.advanced_groups.database.header')">
             <SettingsItem :label="t('view.settings.advanced.advanced.sqlite_table_size.refresh')">
                 <Button size="sm" variant="outline" @click="getSqliteTableSizes">{{
@@ -440,7 +442,8 @@
     import { disableGameLogDialog } from '@/coordinators/gameLogCoordinator';
     import { clearVRCXCache } from '@/coordinators/vrcxCoordinator';
     import { openExternalLink } from '@/shared/utils';
-    import { hasDesktopShell, hasLocalGame, hasLocalVrchatFiles } from '@/shared/utils/platform';
+    import { hasDesktopShell, hasLocalGame, hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
+    import AndroidCustomFilesSettings from '@/platform/android/components/settings/AndroidCustomFilesSettings.vue';
 
     import PhotonSettings from '../PhotonSettings.vue';
     import RegistryBackupDialog from '../../../Tools/dialogs/RegistryBackupDialog.vue';

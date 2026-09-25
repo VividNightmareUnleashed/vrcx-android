@@ -139,6 +139,18 @@
             "failed": "Couldn't open VRChat on this device.",
             "launched": "Opening VRChat"
         },
+        "custom_files": {
+            "header": "Custom CSS and JS",
+            "description": "VRCX reads custom.css and custom.js from Android/data/io.github.vrcxandroid/files on this device. Only add scripts you trust: custom JS can do anything VRCX can.",
+            "css_label": "Reload custom CSS",
+            "css_description": "Applies your changes to custom.css right away.",
+            "js_label": "Reload custom JS",
+            "js_description": "Reloads VRCX so your changes to custom.js take effect.",
+            "reload_button": "Reload",
+            "css_reloaded": "Custom CSS reloaded",
+            "css_missing": "No custom.css found, so no custom styles are applied.",
+            "reload_failed": "Couldn't reload: {message}"
+        },
         "media": {
             "folder_current": "Saving to {folder}",
             "folder_open_failed": "Couldn't open this folder on your device."

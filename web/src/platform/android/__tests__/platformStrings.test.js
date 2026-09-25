@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n';
 import en from '../../../localization/en.json';
 import enPlatform from '../i18n/en.platform.json';
 
+import androidCustomFilesSettings from '../components/settings/AndroidCustomFilesSettings.vue?raw';
 import androidSystemSettings from '../components/settings/AndroidSystemSettings.vue?raw';
 import companionEmptyState from '../components/CompanionEmptyState.vue?raw';
 import companionSettingsTab from '../components/settings/CompanionSettingsTab.vue?raw';
@@ -14,6 +15,7 @@ import mediaTab from '../../../views/Settings/components/Tabs/MediaTab.vue?raw';
 import settingsTabs from '../../../views/Settings/settingsTabs.js?raw';
 
 const sources = {
+    androidCustomFilesSettings,
     androidSystemSettings,
     companionEmptyState,
     companionSettingsTab,
