@@ -4,6 +4,7 @@ using System.Text;
 using VrcxCompanion.Core;
 using VrcxCompanion.Core.Client;
 using VrcxCompanion.Core.Diagnostics;
+using VrcxCompanion.Core.Security;
 using VrcxCompanion.Core.Settings;
 using VrcxCompanion.UI;
 
@@ -63,6 +64,7 @@ internal static class UiPreview
         {
             client?.DisposeAsync().AsTask().Wait(2000);
             Task.Run(() => host.DisposeAsync().AsTask()).Wait(10000);
+            CompanionIdentity.Delete(new AppPaths(Path.Combine(root, "data")).IdentityFile, new DpapiProtector("identity"));
             try
             {
                 Directory.Delete(root, recursive: true);

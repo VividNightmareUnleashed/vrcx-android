@@ -57,19 +57,35 @@ internal static class Program
         }
 
         host.Start();
+        TrayApplicationContext? context = null;
         void OnTimeChanged(object? sender, EventArgs e) => host.NotifyTimeChanged();
+        void OnSessionEnded(object? sender, SessionEndedEventArgs e)
+        {
+            // Logoff or shutdown: Windows may end the process as soon as this handler returns, so the host is stopped
+            // here (sessions closed, listeners released) before the message loop is asked to exit.
+            log.Info($"Windows session ending ({e.Reason})");
+            Stop(host, TimeSpan.FromSeconds(4));
+            context?.RequestExit();
+        }
         SystemEvents.TimeChanged += OnTimeChanged;
+        SystemEvents.SessionEnded += OnSessionEnded;
         try
         {
-            using var context = new TrayApplicationContext(host, log);
-            Application.Run(context);
+            using var tray = new TrayApplicationContext(host, log);
+            context = tray;
+            Application.Run(tray);
         }
         finally
         {
+            SystemEvents.SessionEnded -= OnSessionEnded;
             SystemEvents.TimeChanged -= OnTimeChanged;
-            Task.Run(() => host.DisposeAsync().AsTask()).Wait(TimeSpan.FromSeconds(10));
+            Stop(host, TimeSpan.FromSeconds(10));
             log.Info("exit");
         }
         return 0;
     }
+
+    /// <summary>Disposes the host off the UI thread, waiting at most <paramref name="timeout"/>. Later calls return at once.</summary>
+    private static void Stop(CompanionHost host, TimeSpan timeout) =>
+        Task.Run(() => host.DisposeAsync().AsTask()).Wait(timeout);
 }

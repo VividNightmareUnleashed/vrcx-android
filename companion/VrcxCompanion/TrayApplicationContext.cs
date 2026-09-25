@@ -74,6 +74,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return menu;
     }
 
+    /// <summary>Asks the message loop to close the windows and exit (callable from any thread).</summary>
+    public void RequestExit()
+    {
+        try
+        {
+            Post(Quit);
+        }
+        catch (InvalidOperationException)
+        {
+            // The window is already gone: the loop is ending anyway.
+        }
+    }
+
     private void Post(Action action)
     {
         if (_invoker.IsHandleCreated && !_invoker.IsDisposed)

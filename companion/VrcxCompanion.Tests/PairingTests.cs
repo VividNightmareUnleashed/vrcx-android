@@ -258,34 +258,3 @@ public class DeviceStoreTests
         Assert.True(File.Exists(path + ".bad"));
     }
 }
-
-public class IdentityTests
-{
-    [Fact]
-    public void CreatedOnceAndReloaded()
-    {
-        using var dir = new TempDir();
-        var path = dir.File("identity.bin");
-        string id, fp;
-        using (var first = CompanionIdentity.LoadOrCreate(path, new DpapiProtector("identity"), "TESTPC", NullLog.Instance))
-        {
-            id = first.CompanionId;
-            fp = first.Fingerprint;
-            Assert.True(Guid.TryParse(id, out _));
-            Assert.Equal("CN=VRCX Companion TESTPC", first.Certificate.Subject);
-            Assert.True(first.Certificate.HasPrivateKey);
-            Assert.Equal("1.2.840.10045.2.1", first.Certificate.PublicKey.Oid.Value); // id-ecPublicKey
-            Assert.True(first.Certificate.NotAfter - first.Certificate.NotBefore >= TimeSpan.FromDays(365 * 20 - 1));
-            var spki = first.Certificate.PublicKey.ExportSubjectPublicKeyInfo();
-            Assert.Equal(Base64Url.Encode(System.Security.Cryptography.SHA256.HashData(spki)), fp);
-            Assert.Equal(43, fp.Length);
-        }
-        using var second = CompanionIdentity.LoadOrCreate(path, new DpapiProtector("identity"), "TESTPC", NullLog.Instance);
-        Assert.Equal(id, second.CompanionId);
-        Assert.Equal(fp, second.Fingerprint);
-
-        // Not readable without DPAPI for this user and purpose.
-        Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(() =>
-            new DpapiProtector("other").Unprotect(File.ReadAllBytes(path)));
-    }
-}

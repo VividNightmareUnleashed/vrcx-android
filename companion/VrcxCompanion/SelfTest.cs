@@ -144,6 +144,8 @@ internal static class SelfTest
         }
         finally
         {
+            // The identity's key lives in the user's key store, not under root.
+            CompanionIdentity.Delete(new AppPaths(dataDir).IdentityFile, new DpapiProtector("identity"));
             try
             {
                 Directory.Delete(root, recursive: true);
