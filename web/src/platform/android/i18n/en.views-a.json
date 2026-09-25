@@ -3,9 +3,7 @@
         "views_a": {
             "more_actions": "More actions",
             "date_range": "Date range",
-            "filters": "Filters",
             "search": "Search",
-            "settings": "Settings",
             "player_icons": {
                 "master": "Instance Master",
                 "moderator": "Moderator",
