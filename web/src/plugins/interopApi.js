@@ -1,5 +1,6 @@
 // @ts-nocheck
 import InteropApi from '../ipc-electron/interopApi.js';
+import { isAndroid } from '../shared/utils/platform.js';
 import configRepository from '../services/config.js';
 import vrcxJsonStorage from '../services/jsonStorage.js';
 
@@ -32,6 +33,10 @@ export async function initInteropApi(isVrOverlay = false) {
             window.Discord = InteropApi.Discord;
             window.AssetBundleManager = InteropApi.AssetBundleManager;
             window.AppApiVrElectron = InteropApi.AppApiVrElectron;
+            if (isAndroid) {
+                // Android-only helpers (docs/ARCHITECTURE.md §5).
+                window.AndroidHost = InteropApi.AndroidHost;
+            }
         }
 
         await configRepository.init();

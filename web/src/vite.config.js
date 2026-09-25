@@ -102,6 +102,17 @@ export default defineConfig(({ mode }) => {
 
     const nightly = mode === 'development' || version.split('-').at(-1).length === 7;
 
+    // Android build (`npm run build:android`): see docs/ARCHITECTURE.md §10.
+    const android = process.env.VRCX_TARGET === 'android';
+    const browserTarget = android ? 'chrome120' : 'chrome145';
+    const cssTargets = browserslistToTargets(browserslist(android ? 'Chrome 120' : 'Chrome 145'));
+    const buildInputs = android
+        ? { index: resolve(import.meta.dirname, './index.html') }
+        : {
+              index: resolve(import.meta.dirname, './index.html'),
+              vr: resolve(import.meta.dirname, './vr.html')
+          };
+
     /** @type {import('vite').UserConfig} */
     return {
         base: '',
@@ -140,7 +151,7 @@ export default defineConfig(({ mode }) => {
                     customMedia: true
                 },
                 errorRecovery: true,
-                targets: browserslistToTargets(browserslist('Chrome 145'))
+                targets: cssTargets
             }
         },
         optimizeDeps: {
@@ -159,15 +170,16 @@ export default defineConfig(({ mode }) => {
         },
         define: {
             VERSION: JSON.stringify(version),
-            NIGHTLY: JSON.stringify(nightly)
+            NIGHTLY: JSON.stringify(nightly),
+            ANDROID: JSON.stringify(android)
         },
         server: {
             port: 9000,
             strictPort: true
         },
         build: {
-            target: 'chrome145',
-            outDir: '../build/html',
+            target: browserTarget,
+            outDir: android ? '../build/android/web' : '../build/html',
             license: true,
             emptyOutDir: true,
             copyPublicDir: true,
@@ -181,10 +193,7 @@ export default defineConfig(({ mode }) => {
             },
             rolldownOptions: {
                 preserveEntrySignatures: false,
-                input: {
-                    index: resolve(import.meta.dirname, './index.html'),
-                    vr: resolve(import.meta.dirname, './vr.html')
-                },
+                input: buildInputs,
                 output: {
                     assetFileNames: getAssetFilename,
                     manualChunks: getManualChunk

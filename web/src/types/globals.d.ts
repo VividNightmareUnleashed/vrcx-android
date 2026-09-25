@@ -7,6 +7,8 @@ declare global {
 
     const WINDOWS: boolean;
     const LINUX: boolean;
+    /** Build-time define: true in the Android build (docs/ARCHITECTURE.md §4.1). */
+    const ANDROID: boolean;
 
     interface Window {
         $pinia: any;

@@ -10,7 +10,8 @@ export default defineConfig({
     define: {
         NIGHTLY: JSON.stringify(false),
         WINDOWS: JSON.stringify(true),
-        LINUX: JSON.stringify(false)
+        LINUX: JSON.stringify(false),
+        ANDROID: JSON.stringify(false)
     },
     test: {
         globals: true,

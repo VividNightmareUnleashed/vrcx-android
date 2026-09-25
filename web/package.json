@@ -34,6 +34,7 @@
         "test:coverage": "vitest run --coverage",
         "build:licenses": "node ./build-scripts/generate-third-party-licenses.js",
         "prod": "vite build src && npm run build:licenses",
+        "build:android": "cross-env VRCX_TARGET=android vite build src",
         "build-electron": "node ./build-scripts/download-dotnet-runtime.js --arch=x64 && node ./build-scripts/patch-package-version.js && cross-env DEBUG=electron-builder electron-builder --config electron-builder.config.js --x64 --publish never",
         "build-electron-arm64": "node ./build-scripts/download-dotnet-runtime.js --arch=arm64 && node ./build-scripts/patch-package-version.js && electron-builder --config electron-builder.config.js --arm64 --publish never",
         "postbuild-electron": "node ./build-scripts/patch-node-api-dotnet.js --arch=x64 && node ./build-scripts/rename-builds.js --arch=x64",
