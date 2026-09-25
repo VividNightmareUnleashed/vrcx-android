@@ -9,13 +9,16 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.brotli.BrotliInterceptor
+import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
  * The shared OkHttp client, configured like upstream's `SocketsHttpHandler`:
  * cookie jar, brotli + gzip, 5 minute connection pool, 10 requests per host, 100 s per call, the `VRCX <version>`
- * User-Agent, .NET redirect rules and the optional proxy.
+ * User-Agent, .NET redirect rules and the optional proxy ([ProxySpec]: HTTP and SOCKS5 through OkHttp's own proxy
+ * support, SOCKS4/4a through [Socks4SocketFactory], anything else fails every call).
  */
 object HttpClients {
     const val CALL_TIMEOUT_SECONDS = 100L
@@ -35,22 +38,47 @@ object HttpClients {
             // Redirects are followed by DotNetRedirectInterceptor (max 50, https → http refused, http → https allowed).
             .followRedirects(false)
             .followSslRedirects(false)
+        if (proxy != null) applyProxy(builder, proxy)
+        builder
             .addInterceptor(DotNetRedirectInterceptor())
             .addInterceptor(UserAgentInterceptor(userAgent))
             .addInterceptor(BrotliInterceptor)
-        if (proxy != null) {
-            builder.proxy(proxy.toProxy())
-            val user = proxy.username
-            if (user != null && proxy.type == Proxy.Type.HTTP) {
-                val credential = Credentials.basic(user, proxy.password.orEmpty())
-                builder.proxyAuthenticator { _, response ->
-                    if (response.request.header("Proxy-Authorization") != null) null
-                    else response.request.newBuilder().header("Proxy-Authorization", credential).build()
-                }
-            }
-        }
         return builder.build()
     }
+
+    private fun applyProxy(builder: OkHttpClient.Builder, proxy: ProxySpec) {
+        val address = InetSocketAddress.createUnresolved(proxy.host, proxy.port)
+        when (proxy.nativeKind) {
+            ProxySpec.Kind.HTTP -> {
+                builder.proxy(Proxy(Proxy.Type.HTTP, address))
+                val user = proxy.username
+                if (user != null) {
+                    val credential = Credentials.basic(user, proxy.password.orEmpty())
+                    builder.proxyAuthenticator { _, response ->
+                        if (response.request.header("Proxy-Authorization") != null) null
+                        else response.request.newBuilder().header("Proxy-Authorization", credential).build()
+                    }
+                }
+            }
+            // The JDK's SOCKS5 client; OkHttp passes the host name, which the proxy resolves (like .NET's socks5).
+            ProxySpec.Kind.SOCKS5 -> builder.proxy(Proxy(Proxy.Type.SOCKS, address))
+            ProxySpec.Kind.SOCKS4, ProxySpec.Kind.SOCKS4A -> builder
+                .proxy(Proxy.NO_PROXY)
+                .socketFactory(Socks4SocketFactory(proxy))
+                .dns(Socks4Dns(remoteResolution = proxy.nativeKind == ProxySpec.Kind.SOCKS4A))
+            // Fail every call rather than send it around the proxy the user configured.
+            null -> builder.proxy(Proxy.NO_PROXY).addInterceptor(UnsupportedProxyInterceptor(proxy))
+        }
+    }
+}
+
+/** Fails every call: the configured proxy uses a scheme OkHttp cannot speak (for example `https://`). */
+class UnsupportedProxyInterceptor(private val proxy: ProxySpec) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response =
+        throw IOException(
+            "The proxy ${proxy.displayName} is not supported for VRCX's own requests on Android. " +
+                "Use an http://, socks4:// or socks5:// proxy.",
+        )
 }
 
 /** Default `User-Agent` for requests that do not set their own (upstream `DefaultRequestHeaders`). */

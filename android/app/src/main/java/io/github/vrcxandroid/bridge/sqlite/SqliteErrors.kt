@@ -3,10 +3,11 @@ package io.github.vrcxandroid.bridge.sqlite
 import io.github.vrcxandroid.bridge.DotNetException
 
 /**
- * Error text in System.Data.SQLite's format: `"<sqlite3_errstr(code)>\r\n<sqlite3_errmsg>"`, e.g.
- * `SQL logic error\r\nno such table: nosuch` (verified against upstream). The frontend matches
- * substrings of the sqlite message (`duplicate column name`, `database disk image is malformed`, ...), which is kept
- * verbatim.
+ * Rejections for SQLite failures: `DotNetException("SQLiteException", <sqlite3_errmsg>)`, so the page sees for example
+ * `SQLiteException: database is locked` or `SQLiteException: no such table: nosuch` (ARCHITECTURE.md §4.5). The
+ * frontend matches substrings of the sqlite message (`duplicate column name`, `database disk image is malformed`, ...),
+ * which is passed through verbatim. When the driver gives no message, the `sqlite3_errstr` text
+ * of the result code is used instead.
  */
 internal object SqliteErrors {
     const val TYPE = "SQLiteException"
@@ -14,7 +15,10 @@ internal object SqliteErrors {
     /** The bundled driver throws `android.database.SQLException("Error code: <n>, message: <errmsg>")`. */
     private val DRIVER_MESSAGE = Regex("^Error code: (-?\\d+)(?:, message: (.*))?$", RegexOption.DOT_MATCHES_ALL)
 
-    /** System.Data.SQLite: `new SQLiteException("Insufficient parameters supplied to the command")` (code Unknown). */
+    /**
+     * A parameter without a value. The check is System.Data.SQLite's rather than sqlite's, so its documented text is
+     * kept.
+     */
     fun insufficientParameters() = DotNetException(TYPE, "unknown error\r\nInsufficient parameters supplied to the command")
 
     /** Returns the .NET-style exception for a driver exception, or null when [t] did not come from SQLite. */
@@ -26,10 +30,8 @@ internal object SqliteErrors {
         return DotNetException(TYPE, format(code, detail))
     }
 
-    fun format(code: Int, detail: String?): String {
-        val stock = errorString(code)
-        return if (detail.isNullOrEmpty()) stock else "$stock\r\n$detail".trim()
-    }
+    /** The sqlite message verbatim, or the result code's `sqlite3_errstr` text when there is none. */
+    fun format(code: Int, detail: String?): String = if (detail.isNullOrBlank()) errorString(code) else detail
 
     /** `sqlite3_errstr` (primary result codes; extended codes use their low byte like SQLite does). */
     fun errorString(code: Int): String = when (code) {

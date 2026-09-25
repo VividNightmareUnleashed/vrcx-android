@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.bridge.webapi
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -21,12 +22,43 @@ class MemoryBlobStore(var blob: String? = null) : CookieBlobStore {
         return blob
     }
 
-    override suspend fun save(blob: String) {
+    override suspend fun save(snapshot: () -> String?) {
+        val value = snapshot() ?: return
         saves++
-        this.blob = blob
+        blob = value
     }
 
     fun json(): String? = blob?.let { String(Base64.getDecoder().decode(it)) }
+}
+
+/**
+ * Stands in for the SQLite lane: a save only queues its block, and the test decides when (and in which order) the
+ * blocks run. [replaceDatabase] is what an import does on the lane: fence the jar, then swap the stored blob.
+ */
+class LaneBlobStore(var blob: String? = null) : CookieBlobStore {
+    val queued = ArrayDeque<() -> Unit>()
+    var loadGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
+    override suspend fun load(): String? {
+        val value = blob
+        loadGate?.await()
+        return value
+    }
+
+    override suspend fun save(snapshot: () -> String?) {
+        queued.add { snapshot()?.let { blob = it } }
+    }
+
+    fun runQueued(reversed: Boolean = false) {
+        val blocks = queued.toList().let { if (reversed) it.reversed() else it }
+        queued.clear()
+        blocks.forEach { it() }
+    }
+
+    fun replaceDatabase(jar: PersistentCookieJar, newBlob: String?) {
+        jar.invalidate()
+        blob = newBlob
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -186,6 +218,96 @@ class PersistentCookieJarTest {
         jar.flush() // nothing dirty after a reload: the imported blob stays
         assertEquals(listOf("imported"), jar.loadForRequest(api).map { it.name })
         assertEquals(listOf("imported"), NetCookieCodec.decodeBase64(store.blob!!, clock).map { it.cookie.name })
+    }
+
+    private fun blobOf(vararg cookies: Pair<String, String>) = NetCookieCodec.encodeBase64(
+        cookies.map { (name, value) ->
+            StoredCookie(Cookie.Builder().name(name).value(value).hostOnlyDomain("api.vrchat.cloud").path("/").build(), clock)
+        },
+    )
+
+    private fun storedValues(blob: String?) = NetCookieCodec.decodeBase64(blob!!, clock).map { "${it.cookie.name}=${it.cookie.value}" }
+
+    @Test
+    fun saveQueuedBehindAnImportDoesNotWriteTheOldSession() = runTest(dispatcher) {
+        val lane = LaneBlobStore(blobOf("auth" to "android"))
+        val jar = PersistentCookieJar(lane, backgroundScope, 1000) { clock }
+        jar.saveFromResponse(api, listOf(setCookie("auth=android2; Path=/")))
+        // The debounced save fires and its write is queued on the lane ...
+        advanceTimeBy(1001)
+        runCurrent()
+        assertEquals(1, lane.queued.size)
+        // ... behind the import, which fences the jar and replaces the database file.
+        lane.replaceDatabase(jar, blobOf("auth" to "pc"))
+        lane.runQueued()
+        assertEquals("the imported session survives", listOf("auth=pc"), storedValues(lane.blob))
+        assertEquals(listOf("pc"), jar.loadForRequest(api).map { it.value })
+        // Nothing is left that could write the Android session later.
+        jar.flush()
+        advanceTimeBy(5000)
+        runCurrent()
+        lane.runQueued()
+        assertEquals(listOf("auth=pc"), storedValues(lane.blob))
+    }
+
+    @Test
+    fun flushCalledAfterTheFenceWritesNothing() = runTest(dispatcher) {
+        val lane = LaneBlobStore()
+        val jar = PersistentCookieJar(lane, backgroundScope, 1000) { clock }
+        jar.saveFromResponse(api, listOf(setCookie("auth=android; Path=/")))
+        lane.replaceDatabase(jar, blobOf("auth" to "pc"))
+        jar.flush() // e.g. the restart that follows the import
+        advanceTimeBy(5000) // the debounced save was cancelled by the fence
+        runCurrent()
+        lane.runQueued()
+        assertEquals(listOf("auth=pc"), storedValues(lane.blob))
+    }
+
+    @Test
+    fun writesFollowTheJarStateNotTheOrderTheSavesWereRequested() = runTest(dispatcher) {
+        val lane = LaneBlobStore()
+        val jar = PersistentCookieJar(lane, backgroundScope, 1000) { clock }
+        jar.saveFromResponse(api, listOf(setCookie("auth=1; Path=/")))
+        jar.flush() // a pending save of the logged-in jar ...
+        jar.clear() // ... and ClearCookies' immediate W10= save
+        assertEquals(2, lane.queued.size)
+        lane.runQueued(reversed = true) // even if the older request reaches the lane last
+        assertEquals("W10=", lane.blob)
+        assertEquals(emptyList<Cookie>(), jar.loadForRequest(api))
+    }
+
+    @Test
+    fun loadThatRacesAnImportReadsTheImportedDatabase() = runTest(dispatcher) {
+        val lane = LaneBlobStore(blobOf("auth" to "android"))
+        lane.loadGate = kotlinx.coroutines.CompletableDeferred()
+        val jar = PersistentCookieJar(lane, backgroundScope, 1000) { clock }
+        val loading = launch { jar.ensureLoaded() }
+        runCurrent() // the load has read the old database and is waiting
+        lane.replaceDatabase(jar, blobOf("auth" to "pc"))
+        lane.loadGate!!.complete(Unit)
+        loading.join()
+        assertEquals(listOf("pc"), jar.cookies().map { it.cookie.value })
+    }
+
+    @Test
+    fun failedSaveKeepsTheJarDirty() = runTest(dispatcher) {
+        var fail = true
+        val store = object : CookieBlobStore {
+            var blob: String? = null
+            override suspend fun load(): String? = null
+            override suspend fun save(snapshot: () -> String?) {
+                val value = snapshot() ?: return
+                if (fail) throw IllegalStateException("database is locked")
+                blob = value
+            }
+        }
+        val jar = PersistentCookieJar(store, backgroundScope, 1000) { clock }
+        jar.saveFromResponse(api, listOf(setCookie("auth=1; Path=/")))
+        jar.flush()
+        assertEquals(null, store.blob)
+        fail = false
+        jar.flush()
+        assertEquals(listOf("auth=1"), storedValues(store.blob))
     }
 
     @Test

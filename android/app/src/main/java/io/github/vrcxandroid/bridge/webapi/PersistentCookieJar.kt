@@ -16,7 +16,13 @@ import okhttp3.HttpUrl
 interface CookieBlobStore {
     /** The stored blob, or null when there is none. */
     suspend fun load(): String?
-    suspend fun save(blob: String)
+
+    /**
+     * Calls [snapshot] at the point where the write is ordered with every other database access (the SQLite lane) and
+     * stores its result; a null result means there is nothing to write. Taking the snapshot there, and not when the
+     * save was requested, keeps the stored blob in the order of the jar's changes.
+     */
+    suspend fun save(snapshot: () -> String?)
 }
 
 /**
@@ -27,6 +33,9 @@ interface CookieBlobStore {
  * - The stored blob is read on first use, not at construction, because the database lives on the SQLite lane.
  * - A change schedules a save at most [saveDelayMs] later (upstream checks a dirty flag every second); nothing runs
  *   while the jar is unchanged. [flush] saves immediately (host `onStop`, restart).
+ * - Database import: [invalidate] runs on the SQLite lane before the file is replaced. It drops the in-memory session,
+ *   and every save that is still queued finds nothing to write, so the old session never reaches the imported
+ *   database. The next use reads the imported cookies.
  */
 class PersistentCookieJar(
     private val store: CookieBlobStore,
@@ -40,29 +49,36 @@ class PersistentCookieJar(
     private val entries = LinkedHashMap<Key, StoredCookie>()
     private val loadMutex = Mutex()
 
+    /** Written under [lock]; read without it on the fast paths. */
     @Volatile
     private var loaded = false
     private var dirty = false
+    /** Incremented by [invalidate]; a load that started in an older epoch is discarded. */
+    private var epoch = 0L
     private var saveJob: Job? = null
 
     /** Loads the stored cookies once. Cookies added before the load finished win over stored ones. */
     suspend fun ensureLoaded() {
         if (loaded) return
         loadMutex.withLock {
-            if (loaded) return
-            val stored = try {
-                store.load()?.let { NetCookieCodec.decodeBase64(it, now()) }.orEmpty()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load cookies: ${e.message}")
-                emptyList()
+            while (!loaded) {
+                val startEpoch = synchronized(lock) { epoch }
+                val stored = try {
+                    store.load()?.let { NetCookieCodec.decodeBase64(it, now()) }.orEmpty()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load cookies: ${e.message}")
+                    emptyList()
+                }
+                synchronized(lock) {
+                    // The database was replaced while this load ran: read the new one instead.
+                    if (epoch != startEpoch) return@synchronized
+                    val added = LinkedHashMap(entries)
+                    entries.clear()
+                    stored.forEach { putLocked(it) }
+                    entries.putAll(added)
+                    loaded = true
+                }
             }
-            synchronized(lock) {
-                val added = LinkedHashMap(entries)
-                entries.clear()
-                stored.forEach { putLocked(it) }
-                entries.putAll(added)
-            }
-            loaded = true
         }
     }
 
@@ -128,41 +144,52 @@ class PersistentCookieJar(
             synchronized(lock) {
                 entries.clear()
                 dirty = true
+                loaded = true
             }
-            loaded = true
         }
         flush()
     }
 
     /** Saves now if anything changed since the last save. */
     suspend fun flush() {
-        // Every change loads the jar first, so an unloaded jar has nothing to write (and restart stays cheap).
-        if (!loaded) return
-        val blob = synchronized(lock) {
-            if (!dirty) return
-            dirty = false
-            val time = now()
-            NetCookieCodec.encodeBase64(entries.values.filter { it.cookie.expiresAt > time })
-        }
+        // Every change loads the jar first, so an unloaded jar has nothing to write (and restart stays cheap). The
+        // snapshot on the lane checks again: this is only the fast path that skips the lane hop.
+        if (synchronized(lock) { !loaded || !dirty }) return
+        var snapshotEpoch = -1L
         try {
-            store.save(blob)
+            store.save {
+                synchronized(lock) {
+                    if (!loaded || !dirty) return@save null
+                    dirty = false
+                    snapshotEpoch = epoch
+                    val time = now()
+                    NetCookieCodec.encodeBase64(entries.values.filter { it.cookie.expiresAt > time })
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save cookies: ${e.message}")
-            synchronized(lock) { dirty = true }
+            synchronized(lock) { if (snapshotEpoch == epoch && loaded) dirty = true }
         }
     }
 
-    /** Drops the in-memory cookies and reads them again (after the database file was replaced). */
-    suspend fun reload() {
-        loadMutex.withLock {
-            synchronized(lock) {
-                entries.clear()
-                dirty = false
-                saveJob?.cancel()
-                saveJob = null
-            }
+    /**
+     * Forgets the in-memory session because the database file is being replaced. Called on the SQLite lane before the
+     * replacement, so saves queued behind it write nothing; the next use loads the new file's cookies. Never suspends.
+     */
+    fun invalidate() {
+        synchronized(lock) {
+            epoch++
+            entries.clear()
+            dirty = false
             loaded = false
+            saveJob?.cancel()
+            saveJob = null
         }
+    }
+
+    /** Drops the in-memory cookies and reads them again from the store. */
+    suspend fun reload() {
+        invalidate()
         ensureLoaded()
     }
 

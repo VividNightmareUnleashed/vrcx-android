@@ -202,6 +202,101 @@ class VrcxStorageTest {
         assertEquals(JsonPrimitive("{}"), call("GetAll"))
     }
 
+    /** Real file steps, with each call recorded and optional failures injected. */
+    private class RecordingSteps(
+        private val failWrite: Boolean = false,
+        private val failReplace: Boolean = false,
+    ) : VrcxStorage.AtomicWriteSteps {
+        val calls = ArrayList<String>()
+        var tmpAtReplace: ByteArray? = null
+        var targetAtReplace: ByteArray? = null
+
+        override fun writeAndSync(tmp: File, bytes: ByteArray) {
+            calls.add("write ${tmp.name}")
+            if (failWrite) {
+                // A crash or full disk halfway through the write.
+                tmp.writeBytes(bytes.copyOf(bytes.size / 2))
+                throw java.io.IOException("No space left on device")
+            }
+            VrcxStorage.FileSystemSteps.writeAndSync(tmp, bytes)
+            calls.add("synced ${tmp.name}")
+        }
+
+        override fun replace(tmp: File, target: File) {
+            calls.add("replace ${tmp.name} -> ${target.name}")
+            tmpAtReplace = tmp.readBytes()
+            targetAtReplace = if (target.exists()) target.readBytes() else null
+            if (failReplace) throw java.io.IOException("rename failed")
+            VrcxStorage.FileSystemSteps.replace(tmp, target)
+        }
+    }
+
+    private fun writeInitialFile(): File {
+        val file = File(tmp.root, "VRCX/VRCX.json")
+        val s = store(file)
+        s.set("VRCX_ProxyServer", "old")
+        s.save()
+        return file
+    }
+
+    @Test
+    fun saveWritesTheWholeTempFileAndSyncsItBeforeTheRename() {
+        val file = writeInitialFile()
+        val before = file.readBytes()
+        val steps = RecordingSteps()
+        val s = VrcxStorage(file, scope, 500, dispatcher, steps)
+        s.set("VRCX_ProxyServer", "new")
+        s.save()
+        assertEquals(listOf("write VRCX.json.tmp", "synced VRCX.json.tmp", "replace VRCX.json.tmp -> VRCX.json"), steps.calls)
+        // At the moment of the rename the temp file holds the complete new content and the target is still the old one.
+        assertArrayEquals(VrcxJsonFormat.encode(mapOf("VRCX_ProxyServer" to "new")), steps.tmpAtReplace)
+        assertArrayEquals(before, steps.targetAtReplace)
+        assertArrayEquals(steps.tmpAtReplace, file.readBytes())
+        assertFalse(File(file.parentFile, "VRCX.json.tmp").exists())
+        assertFalse(s.isDirty)
+    }
+
+    @Test
+    fun failedWriteLeavesThePreviousFileByteIdenticalAndStaysDirty() {
+        val file = writeInitialFile()
+        val before = file.readBytes()
+        val s = VrcxStorage(file, scope, 500, dispatcher, RecordingSteps(failWrite = true))
+        s.set("VRCX_ProxyServer", "a much longer value that would have replaced the old one")
+        s.save() // logged and swallowed, like upstream's JsonFileSerializer
+        assertArrayEquals("previous content intact", before, file.readBytes())
+        assertFalse("partial temp file removed", File(file.parentFile, "VRCX.json.tmp").exists())
+        assertTrue("change still pending", s.isDirty)
+        assertEquals("old", store(file).get("VRCX_ProxyServer"))
+    }
+
+    @Test
+    fun failedRenameLeavesThePreviousFileAndALaterSaveSucceeds() {
+        val file = writeInitialFile()
+        val before = file.readBytes()
+        val failing = VrcxStorage(file, scope, 500, dispatcher, RecordingSteps(failReplace = true))
+        failing.set("k", "v")
+        failing.save()
+        assertArrayEquals(before, file.readBytes())
+        assertTrue(failing.isDirty)
+
+        val s = VrcxStorage(file, scope, 500, dispatcher)
+        s.set("k", "v")
+        s.flush()
+        assertEquals("v", store(file).get("k"))
+        assertEquals("old", store(file).get("VRCX_ProxyServer"))
+    }
+
+    @Test
+    fun debouncedSaveGoesThroughTheAtomicSteps() {
+        val steps = RecordingSteps()
+        val s = VrcxStorage(File(tmp.root, "VRCX/VRCX.json"), scope, 500, dispatcher, steps)
+        s.set("a", "1")
+        scope.advanceTimeBy(501)
+        scope.runCurrent()
+        assertEquals(listOf("write VRCX.json.tmp", "synced VRCX.json.tmp", "replace VRCX.json.tmp -> VRCX.json"), steps.calls)
+        assertEquals("1", store(s.file).get("a"))
+    }
+
     @Test(expected = io.github.vrcxandroid.bridge.DotNetException::class)
     fun unknownMethodRejects() {
         StorageBridge.invoke(store(), "Nope", JsonArray(emptyList()))

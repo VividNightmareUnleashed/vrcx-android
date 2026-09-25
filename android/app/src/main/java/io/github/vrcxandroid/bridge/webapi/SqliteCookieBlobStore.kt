@@ -6,7 +6,7 @@ import kotlinx.serialization.json.put
 
 /**
  * The jar's blob in the main database, exactly where upstream keeps it: table `cookies`, row `key = 'default'`
- * (WebApi.cs:150-238). All access goes through the SQLite lane.
+ * (WebApi.cs:150-238). All access goes through the SQLite lane, and the snapshot of a save is taken there.
  */
 internal class SqliteCookieBlobStore(private val database: () -> SQLiteModule) : CookieBlobStore {
     override suspend fun load(): String? = database().runNative { session ->
@@ -14,8 +14,9 @@ internal class SqliteCookieBlobStore(private val database: () -> SQLiteModule) :
         session.queryScalar(SELECT, KEY_ARGS) as? String
     }
 
-    override suspend fun save(blob: String) {
+    override suspend fun save(snapshot: () -> String?) {
         database().runNative { session ->
+            val blob = snapshot() ?: return@runNative
             session.executeNonQuery(CREATE_TABLE, null)
             session.executeNonQuery(
                 UPSERT,

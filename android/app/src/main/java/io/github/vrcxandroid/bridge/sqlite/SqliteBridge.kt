@@ -17,7 +17,7 @@ import kotlinx.serialization.json.JsonObject
  * - `ExecuteNonQuery(sql, args)` → rows changed, or -1
  *
  * `args` is the frontend's `{'@name': value}` object (a JS `Map` the shim encodes as an object) or null.
- * Errors reject as `SQLiteException: <errstr>\r\n<sqlite message>`.
+ * Errors reject as `SQLiteException: <sqlite message>`, e.g. `SQLiteException: database is locked` ([SqliteErrors]).
  */
 internal object SqliteBridge {
     const val CLASS_NAME = "SQLite"

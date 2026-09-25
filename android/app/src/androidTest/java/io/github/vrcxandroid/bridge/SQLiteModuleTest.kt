@@ -6,12 +6,17 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.vrcxandroid.bridge.sqlite.SqliteSession
 import io.github.vrcxandroid.bridge.sqlite.VrcxDatabase
+import io.github.vrcxandroid.bridge.webapi.NetCookieCodec
 import io.github.vrcxandroid.bridge.webapi.PersistentCookieJar
 import io.github.vrcxandroid.bridge.webapi.SqliteCookieBlobStore
+import io.github.vrcxandroid.bridge.webapi.StoredCookie
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -51,12 +56,13 @@ class SQLiteModuleTest {
     private lateinit var module: SQLiteModule
     private var imported: Map<String, String>? = null
     private var importHookCalls = 0
+    private var beforeReplaceHook: () -> Unit = {}
 
     @Before
     fun setUp() {
         dir = File(context.cacheDir, "sqlite-module-${UUID.randomUUID()}").apply { mkdirs() }
         dbFile = File(dir, "VRCX.sqlite3")
-        module = SQLiteModule(context, dbFile, { dispatcher }) { entries ->
+        module = SQLiteModule(context, dbFile, { dispatcher }, { beforeReplaceHook() }) { entries ->
             importHookCalls++
             imported = entries
         }
@@ -109,7 +115,7 @@ class SQLiteModuleTest {
         assertEquals("[[0]]", replies[6]["r"]!!.jsonPrimitive.content)
         assertEquals(JsonArray(listOf(JsonArray(listOf(JsonPrimitive(3L))))), replies[10]["r"])
         assertFalse(replies[11]["ok"]!!.jsonPrimitive.boolean)
-        assertEquals("SQLiteException: SQL logic error\r\nno such table: missing_table", replies[11]["e"]!!.jsonPrimitive.content)
+        assertEquals("SQLiteException: no such table: missing_table", replies[11]["e"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -144,14 +150,14 @@ class SQLiteModuleTest {
         assertEquals("W10=", module.runNative { it.queryScalar("SELECT `value` FROM `cookies` WHERE `key` = 'default'") })
     }
 
-    private fun makePcDatabase(file: File, withConfigs: Boolean = true) {
+    private fun makePcDatabase(file: File, withConfigs: Boolean = true, cookies: String = "W10=") {
         file.delete()
         val s = SqliteSession { VrcxDatabase.open(file) }
         if (withConfigs) {
             s.executeNonQuery("CREATE TABLE configs (`key` TEXT PRIMARY KEY, `value` TEXT)", null)
             s.executeNonQuery("INSERT INTO configs VALUES ('config:from', 'pc')", null)
             s.executeNonQuery("CREATE TABLE `cookies` (`key` TEXT PRIMARY KEY, `value` TEXT)", null)
-            s.executeNonQuery("INSERT INTO cookies VALUES ('default', 'W10=')", null)
+            s.executeNonQuery("INSERT INTO cookies VALUES ('default', @v)", buildJsonObject { put("@v", cookies) })
         } else {
             s.executeNonQuery("CREATE TABLE other (a)", null)
         }
@@ -175,6 +181,34 @@ class SQLiteModuleTest {
         assertEquals("[[\"pc\"]]", replies[0]["r"]!!.jsonPrimitive.content)
         assertEquals("[[\"wal\"]]", sendAll(listOf(message(4, "ExecuteJson", "PRAGMA journal_mode")))[0]["r"]!!.jsonPrimitive.content)
         assertFalse(File(dir, "import.sqlite3.tmp").exists())
+    }
+
+    @Test
+    fun cookieSaveQueuedBehindTheImportDoesNotOverwriteTheImportedSession() = runBlocking {
+        val url = "https://api.vrchat.cloud/api/1/auth/user".toHttpUrl()
+        val jar = PersistentCookieJar(SqliteCookieBlobStore { module }, scope, 60_000)
+        jar.saveFromResponse(url, listOf(Cookie.parse(url, "auth=android; Path=/")!!))
+        jar.flush()
+        jar.saveFromResponse(url, listOf(Cookie.parse(url, "auth=android2; Path=/")!!)) // changed, not saved yet
+        val pcSession = NetCookieCodec.encodeBase64(
+            listOf(StoredCookie(Cookie.Builder().name("auth").value("pc").hostOnlyDomain("api.vrchat.cloud").path("/").build(), System.currentTimeMillis())),
+        )
+        val pc = File(dir, "pc.sqlite3").also { makePcDatabase(it, cookies = pcSession) }
+        val lateSave = CompletableDeferred<Job>()
+        beforeReplaceHook = {
+            // Runs on the lane inside the import. A save requested now (the 1 s debounce firing mid-import) is queued
+            // on the lane behind the replacement.
+            lateSave.complete(scope.launch { jar.flush() })
+            Thread.sleep(300)
+            // What WebApiModule.onDatabaseReplacing does in the app.
+            jar.invalidate()
+        }
+        val result = module.importFrom(Uri.fromFile(pc), null)
+        assertTrue(result.toString(), result["ok"]!!.jsonPrimitive.boolean)
+        lateSave.await().join()
+        val stored = module.runNative { it.queryScalar("SELECT `value` FROM `cookies` WHERE `key` = 'default'") }
+        assertEquals("the imported PC session survives", pcSession, stored)
+        assertEquals(listOf("pc"), jar.loadForRequest(url).map { it.value })
     }
 
     @Test

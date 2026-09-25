@@ -138,8 +138,8 @@ class SqliteSessionTest {
             prepareErrors = mapOf("SELECT * FROM nosuch" to "Error code: 1, message: no such table: nosuch"),
         )
         val session = SqliteSession { conn }
-        assertError("SQLiteException: SQL logic error\r\nno such table: nosuch") { call(session, "ExecuteJson", "SELECT * FROM nosuch") }
-        assertError("SQLiteException: constraint failed\r\nUNIQUE constraint failed: t.a") { call(session, "ExecuteNonQuery", "INSERT INTO t VALUES (1)") }
+        assertError("SQLiteException: no such table: nosuch") { call(session, "ExecuteJson", "SELECT * FROM nosuch") }
+        assertError("SQLiteException: UNIQUE constraint failed: t.a") { call(session, "ExecuteNonQuery", "INSERT INTO t VALUES (1)") }
     }
 
     @Test

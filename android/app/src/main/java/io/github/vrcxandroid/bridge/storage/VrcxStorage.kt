@@ -21,7 +21,8 @@ import kotlin.coroutines.CoroutineContext
  *   unless a caller there asks for a value.
  * - Every change schedules a save [debounceMs] after the last change (upstream restarts a 500 ms one-shot timer).
  * - [save] writes immediately (the frontend calls `Save()` after proxy changes). Writes go to `<name>.tmp`, are fsynced,
- *   then renamed over the file, so a crash never leaves a truncated `VRCX.json`.
+ *   then renamed over the file, so a crash never leaves a truncated `VRCX.json`. A failed save leaves the previous file
+ *   untouched and the map dirty.
  * - A file that cannot be parsed is kept as `<name>.corrupt` before it is replaced (upstream silently starts empty).
  *
  * Thread-safe: bridge calls arrive on the VRCXStorage lane, native callers use [get]/[set] from any thread.
@@ -31,6 +32,7 @@ class VrcxStorage(
     private val scope: CoroutineScope,
     private val debounceMs: Long = 500,
     private val ioContext: CoroutineContext = Dispatchers.IO,
+    private val fileSteps: AtomicWriteSteps = FileSystemSteps,
 ) {
     private val lock = Any()
     private val saveLock = Any()
@@ -143,15 +145,41 @@ class VrcxStorage(
         val dir = file.absoluteFile.parentFile
         dir?.mkdirs()
         val tmp = File(dir, file.name + ".tmp")
-        FileOutputStream(tmp).use { out ->
-            out.write(bytes)
-            out.flush()
-            out.fd.sync()
-        }
         try {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (e: AtomicMoveNotSupportedException) {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            // The file is only replaced once the new content is complete and on disk.
+            fileSteps.writeAndSync(tmp, bytes)
+            fileSteps.replace(tmp, file)
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
+    }
+
+    /** The two steps of an atomic save. Separate so tests can check their order and inject failures. */
+    interface AtomicWriteSteps {
+        /** Writes [bytes] to [tmp] and forces them to disk. */
+        fun writeAndSync(tmp: File, bytes: ByteArray)
+
+        /** Replaces [target] with [tmp] in one rename. */
+        fun replace(tmp: File, target: File)
+    }
+
+    /** Real file system: `write` + `fsync`, then an atomic rename (a plain replace where the file system has none). */
+    object FileSystemSteps : AtomicWriteSteps {
+        override fun writeAndSync(tmp: File, bytes: ByteArray) {
+            FileOutputStream(tmp).use { out ->
+                out.write(bytes)
+                out.flush()
+                out.fd.sync()
+            }
+        }
+
+        override fun replace(tmp: File, target: File) {
+            try {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
         }
     }
 

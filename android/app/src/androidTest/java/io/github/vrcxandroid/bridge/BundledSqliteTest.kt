@@ -85,7 +85,7 @@ class BundledSqliteTest {
         assertEquals("[[\"avtr_1\",\"b\",\"g2\"]]", json("SELECT avatar_id, created_at, group_name FROM favorite_avatar"))
 
         exec("ALTER TABLE favorite_avatar ADD group_name2 TEXT DEFAULT ''")
-        assertError("SQLiteException: SQL logic error\r\nduplicate column name: group_name2") {
+        assertError("SQLiteException: duplicate column name: group_name2") {
             exec("ALTER TABLE favorite_avatar ADD group_name2 TEXT DEFAULT ''")
         }
         exec("ALTER TABLE favorite_avatar DROP COLUMN group_name2")
@@ -95,8 +95,8 @@ class BundledSqliteTest {
         } catch (e: Exception) {
             errorText(e)
         }
-        assertTrue(dropMissing, dropMissing.startsWith("SQLiteException: SQL logic error\r\nno such column: \"group_name2\"") ||
-            dropMissing.startsWith("SQLiteException: SQL logic error\r\nno such column: group_name2"))
+        assertTrue(dropMissing, dropMissing.startsWith("SQLiteException: no such column: \"group_name2\"") ||
+            dropMissing.startsWith("SQLiteException: no such column: group_name2"))
 
         assertEquals("[[\"favorite_avatar\"]]", json("SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE 'favorite_%'"))
     }
@@ -145,10 +145,10 @@ class BundledSqliteTest {
 
     @Test
     fun errorTextAndMissingParameter() {
-        assertError("SQLiteException: SQL logic error\r\nno such table: nosuch") { json("SELECT * FROM nosuch") }
+        assertError("SQLiteException: no such table: nosuch") { json("SELECT * FROM nosuch") }
         exec("CREATE TABLE u (a TEXT PRIMARY KEY)")
         exec("INSERT INTO u VALUES ('x')")
-        assertError("SQLiteException: constraint failed\r\nUNIQUE constraint failed: u.a") { exec("INSERT INTO u VALUES ('x')") }
+        assertError("SQLiteException: UNIQUE constraint failed: u.a") { exec("INSERT INTO u VALUES ('x')") }
         assertError("SQLiteException: unknown error\r\nInsufficient parameters supplied to the command") {
             exec("INSERT INTO u VALUES (@a)", buildJsonObject { put("@b", "extra") })
         }

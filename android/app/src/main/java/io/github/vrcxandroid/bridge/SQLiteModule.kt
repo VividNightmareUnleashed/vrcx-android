@@ -31,17 +31,18 @@ class SQLiteModule internal constructor(
     private val context: Context,
     private val dbFile: File,
     private val dispatcher: () -> BridgeDispatcher,
+    /** Runs on the lane right before the file is replaced; must not suspend or touch the lane. */
+    private val beforeReplace: () -> Unit = {},
     private val afterImport: suspend (storageEntries: Map<String, String>?) -> Unit,
 ) : BridgeModule, DatabaseController {
     constructor(context: Context) : this(
         context,
         File(File(context.filesDir, "VRCX"), "VRCX.sqlite3"),
         { AppGraph.dispatcher },
-        { entries ->
-            if (entries != null) (AppGraph.storage as? VRCXStorageModule)?.replaceAll(entries)
-            // The cookie jar must not write the old session into the imported database before the restart.
-            (AppGraph.http as? WebApiModule)?.onDatabaseReplaced()
-        },
+        // The cookie jar must not write the old session into the imported database before the restart. Its saves are
+        // ordered on this lane, so dropping the session here fences every save still queued behind the replacement.
+        { (AppGraph.http as? WebApiModule)?.onDatabaseReplacing() },
+        { entries -> if (entries != null) (AppGraph.storage as? VRCXStorageModule)?.replaceAll(entries) },
     )
 
     override val className = SqliteBridge.CLASS_NAME
@@ -78,6 +79,7 @@ class SQLiteModule internal constructor(
             }
 
             runNative { s ->
+                beforeReplace()
                 s.close()
                 VrcxDatabase.deleteSidecars(dbFile)
                 VrcxDatabase.replace(staged, dbFile)
