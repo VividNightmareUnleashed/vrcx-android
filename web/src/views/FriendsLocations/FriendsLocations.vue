@@ -908,8 +908,8 @@
     async function loadInitialSettings() {
         try {
             const [storedScale, storedSpacing, storedShowSameInstance, storedShowCosmetics] = await Promise.all([
-                // Phones default to 75 %, which fits two cards per row.
-                configRepository.getString('VRCX_FriendLocationCardScale', isCompact.value ? '0.75' : '1'),
+                // Phones default to 70 %, which fits two cards per row in a 360px wide page card.
+                configRepository.getString('VRCX_FriendLocationCardScale', isCompact.value ? '0.7' : '1'),
                 configRepository.getString('VRCX_FriendLocationCardSpacing', '1'),
                 configRepository.getBool('VRCX_FriendLocationShowSameInstance', null),
                 configRepository.getBool('VRCX_FriendLocationShowCosmetics', true)
@@ -1131,39 +1131,39 @@
     }
 
     /* Phones (docs/DESIGN.md §3.4): search and settings first, the segments as a scrollable strip below. */
-    :global(html.vrcx-compact) .friend-view {
+    :global(html.vrcx-compact .friend-view) {
         gap: 8px;
     }
 
-    :global(html.vrcx-compact) .friend-view__toolbar {
+    :global(html.vrcx-compact .friend-view__toolbar) {
         flex-direction: column-reverse;
         align-items: stretch;
         gap: 8px;
         padding-top: 0;
     }
 
-    :global(html.vrcx-compact) .friend-view__tabs {
+    :global(html.vrcx-compact .friend-view__tabs) {
         min-width: 0;
         overflow-x: auto;
         scrollbar-width: none;
     }
 
-    :global(html.vrcx-compact) .friend-view__actions {
+    :global(html.vrcx-compact .friend-view__actions) {
         flex-wrap: nowrap;
         gap: 4px;
     }
 
-    :global(html.vrcx-compact) .friend-view__search {
+    :global(html.vrcx-compact .friend-view__search) {
         width: auto;
         min-width: 0;
     }
 
-    :global(html.vrcx-compact) .friend-view__scale-control {
+    :global(html.vrcx-compact .friend-view__scale-control) {
         flex: 1;
         min-width: 0;
     }
 
-    :global(html.vrcx-compact) .friend-view__slider {
+    :global(html.vrcx-compact .friend-view__slider) {
         flex: 1;
         width: auto;
         margin-right: 0;

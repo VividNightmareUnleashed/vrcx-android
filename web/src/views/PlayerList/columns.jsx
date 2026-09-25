@@ -5,8 +5,15 @@ import { Apple, ArrowUpDown, IdCard, User, Monitor, Smartphone } from 'lucide-vu
 
 import { getFaviconUrl, languageClass, openExternalLink, statusClass } from '../../shared/utils';
 import { i18n } from '../../plugins';
+import { useCompactLayout } from '../../composables/useCompactLayout';
 
 const { t } = i18n.global;
+
+// Phone layout (docs/DESIGN.md §3.1): read during render, so cells follow orientation changes.
+const isCompactLayout = () => useCompactLayout().isCompact.value;
+
+/** Card footer entries whose cell rendered nothing take no room (no stray gaps before the next entry). */
+const FOOTER_HIDE_EMPTY = 'has-[>div:empty]:hidden';
 
 const sortButton = ({ column, label, descFirst = false }) => {
     const resolvedLabel = typeof label === 'function' ? label() : label;
@@ -322,10 +329,11 @@ export const createColumns = ({
             header: () => t('table.playerList.language'),
             size: 100,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.language'), mobile: { slot: 'footer' } },
+            meta: { label: () => t('table.playerList.language'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const langs = userRef?.$languages ?? [];
+                if (isCompactLayout() && !langs.length) return null;
                 return (
                     <div class="flex items-center gap-0.5">
                         {langs.map((item) => (
@@ -352,9 +360,10 @@ export const createColumns = ({
             header: () => t('table.playerList.bioLink'),
             size: 100,
             enableSorting: false,
-            meta: { label: () => t('table.playerList.bioLink'), mobile: { slot: 'footer' } },
+            meta: { label: () => t('table.playerList.bioLink'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
             cell: ({ row }) => {
                 const links = row.original?.profileRef?.bioLinks?.filter(Boolean) ?? [];
+                if (isCompactLayout() && !links.length) return null;
                 return (
                     <div class="flex items-center">
                         {links.map((link, index) => (
@@ -389,12 +398,13 @@ export const createColumns = ({
                 stretch: true,
                 label: () => t('table.playerList.note'),
                 // Own line under the platform, languages and links.
-                mobile: { slot: 'footer', class: 'basis-full' }
+                mobile: { slot: 'footer', class: `basis-full ${FOOTER_HIDE_EMPTY}` }
             },
             enableSorting: false,
             cell: ({ row }) => {
                 const note = row.original?.ref?.note;
                 const text = typeof note === 'string' || typeof note === 'number' ? String(note) : '';
+                if (isCompactLayout() && !text) return null;
                 return <span>{text}</span>;
             }
         }

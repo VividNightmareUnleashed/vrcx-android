@@ -12,11 +12,11 @@
                 <!-- Phones (docs/DESIGN.md §3.4): search on the first row, the type filter on the second. -->
                 <div
                     v-if="isCompact"
-                    class="flex w-full min-w-0 flex-col gap-2"
+                    class="flex w-full min-w-0 flex-col gap-2 compact-landscape:flex-row compact-landscape:items-center"
                     data-testid="friend-log-compact-toolbar">
                     <InputGroupField
                         v-model="friendLogTable.filters[1].value"
-                        class="min-w-0"
+                        class="min-w-0 compact-landscape:w-2/5 compact-landscape:shrink-0"
                         :placeholder="t('view.friend_log.search_placeholder')"
                         clearable
                         enterkeyhint="search" />

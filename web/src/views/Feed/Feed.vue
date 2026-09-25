@@ -10,8 +10,11 @@
             <template #toolbar>
                 <!-- Phones (docs/DESIGN.md §3.4): search first, then the filters as a scrollable strip; the date range
                      opens in a bottom sheet with one month. -->
-                <div v-if="isCompact" class="flex w-full min-w-0 flex-col gap-2" data-testid="feed-compact-toolbar">
-                    <div class="flex min-w-0 items-center gap-2">
+                <div
+                    v-if="isCompact"
+                    class="flex w-full min-w-0 flex-col gap-2 compact-landscape:flex-row compact-landscape:items-center"
+                    data-testid="feed-compact-toolbar">
+                    <div class="flex min-w-0 items-center gap-2 compact-landscape:w-2/5 compact-landscape:shrink-0">
                         <InputGroupField
                             v-model="feedTable.search"
                             class="min-w-0 flex-1"
@@ -36,14 +39,16 @@
                                     </Badge>
                                 </Button>
                             </template>
-                            <div class="flex flex-col items-center">
+                            <div
+                                class="flex flex-col items-center compact-landscape:flex-row compact-landscape:items-start compact-landscape:justify-center compact-landscape:gap-4">
                                 <RangeCalendar
                                     v-model="dateRange"
                                     :locale="locale"
                                     :max-value="todayDate"
                                     :number-of-months="1"
                                     :week-starts-on="weekStartsOn" />
-                                <div class="mt-3 flex w-full justify-end gap-2">
+                                <div
+                                    class="mt-3 flex w-full justify-end gap-2 compact-landscape:mt-0 compact-landscape:w-auto compact-landscape:flex-col-reverse">
                                     <Button variant="outline" @click="clearDateFilter">
                                         {{ t('common.actions.clear') }}
                                     </Button>
@@ -54,7 +59,8 @@
                             </div>
                         </ResponsivePopover>
                     </div>
-                    <div class="flex min-w-0 items-center gap-2 overflow-x-auto scrollbar-hidden">
+                    <div
+                        class="flex min-w-0 items-center gap-2 overflow-x-auto scrollbar-hidden compact-landscape:flex-1">
                         <Toggle
                             variant="outline"
                             size="sm"

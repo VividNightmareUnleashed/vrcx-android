@@ -46,17 +46,17 @@
                     <!-- Phones (docs/DESIGN.md §3.4): search on its own row, then the mode, VIP and type filters. -->
                     <div
                         v-if="isCompact"
-                        class="flex w-full min-w-0 flex-col gap-2"
+                        class="flex w-full min-w-0 flex-col gap-2 compact-landscape:flex-row compact-landscape:items-center"
                         data-testid="game-log-compact-toolbar">
                         <InputGroupField
                             v-model="gameLogTable.search"
-                            class="min-w-0"
+                            class="min-w-0 compact-landscape:w-2/5 compact-landscape:shrink-0"
                             :placeholder="t('view.game_log.search_placeholder')"
                             clearable
                             enterkeyhint="search"
                             @keyup.enter="gameLogTableLookup"
                             @change="gameLogTableLookup" />
-                        <div class="flex min-w-0 items-center gap-2">
+                        <div class="flex min-w-0 items-center gap-2 compact-landscape:flex-1">
                             <ToggleGroup
                                 type="single"
                                 variant="outline"

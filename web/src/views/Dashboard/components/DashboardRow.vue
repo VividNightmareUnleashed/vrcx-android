@@ -1,5 +1,5 @@
 <template>
-    <div class="relative h-full min-h-[180px]">
+    <div class="relative h-full min-h-[180px] compact:h-auto compact:shrink-0">
         <!-- Phones: the panels of a row are edited one under the other, as they are shown. -->
         <div v-if="isEditing" class="flex h-full gap-2" :class="isVertical || isCompact ? 'flex-col' : 'flex-row'">
             <DashboardPanel

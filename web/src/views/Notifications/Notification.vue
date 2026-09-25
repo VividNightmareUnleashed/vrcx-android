@@ -12,9 +12,9 @@
                 <!-- Phones (docs/DESIGN.md §3.4): search and refresh first, the type filter full width below. -->
                 <div
                     v-if="isCompact"
-                    class="flex w-full min-w-0 flex-col gap-2"
+                    class="flex w-full min-w-0 flex-col gap-2 compact-landscape:flex-row compact-landscape:items-center"
                     data-testid="notification-compact-toolbar">
-                    <div class="flex min-w-0 items-center gap-1">
+                    <div class="flex min-w-0 items-center gap-1 compact-landscape:w-1/2 compact-landscape:shrink-0">
                         <InputGroupField
                             v-model="notificationTable.filters[1].value"
                             class="min-w-0 flex-1"

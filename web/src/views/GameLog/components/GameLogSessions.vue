@@ -4,18 +4,19 @@
              range opens in a bottom sheet with one month. -->
         <div
             v-if="isCompact"
-            class="flex shrink-0 flex-col gap-2 border-b border-border px-0 pb-2"
+            class="flex shrink-0 flex-col gap-2 border-b border-border px-0 pb-2 compact-landscape:flex-row compact-landscape:items-center"
             data-testid="game-log-sessions-compact-toolbar">
             <InputGroupField
                 :model-value="sessionsSearch"
-                class="min-w-0"
+                class="min-w-0 compact-landscape:w-2/5 compact-landscape:shrink-0"
                 :placeholder="t('view.game_log.search_placeholder')"
                 clearable
                 enterkeyhint="search"
                 @update:modelValue="handleSessionsSearchInput"
                 @keyup.enter="gameLogStore.setSessionsSearch(sessionsSearch)"
                 @change="gameLogStore.setSessionsSearch(sessionsSearch)" />
-            <div class="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hidden">
+            <div
+                class="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hidden compact-landscape:flex-1">
                 <slot name="leading" />
                 <Toggle
                     variant="outline"
@@ -44,7 +45,8 @@
                             </Badge>
                         </Button>
                     </template>
-                    <div class="flex flex-col items-center">
+                    <div
+                        class="flex flex-col items-center compact-landscape:flex-row compact-landscape:items-start compact-landscape:justify-center compact-landscape:gap-4">
                         <RangeCalendar
                             v-model="dateRange"
                             :locale="locale"
@@ -53,7 +55,8 @@
                             :number-of-months="1"
                             :week-starts-on="weekStartsOn"
                             :is-date-unavailable="isDateUnavailable" />
-                        <div class="mt-3 flex w-full justify-end gap-2">
+                        <div
+                            class="mt-3 flex w-full justify-end gap-2 compact-landscape:mt-0 compact-landscape:w-auto compact-landscape:flex-col-reverse">
                             <Button variant="outline" @click="handleClearDateRange">
                                 {{ t('common.actions.clear') }}
                             </Button>

@@ -71,8 +71,10 @@
             <!-- Phones (docs/DESIGN.md §3.4): search and the clear/refresh buttons first, the type filter below; in the
                  table toolbar so it shares the row with the View options and Quick actions buttons. -->
             <template v-if="isCompact" #toolbar>
-                <div class="flex w-full min-w-0 flex-col gap-2" data-testid="moderation-compact-toolbar">
-                    <div class="flex min-w-0 items-center gap-1">
+                <div
+                    class="flex w-full min-w-0 flex-col gap-2 compact-landscape:flex-row compact-landscape:items-center"
+                    data-testid="moderation-compact-toolbar">
+                    <div class="flex min-w-0 items-center gap-1 compact-landscape:w-1/2 compact-landscape:shrink-0">
                         <InputGroupField
                             v-model="playerModerationTable.filters[1].value"
                             class="min-w-0 flex-1"

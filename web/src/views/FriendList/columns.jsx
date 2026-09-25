@@ -36,6 +36,9 @@ const compactStat = (label, content) =>
         </span>
     );
 
+/** Card footer entries whose cell rendered nothing take no room (no stray gaps before the next entry). */
+const FOOTER_HIDE_EMPTY = 'has-[>div:empty]:hidden';
+
 const sortButton = ({ column, label, descFirst = false }) => {
     const resolvedLabel = typeof label === 'function' ? label() : label;
     return (
@@ -257,41 +260,43 @@ export const createColumns = ({
                     label: () => t('table.friendList.language')
                 }),
             size: 130,
-            meta: { label: () => t('table.friendList.language'), mobile: { slot: 'footer' } },
+            meta: { label: () => t('table.friendList.language'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
             sortingFn: sortByLanguages,
-            cell: ({ row }) => (
-                <div class="flex items-center">
-                    {(row.original?.$languages ?? []).map((item) => (
-                        <TooltipWrapper key={item.key} side="top" content={`${item.value} (${item.key})`}>
-                            <span class={['flags', 'inline-block', 'mr-1', languageClass(item.key)]}></span>
-                        </TooltipWrapper>
-                    ))}
-                </div>
-            )
+            cell: ({ row }) =>
+                isCompactLayout() && !row.original?.$languages?.length ? null : (
+                    <div class="flex items-center">
+                        {(row.original?.$languages ?? []).map((item) => (
+                            <TooltipWrapper key={item.key} side="top" content={`${item.value} (${item.key})`}>
+                                <span class={['flags', 'inline-block', 'mr-1', languageClass(item.key)]}></span>
+                            </TooltipWrapper>
+                        ))}
+                    </div>
+                )
         },
         {
             id: 'bioLink',
             header: () => t('table.friendList.bioLink'),
             size: 130,
             enableSorting: false,
-            meta: { label: () => t('table.friendList.bioLink'), mobile: { slot: 'footer' } },
-            cell: ({ row }) => (
-                <div class="flex items-center">
-                    {(row.original?.bioLinks ?? []).filter(Boolean).map((link, index) => (
-                        <TooltipWrapper key={index} content={String(link)}>
-                            <img
-                                src={getFaviconUrl(link)}
-                                class="h-4 w-4 mr-1 align-middle cursor-pointer"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    openExternalLink(link);
-                                }}
-                                loading="lazy"
-                            />
-                        </TooltipWrapper>
-                    ))}
-                </div>
-            )
+            meta: { label: () => t('table.friendList.bioLink'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
+            cell: ({ row }) =>
+                isCompactLayout() && !(row.original?.bioLinks ?? []).filter(Boolean).length ? null : (
+                    <div class="flex items-center">
+                        {(row.original?.bioLinks ?? []).filter(Boolean).map((link, index) => (
+                            <TooltipWrapper key={index} content={String(link)}>
+                                <img
+                                    src={getFaviconUrl(link)}
+                                    class="h-4 w-4 mr-1 align-middle cursor-pointer"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        openExternalLink(link);
+                                    }}
+                                    loading="lazy"
+                                />
+                            </TooltipWrapper>
+                        ))}
+                    </div>
+                )
         },
         {
             id: 'joinCount',
@@ -306,7 +311,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.joinCount'),
-                mobile: { slot: 'footer' }
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
             },
             // PC: TanStack's default cell. Phones: "Joins: 3", or nothing without game log data.
             cell: ({ row, renderValue }) =>
@@ -327,7 +332,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.timeTogether'),
-                mobile: { slot: 'footer' }
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
             },
             cell: ({ row }) => {
                 const time = row.original?.$timeSpent;
@@ -346,7 +351,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastSeen')
                 }),
             size: 170,
-            meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer' } },
+            meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
             sortingFn: sortByString((row) => row?.$lastSeen ?? ''),
             cell: ({ row }) => {
                 const text = formatDateFilter(row.original?.$lastSeen, 'long');
@@ -369,7 +374,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.mutualFriends'),
-                mobile: { slot: 'footer' }
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
             },
             cell: ({ row }) => {
                 const count = row.original?.$mutualCount;
@@ -403,17 +408,10 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastActivity')
                 }),
             size: 200,
-            meta: { label: () => t('table.friendList.lastActivity'), mobile: { slot: 'footer' } },
+            // Phones: in the user dialog (a card tap opens it); the card keeps to the common fields.
+            meta: { label: () => t('table.friendList.lastActivity'), mobile: { slot: 'detail' } },
             sortingFn: sortByString((row) => row?.last_activity ?? ''),
-            cell: ({ row }) =>
-                isCompactLayout() ? (
-                    compactStat(
-                        () => t('table.friendList.lastActivity'),
-                        formatDateFilter(row.original?.last_activity, 'long')
-                    )
-                ) : (
-                    <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
-                )
+            cell: ({ row }) => <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
         },
         {
             id: 'lastLogin',
