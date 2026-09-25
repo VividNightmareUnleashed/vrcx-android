@@ -3,6 +3,7 @@ package io.github.vrcxandroid.host
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.net.URI
 
 /**
  * Mapping between app-private files the page may display and their URLs (docs/ARCHITECTURE.md §6.6):
@@ -51,8 +52,11 @@ class LocalPaths(localRoot: File, cacheRoot: File, private val origin: String = 
                 File(localRoot, decodePath(stripQuery(raw.substring(origin.length + HostUrls.LOCAL_PREFIX.length))) ?: return null)
             raw.startsWith(origin + "/", ignoreCase = true) ->
                 File(decodePath(stripQuery(raw.substring(origin.length))) ?: return null)
-            raw.startsWith("file://", ignoreCase = true) ->
-                File(decodePath(stripQuery(raw.substring("file://".length))) ?: return null)
+            raw.startsWith("file:", ignoreCase = true) -> try {
+                File(URI(stripQuery(raw)))
+            } catch (_: Exception) {
+                return null
+            }
             File(raw).isAbsolute -> File(raw)
             else -> return null
         }

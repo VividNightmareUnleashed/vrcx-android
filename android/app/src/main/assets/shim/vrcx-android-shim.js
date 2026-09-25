@@ -158,7 +158,8 @@
 
     function post(text) {
         var target = getNative();
-        if (!target) {
+        if (!target || outbox.length > 0) {
+            // Keep the order: while anything is queued, later messages queue behind it.
             outbox.push(text);
             scheduleFlush();
             return;
