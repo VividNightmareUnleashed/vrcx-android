@@ -3,7 +3,8 @@
         <div class="options-container">
             <span class="header">{{ t('view.tools.header') }}</span>
 
-            <div class="mt-5 px-5">
+            <!-- Phones: one tool per row (two in landscape), no side indent. -->
+            <div class="mt-5 px-5 compact:mt-3 compact:px-0">
                 <div v-for="category in categories" :key="category.key" class="mb-6">
                     <div
                         class="cursor-pointer flex items-center p-2 px-3 rounded-lg mb-3 transition-all duration-200 ease-in-out"
@@ -16,7 +17,9 @@
                         </span>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4 ml-4" v-show="!categoryCollapsed[category.key]">
+                    <div
+                        class="grid grid-cols-2 gap-4 ml-4 compact:grid-cols-1 compact:gap-2.5 compact:ml-0 compact-landscape:grid-cols-2"
+                        v-show="!categoryCollapsed[category.key]">
                         <ToolItem
                             v-for="tool in category.tools"
                             :key="tool.key"
@@ -32,7 +35,7 @@
                                     <Button
                                         size="icon-xs"
                                         variant="secondary"
-                                        class="opacity-0 transition-opacity group-hover:opacity-100"
+                                        class="opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-2"
                                         :title="t('nav_menu.custom_nav.unpin_from_nav')"
                                         :ariaLabel="t('nav_menu.custom_nav.unpin_from_nav')"
                                         @click.stop="unpinToolFromNav(tool.key)">
@@ -55,7 +58,7 @@
                                     <Button
                                         size="icon-xs"
                                         variant="ghost"
-                                        class="opacity-0 transition-opacity group-hover:opacity-100"
+                                        class="opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-2"
                                         :title="t('nav_menu.custom_nav.pin_to_nav')"
                                         :ariaLabel="t('nav_menu.custom_nav.pin_to_nav')"
                                         @click.stop="pinToolToNav(tool.key)">

@@ -71,7 +71,7 @@
                         </Button>
                     </ButtonGroup>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
                         <Item
                             v-for="image in galleryTable"
@@ -143,7 +143,7 @@
                         </Button>
                     </ButtonGroup>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))">
                         <Item
                             v-for="image in VRCPlusIconsTable"
@@ -201,7 +201,7 @@
                         @change="onFileChangeEmoji"
                         style="display: none" />
                     <div class="flex flex-col gap-2">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 compact:flex-wrap">
                             <ButtonGroup>
                                 <Button variant="outline" size="sm" @click="refreshEmojiTable">
                                     <RefreshCw />
@@ -243,7 +243,7 @@
                                 <span>{{ t('dialog.gallery_icons.emoji_animation_type') }}</span>
                             </label>
                         </div>
-                        <div v-if="emojiAnimType" class="flex items-center gap-2">
+                        <div v-if="emojiAnimType" class="flex items-center gap-2 compact:flex-wrap">
                             <Button size="sm" variant="outline" @click="openExternalLink('https://vrcemoji.com')">
                                 {{ t('dialog.gallery_icons.create_animated_emoji') }}
                             </Button>
@@ -285,7 +285,7 @@
                         }}</span>
                     </div>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))">
                         <Item
                             v-for="image in emojiTable"
@@ -361,7 +361,7 @@
                         </Button>
                     </ButtonGroup>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))">
                         <Item
                             v-for="image in stickerTable"
@@ -410,7 +410,7 @@
                         accept="image/*"
                         @change="onFileChangePrint"
                         style="display: none" />
-                    <div style="display: flex; align-items: center">
+                    <div class="compact:flex-wrap compact:gap-y-2" style="display: flex; align-items: center">
                         <ButtonGroup>
                             <Button variant="outline" size="sm" @click="refreshPrintTable">
                                 <RefreshCw />
@@ -429,6 +429,7 @@
                             v-model="printUploadNote"
                             :rows="1"
                             :maxlength="32"
+                            class="compact:order-last compact:ml-0! compact:w-full!"
                             style="margin-left: 8px; width: 300px"
                             :placeholder="t('dialog.gallery_icons.note')"
                             input-class="resize-none min-h-0" />
@@ -438,7 +439,7 @@
                         </label>
                     </div>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr))">
                         <Item
                             v-for="image in printTable"
@@ -533,7 +534,7 @@
                         </Select>
                     </div>
                     <ItemGroup
-                        class="grid gap-3 mt-3"
+                        class="grid gap-3 mt-3 compact:grid-cols-2! compact-landscape:grid-cols-4!"
                         style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
                         <Item
                             v-for="item in filteredInventoryTable"

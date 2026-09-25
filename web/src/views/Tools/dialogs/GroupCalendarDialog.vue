@@ -1,6 +1,7 @@
 <template>
     <Dialog :open="visible" @update:open="(open) => (open ? null : closeDialog())">
-        <DialogContent class="x-dialog sm:max-w-[50vw] h-[70vh] overflow-hidden">
+        <!-- Phones: a full-screen page (mobile.css) that scrolls as one column, the month above the day's events. -->
+        <DialogContent class="x-dialog sm:max-w-[50vw] h-[70vh] overflow-hidden compact:overflow-y-auto">
             <DialogHeader>
                 <div class="dialog-title-container">
                     <DialogTitle>{{ t('dialog.group_calendar.header') }}</DialogTitle>
@@ -654,6 +655,56 @@
 
     .is-rotated {
         transform: rotate(-90deg);
+    }
+
+    /* ---- Phones (html.vrcx-compact, Android only) ---- */
+
+    :global(html.vrcx-compact) .x-dialog .top-content {
+        height: auto;
+        overflow: visible;
+    }
+
+    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .calendar-container {
+        order: -1;
+    }
+
+    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container {
+        height: auto;
+        min-width: 0;
+        margin: 0;
+        padding: 0;
+        overflow: visible;
+    }
+
+    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container .timeline-group {
+        padding: 0 10px 8px 0;
+    }
+
+    :global(html.vrcx-compact) .x-dialog .top-content .timeline-view .timeline-container .timeline-empty {
+        padding: 24px 0;
+    }
+
+    :global(html.vrcx-compact) .grid-view {
+        position: static;
+    }
+
+    :global(html.vrcx-compact) .grid-view .search-container {
+        padding: 0 0 8px;
+    }
+
+    :global(html.vrcx-compact) .grid-view .search-container .search-input {
+        width: 100%;
+    }
+
+    :global(html.vrcx-compact) .grid-view .groups-grid {
+        padding: 8px 10px 8px 0;
+        overflow: visible;
     }
 
     .rotation-transition {

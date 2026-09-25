@@ -122,7 +122,7 @@
             @update:placeholder="onUpdatePlaceholder"
             :prevent-deselect="true"
             :week-starts-on="weekStartsOn"
-            class="p-4">
+            class="p-4 compact:p-1">
             <CalendarHeader class="pt-0">
                 <nav class="flex items-center gap-1 absolute top-0 inset-x-0 justify-between">
                     <CalendarPrevButton class="size-9" />
@@ -151,7 +151,7 @@
                                 <CalendarCellTrigger
                                     :day="weekDate"
                                     :month="month.value"
-                                    class="size-12 cursor-pointer">
+                                    class="size-12 cursor-pointer compact:size-10">
                                     <div class="date">
                                         <div
                                             class="calendar-date-content"
@@ -185,6 +185,16 @@
         display: flex;
         align-items: flex-start;
         padding: 0 12px;
+    }
+
+    /* Phones: a 7 × 40 px grid that fits a 360 px screen. */
+    :global(html.vrcx-compact) .group-calendar-month {
+        padding: 0;
+        justify-content: center;
+    }
+
+    :global(html.vrcx-compact) .calendar-date-content {
+        font-size: 15px;
     }
 
     .date {

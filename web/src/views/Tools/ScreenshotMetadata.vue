@@ -1,5 +1,6 @@
 <template>
-    <div class="screenshot-metadata-page x-container flex flex-col overflow-hidden">
+    <!-- Phones: one scrolling column, the details under the image. -->
+    <div class="screenshot-metadata-page x-container flex flex-col overflow-hidden compact:overflow-y-auto">
         <div class="flex items-center gap-2 ml-2">
             <Button variant="ghost" size="sm" class="mr-3" @click="goBack">
                 <ArrowLeft />
@@ -25,10 +26,11 @@
                 <FolderOpen />
                 {{ t('dialog.screenshot_metadata.open_folder') }}
             </Button>
-            <div class="flex-1" />
+            <div class="flex-1 compact:hidden" />
             <InputGroupSearch
                 v-model="screenshotMetadataDialog.search"
                 :placeholder="t('dialog.screenshot_metadata.search_placeholder')"
+                class="compact:w-auto! compact:min-w-0 compact:flex-1"
                 style="width: 200px"
                 @input="screenshotMetadataSearch" />
             <Select :model-value="screenshotMetadataDialog.searchType" @update:modelValue="handleSearchTypeChange">
@@ -74,7 +76,7 @@
                         </th>
                         <th
                             v-if="searchHasMatchColumn"
-                            class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-left px-3 py-2 border-b whitespace-nowrap select-none cursor-pointer hover:text-foreground"
+                            class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-left px-3 py-2 border-b whitespace-nowrap select-none cursor-pointer hover:text-foreground compact:hidden"
                             @click="toggleSearchSort('match')">
                             {{ t('dialog.screenshot_metadata.col_match') }}
                             <span v-if="searchSort.key === 'match'" class="ml-1 text-[10px]">{{
@@ -98,7 +100,7 @@
                             }}</span>
                         </th>
                         <th
-                            class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-left px-3 py-2 border-b whitespace-nowrap select-none w-[100px]">
+                            class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-left px-3 py-2 border-b whitespace-nowrap select-none w-[100px] compact:hidden">
                             {{ t('dialog.screenshot_metadata.col_resolution') }}
                         </th>
                         <th class="w-8 border-b"></th>
@@ -118,12 +120,13 @@
                             :class="row.filePath === selectedSearchFilePath ? 'pl-[9px]' : ''">
                             {{ row.dateFormatted }}
                         </td>
-                        <td class="text-sm px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis">
+                        <td
+                            class="text-sm px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis compact:whitespace-normal">
                             {{ row.world || '—' }}
                         </td>
                         <td
                             v-if="searchHasMatchColumn"
-                            class="text-sm px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis text-primary">
+                            class="text-sm px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis text-primary compact:hidden">
                             {{ row.match || '—' }}
                         </td>
                         <td
@@ -137,7 +140,7 @@
                             </span>
                         </td>
                         <td
-                            class="text-xs text-muted-foreground px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis">
+                            class="text-xs text-muted-foreground px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis compact:hidden">
                             {{ row.resolution }}
                         </td>
                         <td class="py-2 pr-2 border-b">
@@ -150,8 +153,16 @@
         </div>
 
         <!-- Detail View -->
-        <div v-else class="grid flex-1 min-h-0 overflow-hidden gap-4" style="grid-template-columns: 1fr 380px">
-            <div class="flex flex-col items-center min-h-0" @dragover.prevent @dragenter.prevent @drop="handleDrop">
+        <div
+            v-else
+            class="grid flex-1 min-h-0 overflow-hidden gap-4 compact:grid-cols-1! compact:flex-none compact:overflow-visible"
+            style="grid-template-columns: 1fr 380px">
+            <div
+                class="flex flex-col items-center min-h-0"
+                :class="screenshotMetadataDialog.metadata.filePath ? 'compact:h-[45dvh]' : ''"
+                @dragover.prevent
+                @dragenter.prevent
+                @drop="handleDrop">
                 <div class="relative flex-1 w-full min-h-0 flex items-center justify-center">
                     <template v-if="screenshotMetadataDialog.metadata.filePath">
                         <img
@@ -193,7 +204,7 @@
                 </div>
             </div>
 
-            <div class="overflow-y-auto pr-1">
+            <div class="overflow-y-auto pr-1 compact:overflow-visible compact:pr-0">
                 <Button
                     v-if="searchResultsData.length"
                     variant="ghost"
