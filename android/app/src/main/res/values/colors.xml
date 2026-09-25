@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- VRCX frame colour (the sidebar CSS token) for the light theme. Used as the
+         window and WebView background before the page paints, so there is no white flash. -->
+    <color name="vrcx_frame">#FAFAFA</color>
+    <color name="vrcx_on_frame">#0A0A0A</color>
+    <color name="vrcx_muted">#737373</color>
+</resources>

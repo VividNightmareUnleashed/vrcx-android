@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">VRCX</string>
+
+    <!-- Notification channels -->
+    <string name="channel_notifications">Notifications</string>
+    <string name="channel_notifications_description">VRCX notifications: friends, invites, game log events</string>
+    <string name="channel_service">Background connection</string>
+    <string name="channel_service_description">Shown while VRCX keeps running in the background</string>
+
+    <!-- Foreground service notification (the Android equivalent of the tray icon) -->
+    <string name="service_running">Running in the background</string>
+    <string name="service_companion_connected">Connected to %1$s</string>
+    <string name="service_companion_connected_unnamed">PC companion connected</string>
+    <string name="service_companion_connecting">Connecting to the PC companion…</string>
+    <string name="service_companion_searching">Looking for the PC companion…</string>
+    <string name="service_companion_error">PC companion: connection problem</string>
+    <string name="service_new_activity_with_status">New activity · %1$s</string>
+    <string name="action_open">Open</string>
+    <string name="action_quit">Quit</string>
+
+    <!-- Attention notification (AppApi.FlashWindow / FocusWindow while in the background) -->
+    <string name="attention_title">VRCX needs your attention</string>
+    <string name="attention_text">Open VRCX to continue.</string>
+
+    <!-- Database import pickers -->
+    <string name="import_pick_database">Select the VRCX.sqlite3 file from your PC</string>
+    <string name="import_pick_json">Optionally select VRCX.json (press back to skip)</string>
+
+    <!-- WebView version gate -->
+    <string name="webview_gate_title">Android System WebView needs an update</string>
+    <string name="webview_gate_body">VRCX needs Android System WebView %1$d or newer with document-start scripts and web message listeners. This device has %2$s.\n\nUpdate "Android System WebView" (or Chrome, if it provides the WebView on this device) from the Play Store, then open VRCX again.</string>
+    <string name="webview_gate_missing">no WebView</string>
+    <string name="webview_gate_update">Update WebView</string>
+    <string name="webview_gate_retry">Try again</string>
+</resources>

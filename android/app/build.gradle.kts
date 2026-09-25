@@ -79,4 +79,8 @@ dependencies {
     androidTestImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     // appapi
     androidTestImplementation("junit:junit:4.13.2")
+    // host
+    // play-services-code-scanner pulls in Fragment 1.0.0, which breaks Activity Result permission requests
+    // (lint InvalidFragmentVersionForActivityResult, fatal for release builds).
+    implementation("androidx.fragment:fragment:1.8.5")
 }
