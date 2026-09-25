@@ -214,9 +214,9 @@ object NotificationPermissionPolicy {
         rationaleAfter -> Record()
         // The second denial: the system stops showing the prompt.
         rationaleBefore -> Record(blocked = true)
-        // Neither: a dismissed first prompt (it comes back) or a prompt the system no longer shows. Twice in a row
-        // counts as blocked, so the page stops offering a button that does nothing.
-        else -> (record.silentDenials + 1).let { Record(blocked = it >= 2, silentDenials = it) }
+        // Neither: a dismissed first prompt (it comes back) or a prompt the system no longer shows (then it stays
+        // blocked). Twice in a row counts as blocked, so the page stops offering a button that does nothing.
+        else -> (record.silentDenials + 1).let { Record(blocked = record.blocked || it >= 2, silentDenials = it) }
     }
 }
 

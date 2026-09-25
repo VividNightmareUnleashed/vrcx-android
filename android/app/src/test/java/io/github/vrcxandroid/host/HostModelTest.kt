@@ -228,7 +228,11 @@ class HostModelTest {
     @Test
     fun notificationPermissionIsDeniedOnceTheSystemStopsPrompting() {
         val once = afterDenial(fresh, before = false, after = true)
-        assertEquals("denied", state(afterDenial(once, before = true, after = false)))
+        val blocked = afterDenial(once, before = true, after = false)
+        assertEquals("denied", state(blocked))
+        // Asking again once blocked: the system answers at once, without rationale; it stays blocked.
+        assertEquals("denied", state(afterDenial(blocked, before = false, after = false)))
+        assertEquals("denied", state(afterDenial(afterDenial(blocked, before = false, after = false), before = false, after = false)))
         // Two answers in a row without any rationale: the prompt is not being shown.
         val silentTwice = afterDenial(afterDenial(fresh, before = false, after = false), before = false, after = false)
         assertEquals("denied", state(silentTwice))
