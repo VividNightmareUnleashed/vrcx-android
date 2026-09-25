@@ -110,6 +110,8 @@
 <template>
     <Dialog :open="promptOpen" @update:open="modalStore.setPromptOpen">
         <DialogContent
+            data-mobile="card"
+            data-mobile-autofocus
             :show-close-button="false"
             @escapeKeyDown="onEscapeKeyDown"
             @pointerDownOutside="onPointerDownOutside"

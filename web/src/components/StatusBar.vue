@@ -1,20 +1,30 @@
 <template>
     <div
-        class="shrink-0 h-[22px] flex items-center bg-sidebar border-t border-border text-xs select-none overflow-hidden"
+        :class="
+            isSheet
+                ? 'status-bar-sheet shrink-0 flex items-center bg-sidebar border-t border-border text-xs select-none'
+                : 'shrink-0 h-[22px] flex items-center bg-sidebar border-t border-border text-xs select-none overflow-hidden'
+        "
         style="font-family: var(--font-mono-cjk)"
         @contextmenu.prevent>
         <ContextMenu>
             <ContextMenuTrigger as-child>
-                <div class="flex items-center w-full h-full px-2">
+                <div
+                    :class="
+                        isSheet
+                            ? 'flex flex-wrap items-center w-full px-1 py-1'
+                            : 'flex items-center w-full h-full px-2'
+                    ">
                     <!-- Left section -->
                     <div
-                        class="flex items-center flex-1 min-w-0 overflow-hidden [&>*:first-child]:pl-0.5"
-                        style="
-                            mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-                            -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-                        ">
+                        :class="
+                            isSheet
+                                ? 'flex flex-wrap items-center w-full min-w-0 [&>*]:border-r-0'
+                                : 'flex items-center flex-1 min-w-0 overflow-hidden [&>*:first-child]:pl-0.5'
+                        "
+                        :style="isSheet ? undefined : leftSectionMaskStyle">
                         <TooltipWrapper
-                            v-if="!isLinux && visibility.proxy"
+                            v-if="showProxy"
                             :content="
                                 vrcxStore.proxyServer
                                     ? `${t('status_bar.proxy')}: ${vrcxStore.proxyServer}`
@@ -34,7 +44,7 @@
                         </TooltipWrapper>
 
                         <TooltipWrapper
-                            v-if="!isMacOS && visibility.steamvr"
+                            v-if="showSteamVr"
                             :content="
                                 gameStore.isSteamVRRunning
                                     ? t('status_bar.steamvr_running')
@@ -51,11 +61,7 @@
                             </div>
                         </TooltipWrapper>
 
-                        <HoverCard
-                            v-if="!isMacOS && visibility.vrchat"
-                            v-model:open="gameHoverOpen"
-                            :open-delay="50"
-                            :close-delay="50">
+                        <HoverCard v-if="showGame" v-model:open="gameHoverOpen" :open-delay="50" :close-delay="50">
                             <HoverCardTrigger as-child>
                                 <div
                                     class="flex items-center gap-1 px-2 h-[22px] whitespace-nowrap border-r border-border">
@@ -206,7 +212,12 @@
                     </div>
 
                     <!-- Right section -->
-                    <div class="flex items-center shrink-0 ml-auto [&>*:last-child]:border-r-0 [&>*:last-child]:pr-0.5">
+                    <div
+                        :class="
+                            isSheet
+                                ? 'flex flex-wrap items-center w-full [&>*]:border-r-0'
+                                : 'flex items-center shrink-0 ml-auto [&>*:last-child]:border-r-0 [&>*:last-child]:pr-0.5'
+                        ">
                         <template v-if="visibility.clocks">
                             <Popover
                                 v-for="(clock, idx) in visibleClocks"
@@ -246,7 +257,7 @@
                         </template>
 
                         <TooltipWrapper
-                            v-if="visibility.zoom"
+                            v-if="showZoom"
                             :content="t('status_bar.zoom_tooltip')"
                             side="top"
                             :disabled="zoomEditing">
@@ -334,7 +345,7 @@
                     {{ t('status_bar.app_uptime_short') }}
                 </ContextMenuCheckboxItem>
                 <ContextMenuCheckboxItem
-                    v-if="!isMacOS"
+                    v-if="!isMacOS && hasZoom"
                     :model-value="visibility.zoom"
                     @select.prevent
                     @update:model-value="toggleVisibility('zoom')">
@@ -427,6 +438,23 @@
     } from './statusBarUtils';
 
     import configRepository from '../services/config';
+    import { isAndroid } from '../shared/utils/platform';
+    import { useCompanionStore } from '../platform/android/companionStore';
+
+    const props = defineProps({
+        // 'sheet': inside the phone nav sheet footer (docs/DESIGN.md §2.3), wrapped over several lines.
+        variant: {
+            type: String,
+            default: 'bar'
+        }
+    });
+
+    const isSheet = computed(() => props.variant === 'sheet');
+
+    const leftSectionMaskStyle = {
+        maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
+        WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
+    };
 
     dayjs.extend(utc);
     dayjs.extend(timezone);
@@ -435,6 +463,9 @@
 
     const isMacOS = computed(() => navigator.platform.includes('Mac'));
     const isLinux = computed(() => LINUX);
+    // Android has no zoom (docs/ARCHITECTURE.md §9); game and SteamVR state come from the PC companion.
+    const hasZoom = !isAndroid;
+    const companionStore = isAndroid ? useCompanionStore() : null;
 
     const gameStore = useGameStore();
     const gameLogStore = useGameLogStore();
@@ -517,6 +548,23 @@
     const VISIBILITY_KEY = 'VRCX_statusBarVisibility';
 
     const visibility = reactive({ ...defaultVisibility });
+
+    const showProxy = computed(() => {
+        if (!visibility.proxy) return false;
+        // Android: only when a proxy is configured (the proxy is set in Settings, no status item needed otherwise).
+        return isAndroid ? Boolean(vrcxStore.proxyServer) : !isLinux.value;
+    });
+    const showSteamVr = computed(() => {
+        if (!visibility.steamvr || isMacOS.value) return false;
+        // Android: only while the PC companion reports SteamVR running.
+        return isAndroid ? gameStore.isSteamVRRunning : true;
+    });
+    const showGame = computed(() => {
+        if (!visibility.vrchat || isMacOS.value) return false;
+        // Android: game state needs a paired PC companion.
+        return isAndroid ? Boolean(companionStore?.isPaired) : true;
+    });
+    const showZoom = computed(() => hasZoom && visibility.zoom);
 
     /**
      * @param key
@@ -719,7 +767,9 @@
         }
     });
 
-    initGetZoomLevel();
+    if (hasZoom) {
+        initGetZoomLevel();
+    }
 
     watch(
         () => visibility.ws,

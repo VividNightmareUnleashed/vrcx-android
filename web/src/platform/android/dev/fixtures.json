@@ -1,0 +1,241 @@
+{
+    "_comment": "Made-up data for the Android preview harness. Images are generated locally from `image` colours; nothing is fetched from VRChat.",
+    "currentUser": {
+        "id": "usr_00000000-0000-4000-8000-000000000001",
+        "username": "previewer",
+        "displayName": "Preview User",
+        "status": "join me",
+        "statusDescription": "Testing the phone shell",
+        "state": "online",
+        "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)",
+        "bio": "Local fixture account for the VRCX Android preview harness.",
+        "pronouns": "",
+        "image": "#5b8def",
+        "tags": ["system_trust_basic", "system_trust_known", "system_trust_trusted", "language_eng"],
+        "last_platform": "standalonewindows",
+        "platform": "standalonewindows"
+    },
+    "friends": [
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000101",
+            "displayName": "Aurora",
+            "status": "join me",
+            "statusDescription": "Come hang out",
+            "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)",
+            "image": "#e8a33c",
+            "tags": ["system_trust_veteran", "language_eng"],
+            "last_platform": "standalonewindows"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000102",
+            "displayName": "Birch",
+            "status": "active",
+            "statusDescription": "",
+            "location": "wrld_00000000-0000-4000-8000-00000000a002:67890~hidden(usr_00000000-0000-4000-8000-000000000102)~region(us)",
+            "image": "#3cb371",
+            "tags": ["system_trust_trusted"],
+            "last_platform": "android"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000103",
+            "displayName": "Cobalt",
+            "status": "ask me",
+            "statusDescription": "Busy building",
+            "location": "private",
+            "image": "#6a5acd",
+            "tags": ["system_trust_known"],
+            "last_platform": "standalonewindows"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000104",
+            "displayName": "Dune",
+            "status": "busy",
+            "statusDescription": "Do not disturb",
+            "location": "wrld_00000000-0000-4000-8000-00000000a003:24680~friends(usr_00000000-0000-4000-8000-000000000104)~region(jp)",
+            "image": "#c0504d",
+            "tags": ["system_trust_basic"],
+            "last_platform": "ios"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000105",
+            "displayName": "Ember",
+            "status": "active",
+            "statusDescription": "",
+            "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)",
+            "image": "#f28c28",
+            "tags": ["system_trust_veteran"],
+            "last_platform": "standalonewindows"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000106",
+            "displayName": "Fjord",
+            "status": "active",
+            "statusDescription": "On the website",
+            "location": "offline",
+            "state": "active",
+            "image": "#2f8fb8",
+            "tags": ["system_trust_known"],
+            "last_platform": "web"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000107",
+            "displayName": "Gale",
+            "status": "offline",
+            "statusDescription": "",
+            "location": "offline",
+            "state": "offline",
+            "image": "#8c8c8c",
+            "tags": ["system_trust_trusted"],
+            "last_platform": "standalonewindows"
+        },
+        {
+            "id": "usr_00000000-0000-4000-8000-000000000108",
+            "displayName": "Harbor",
+            "status": "offline",
+            "statusDescription": "",
+            "location": "offline",
+            "state": "offline",
+            "image": "#4f6d7a",
+            "tags": ["system_trust_basic"],
+            "last_platform": "android"
+        }
+    ],
+    "worlds": [
+        {
+            "id": "wrld_00000000-0000-4000-8000-00000000a001",
+            "name": "Lantern Harbor",
+            "authorName": "Preview Studio",
+            "authorId": "usr_00000000-0000-4000-8000-000000000201",
+            "capacity": 32,
+            "image": "#1f6f8b",
+            "description": "A quiet harbor at dusk."
+        },
+        {
+            "id": "wrld_00000000-0000-4000-8000-00000000a002",
+            "name": "Moss Library",
+            "authorName": "Preview Studio",
+            "authorId": "usr_00000000-0000-4000-8000-000000000201",
+            "capacity": 16,
+            "image": "#4a7c59",
+            "description": "Books, plants and too many chairs."
+        },
+        {
+            "id": "wrld_00000000-0000-4000-8000-00000000a003",
+            "name": "Neon Rooftops",
+            "authorName": "Another Creator",
+            "authorId": "usr_00000000-0000-4000-8000-000000000202",
+            "capacity": 40,
+            "image": "#7b3fa0",
+            "description": "City lights and a long way down."
+        },
+        {
+            "id": "wrld_00000000-0000-4000-8000-00000000a004",
+            "name": "Glass Observatory",
+            "authorName": "Another Creator",
+            "authorId": "usr_00000000-0000-4000-8000-000000000202",
+            "capacity": 24,
+            "image": "#b56576",
+            "description": "Stars all the way around."
+        }
+    ],
+    "feed": [
+        {
+            "type": "GPS",
+            "minutesAgo": 2,
+            "userIndex": 0,
+            "worldIndex": 0,
+            "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)",
+            "previousWorldIndex": 1,
+            "time": 1800000
+        },
+        {
+            "type": "Status",
+            "minutesAgo": 5,
+            "userIndex": 2,
+            "status": "ask me",
+            "statusDescription": "Busy building",
+            "previousStatus": "active",
+            "previousStatusDescription": ""
+        },
+        {
+            "type": "Online",
+            "minutesAgo": 9,
+            "userIndex": 4,
+            "worldIndex": 0,
+            "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)"
+        },
+        {
+            "type": "Avatar",
+            "minutesAgo": 14,
+            "userIndex": 1,
+            "avatarName": "Paper Crane",
+            "image": "#e0c068",
+            "previousImage": "#6c8ebf"
+        },
+        {
+            "type": "Offline",
+            "minutesAgo": 20,
+            "userIndex": 6,
+            "worldIndex": 2,
+            "location": "wrld_00000000-0000-4000-8000-00000000a003:24680~region(jp)",
+            "time": 5400000
+        },
+        {
+            "type": "Bio",
+            "minutesAgo": 31,
+            "userIndex": 3,
+            "bio": "Making worlds and breaking them.",
+            "previousBio": "Making worlds."
+        },
+        {
+            "type": "GPS",
+            "minutesAgo": 44,
+            "userIndex": 3,
+            "worldIndex": 2,
+            "location": "wrld_00000000-0000-4000-8000-00000000a003:24680~friends(usr_00000000-0000-4000-8000-000000000104)~region(jp)",
+            "previousWorldIndex": 3,
+            "time": 2700000
+        },
+        {
+            "type": "Online",
+            "minutesAgo": 58,
+            "userIndex": 1,
+            "worldIndex": 1,
+            "location": "wrld_00000000-0000-4000-8000-00000000a002:67890~region(us)"
+        },
+        {
+            "type": "Status",
+            "minutesAgo": 75,
+            "userIndex": 0,
+            "status": "join me",
+            "statusDescription": "Come hang out",
+            "previousStatus": "active",
+            "previousStatusDescription": ""
+        },
+        {
+            "type": "Offline",
+            "minutesAgo": 90,
+            "userIndex": 7,
+            "worldIndex": 3,
+            "location": "wrld_00000000-0000-4000-8000-00000000a004:13579~region(eu)",
+            "time": 3600000
+        },
+        {
+            "type": "Avatar",
+            "minutesAgo": 120,
+            "userIndex": 4,
+            "avatarName": "Ember Fox",
+            "image": "#f28c28",
+            "previousImage": "#9c6644"
+        },
+        {
+            "type": "GPS",
+            "minutesAgo": 150,
+            "userIndex": 4,
+            "worldIndex": 3,
+            "location": "wrld_00000000-0000-4000-8000-00000000a004:13579~region(eu)",
+            "previousWorldIndex": 0,
+            "time": 600000
+        }
+    ]
+}

@@ -1,7 +1,25 @@
 <template>
     <div :class="['flex flex-col min-w-0 data-table', autoHeight && 'flex-1 min-h-0 overflow-hidden']">
-        <div v-if="$slots.toolbar" class="mb-2">
+        <div v-if="$slots.toolbar && !showTouchTools" class="mb-2">
             <slot name="toolbar"></slot>
+        </div>
+        <!-- Touch layouts: View options (the PC header menu) and the Shift stand-in next to the toolbar. -->
+        <div v-else-if="showTouchTools" class="mb-2 flex items-start gap-2" data-slot="data-table-toolbar">
+            <!-- A PC toolbar row that is wider than the phone scrolls sideways instead of spilling out. -->
+            <div v-if="$slots.toolbar" class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden">
+                <slot name="toolbar"></slot>
+            </div>
+            <div class="ml-auto flex shrink-0 items-center gap-1">
+                <QuickActionsToggle v-if="showQuickActions" />
+                <DataTableViewOptions
+                    v-if="showViewOptions"
+                    :table="table"
+                    :page-sizes="pageSizes"
+                    :page-size="pageSizeProxy"
+                    :set-page-size="handlePageSizeChange"
+                    :enable-column-visibility="enableColumnVisibility"
+                    :reset-all="tcResetAll" />
+            </div>
         </div>
 
         <div :class="['rounded-md border', autoHeight && 'flex-1 min-h-0 flex flex-col overflow-hidden']">
@@ -9,7 +27,26 @@
                 ref="tableScrollRef"
                 :class="['max-w-full overflow-auto relative', autoHeight && 'flex-1 min-h-0']"
                 :style="tableStyle">
-                <Table :class="tableClassValue" :style="tableElementStyle">
+                <DataTableCardList
+                    v-if="useCards"
+                    :table="table"
+                    :row-class="rowClass"
+                    :on-row-click="onRowClick"
+                    :striped="isDataTableStriped"
+                    :expanded-renderer="expandedRenderer">
+                    <template v-if="$slots['row-context-menu']" #row-context-menu="{ row }">
+                        <slot name="row-context-menu" :row="row" />
+                    </template>
+                    <template v-if="$slots.expanded" #expanded="{ row }">
+                        <slot name="expanded" :row="row"></slot>
+                    </template>
+                    <template #empty>
+                        <slot name="empty">
+                            <DataTableEmpty v-if="!loading" :type="emptyType" />
+                        </slot>
+                    </template>
+                </DataTableCardList>
+                <Table v-else :class="tableClassValue" :style="tableElementStyle">
                     <colgroup>
                         <col v-for="col in table.getVisibleLeafColumns()" :key="col.id" :style="getColStyle(col)" />
                     </colgroup>
@@ -35,7 +72,7 @@
                                                             :render="header.column.columnDef.header"
                                                             :props="header.getContext()" />
                                                         <div
-                                                            v-if="header.column.getCanResize?.()"
+                                                            v-if="header.column.getCanResize?.() && !isCoarsePointer"
                                                             class="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none opacity-0 transition-opacity group-hover:opacity-100"
                                                             @mousedown.stop="header.getResizeHandler?.()($event)"
                                                             @touchstart.stop="header.getResizeHandler?.()($event)">
@@ -58,7 +95,7 @@
                                                     :render="header.column.columnDef.header"
                                                     :props="header.getContext()" />
                                                 <div
-                                                    v-if="header.column.getCanResize?.()"
+                                                    v-if="header.column.getCanResize?.() && !isCoarsePointer"
                                                     class="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none opacity-0 transition-opacity group-hover:opacity-100"
                                                     @mousedown.stop="header.getResizeHandler?.()($event)"
                                                     @touchstart.stop="header.getResizeHandler?.()($event)">
@@ -119,7 +156,7 @@
                                                             :render="header.column.columnDef.header"
                                                             :props="header.getContext()" />
                                                         <div
-                                                            v-if="header.column.getCanResize?.()"
+                                                            v-if="header.column.getCanResize?.() && !isCoarsePointer"
                                                             class="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none opacity-0 transition-opacity group-hover:opacity-100"
                                                             @mousedown.stop="header.getResizeHandler?.()($event)"
                                                             @touchstart.stop="header.getResizeHandler?.()($event)">
@@ -142,7 +179,7 @@
                                                     :render="header.column.columnDef.header"
                                                     :props="header.getContext()" />
                                                 <div
-                                                    v-if="header.column.getCanResize?.()"
+                                                    v-if="header.column.getCanResize?.() && !isCoarsePointer"
                                                     class="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none opacity-0 transition-opacity group-hover:opacity-100"
                                                     @mousedown.stop="header.getResizeHandler?.()($event)"
                                                     @touchstart.stop="header.getResizeHandler?.()($event)">
@@ -182,7 +219,7 @@
                                 <template v-if="!header.isPlaceholder">
                                     <FlexRender :render="header.column.columnDef.header" :props="header.getContext()" />
                                     <div
-                                        v-if="header.column.getCanResize?.()"
+                                        v-if="header.column.getCanResize?.() && !isCoarsePointer"
                                         class="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none opacity-0 transition-opacity group-hover:opacity-100"
                                         @mousedown.stop="header.getResizeHandler?.()($event)"
                                         @touchstart.stop="header.getResizeHandler?.()($event)">
@@ -262,8 +299,15 @@
             </div>
         </div>
 
-        <div v-if="showPagination" class="dt-pagination mt-4 flex w-full items-center gap-3 mb-1">
-            <div v-if="pageSizes.length" class="dt-pagination-sizes inline-flex items-center flex-1 justify-end gap-2">
+        <div
+            v-if="showPagination"
+            :class="[
+                'dt-pagination flex w-full items-center mb-1',
+                compactPagination ? 'mt-2 justify-center gap-1' : 'mt-4 gap-3'
+            ]">
+            <div
+                v-if="pageSizes.length && !compactPagination"
+                class="dt-pagination-sizes inline-flex items-center flex-1 justify-end gap-2">
                 <span class="text-xs text-muted-foreground truncate">{{ t('table.pagination.rows_per_page') }}</span>
                 <Select v-model="pageSizeValue">
                     <SelectTrigger size="sm">
@@ -280,26 +324,27 @@
                 v-model:page="currentPage"
                 :total="totalItems"
                 :items-per-page="pageSizeProxy"
-                :sibling-count="1"
+                :sibling-count="compactPagination ? 0 : 1"
                 show-edges
                 class="flex-none">
                 <PaginationContent v-slot="{ items }">
-                    <PaginationPrevious />
+                    <PaginationPrevious :class="compactPagination && 'h-8 px-2'" />
                     <template
                         v-for="(item, index) in items"
                         :key="item.type === 'page' ? `page-${item.value}` : `ellipsis-${index}`">
                         <PaginationItem
                             v-if="item.type === 'page'"
                             :value="item.value"
+                            :size="compactPagination ? 'icon-sm' : 'icon'"
                             :is-active="item.value === currentPage">
                             {{ item.value }}
                         </PaginationItem>
-                        <PaginationEllipsis v-else />
+                        <PaginationEllipsis v-else :class="compactPagination && 'size-8'" />
                     </template>
-                    <PaginationNext />
+                    <PaginationNext :class="compactPagination && 'h-8 px-2'" />
                 </PaginationContent>
             </Pagination>
-            <div class="dt-pagination-spacer flex-1"></div>
+            <div v-if="!compactPagination" class="dt-pagination-spacer flex-1"></div>
         </div>
     </div>
 </template>
@@ -313,6 +358,8 @@
     import { storeToRefs } from 'pinia';
     import { useAppearanceSettingsStore } from '@/stores/';
     import { useI18n } from 'vue-i18n';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
+    import { isAndroid } from '@/shared/utils/platform';
 
     import {
         ContextMenu,
@@ -334,13 +381,18 @@
     import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
     import {
         getColStyle,
+        getSortableColumns,
         getToggleableColumns,
+        hasMobileHint,
         isReorderable as isReorderableHelper,
         isSpacer,
         resolveHeaderLabel
     } from './dataTableHelpers.js';
+    import { QuickActionsToggle } from '../quick-actions';
 
+    import DataTableCardList from './DataTableCardList.vue';
     import DataTableEmpty from './DataTableEmpty.vue';
+    import DataTableViewOptions from './DataTableViewOptions.vue';
     import SortableTableHead from './SortableTableHead.vue';
 
     const appearanceSettingsStore = useAppearanceSettingsStore();
@@ -406,8 +458,23 @@
         autoHeight: {
             type: Boolean,
             default: false
+        },
+        // auto: card list on phones when a column declares meta.mobile (docs/DESIGN.md §3.1); table / cards force.
+        mobileMode: {
+            type: String,
+            default: 'auto',
+            validator: (value) => ['auto', 'table', 'cards'].includes(value)
+        },
+        // The table has Shift-modified actions (instant delete): show the touch "quick actions" toggle.
+        // Also enabled by table meta `quickActions: true` or any column meta `quickActions: true`.
+        quickActions: {
+            type: Boolean,
+            default: false
         }
     });
+
+    // Both flags are always false in desktop builds.
+    const { isCompact, isCoarsePointer } = useCompactLayout();
 
     const { t } = useI18n();
     const tableScrollRef = ref(null);
@@ -429,7 +496,41 @@
         () => !props.enableColumnVisibility && (tcResetAll.value || tcColumnOrderLocked.value != null)
     );
 
-    const effectiveColumnReorder = computed(() => props.enableColumnReorder && tcColumnOrderLocked.value !== true);
+    // Column drag-reorder starts after a 250 ms touch and fights scrolling: off on coarse pointers (DESIGN.md §3.1).
+    const effectiveColumnReorder = computed(
+        () => props.enableColumnReorder && tcColumnOrderLocked.value !== true && !isCoarsePointer.value
+    );
+
+    const leafColumns = computed(() => props.table?.getAllLeafColumns?.() ?? []);
+
+    const useCards = computed(() => {
+        if (props.mobileMode === 'cards') return true;
+        if (props.mobileMode === 'table') return false;
+        return isCompact.value && leafColumns.value.some((col) => hasMobileHint(col));
+    });
+
+    const showQuickActions = computed(
+        () =>
+            isAndroid &&
+            (props.quickActions ||
+                tableMeta.value.quickActions === true ||
+                leafColumns.value.some((col) => col.columnDef?.meta?.quickActions === true))
+    );
+
+    const showViewOptions = computed(() => {
+        if (!isCompact.value && !useCards.value) return false;
+        return (
+            props.pageSizes.length > 1 ||
+            Boolean(tcResetAll.value) ||
+            getSortableColumns(leafColumns.value).length > 0 ||
+            (props.enableColumnVisibility && getToggleableColumns(leafColumns.value).length > 0)
+        );
+    });
+
+    const showTouchTools = computed(() => showQuickActions.value || showViewOptions.value);
+
+    // Phones: no page-size selector (it lives in View options), no sibling pages, 32px items.
+    const compactPagination = computed(() => isCompact.value);
 
     const dndContextKey = computed(() => (props.table?.getVisibleLeafColumns?.() ?? []).map((c) => c.id).join(','));
 

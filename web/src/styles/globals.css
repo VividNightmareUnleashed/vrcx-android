@@ -15,6 +15,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Android phone shell (docs/DESIGN.md §2). html.vrcx-compact is only ever set by the Android build
+ * (composables/useCompactLayout.js), so these variants are inert on desktop. Touch-only fixes use the built-in
+ * pointer-coarse: variant instead. */
+@custom-variant compact (&:where(.vrcx-compact, .vrcx-compact *));
+@custom-variant compact-landscape (&:where(.vrcx-compact-landscape, .vrcx-compact-landscape *));
+
+/* The dev-only Android preview harness is not part of any bundle. */
+@source not "../platform/android/dev";
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

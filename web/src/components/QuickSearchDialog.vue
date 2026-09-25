@@ -7,6 +7,7 @@
 
     import { useQuickSearchStore } from '../stores/quickSearch';
     import { useUserDisplay } from '../composables/useUserDisplay';
+    import { useCompactLayout } from '../composables/useCompactLayout';
 
     import QuickSearchSync from './QuickSearchSync.vue';
 
@@ -26,6 +27,8 @@
     } = storeToRefs(quickSearchStore);
     const { selectResult } = quickSearchStore;
     const { t } = useI18n();
+    // Phones: a full-screen page whose result list fills the screen, with a close button (docs/DESIGN.md §3.2).
+    const { isCompact } = useCompactLayout();
 
     /**
      * @param item
@@ -37,16 +40,19 @@
 
 <template>
     <Dialog v-model:open="isOpen">
-        <DialogContent class="overflow-hidden p-0 sm:max-w-2xl" :show-close-button="false">
+        <DialogContent
+            class="overflow-hidden p-0 sm:max-w-2xl compact:flex compact:flex-col compact:gap-0 compact:[&_[data-slot=command-input-wrapper]]:pr-12"
+            :show-close-button="isCompact">
             <DialogHeader class="sr-only">
                 <DialogTitle>{{ t('side_panel.search_placeholder') }}</DialogTitle>
                 <DialogDescription>{{ t('side_panel.search_placeholder') }}</DialogDescription>
             </DialogHeader>
-            <Command>
+            <Command class="compact:min-h-0 compact:flex-1">
                 <!-- Sync filterState.search → store.query -->
                 <QuickSearchSync />
                 <CommandInput :placeholder="t('side_panel.search_placeholder')" />
-                <CommandList class="max-h-[min(400px,50vh)] overflow-y-auto overflow-x-hidden">
+                <CommandList
+                    class="max-h-[min(400px,50vh)] overflow-y-auto overflow-x-hidden compact:max-h-none compact:flex-1">
                     <template v-if="!query || query.length < 2">
                         <CommandGroup :heading="t('side_panel.search_categories')">
                             <CommandItem :value="'hint-friends'" disabled class="gap-3 opacity-70">

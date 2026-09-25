@@ -5,6 +5,8 @@
     import { Button } from '@/components/ui/button';
     import { useI18n } from 'vue-i18n';
 
+    import { isAndroid } from '@/shared/utils/platform';
+
     const props = defineProps({
         // scroll DOM ref
         target: { type: [String, Object], default: null },
@@ -114,10 +116,13 @@
 
     const isBodyTeleport = computed(() => teleportTarget.value === 'body' || teleportTarget.value === document.body);
 
-    const wrapperStyle = computed(
-        () =>
-            `position:${isBodyTeleport.value ? 'fixed' : 'absolute'}; right:${props.right}px; bottom:${props.bottom}px; z-index:50;`
-    );
+    const wrapperStyle = computed(() => {
+        // Android: a fixed button clears the phone dock, the gesture bar and the keyboard (platform/android/mobile.css).
+        if (isAndroid && isBodyTeleport.value) {
+            return `position:fixed; right:calc(${props.right}px + var(--safe-right, 0px)); bottom:calc(${props.bottom}px + var(--vrcx-fixed-bottom, 0px)); z-index:50;`;
+        }
+        return `position:${isBodyTeleport.value ? 'fixed' : 'absolute'}; right:${props.right}px; bottom:${props.bottom}px; z-index:50;`;
+    });
 </script>
 
 <template>

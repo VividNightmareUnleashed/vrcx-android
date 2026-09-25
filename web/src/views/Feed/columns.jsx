@@ -2,7 +2,7 @@ import AvatarInfo from '../../components/AvatarInfo.vue';
 import Location from '../../components/Location.vue';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { TooltipWrapper } from '../../components/ui/tooltip';
 import { ArrowDown, ArrowRight, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { formatDateFilter, statusClass, timeToText } from '../../shared/utils';
 import { i18n } from '../../plugins/i18n';
@@ -170,7 +170,9 @@ export const columns = [
         minSize: 0,
         maxSize: 20,
         meta: {
-            expandedRow
+            expandedRow,
+            // Phone card slots (docs/DESIGN.md §3.1): reference implementation for the other tables.
+            mobile: { slot: 'leading' }
         },
         cell: ({ row }) => {
             if (!row.getCanExpand()) {
@@ -193,7 +195,7 @@ export const columns = [
     {
         accessorKey: 'created_at',
         size: 140,
-        meta: { label: () => t('table.feed.date') },
+        meta: { label: () => t('table.feed.date'), mobile: { slot: 'trailing' } },
         header: ({ column }) => (
             <Button variant="ghost" class="pl-0!" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
                 {t('table.feed.date')}
@@ -205,15 +207,11 @@ export const columns = [
             const shortText = formatDateFilter(createdAt, 'short');
             const longText = formatDateFilter(createdAt, 'long');
 
+            // TooltipWrapper: on phones a long-press shows the full date (docs/DESIGN.md §3.3).
             return (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <span>{shortText}</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                        <span>{longText}</span>
-                    </TooltipContent>
-                </Tooltip>
+                <TooltipWrapper side="right" content={longText}>
+                    <span>{shortText}</span>
+                </TooltipWrapper>
             );
         }
     },
@@ -221,7 +219,7 @@ export const columns = [
         accessorKey: 'type',
         size: 130,
         header: () => t('table.feed.type'),
-        meta: { label: () => t('table.feed.type') },
+        meta: { label: () => t('table.feed.type'), mobile: { slot: 'badge' } },
         cell: ({ row }) => {
             const type = row.getValue('type');
             return (
@@ -237,7 +235,7 @@ export const columns = [
         accessorKey: 'displayName',
         size: 190,
         header: () => t('table.feed.user'),
-        meta: { label: () => t('table.feed.user') },
+        meta: { label: () => t('table.feed.user'), mobile: { slot: 'title' } },
         cell: ({ row }) => {
             const original = row.original;
             const friend = getFriendStore().friends.get(original.userId);
@@ -261,7 +259,8 @@ export const columns = [
         minSize: 100,
         meta: {
             stretch: true,
-            label: () => t('table.feed.detail')
+            label: () => t('table.feed.detail'),
+            mobile: { slot: 'body' }
         },
         cell: ({ row }) => {
             const original = row.original;

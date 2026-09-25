@@ -1,1 +1,31 @@
-{}
+{
+    "android": {
+        "shell": {
+            "search": "Search",
+            "menu": "Menu",
+            "dock_label": "Main navigation",
+            "game_indicator": {
+                "running": "VRChat is running on your PC",
+                "stopped": "VRChat is not running on your PC",
+                "disconnected": "PC companion is not connected"
+            },
+            "dialog": {
+                "back": "Back",
+                "close": "Close",
+                "history": "Dialog history"
+            },
+            "view_options": {
+                "title": "View options",
+                "sort": "Sort by",
+                "sort_none": "Default order",
+                "ascending": "Ascending",
+                "descending": "Descending",
+                "columns": "Columns"
+            },
+            "quick_actions": {
+                "label": "Quick actions",
+                "hint": "Delete and leave without asking for confirmation, like holding Shift on PC"
+            }
+        }
+    }
+}

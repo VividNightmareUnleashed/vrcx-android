@@ -4,6 +4,7 @@
             :table="table"
             :loading="friendLogTable.loading"
             auto-height
+            quick-actions
             :page-sizes="pageSizes"
             :total-items="totalItems"
             :on-page-size-change="handlePageSizeChange">

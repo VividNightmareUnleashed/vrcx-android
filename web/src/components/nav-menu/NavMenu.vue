@@ -43,7 +43,11 @@
                                                         item.titleIsCustom ? item.title : t(item.title || '')
                                                     }}</span>
                                                     <span
-                                                        v-if="item.action === 'direct-access' && !isCollapsed"
+                                                        v-if="
+                                                            item.action === 'direct-access' &&
+                                                            !isCollapsed &&
+                                                            !isAndroid
+                                                        "
                                                         class="nav-shortcut-hint ml-auto inline-flex items-center gap-2">
                                                         <Kbd>{{ isMac ? '⌘' : 'Ctrl' }}</Kbd>
                                                         <Kbd>D</Kbd>
@@ -120,6 +124,7 @@
 
         <NavMenuFooter
             :is-collapsed="isCollapsed"
+            :sheet="sheet"
             :is-dark-mode="isDarkMode"
             :has-pending-update="pendingVRCXUpdate"
             :has-pending-install="!!pendingVRCXInstall"
@@ -145,6 +150,9 @@
             @logout-click="handleLogoutClick"
             @toggle-nav-collapse="toggleNavCollapse"
             @open-github="openGithub" />
+
+        <!-- Phone nav sheet footer (StatusBar, docs/DESIGN.md §2.3). -->
+        <slot v-if="sheet" name="sheet-footer" />
     </Sidebar>
 
     <CustomNavDialog
@@ -159,7 +167,7 @@
 </template>
 
 <script setup>
-    import { computed, h, onMounted, ref, watch } from 'vue';
+    import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
     import { storeToRefs } from 'pinia';
     import { Plus } from 'lucide-vue-next';
@@ -186,7 +194,8 @@
         SidebarHeader,
         SidebarMenu,
         SidebarMenuButton,
-        SidebarMenuItem
+        SidebarMenuItem,
+        useSidebar
     } from '@/components/ui/sidebar';
 
     import {
@@ -199,6 +208,8 @@
         useVRCXUpdaterStore
     } from '../../stores';
     import { isEntryNotified as checkEntryNotified } from './navMenuUtils';
+    import { isAndroid } from '../../shared/utils/platform';
+    import { publishNavMenuModel } from './navMenuModel';
     import { DASHBOARD_NAV_KEY_PREFIX, links } from '../../shared/constants';
     import { openExternalLink } from '../../shared/utils';
 
@@ -206,6 +217,14 @@
     import NavMenuFooter from './NavMenuFooter.vue';
 
     import CustomNavDialog from '../dialogs/CustomNavDialog.vue';
+
+    const props = defineProps({
+        // Rendered inside the phone nav sheet: always expanded, closes after navigating, no Collapse item.
+        sheet: {
+            type: Boolean,
+            default: false
+        }
+    });
 
     const { t, locale } = useI18n();
     const router = useRouter();
@@ -233,9 +252,19 @@
         themeMode,
         tableDensity,
         isDarkMode,
-        isNavCollapsed: isCollapsed,
+        isNavCollapsed: storedNavCollapsed,
         showNewDashboardButton
     } = storeToRefs(appearanceSettingsStore);
+    // The phone sheet always shows labels, whatever the (tablet/PC) collapsed setting is.
+    const isCollapsed = computed(() => !props.sheet && Boolean(storedNavCollapsed.value));
+    // Null outside a SidebarProvider (tests); only used to close the phone sheet.
+    const sidebar = useSidebar(null);
+
+    const closeSheet = () => {
+        if (props.sheet && sidebar?.isMobile?.value) {
+            sidebar.setOpenMobile(false);
+        }
+    };
 
     const {
         themes,
@@ -289,7 +318,7 @@
 
     const getItemTooltip = (item) => {
         const label = item.titleIsCustom ? item.title : t(item.title || '');
-        if (item.action !== 'direct-access') {
+        if (item.action !== 'direct-access' || isAndroid) {
             return label;
         }
         return () =>
@@ -413,6 +442,7 @@
     };
 
     const handleSubmenuClick = (entry) => {
+        closeSheet();
         triggerNavAction(entry);
     };
 
@@ -428,6 +458,7 @@
     };
 
     const handleMenuItemClick = (item) => {
+        closeSheet();
         triggerNavAction(item);
     };
 
@@ -443,6 +474,19 @@
             }
         }
     );
+
+    const unpublishNavModel = publishNavMenuModel({
+        menuItems,
+        activeMenuIndex,
+        allNavDefinitions,
+        hasNotifications,
+        isNavItemNotified,
+        isEntryNotified,
+        triggerNavAction,
+        clearAllNotifications,
+        openCustomNavDialog: handleOpenCustomNavDialog
+    });
+    onBeforeUnmount(unpublishNavModel);
 
     onMounted(async () => {
         await initThemeColor();

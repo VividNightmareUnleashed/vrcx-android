@@ -10,8 +10,10 @@
                     <span class="search-text flex-1 min-w-0 text-left text-sm text-muted-foreground truncate">{{
                         t('side_panel.search_placeholder')
                     }}</span>
-                    <Kbd class="search-kbd shrink-0">{{ isMac ? '⌘' : 'Ctrl' }}</Kbd>
-                    <Kbd class="search-kbd shrink-0">K</Kbd>
+                    <template v-if="!isAndroid">
+                        <Kbd class="search-kbd shrink-0">{{ isMac ? '⌘' : 'Ctrl' }}</Kbd>
+                        <Kbd class="search-kbd shrink-0">K</Kbd>
+                    </template>
                 </button>
             </div>
             <div class="flex items-center mx-1 gap-1">
@@ -368,6 +370,7 @@
     import { runRefreshFriendsListFlow } from '../../coordinators/friendSyncCoordinator';
     import { normalizeFavoriteGroupsChange, resolveFavoriteGroups } from './sidebarSettingsUtils';
     import { useQuickSearchStore } from '../../stores/quickSearch';
+    import { isAndroid } from '../../shared/utils/platform';
 
     import FriendsSidebar from './components/FriendsSidebar.vue';
     import QuickSearchDialog from '../../components/QuickSearchDialog.vue';
