@@ -437,6 +437,37 @@ class CompanionEngineTest {
     }
 
     @Test
+    fun mirrorRequestedFetchRewindsTheFile() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server))
+        val conn = server.nextConnection()
+        awaitSyncCount(1)
+        val f = server.files.first { it.name == file2 }
+        val before = sink.dataEvents().size
+
+        engine.requestFetch(file2, "0002", 0)
+        val fetch = conn.awaitMessage("fetch")
+        assertEquals("0", (fetch["fromOffset"] as JsonPrimitive).content)
+        // A live frame sent before the companion saw the fetch is dropped; the answer from 0 is delivered.
+        f.append("live\n")
+        conn.sendData(f.name, f.fileId, (f.bytes.size - 5).toLong(), "live\n".toByteArray())
+        conn.sendRange(f, 0)
+        waitFor(message = "refetched") { sink.dataEvents().drop(before).any { it.startsWith("data:$file2@0+") } }
+        waitFor(message = "complete file") { sink.content(file2) == String(f.bytes) }
+        assertTrue(sink.dataEvents().drop(before).first().startsWith("data:$file2@0+"))
+    }
+
+    @Test
+    fun withoutALogSinkTheSessionNeverSubscribes() {
+        val server = server().withLogs()
+        val engine = engine(pairedStore(server), config(subscribeWaitMs = 100), logSink = NullLogSink)
+        val conn = server.nextConnection()
+        awaitStatus(engine, "connected")
+        Thread.sleep(400)
+        assertTrue(conn.messages.none { it.s("t") == "subscribe" })
+    }
+
+    @Test
     fun waitsForTillDateAndResubscribesWhenItChanges() {
         val server = server().withLogs()
         sink.since = 0
