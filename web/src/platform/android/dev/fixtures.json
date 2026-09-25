@@ -148,11 +148,45 @@
             "previousWorldIndex": 1,
             "time": 1800000
         },
-        { "type": "Status", "minutesAgo": 5, "userIndex": 2, "status": "ask me", "statusDescription": "Busy building", "previousStatus": "active", "previousStatusDescription": "" },
-        { "type": "Online", "minutesAgo": 9, "userIndex": 4, "worldIndex": 0, "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)" },
-        { "type": "Avatar", "minutesAgo": 14, "userIndex": 1, "avatarName": "Paper Crane", "image": "#e0c068", "previousImage": "#6c8ebf" },
-        { "type": "Offline", "minutesAgo": 20, "userIndex": 6, "worldIndex": 2, "location": "wrld_00000000-0000-4000-8000-00000000a003:24680~region(jp)", "time": 5400000 },
-        { "type": "Bio", "minutesAgo": 31, "userIndex": 3, "bio": "Making worlds and breaking them.", "previousBio": "Making worlds." },
+        {
+            "type": "Status",
+            "minutesAgo": 5,
+            "userIndex": 2,
+            "status": "ask me",
+            "statusDescription": "Busy building",
+            "previousStatus": "active",
+            "previousStatusDescription": ""
+        },
+        {
+            "type": "Online",
+            "minutesAgo": 9,
+            "userIndex": 4,
+            "worldIndex": 0,
+            "location": "wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)"
+        },
+        {
+            "type": "Avatar",
+            "minutesAgo": 14,
+            "userIndex": 1,
+            "avatarName": "Paper Crane",
+            "image": "#e0c068",
+            "previousImage": "#6c8ebf"
+        },
+        {
+            "type": "Offline",
+            "minutesAgo": 20,
+            "userIndex": 6,
+            "worldIndex": 2,
+            "location": "wrld_00000000-0000-4000-8000-00000000a003:24680~region(jp)",
+            "time": 5400000
+        },
+        {
+            "type": "Bio",
+            "minutesAgo": 31,
+            "userIndex": 3,
+            "bio": "Making worlds and breaking them.",
+            "previousBio": "Making worlds."
+        },
         {
             "type": "GPS",
             "minutesAgo": 44,
@@ -162,10 +196,38 @@
             "previousWorldIndex": 3,
             "time": 2700000
         },
-        { "type": "Online", "minutesAgo": 58, "userIndex": 1, "worldIndex": 1, "location": "wrld_00000000-0000-4000-8000-00000000a002:67890~region(us)" },
-        { "type": "Status", "minutesAgo": 75, "userIndex": 0, "status": "join me", "statusDescription": "Come hang out", "previousStatus": "active", "previousStatusDescription": "" },
-        { "type": "Offline", "minutesAgo": 90, "userIndex": 7, "worldIndex": 3, "location": "wrld_00000000-0000-4000-8000-00000000a004:13579~region(eu)", "time": 3600000 },
-        { "type": "Avatar", "minutesAgo": 120, "userIndex": 4, "avatarName": "Ember Fox", "image": "#f28c28", "previousImage": "#9c6644" },
+        {
+            "type": "Online",
+            "minutesAgo": 58,
+            "userIndex": 1,
+            "worldIndex": 1,
+            "location": "wrld_00000000-0000-4000-8000-00000000a002:67890~region(us)"
+        },
+        {
+            "type": "Status",
+            "minutesAgo": 75,
+            "userIndex": 0,
+            "status": "join me",
+            "statusDescription": "Come hang out",
+            "previousStatus": "active",
+            "previousStatusDescription": ""
+        },
+        {
+            "type": "Offline",
+            "minutesAgo": 90,
+            "userIndex": 7,
+            "worldIndex": 3,
+            "location": "wrld_00000000-0000-4000-8000-00000000a004:13579~region(eu)",
+            "time": 3600000
+        },
+        {
+            "type": "Avatar",
+            "minutesAgo": 120,
+            "userIndex": 4,
+            "avatarName": "Ember Fox",
+            "image": "#f28c28",
+            "previousImage": "#9c6644"
+        },
         {
             "type": "GPS",
             "minutesAgo": 150,

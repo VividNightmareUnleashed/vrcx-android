@@ -17,25 +17,25 @@ npx vite --config src/platform/android/dev/vite.config.js
 Then open <http://localhost:9010/platform/android/dev/index.html> and set the browser's device toolbar (or the
 viewport) to a phone size. Useful sizes:
 
-| Size | What it shows |
-|---|---|
-| 360 x 780 | small phone, portrait: app bar, page card, dock |
-| 412 x 915 | large phone, portrait |
-| 780 x 360 | phone landscape: 48 px rail, 40 px app bar, friends panel as a right column |
-| 800 x 1280 | tablet: the upstream desktop frame with the touch fixes |
+| Size       | What it shows                                                               |
+| ---------- | --------------------------------------------------------------------------- |
+| 360 x 780  | small phone, portrait: app bar, page card, dock                             |
+| 412 x 915  | large phone, portrait                                                       |
+| 780 x 360  | phone landscape: 48 px rail, 40 px app bar, friends panel as a right column |
+| 800 x 1280 | tablet: the upstream desktop frame with the touch fixes                     |
 
 Turn on touch emulation in the device toolbar to check the coarse-pointer rules (long-press tooltips, visible
 hover-only controls, no column resize handles). The port can be changed with `VRCX_PREVIEW_PORT`.
 
 ## Query parameters
 
-| Parameter | Values | Default |
-|---|---|---|
-| `theme` | `system`, `light`, `dark`, `midnight` | `system` |
-| `color` | `default`, `blue`, `green`, `orange`, `red`, `rose`, `violet`, `yellow` | stored value |
-| `companion` | `none` (no PC paired), `paired` (paired, not connected), `connected`, `playing` (VRChat running) | `playing` |
-| `insets` | `top,right,bottom,left` in CSS px, as the native `insets` event sends them | `24,0,16,0` |
-| `onboarding` | `1` shows the first-run onboarding | off |
+| Parameter    | Values                                                                                           | Default      |
+| ------------ | ------------------------------------------------------------------------------------------------ | ------------ |
+| `theme`      | `system`, `light`, `dark`, `midnight`                                                            | `system`     |
+| `color`      | `default`, `blue`, `green`, `orange`, `red`, `rose`, `violet`, `yellow`                          | stored value |
+| `companion`  | `none` (no PC paired), `paired` (paired, not connected), `connected`, `playing` (VRChat running) | `playing`    |
+| `insets`     | `top,right,bottom,left` in CSS px, as the native `insets` event sends them                       | `24,0,16,0`  |
+| `onboarding` | `1` shows the first-run onboarding                                                               | off          |
 
 Example: `index.html?theme=dark&companion=none&insets=32,0,24,0`.
 
