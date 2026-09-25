@@ -1,8 +1,10 @@
 <template>
     <div id="chart" class="x-container">
-        <div ref="instanceActivityRef" class="pt-12">
+        <div ref="instanceActivityRef" class="pt-12 compact:pt-1">
             <BackToTop :target="instanceActivityRef" :right="30" :bottom="30" :teleport="false" />
-            <div class="options-container flex items-center justify-between mt-0">
+            <!-- Phones: the date controls wrap under the title (docs/DESIGN.md §3.4). -->
+            <div
+                class="options-container flex items-center justify-between mt-0 compact:flex-wrap compact:gap-y-2 compact:px-0">
                 <div class="flex items-center justify-between">
                     <span class="shrink-0">{{ t('view.charts.instance_activity.header') }}</span>
                     <HoverCard>
@@ -25,7 +27,7 @@
                     </HoverCard>
                 </div>
 
-                <div class="flex items-center">
+                <div class="flex items-center compact:ml-auto">
                     <TooltipWrapper :content="t('view.charts.instance_activity.refresh')" side="top">
                         <Button class="rounded-full mr-1.5" size="icon" variant="ghost" @click="reloadData">
                             <RefreshCcw />
@@ -118,7 +120,7 @@
                             <div>
                                 <Button
                                     variant="outline"
-                                    class="w-50 justify-start text-left font-normal"
+                                    class="w-50 justify-start text-left font-normal compact:w-auto"
                                     :disabled="isLoading">
                                     <CalendarIcon class="mr-2 h-4 w-4" />
                                     {{ dayjs(selectedDate).format('YYYY-MM-DD') }}
@@ -157,7 +159,7 @@
             <transition name="el-fade-in-linear">
                 <div
                     v-show="isDetailVisible && !isLoading && activityData.length !== 0"
-                    class="px-[400px] transition-[top] duration-300 ease-in-out">
+                    class="px-[400px] transition-[top] duration-300 ease-in-out compact:px-6">
                     <div class="flex items-center">
                         <Separator class="flex-1" />
                         <span class="px-2 text-muted-foreground">·</span>
@@ -209,6 +211,8 @@
     import { useIntersectionObserver } from '../composables/useIntersectionObserver';
 
     import InstanceActivityDetail from './InstanceActivityDetail.vue';
+    import { applyCompactChartLayout } from '../composables/compactChartLayout';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
     import InstanceActivityTooltip from './InstanceActivityTooltip.jsx';
 
     import * as echarts from 'echarts';
@@ -227,13 +231,25 @@
         setInstanceActivityHeight();
     });
 
+    // Always false in desktop builds.
+    const { isCompact } = useCompactLayout();
+
     function setInstanceActivityHeight() {
         if (instanceActivityRef.value) {
+            // Phones: the page card is already sized by the shell (--app-chrome-h), so the scroller fills it instead of
+            // the PC's window height minus the title bar.
             const availableHeight = window.innerHeight - 110;
-            instanceActivityRef.value.style.height = `${availableHeight}px`;
+            instanceActivityRef.value.style.height = isCompact.value ? '100%' : `${availableHeight}px`;
             instanceActivityRef.value.style.overflowY = 'auto';
         }
     }
+
+    watch(isCompact, () => {
+        setInstanceActivityHeight();
+        if (echartsInstance && activityData.value.length) {
+            echartsInstance.setOption(getNewOption(), { notMerge: true });
+        }
+    });
 
     onMounted(() => {
         if (instanceActivityRef.value) {
@@ -690,7 +706,10 @@
             ],
             backgroundColor: 'transparent'
         };
-        return echartsOption;
+        return applyCompactChartLayout(echartsOption, {
+            compact: isCompact.value,
+            width: isCompact.value ? (activityChartRef.value?.clientWidth ?? 0) : 0
+        });
     }
 
     function handleEchartsRerender() {
