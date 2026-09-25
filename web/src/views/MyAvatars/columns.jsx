@@ -49,12 +49,14 @@ const sortButton = ({ column, label, descFirst = false }) => {
     );
 };
 
+// meta.mobile: phone card slots (docs/DESIGN.md §3.1; reference: views/Feed/columns.jsx).
 export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAvatarId }) {
     return [
         {
             id: 'active',
             header: () => null,
             size: 40,
+            meta: { mobile: { slot: 'titleSuffix' } },
             enableSorting: false,
             enableResizing: false,
             cell: ({ row }) => {
@@ -71,6 +73,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
             id: 'thumbnail',
             header: () => null,
             size: 64,
+            meta: { mobile: { slot: 'leading' } },
             enableSorting: false,
             enableResizing: false,
             cell: ({ row }) => {
@@ -108,7 +111,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     label: () => t('dialog.avatar.info.name')
                 }),
             size: 200,
-            meta: { label: () => t('dialog.avatar.info.name') },
+            meta: { mobile: { slot: 'title' }, label: () => t('dialog.avatar.info.name') },
             cell: ({ row }) => {
                 const ref = row.original;
                 return (
@@ -130,7 +133,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
             header: () => t('dialog.avatar.info.tags'),
             size: 150,
             enableSorting: false,
-            meta: { label: () => t('dialog.avatar.info.tags') },
+            meta: { mobile: { slot: 'body' }, label: () => t('dialog.avatar.info.tags') },
             cell: ({ row }) => {
                 const tags = row.original.$tags || [];
                 if (!tags.length) return null;
@@ -164,7 +167,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
             header: () => t('dialog.avatar.info.platform'),
             size: 120,
             enableSorting: false,
-            meta: { label: () => t('dialog.avatar.info.platform') },
+            meta: { mobile: { slot: 'badge' }, label: () => t('dialog.avatar.info.platform') },
             cell: ({ row }) => {
                 const ref = row.original;
                 const platforms = getAvailablePlatforms(ref.unityPackages);
@@ -194,7 +197,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
             accessorKey: 'releaseStatus',
             header: () => t('dialog.avatar.info.visibility'),
             size: 120,
-            meta: { label: () => t('dialog.avatar.info.visibility') },
+            meta: { mobile: { slot: 'badge' }, label: () => t('dialog.avatar.info.visibility') },
             cell: ({ row }) => {
                 const ref = row.original;
                 return (
@@ -217,6 +220,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                 }),
             size: 140,
             meta: {
+                mobile: { slot: 'footer', label: true },
                 class: 'text-right',
                 label: () => t('dialog.avatar.info.time_spent')
             },
@@ -236,6 +240,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                 }),
             size: 90,
             meta: {
+                mobile: { slot: 'footer', label: true },
                 class: 'text-right',
                 label: () => t('dialog.avatar.info.version')
             },
@@ -264,6 +269,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                 }),
             size: 100,
             meta: {
+                mobile: { slot: 'footer', label: true },
                 class: 'text-right',
                 label: () => t('dialog.avatar.tags.impostor')
             },
@@ -281,7 +287,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     label: () => t('dialog.avatar.info.pc_performance')
                 }),
             size: 140,
-            meta: { label: () => t('dialog.avatar.info.pc_performance') },
+            meta: { mobile: { slot: 'footer', label: true }, label: () => t('dialog.avatar.info.pc_performance') },
             cell: ({ row }) => {
                 const perf = getPlatformInfo(row.original.unityPackages)?.pc?.performanceRating;
                 return perf ? <span>{perf}</span> : <span class="text-muted-foreground">-</span>;
@@ -296,7 +302,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     label: () => t('dialog.avatar.info.android_performance')
                 }),
             size: 140,
-            meta: { label: () => t('dialog.avatar.info.android_performance') },
+            meta: { mobile: { slot: 'footer', label: true }, label: () => t('dialog.avatar.info.android_performance') },
             cell: ({ row }) => {
                 const perf = getPlatformInfo(row.original.unityPackages)?.android?.performanceRating;
                 return perf ? <span>{perf}</span> : <span class="text-muted-foreground">-</span>;
@@ -311,7 +317,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     label: () => t('dialog.avatar.info.ios_performance')
                 }),
             size: 140,
-            meta: { label: () => t('dialog.avatar.info.ios_performance') },
+            meta: { mobile: { slot: 'footer', label: true }, label: () => t('dialog.avatar.info.ios_performance') },
             cell: ({ row }) => {
                 const perf = getPlatformInfo(row.original.unityPackages)?.ios?.performanceRating;
                 return perf ? <span>{perf}</span> : <span class="text-muted-foreground">-</span>;
@@ -327,7 +333,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     descFirst: true
                 }),
             size: 160,
-            meta: { label: () => t('dialog.avatar.info.last_updated') },
+            meta: { mobile: { slot: 'footer', label: true }, label: () => t('dialog.avatar.info.last_updated') },
             cell: ({ row }) => {
                 const ref = row.original;
                 return <span>{formatDateFilter(ref.updated_at, 'long')}</span>;
@@ -343,7 +349,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
                     descFirst: true
                 }),
             size: 160,
-            meta: { label: () => t('dialog.avatar.info.created_at') },
+            meta: { mobile: { slot: 'footer', label: true }, label: () => t('dialog.avatar.info.created_at') },
             cell: ({ row }) => {
                 const ref = row.original;
                 return <span>{formatDateFilter(ref.created_at, 'long')}</span>;
@@ -353,6 +359,7 @@ export function getColumns({ onShowAvatarDialog, onContextMenuAction, currentAva
             id: 'actions',
             header: () => null,
             size: 100,
+            meta: { mobile: { slot: 'actions' } },
             enableSorting: false,
             enableResizing: false,
             cell: ({ row }) => {

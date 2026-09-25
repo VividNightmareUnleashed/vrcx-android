@@ -1,6 +1,7 @@
 <template>
     <div class="x-container grid h-full min-h-0 grid-rows-[auto_1fr] gap-4 overflow-hidden" ref="containerRef">
-        <div class="flex items-center gap-2 px-0.5 pt-1.5">
+        <!-- Phones: the toolbar wraps and the search takes its own row (docs/DESIGN.md §3.4). -->
+        <div class="flex items-center gap-2 px-0.5 pt-1.5 compact:flex-wrap">
             <ToggleGroup
                 type="single"
                 :model-value="viewMode"
@@ -126,7 +127,10 @@
             <span v-if="isLoading" class="text-muted-foreground text-sm">
                 {{ t('view.friends_locations.loading_more') }}
             </span>
-            <Input v-model="searchText" :placeholder="t('view.search.search_placeholder')" class="h-8 w-80" />
+            <Input
+                v-model="searchText"
+                :placeholder="t('view.search.search_placeholder')"
+                class="h-8 w-80 compact:order-last compact:w-full" />
 
             <DropdownMenu v-if="viewMode === 'grid'">
                 <DropdownMenuTrigger as-child>
@@ -350,6 +354,8 @@
     import { avatarRequest } from '../../api';
     import { database } from '../../services/database';
     import { getColumns } from './columns';
+    import { getMyAvatarsTableOptions } from './myAvatarsTableOptions';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { getPlatformInfo } from '../../shared/utils/avatar';
     import { getTagColor } from '../../shared/constants';
     import { processBulk } from '../../services/request';
@@ -790,11 +796,14 @@
         return '';
     }
 
+    // Phones: the table renders as cards with a shorter default column set (docs/DESIGN.md §3.1).
+    const { isCompact } = useCompactLayout();
+
     const { table, pagination } = useVrcxVueTable({
         get data() {
             return filteredAvatars.value;
         },
-        persistKey: 'my-avatars',
+        ...getMyAvatarsTableOptions(isCompact.value),
         columns,
         initialSorting: [{ id: 'updated_at', desc: true }],
         initialPagination: {
