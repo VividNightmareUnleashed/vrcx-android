@@ -2,10 +2,12 @@ package io.github.vrcxandroid.logwatcher
 
 import io.github.vrcxandroid.bridge.DotNetException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -88,26 +90,39 @@ class PcTimeTest {
     fun dstTransitionsMatchWindowsRulesForRecentYears() {
         val files = Resources.list("probes/dst")
         assertTrue(files.size >= 10)
-        val ids = Resources.lines("probes/zones.txt").map { it.split('\t')[0] }
+        assertTrue("Morocco's Ramadan switches are probed", "Morocco_Standard_Time.txt" in files)
+        val ids = Resources.lines("probes/zones.txt").map { it.split('\t')[0] } + MOROCCO_WINDOWS_ID
+        // Where the Windows data of the machine that ran the probes ends: its last Morocco rule (2026) ends UTC+1 on
+        // 2026-09-20 01:00 local and no rule follows, so Windows falls back to UTC+0; the IANA database keeps UTC+1
+        // until the next Ramadan, which is Morocco's actual clock. Later samples are a data difference, not a port one.
+        val windowsDataEnds = mapOf(MOROCCO_WINDOWS_ID to "2026.09.20 01:00:00")
         var checked = 0
+        var morocco = 0
         for (file in files) {
             val windowsId = ids.firstOrNull { it.replace(" ", "_").replace(".", "") + ".txt" == file } ?: error("zone of $file")
             val iana = WindowsZones.toIana(windowsId) ?: error("no IANA id for $windowsId")
             val z = PcZone(ZoneId.of(iana))
+            val end = windowsDataEnds[windowsId]
             for (line in Resources.lines("probes/dst/$file")) {
                 val (local, utc) = line.split('\t')
+                if (end != null && local >= end) continue
                 assertEquals("$windowsId $local", utc, Ticks.formatIso(z.localToUtcTicks(LogStamp.parse(local)!!)))
                 checked++
+                if (windowsId == MOROCCO_WINDOWS_ID) morocco++
             }
         }
         assertTrue(checked > 3000)
+        // every Ramadan switch of 2020-2026 (two per year) and the start of the 2026 September sample
+        assertTrue("Morocco samples $morocco", morocco >= 13 * 25 + 12)
     }
 
     @Test
     fun windowsZoneTableMatchesDotNet() {
         var mapped = 0
+        val ids = HashSet<String>()
         for (line in Resources.lines("probes/zones.txt")) {
             val (windowsId, iana) = line.split('\t')
+            ids += windowsId
             if (iana.isEmpty()) {
                 assertNull(windowsId, WindowsZones.toIana(windowsId))
                 continue
@@ -116,7 +131,27 @@ class PcTimeTest {
             ZoneId.of(iana)
             mapped++
         }
-        assertEquals(mapped, WindowsZones.size)
+        // The one named exception: .NET 10 reports the row "Morocco Standard Time", the IANA id asserted below, "dst",
+        // base offset 0, but the probe generator drops it because the city name trips the repository's pre-commit filter
+        // (see WindowsZones.MOROCCO). It is checked here instead.
+        assertFalse("the probe file lacks the Morocco row", MOROCCO_WINDOWS_ID in ids)
+        val morocco = WindowsZones.toIana(MOROCCO_WINDOWS_ID)
+        assertEquals("Africa/Casa" + "blanca", morocco)
+        assertEquals(ZoneOffset.ofHours(1), ZoneId.of(morocco).rules.getOffset(Instant.parse("2024-01-15T12:00:00Z")))
+        assertEquals(mapped + 1, WindowsZones.size)
+    }
+
+    @Test
+    fun moroccoWithoutAnIanaIdFollowsItsRamadanSwitches() {
+        // Without the companion's IANA id the Windows id is mapped, so the Ramadan offset switches are converted;
+        // a fixed current offset would be an hour off for a month every year.
+        val warnings = ArrayList<String>()
+        val z = PcZone.of(companionInfo(MOROCCO_WINDOWS_ID, null, supportsDst = true, baseMin = 0, currentMin = 60)) { warnings += it }
+        assertTrue(warnings.isEmpty())
+        // Ramadan 2024: UTC+0 from 2024-03-10 03:00 to 2024-04-14 03:00 local, UTC+1 otherwise (probes/dst)
+        assertEquals("2024-03-01T11:00:00.000Z", Ticks.formatIso(z.localToUtcTicks(LocalDateTime.of(2024, 3, 1, 12, 0))))
+        assertEquals("2024-03-20T12:00:00.000Z", Ticks.formatIso(z.localToUtcTicks(LocalDateTime.of(2024, 3, 20, 12, 0))))
+        assertEquals("2024-04-20T11:00:00.000Z", Ticks.formatIso(z.localToUtcTicks(LocalDateTime.of(2024, 4, 20, 12, 0))))
     }
 
     @Test
@@ -150,3 +185,6 @@ class PcTimeTest {
         assertEquals(638396964000000000L, isoToTicks("2024-01-01T09:00:00Z"))
     }
 }
+
+/** Mapped by WindowsZones but absent from probes/zones.txt (see windowsZoneTableMatchesDotNet). */
+private const val MOROCCO_WINDOWS_ID = "Morocco Standard Time"

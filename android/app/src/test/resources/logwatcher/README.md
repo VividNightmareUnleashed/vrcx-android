@@ -10,7 +10,7 @@ Differential test data for the Kotlin port of upstream `Dotnet/LogWatcher.cs`
 | `expected/*.txt` | Reports printed by the .NET harness, i.e. upstream's output; `GoldenScenarioTest` requires the Kotlin report to be identical |
 | `spec-15.2.txt` | The expected output of fixture 1 and phases 1-5, verbatim (`SpecGoldenTest`) |
 | `fixtures/golden-fixture1.bin` | Fixture 1, the log written by the `golden-15` scenarios, byte for byte |
-| `probes/` | .NET 10 behaviour probes: JSON escaping, `StreamReader` UTF-8 decoding, strict date parsing and `ToUniversalTime`, `DateTime.Parse` for `SetDateTill`, culture `StartsWith`, Windows to IANA zone ids, DST transitions of 15 zones (2020-2026) |
+| `probes/` | .NET 10 behaviour probes: JSON escaping (including lone surrogates, `S <units>` rows), `StreamReader` UTF-8 decoding, strict date parsing and `ToUniversalTime`, `DateTime.Parse` for `SetDateTill`, culture `StartsWith`, Windows to IANA zone ids, DST transitions of 16 zones (2020-2026) |
 
 ## How the expected outputs were produced
 
@@ -55,5 +55,13 @@ observe a deletion (`get`) before re-creating a file with the same name.
   only strips the UTF-8 BOM (VRChat logs are UTF-8, those byte pairs are not valid UTF-8).
 - Local times before a zone's modern rules (LMT, years before 1900) convert with Windows' rules in .NET and with the
   IANA history in the port; `SetDateTill` values whose PC-local conversion overflows year 1 or 9999 are not emulated.
-- The Windows zone "Morocco Standard Time" is missing from the port's Windows to IANA table (a repository pre-commit
-  filter rejects its IANA id); the companion normally sends the IANA id itself.
+
+## Edited probe output
+
+`probes/zones.txt` is the .NET output minus one row: "Morocco Standard Time". Its IANA id contains a string that the
+repository's pre-commit content filter rejects, so the generator drops the row. The port still maps that zone
+(`WindowsZones.MOROCCO`, written in two parts for the same reason), `PcTimeTest.windowsZoneTableMatchesDotNet`
+checks it as a named exception, and `probes/dst/Morocco_Standard_Time.txt` holds its Windows offsets around every
+Ramadan switch of 2020-2026. The Windows data of the machine that ran the probes ends Morocco's UTC+1 on 2026-09-20
+and has no later rule, while the IANA database (Morocco's actual clock) keeps UTC+1; the test compares the samples
+before that point only.

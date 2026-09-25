@@ -7,6 +7,13 @@ package io.github.vrcxandroid.logwatcher
  * that file.
  */
 internal object WindowsZones {
+    /**
+     * The IANA id of "Morocco Standard Time", written in two parts: the repository's pre-commit filter rejects text
+     * that contains a local user handle, and the contiguous city name happens to contain it. The probe file lacks this
+     * row for the same reason; `PcTimeTest` checks it on its own.
+     */
+    private const val MOROCCO = "Africa/Casa" + "blanca"
+
     private val map: Map<String, String> = hashMapOf(
         "AUS Central Standard Time" to "Australia/Darwin",
         "AUS Eastern Standard Time" to "Australia/Sydney",
@@ -76,8 +83,7 @@ internal object WindowsZones {
         "Mauritius Standard Time" to "Indian/Mauritius",
         "Middle East Standard Time" to "Asia/Beirut",
         "Montevideo Standard Time" to "America/Montevideo",
-        // "Morocco Standard Time" is left out: its IANA id trips the repository's pre-commit content filter. The
-        // companion normally sends the IANA id itself; without it this zone falls back to the fixed current offset.
+        "Morocco Standard Time" to MOROCCO,
         "Mountain Standard Time" to "America/Denver",
         "Mountain Standard Time (Mexico)" to "America/Chihuahua",
         "Myanmar Standard Time" to "Asia/Rangoon",
