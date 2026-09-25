@@ -37,8 +37,11 @@ interface AppApiPlatform : DocPlatform {
     /** Opens an http(s) URL in a Custom Tab or browser. */
     fun openExternalUrl(url: String): Boolean
 
-    /** ACTION_VIEW on [uri] when an installed app handles it. Returns whether an activity was started. */
-    fun viewUri(uri: String, mimeType: String? = null): Boolean
+    /**
+     * ACTION_VIEW on [uri]. Returns whether an activity was started (false when nothing handles it). With
+     * [onlyIfResolvable] the intent is not even sent unless the package manager resolves it first (StartGame).
+     */
+    fun viewUri(uri: String, mimeType: String? = null, onlyIfResolvable: Boolean = false): Boolean
 
     /** ACTION_VIEW on a document (FileProvider URI for local files) with a read grant. */
     fun viewDoc(doc: Doc, mimeType: String): Boolean

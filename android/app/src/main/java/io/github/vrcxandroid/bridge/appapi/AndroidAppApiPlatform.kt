@@ -55,27 +55,35 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
 
     override fun openExternalUrl(url: String): Boolean = host.openExternalUrl(url)
 
-    override fun viewUri(uri: String, mimeType: String?): Boolean {
-        val parsed = Uri.parse(uri)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            if (mimeType != null) setDataAndType(parsed, mimeType) else data = parsed
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        return host.canHandle(intent) && host.startIntent(intent)
+    /**
+     * Only StartGame asks the package manager first: other targets (folders in the Files app, calendar inserts) are
+     * not in the manifest's `<queries>`, so resolving them would fail on Android 11+ although starting them works;
+     * [HostServices.startIntent] returns false when nothing handles the intent.
+     */
+    override fun viewUri(uri: String, mimeType: String?, onlyIfResolvable: Boolean): Boolean {
+        val intent = viewIntent(Uri.parse(uri), mimeType, grantRead = false)
+        if (onlyIfResolvable && !host.canHandle(intent)) return false
+        return host.startIntent(intent)
     }
 
+    /** The document itself (SAF/MediaStore) or a FileProvider URI, with a read grant for the viewer. */
     override fun viewDoc(doc: Doc, mimeType: String): Boolean {
         val uri = contentUriFor(doc) ?: return false
-        return viewUri(uri.toString(), mimeType)
+        return host.startIntent(viewIntent(uri, mimeType, grantRead = true))
+    }
+
+    /**
+     * A read grant is only added for documents this app can read: granting a URI it holds no permission for (such as
+     * a Files-app folder) makes startActivity throw.
+     */
+    private fun viewIntent(uri: Uri, mimeType: String?, grantRead: Boolean) = Intent(Intent.ACTION_VIEW).apply {
+        if (mimeType != null) setDataAndType(uri, mimeType) else data = uri
+        if (grantRead) addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     override fun openCalendar(icsFile: File, event: IcsEvent?): Boolean {
         fileProviderUri(icsFile)?.let { uri ->
-            val view = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "text/calendar")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            if (host.canHandle(view) && host.startIntent(view)) return true
+            if (host.startIntent(viewIntent(uri, "text/calendar", grantRead = true))) return true
         }
         if (event == null) return false
         val insert = Intent(Intent.ACTION_INSERT, CalendarContract.Events.CONTENT_URI).apply {
@@ -86,7 +94,7 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
             event.endMillis?.let { putExtra(CalendarContract.EXTRA_EVENT_END_TIME, it) }
             if (event.allDay) putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, true)
         }
-        return host.canHandle(insert) && host.startIntent(insert)
+        return host.startIntent(insert)
     }
 
     override suspend fun clipboardText(): String = withContext(Dispatchers.Main) {

@@ -86,7 +86,11 @@ class FakeAppApiPlatform(
         return true
     }
 
-    override fun viewUri(uri: String, mimeType: String?): Boolean {
+    /** The last onlyIfResolvable flag passed to [viewUri]. */
+    var lastViewRequiredResolvable: Boolean? = null
+
+    override fun viewUri(uri: String, mimeType: String?, onlyIfResolvable: Boolean): Boolean {
+        lastViewRequiredResolvable = onlyIfResolvable
         if (handledUriPrefixes.none { uri.startsWith(it) }) return false
         viewedUris += uri to mimeType
         return true
@@ -150,17 +154,27 @@ class FakeAppApiPlatform(
         }
     }
 
+    /**
+     * Default root `ugc/default`. A path `tree:<name>` stands for a SAF tree: it is "granted" when the folder
+     * `ugc/<name>` exists and then goes through [TreeUgc]; otherwise it falls back to the default like a revoked tree.
+     */
     class FakeUgcStorage(private val root: File) : UgcStorage {
         val calls = mutableListOf<String?>()
         var failFolder: Exception? = null
 
-        private fun rootFor(ugcFolderPath: String?): File =
-            if (ugcFolderPath.isNullOrEmpty() || !ugcFolderPath.startsWith("tree:")) File(root, "default") else File(root, ugcFolderPath.removePrefix("tree:"))
+        private fun treeFor(ugcFolderPath: String?): DocumentTree? {
+            if (ugcFolderPath == null || !ugcFolderPath.startsWith("tree:")) return null
+            val dir = File(root, ugcFolderPath.removePrefix("tree:"))
+            return if (dir.isDirectory) FileDocumentTree(dir) else null
+        }
+
+        private fun defaultRoot() = File(root, "default")
 
         override fun folder(ugcFolderPath: String?, type: String, monthFolder: String): UgcFolder {
             calls += ugcFolderPath
             failFolder?.let { throw it }
-            val dir = File(File(rootFor(ugcFolderPath), type), monthFolder).apply { mkdirs() }
+            treeFor(ugcFolderPath)?.let { return TreeUgc.folder(it, type, monthFolder) }
+            val dir = File(File(defaultRoot(), type), monthFolder).apply { mkdirs() }
             return object : UgcFolder {
                 override fun exists(fileName: String) = File(dir, fileName).exists()
                 override fun create(fileName: String, bytes: ByteArray): String {
@@ -171,28 +185,22 @@ class FakeAppApiPlatform(
             }
         }
 
-        override fun listPngs(ugcFolderPath: String?, type: String): List<Doc> =
-            File(rootFor(ugcFolderPath), type).walkTopDown().filter { it.isFile && it.name.endsWith(".png", true) }.map { LocalFileDoc(it) }.toList()
+        override fun listPngs(ugcFolderPath: String?, type: String): List<Doc> {
+            treeFor(ugcFolderPath)?.let { return TreeUgc.listPngs(it, type) }
+            return File(defaultRoot(), type).walkTopDown().filter { it.isFile && it.name.endsWith(".png", true) }.map { LocalFileDoc(it) }.toList()
+        }
 
-        override fun open(ugcFolderPath: String?): Boolean = rootFor(ugcFolderPath).isDirectory
+        override fun open(ugcFolderPath: String?): Boolean = (treeFor(ugcFolderPath)?.let { File(it.folderUri(it.rootId)) } ?: defaultRoot()).isDirectory
     }
 
+    /** A photos root that is a local folder walked by the production [TreeWalk]. */
     class FakePhotosLibrary(var dir: File?) : PhotosLibrary {
         var opened = 0
         override fun location(): String = dir?.absolutePath.orEmpty()
 
-        /** Breadth first, files of each folder sorted case-insensitively (Windows `Directory.GetFiles` order). */
         override fun listPngs(): List<PhotoEntry>? {
-            val start = dir ?: return null
-            val out = mutableListOf<PhotoEntry>()
-            val queue = ArrayDeque(listOf(start to ""))
-            while (queue.isNotEmpty()) {
-                val (d, rel) = queue.removeFirst()
-                val children = d.listFiles()?.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }).orEmpty()
-                children.filter { it.isFile && it.name.endsWith(".png", true) }.forEach { out += PhotoEntry(LocalFileDoc(it), rel) }
-                children.filter { it.isDirectory }.forEach { queue.addLast(it to if (rel.isEmpty()) it.name else "$rel/${it.name}") }
-            }
-            return out
+            val tree = FileDocumentTree(dir ?: return null)
+            return TreeWalk.listPngs(tree, tree.rootId)
         }
 
         override suspend fun open(): Boolean {
@@ -200,4 +208,37 @@ class FakeAppApiPlatform(
             return dir != null
         }
     }
+}
+
+/** A local folder as a [DocumentTree]: ids are paths relative to [root] ("" for the root itself). */
+class FileDocumentTree(private val root: File) : DocumentTree {
+    /** Number of folder listings, to check that walks do not list folders more than once. */
+    var listings = 0
+
+    override val location: String get() = root.absolutePath
+    override val rootId: String = ""
+
+    private fun fileOf(id: String) = if (id.isEmpty()) root else File(root, id)
+    private fun idOf(parentId: String, name: String) = if (parentId.isEmpty()) name else "$parentId/$name"
+
+    override fun children(parentId: String): List<TreeEntry> {
+        listings++
+        return fileOf(parentId).listFiles().orEmpty().map { TreeEntry(idOf(parentId, it.name), LocalFileDoc(it), it.isDirectory) }
+    }
+
+    override fun createDirectory(parentId: String, name: String): String {
+        val dir = File(fileOf(parentId), name)
+        check(!dir.exists()) { "createDirectory called for an existing folder: $dir" }
+        check(dir.mkdir())
+        return idOf(parentId, name)
+    }
+
+    override fun createFile(parentId: String, name: String, mimeType: String, bytes: ByteArray): String {
+        val file = File(fileOf(parentId), name)
+        check(!file.exists()) { "createFile called for an existing file: $file" }
+        file.writeBytes(bytes)
+        return file.absolutePath
+    }
+
+    override fun folderUri(id: String): String = fileOf(id).absolutePath
 }

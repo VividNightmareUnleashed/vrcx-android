@@ -1,8 +1,11 @@
 package io.github.vrcxandroid.bridge.appapi
 
+import android.Manifest
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -11,6 +14,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import io.github.vrcxandroid.bridge.appapi.docs.ContentDoc
 import io.github.vrcxandroid.bridge.appapi.docs.Doc
+import io.github.vrcxandroid.bridge.appapi.docs.DocInfo
 import io.github.vrcxandroid.bridge.appapi.docs.LocalFileDoc
 import java.io.File
 import java.io.IOException
@@ -19,57 +23,58 @@ private const val PREF_UGC_TREE = "ugcTreeUri"
 private const val PREF_PHOTOS_TREE = "photosTreeUri"
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
-/** SAF tree helpers shared by the UGC storage and the photos library. */
-internal class Trees(private val context: Context) {
-    /** [path] as a tree URI this app still holds a persisted permission for, or null. */
-    fun granted(path: String?, write: Boolean): Uri? {
-        if (path.isNullOrEmpty() || !path.startsWith("content://")) return null
-        val uri = Uri.parse(path)
-        if (!isTreeUri(uri)) return null
-        val ok = context.contentResolver.persistedUriPermissions.any {
-            it.uri == uri && it.isReadPermission && (!write || it.isWritePermission)
-        }
-        return if (ok) uri else null
-    }
+/** A SAF tree (ACTION_OPEN_DOCUMENT_TREE result) as a [DocumentTree]. */
+class SafDocumentTree(private val context: Context, val treeUri: Uri) : DocumentTree {
+    override val location: String get() = treeUri.toString()
+    override val rootId: String = DocumentsContract.getTreeDocumentId(treeUri)
 
-    fun isTreeUri(uri: Uri): Boolean {
-        val segments = uri.pathSegments
-        return segments.size >= 2 && segments[0] == "tree"
-    }
+    override fun children(parentId: String): List<TreeEntry> =
+        ContentDoc.listTreeChildren(context, treeUri, parentId).map { TreeEntry(it.documentId, it.doc, it.isDirectory) }
 
-    fun rootId(tree: Uri): String = DocumentsContract.getTreeDocumentId(tree)
-
-    /** Id of the sub folder [name] of [parentId] (case-insensitive like Windows); created when [create]. */
-    fun childDir(tree: Uri, parentId: String, name: String, create: Boolean): String? {
-        ContentDoc.listTreeChildren(context, tree, parentId)
-            .firstOrNull { it.isDirectory && it.doc.name.equals(name, ignoreCase = true) }
-            ?.let { return it.documentId }
-        if (!create) return null
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
-        val created = DocumentsContract.createDocument(context.contentResolver, parent, DocumentsContract.Document.MIME_TYPE_DIR, name)
-            ?: throw IOException("Could not create the folder '$name'.")
+    override fun createDirectory(parentId: String, name: String): String {
+        val created = DocumentsContract.createDocument(
+            context.contentResolver,
+            documentUri(parentId),
+            DocumentsContract.Document.MIME_TYPE_DIR,
+            name,
+        ) ?: throw IOException("Could not create the folder '$name'.")
         return DocumentsContract.getDocumentId(created)
     }
 
-    /** Every `*.png` below [startId], breadth first, each folder's files sorted by name. */
-    fun listPngs(tree: Uri, startId: String): List<PhotoEntry> {
-        val out = mutableListOf<PhotoEntry>()
-        val queue = ArrayDeque<Pair<String, String>>()
-        queue.addLast(startId to "")
-        while (queue.isNotEmpty()) {
-            val (id, relative) = queue.removeFirst()
-            val children = ContentDoc.listTreeChildren(context, tree, id).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.doc.name })
-            for (child in children) {
-                if (!child.isDirectory && child.doc.name.endsWith(".png", ignoreCase = true)) out += PhotoEntry(child.doc, relative)
+    override fun createFile(parentId: String, name: String, mimeType: String, bytes: ByteArray): String {
+        val resolver = context.contentResolver
+        val uri = DocumentsContract.createDocument(resolver, documentUri(parentId), mimeType, name)
+            ?: throw IOException("Could not create '$name'.")
+        try {
+            resolver.openOutputStream(uri, "w")?.use { it.write(bytes) } ?: throw IOException("Could not write '$name'.")
+        } catch (e: Exception) {
+            try {
+                DocumentsContract.deleteDocument(resolver, uri)
+            } catch (ignored: Exception) {
+                // keep the original error
             }
-            for (child in children) {
-                if (child.isDirectory) queue.addLast(child.documentId to (if (relative.isEmpty()) child.doc.name else "$relative/${child.doc.name}"))
-            }
+            throw e
         }
-        return out
+        return uri.toString()
     }
 
-    fun documentUri(tree: Uri, id: String): Uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+    override fun folderUri(id: String): String = documentUri(id).toString()
+
+    private fun documentUri(id: String): Uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+
+    companion object {
+        /** [path] as a tree this app still holds a persisted permission for, or null. */
+        fun granted(context: Context, path: String?, write: Boolean): SafDocumentTree? {
+            if (path.isNullOrEmpty() || !path.startsWith("content://")) return null
+            val uri = Uri.parse(path)
+            val segments = uri.pathSegments
+            if (segments.size < 2 || segments[0] != "tree") return null
+            val ok = context.contentResolver.persistedUriPermissions.any {
+                it.uri == uri && it.isReadPermission && (!write || it.isWritePermission)
+            }
+            return if (ok) SafDocumentTree(context, uri) else null
+        }
+    }
 }
 
 /**
@@ -77,13 +82,15 @@ internal class Trees(private val context: Context) {
  * tree the user picked as UGC folder. A non-content path (for example a Windows path from an imported PC config) or a
  * tree whose permission was revoked falls back to the default, like upstream falls back to the photos folder.
  */
-class AndroidUgcStorage(private val context: Context, private val prefs: SharedPreferences, private val view: (Uri, String?) -> Boolean) : UgcStorage {
-    private val trees = Trees(context)
-
+class AndroidUgcStorage(
+    private val context: Context,
+    private val prefs: SharedPreferences,
+    private val view: (Uri, String?) -> Boolean,
+) : UgcStorage {
     /** The granted UGC tree, remembered so the photos library can fall back to it. */
-    private fun treeFor(ugcFolderPath: String?, write: Boolean): Uri? {
-        val tree = trees.granted(ugcFolderPath, write)
-        val value = tree?.toString()
+    private fun treeFor(ugcFolderPath: String?, write: Boolean): SafDocumentTree? {
+        val tree = SafDocumentTree.granted(context, ugcFolderPath, write)
+        val value = tree?.location
         if (prefs.getString(PREF_UGC_TREE, null) != value) {
             prefs.edit().apply { if (value != null) putString(PREF_UGC_TREE, value) else remove(PREF_UGC_TREE) }.apply()
         }
@@ -91,46 +98,34 @@ class AndroidUgcStorage(private val context: Context, private val prefs: SharedP
     }
 
     override fun folder(ugcFolderPath: String?, type: String, monthFolder: String): UgcFolder {
+        treeFor(ugcFolderPath, write = true)?.let { return TreeUgc.folder(it, type, monthFolder) }
         val segments = listOf(type, monthFolder).filter { it.isNotEmpty() }
-        val tree = treeFor(ugcFolderPath, write = true)
-        if (tree != null) {
-            var id = trees.rootId(tree)
-            for (s in segments) id = trees.childDir(tree, id, s, create = true)!!
-            return SafFolder(tree, id)
-        }
-        return if (Build.VERSION.SDK_INT >= 29) {
-            MediaStoreFolder(relativePath(segments))
-        } else {
-            @Suppress("DEPRECATION")
-            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VRCX/" + segments.joinToString("/"))
-            if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Access to the path '${dir.absolutePath}' is denied.")
-            LegacyFolder(dir)
-        }
+        if (Build.VERSION.SDK_INT >= 29) return MediaStoreFolder(relativePath(segments))
+        val dir = File(legacyRoot(), segments.joinToString("/"))
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Access to the path '${dir.absolutePath}' is denied.")
+        return LegacyFolder(dir)
     }
 
     override fun listPngs(ugcFolderPath: String?, type: String): List<Doc> {
-        val tree = treeFor(ugcFolderPath, write = true)
-        if (tree != null) {
-            val id = trees.childDir(tree, trees.rootId(tree), type, create = false) ?: return emptyList()
-            return trees.listPngs(tree, id).map { it.doc }
-        }
-        return if (Build.VERSION.SDK_INT >= 29) {
-            ContentDoc.queryMedia(
+        treeFor(ugcFolderPath, write = true)?.let { return TreeUgc.listPngs(it, type) }
+        if (Build.VERSION.SDK_INT >= 29) {
+            return ContentDoc.queryMedia(
                 context,
                 MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
                 "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
-                arrayOf("${DEFAULT_ROOT}/$type/%", "%.png"),
+                arrayOf("$DEFAULT_ROOT/$type/%", "%.png"),
             )
-        } else {
-            @Suppress("DEPRECATION")
-            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VRCX/$type")
-            dir.walkTopDown().filter { it.isFile && it.name.endsWith(".png", ignoreCase = true) }.map { LocalFileDoc(it) }.toList()
         }
+        return File(legacyRoot(), type).walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".png", ignoreCase = true) }
+            .map { LocalFileDoc(it) }
+            .toList()
     }
 
     override fun open(ugcFolderPath: String?): Boolean {
-        val tree = treeFor(ugcFolderPath, write = false)
-        if (tree != null) return view(trees.documentUri(tree, trees.rootId(tree)), DocumentsContract.Document.MIME_TYPE_DIR)
+        treeFor(ugcFolderPath, write = false)?.let { tree ->
+            return view(Uri.parse(tree.folderUri(tree.rootId)), DocumentsContract.Document.MIME_TYPE_DIR)
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             val any = ContentDoc.queryMedia(
                 context,
@@ -138,24 +133,36 @@ class AndroidUgcStorage(private val context: Context, private val prefs: SharedP
                 "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
                 arrayOf("$DEFAULT_ROOT/%"),
             ).isNotEmpty()
+            // upstream returns false when the folder does not exist yet
             if (!any) return false
+            val folder = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, "primary:$DEFAULT_ROOT")
+            return view(folder, DocumentsContract.Document.MIME_TYPE_DIR)
         }
-        val folder = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, "primary:$DEFAULT_ROOT")
+        val root = legacyRoot()
+        if (!root.isDirectory) return false
+        // file:// URIs cannot be shared with other apps; address the folder through the external storage provider
+        @Suppress("DEPRECATION")
+        val storage = Environment.getExternalStorageDirectory().absolutePath.trimEnd('/')
+        if (!root.absolutePath.startsWith("$storage/")) return false
+        val folder = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, "primary:" + root.absolutePath.substring(storage.length + 1))
         return view(folder, DocumentsContract.Document.MIME_TYPE_DIR)
     }
 
     private fun relativePath(segments: List<String>): String = (listOf(DEFAULT_ROOT) + segments).joinToString("/") + "/"
 
-    private inner class SafFolder(private val tree: Uri, private val dirId: String) : UgcFolder {
-        override fun exists(fileName: String): Boolean =
-            ContentDoc.listTreeChildren(context, tree, dirId).any { !it.isDirectory && it.doc.name.equals(fileName, ignoreCase = true) }
-
-        override fun create(fileName: String, bytes: ByteArray): String {
-            val uri = DocumentsContract.createDocument(context.contentResolver, trees.documentUri(tree, dirId), "image/png", fileName)
-                ?: throw IOException("Could not create '$fileName'.")
-            context.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) } ?: throw IOException("Could not write '$fileName'.")
-            return uri.toString()
+    /**
+     * Android 8-9: the public `Pictures/VRCX` when the app may write there (WRITE_EXTERNAL_STORAGE), otherwise the
+     * app's own `Android/data/<package>/files/Pictures/VRCX`, which needs no permission.
+     */
+    @Suppress("DEPRECATION")
+    private fun legacyRoot(): File {
+        val canWritePublic = context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        val pictures = if (canWritePublic) {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        } else {
+            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: throw IOException("Shared storage is not available.")
         }
+        return File(pictures, "VRCX")
     }
 
     private inner class MediaStoreFolder(private val relativePath: String) : UgcFolder {
@@ -215,18 +222,15 @@ class AndroidPhotosLibrary(
     private val view: (Uri, String?) -> Boolean,
     private val pickDirectory: suspend () -> Uri?,
 ) : PhotosLibrary {
-    private val trees = Trees(context)
+    private fun rootTree(): SafDocumentTree? =
+        SafDocumentTree.granted(context, prefs.getString(PREF_PHOTOS_TREE, null), write = false)
+            ?: SafDocumentTree.granted(context, prefs.getString(PREF_UGC_TREE, null), write = false)
 
-    private fun rootTree(): Uri? =
-        trees.granted(prefs.getString(PREF_PHOTOS_TREE, null), write = false)
-            ?: trees.granted(prefs.getString(PREF_UGC_TREE, null), write = false)
-
-    override fun location(): String = rootTree()?.toString().orEmpty()
+    override fun location(): String = rootTree()?.location.orEmpty()
 
     override fun listPngs(): List<PhotoEntry>? {
-        rootTree()?.let { tree -> return trees.listPngs(tree, trees.rootId(tree)) }
+        rootTree()?.let { tree -> return TreeWalk.listPngs(tree, tree.rootId) }
         if (Build.VERSION.SDK_INT < 29) return null
-        val prefix = "Pictures/VRChat/"
         val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val out = mutableListOf<PhotoEntry>()
         context.contentResolver.query(
@@ -239,27 +243,30 @@ class AndroidPhotosLibrary(
                 MediaStore.MediaColumns.RELATIVE_PATH,
             ),
             "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
-            arrayOf("$prefix%", "%.png"),
+            arrayOf("$MEDIA_PREFIX%", "%.png"),
             null,
         )?.use { c ->
             while (c.moveToNext()) {
-                val uri = android.content.ContentUris.withAppendedId(collection, c.getLong(0))
-                val relative = c.getString(4).orEmpty().removePrefix(prefix).trimEnd('/')
-                out += PhotoEntry(
-                    ContentDoc(context, uri, io.github.vrcxandroid.bridge.appapi.docs.DocInfo(c.getString(1).orEmpty(), c.getLong(2), c.getLong(3) * 1000)),
-                    relative,
-                )
+                val uri = ContentUris.withAppendedId(collection, c.getLong(0))
+                val relative = c.getString(4).orEmpty().removePrefix(MEDIA_PREFIX).trimEnd('/')
+                out += PhotoEntry(ContentDoc(context, uri, DocInfo(c.getString(1).orEmpty(), c.getLong(2), c.getLong(3) * 1000)), relative)
             }
         }
-        return out.sortedWith(compareBy<PhotoEntry> { it.relativeDir.count { ch -> ch == '/' } }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.relativeDir }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.doc.name })
+        return TreeWalk.sortLikeListPngs(out)
     }
 
     override suspend fun open(): Boolean {
         var tree = rootTree()
         if (tree == null) {
-            tree = pickDirectory() ?: return false
-            prefs.edit().putString(PREF_PHOTOS_TREE, tree.toString()).apply()
+            val picked = pickDirectory() ?: return false
+            prefs.edit().putString(PREF_PHOTOS_TREE, picked.toString()).apply()
+            tree = SafDocumentTree(context, picked)
         }
-        return view(trees.documentUri(tree, trees.rootId(tree)), DocumentsContract.Document.MIME_TYPE_DIR)
+        return view(Uri.parse(tree.folderUri(tree.rootId)), DocumentsContract.Document.MIME_TYPE_DIR)
+    }
+
+    companion object {
+        /** MediaStore relative path of VRChat's photo folder on PC-like layouts. */
+        const val MEDIA_PREFIX = "Pictures/VRChat/"
     }
 }

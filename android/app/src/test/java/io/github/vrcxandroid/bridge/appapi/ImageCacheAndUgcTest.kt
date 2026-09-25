@@ -163,11 +163,20 @@ class ImageCacheAndUgcTest {
         assertEquals(JsonNull, call("SaveStickerToFile", server.url("/s").toString(), "", "2025-09", "s.png"))
         // host not allowed → null
         assertEquals(JsonNull, call("SaveEmojiToFile", "https://example.com/e.png", "", "2025-09", "e.png"))
-        // SAF tree argument goes to the storage as is
+        // SAF tree argument goes to the storage as is and is walked by TreeUgc
+        File(platform.root, "ugc/mine/emoji").mkdirs()
         server.enqueue(png())
-        assertTrue(call("SaveEmojiToFile", server.url("/e").toString(), "tree:mine", "2025-09", "e.png").jsonPrimitive.content.isNotEmpty())
+        val saved = File(platform.root, "ugc/mine/emoji/2025-09/e.png")
+        assertEquals(saved.absolutePath, call("SaveEmojiToFile", server.url("/e").toString(), "tree:mine", "2025-09", "e.png").jsonPrimitive.content)
         assertEquals("tree:mine", (platform.ugc as FakeAppApiPlatform.FakeUgcStorage).calls.last())
-        assertTrue(File(platform.root, "ugc/mine/Emoji/2025-09/e.png").isFile)
+        assertTrue(saved.isFile)
+        // same name in the tree (any case) → null without a download
+        assertEquals(JsonNull, call("SaveEmojiToFile", server.url("/e").toString(), "tree:mine", "2025-09", "E.png"))
+        // a tree that is no longer granted falls back to the default folder
+        server.enqueue(png())
+        call("SaveEmojiToFile", server.url("/e").toString(), "tree:revoked", "2025-09", "e.png")
+        assertTrue(File(platform.root, "ugc/default/Emoji/2025-09/e.png").isFile)
+        assertEquals(4, server.requestCount)
     }
 
     @Test

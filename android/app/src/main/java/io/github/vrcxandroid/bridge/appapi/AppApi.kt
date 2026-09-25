@@ -250,7 +250,7 @@ class AppApi(
         val url = arguments?.trim()?.split(' ')?.firstOrNull().orEmpty()
         if (!url.startsWith("vrchat://launch", ignoreCase = true)) return false
         return try {
-            platform.viewUri(url)
+            platform.viewUri(url, onlyIfResolvable = true)
         } catch (e: Exception) {
             platform.log("Failed to start VRChat", e)
             false

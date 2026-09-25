@@ -155,6 +155,7 @@ class AppApiContractTest {
         val args = "vrchat://launch?ref=vrcx.app&id=wrld_x:1~private(usr_y) --no-vr"
         assertBool(false, call("StartGame", args))
         assertTrue(platform.viewedUris.isEmpty())
+        assertEquals(true, platform.lastViewRequiredResolvable)
         platform.handledUriPrefixes += "vrchat://launch"
         assertBool(true, call("StartGame", args))
         assertEquals("vrchat://launch?ref=vrcx.app&id=wrld_x:1~private(usr_y)", platform.viewedUris.single().first)
@@ -220,6 +221,7 @@ class AppApiContractTest {
         assertEquals("Exception: Invalid user ID", rejection("OpenDiscordProfile", null))
         call("OpenDiscordProfile", "123456789012345678")
         assertEquals(listOf("https://discord.com/users/123456789012345678"), platform.openedUrls)
+        assertEquals(false, platform.lastViewRequiredResolvable)
         platform.handledUriPrefixes += "discord://"
         call("OpenDiscordProfile", "42")
         assertEquals("discord://-/users/42", platform.viewedUris.single().first)
