@@ -69,6 +69,34 @@ public class TailerTests
     }
 
     [Fact]
+    public async Task WatcherHintCatchesAReplacementWithIdenticalMetadata()
+    {
+        using var dir = new TempDir();
+        var path = dir.File("output_log_1.txt");
+        var created = new DateTime(2024, 1, 1, 9, 0, 0, DateTimeKind.Utc);
+        var written = new DateTime(2024, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        void Create(string text)
+        {
+            File.WriteAllText(path, text);
+            File.SetCreationTimeUtc(path, created);
+            File.SetLastWriteTimeUtc(path, written);
+        }
+
+        Create("aaaa");
+        using var tailer = new LogDirectoryTailer(dir.Path, NullLog.Instance, useWatcher: true);
+        var first = tailer.Scan()!.Files.Single();
+
+        // Same name, length and timestamps: only the watcher can tell that the file was replaced.
+        File.Delete(path);
+        Create("bbbb");
+        await Task.Delay(300);
+        var second = tailer.Scan()!.Files.Single();
+        Assert.Equal(first.Length, second.Length);
+        Assert.Equal(first.LastWriteTimeUtcTicks, second.LastWriteTimeUtcTicks);
+        Assert.NotEqual(first.FileId, second.FileId);
+    }
+
+    [Fact]
     public void OnlyOpensFilesWhoseMetadataChanged()
     {
         using var dir = new TempDir();

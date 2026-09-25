@@ -212,12 +212,11 @@ public sealed class SyncEngine : IDisposable
             }
             try
             {
+                // Idle: no timer at all until someone subscribes or observes; then poll right away.
                 if (!active)
-                {
                     await _activity.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                await Task.Delay(PollInterval, _time, cancellationToken).ConfigureAwait(false);
+                else
+                    await Task.Delay(PollInterval, _time, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
