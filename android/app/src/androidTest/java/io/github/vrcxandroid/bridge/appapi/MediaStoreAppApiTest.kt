@@ -98,6 +98,28 @@ class MediaStoreAppApiTest {
     }
 
     @Test
+    fun rewritingAnOlderShotKeepsItsCreationTimeAndTheNewestShotLast() {
+        val json = "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_a\",\"displayName\":\"A\"}}"
+        // names without a VRChat capture time: ordered by the MediaStore creation time (DATE_ADDED)
+        val older = insertImage("Pictures/VRChat/$month/", "vrcx_test_older.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 18, Color.RED))!!)
+        val created = ContentDoc(context, older).creationTime()
+        Thread.sleep(1_100)
+        val newer = insertImage("Pictures/VRChat/$month/", "vrcx_test_newer.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 18, Color.GREEN))!!)
+        val newerDoc = ContentDoc(context, newer)
+        assertTrue(newerDoc.creationTime() > created)
+        assertEquals(newer.toString(), api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
+
+        Thread.sleep(1_100)
+        assertEquals("true", call("DeleteScreenshotMetadata", older.toString()).jsonPrimitive.content)
+        val rewritten = ContentDoc(context, older)
+        assertEquals(ScreenshotParser.NO_METADATA, Json.parseToJsonElement(call("GetScreenshotMetadata", older.toString()).jsonPrimitive.content).jsonObject["error"]!!.jsonPrimitive.content)
+        // the rewrite moved the modification time past the newer shot, but not the creation time
+        assertTrue("${rewritten.lastModified()} > ${newerDoc.lastModified()}", rewritten.lastModified() > newerDoc.lastModified())
+        assertEquals(created, rewritten.creationTime())
+        assertEquals(newer.toString(), api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
+    }
+
+    @Test
     fun savesIntoPicturesVrcxAndListsTheFile() {
         val bytes = png(16, 16, Color.RED)
         val uri = save("Stickers", "vrcx_test_sticker.png", bytes)

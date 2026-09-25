@@ -5,6 +5,10 @@ import io.github.vrcxandroid.bridge.appapi.png.SeekableStream
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 
 /**
  * A file the AppApi file methods work on: a local file, a SAF document or a MediaStore item. Upstream works on paths;
@@ -23,7 +27,10 @@ interface Doc {
     /** Last modification time in epoch milliseconds (0 when unknown). */
     fun lastModified(): Long
 
-    /** Creation time in epoch milliseconds; falls back to [lastModified] where the storage has none. */
+    /**
+     * Creation time in epoch milliseconds, kept when [writeBytes] replaces the content; falls back to [lastModified]
+     * where the storage has none (SAF documents, and local files on Linux, whose "creation time" is the mtime).
+     */
     fun creationTime(): Long = lastModified()
 
     /** Seekable read-only view of the content. */
@@ -50,11 +57,12 @@ class LocalFileDoc(override val file: File) : Doc {
     override fun length(): Long = file.length()
     override fun lastModified(): Long = file.lastModified()
 
-    override fun creationTime(): Long = try {
-        java.nio.file.Files.readAttributes(file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java)
-            .creationTime().toMillis()
+    override fun creationTime(): Long = creationFileTime()?.toMillis() ?: file.lastModified()
+
+    private fun creationFileTime(): FileTime? = try {
+        Files.readAttributes(file.toPath(), BasicFileAttributes::class.java).creationTime()
     } catch (e: Exception) {
-        file.lastModified()
+        null
     }
 
     override fun openRead(): SeekableStream {
@@ -67,8 +75,13 @@ class LocalFileDoc(override val file: File) : Doc {
         return file.readBytes()
     }
 
+    /**
+     * Writes a temporary file and renames it over the original. The replacement is a new file, so the original
+     * creation time is put back where the file system keeps one (upstream edits in place and keeps it).
+     */
     override fun writeBytes(bytes: ByteArray) {
         val dir = file.absoluteFile.parentFile ?: throw IOException("no parent directory")
+        val created = creationFileTime()
         val temp = File(dir, file.name + ".temp")
         temp.writeBytes(bytes)
         if (!temp.renameTo(file)) {
@@ -77,6 +90,14 @@ class LocalFileDoc(override val file: File) : Doc {
             if (!temp.renameTo(file)) {
                 temp.delete()
                 throw IOException("Could not replace '${file.absolutePath}'.")
+            }
+        }
+        if (created != null) {
+            try {
+                // only the creation time; Unix file systems ignore it
+                Files.getFileAttributeView(file.toPath(), BasicFileAttributeView::class.java).setTimes(null, null, created)
+            } catch (e: Exception) {
+                // the content is written; a lost creation time only affects ordering
             }
         }
     }

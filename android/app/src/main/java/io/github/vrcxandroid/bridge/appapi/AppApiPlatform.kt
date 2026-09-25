@@ -18,8 +18,11 @@ interface AppApiPlatform : DocPlatform {
     val httpClient: OkHttpClient
     val cacheDir: File
 
-    /** `getExternalFilesDir(null)`, where users put custom.css / custom.js. */
+    /** `getExternalFilesDir(null)`, where users put custom.css (and custom.js on Android 11+). */
     val externalFilesDir: File?
+
+    /** The folder custom.js is read from, one no other app can write ([CustomFiles.scriptDir]); null for none. */
+    val customScriptDir: File?
 
     val images: ImageCodec
     val ugc: UgcStorage
@@ -72,8 +75,11 @@ interface PhotosLibrary {
     /** Every `*.png` below the root, recursively; null when there is no root. */
     fun listPngs(): List<PhotoEntry>?
 
-    /** Opens the root in a file manager, asking the user to pick one first when none is configured. */
-    suspend fun open(): Boolean
+    /**
+     * Opens the root in a file manager. Without a root it asks the user to pick one in the background (never waiting
+     * for the answer, see [BackgroundPicker]) and returns false.
+     */
+    fun open(): Boolean
 }
 
 /** Where prints, stickers and emoji are saved: MediaStore `Pictures/VRCX/...` or a SAF tree chosen by the user. */

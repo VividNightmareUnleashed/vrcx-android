@@ -27,6 +27,9 @@ class FakeAppApiPlatform(
     override val gameState = State()
     override var httpClient: OkHttpClient = OkHttpClient()
     override var externalFilesDir: File? = File(root, "external").apply { mkdirs() }
+
+    /** Like Android 11+: custom.js is read from the external folder too. */
+    override var customScriptDir: File? = externalFilesDir
     override var images: ImageCodec = object : ImageCodec {
         override fun resizeToFitLimits(bytes: ByteArray, matchingDimensions: Boolean, maxWidth: Int, maxHeight: Int, maxSize: Long) = bytes
         override fun resizePrint(bytes: ByteArray) = bytes
@@ -203,7 +206,7 @@ class FakeAppApiPlatform(
             return TreeWalk.listPngs(tree, tree.rootId)
         }
 
-        override suspend fun open(): Boolean {
+        override fun open(): Boolean {
             opened++
             return dir != null
         }

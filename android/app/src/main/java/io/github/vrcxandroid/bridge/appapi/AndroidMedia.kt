@@ -12,9 +12,9 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import io.github.vrcxandroid.bridge.appapi.docs.ContentDoc
 import io.github.vrcxandroid.bridge.appapi.docs.Doc
-import io.github.vrcxandroid.bridge.appapi.docs.DocInfo
 import io.github.vrcxandroid.bridge.appapi.docs.LocalFileDoc
 import java.io.File
 import java.io.IOException
@@ -165,6 +165,7 @@ class AndroidUgcStorage(
         return File(pictures, "VRCX")
     }
 
+    @RequiresApi(29)
     private inner class MediaStoreFolder(private val relativePath: String) : UgcFolder {
         private val collection: Uri
             get() = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -215,12 +216,13 @@ class AndroidUgcStorage(
 /**
  * The folder the screenshot tools search (upstream `GetVRChatPhotosLocation`): a SAF tree picked through
  * `OpenVrcPhotosFolder`, else the UGC tree, else MediaStore `Pictures/VRChat/` (what the app can see there).
+ * [picker] asks for the tree off the AppApi lane (see [BackgroundPicker]).
  */
 class AndroidPhotosLibrary(
     private val context: Context,
     private val prefs: SharedPreferences,
     private val view: (Uri, String?) -> Boolean,
-    private val pickDirectory: suspend () -> Uri?,
+    private val picker: BackgroundPicker<Uri>,
 ) : PhotosLibrary {
     private fun rootTree(): SafDocumentTree? =
         SafDocumentTree.granted(context, prefs.getString(PREF_PHOTOS_TREE, null), write = false)
@@ -235,35 +237,35 @@ class AndroidPhotosLibrary(
         val out = mutableListOf<PhotoEntry>()
         context.contentResolver.query(
             collection,
-            arrayOf(
-                MediaStore.MediaColumns._ID,
-                MediaStore.MediaColumns.DISPLAY_NAME,
-                MediaStore.MediaColumns.SIZE,
-                MediaStore.MediaColumns.DATE_MODIFIED,
-                MediaStore.MediaColumns.RELATIVE_PATH,
-            ),
+            arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.RELATIVE_PATH, *ContentDoc.MEDIA_INFO_COLUMNS),
             "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
             arrayOf("$MEDIA_PREFIX%", "%.png"),
             null,
         )?.use { c ->
             while (c.moveToNext()) {
                 val uri = ContentUris.withAppendedId(collection, c.getLong(0))
-                val relative = c.getString(4).orEmpty().removePrefix(MEDIA_PREFIX).trimEnd('/')
-                out += PhotoEntry(ContentDoc(context, uri, DocInfo(c.getString(1).orEmpty(), c.getLong(2), c.getLong(3) * 1000)), relative)
+                val relative = c.getString(1).orEmpty().removePrefix(MEDIA_PREFIX).trimEnd('/')
+                out += PhotoEntry(ContentDoc(context, uri, ContentDoc.mediaInfo(c, 2)), relative)
             }
         }
         return TreeWalk.sortLikeListPngs(out)
     }
 
-    override suspend fun open(): Boolean {
-        var tree = rootTree()
-        if (tree == null) {
-            val picked = pickDirectory() ?: return false
+    /**
+     * Opens the photos tree. Without one, the folder picker is started in the background and false ("folder missing")
+     * is returned at once; the chosen tree is remembered and opened when the user picks it.
+     */
+    override fun open(): Boolean {
+        rootTree()?.let { return openTree(it) }
+        picker.launch { picked ->
             prefs.edit().putString(PREF_PHOTOS_TREE, picked.toString()).apply()
-            tree = SafDocumentTree(context, picked)
+            openTree(SafDocumentTree(context, picked))
         }
-        return view(Uri.parse(tree.folderUri(tree.rootId)), DocumentsContract.Document.MIME_TYPE_DIR)
+        return false
     }
+
+    private fun openTree(tree: SafDocumentTree): Boolean =
+        view(Uri.parse(tree.folderUri(tree.rootId)), DocumentsContract.Document.MIME_TYPE_DIR)
 
     companion object {
         /** MediaStore relative path of VRChat's photo folder on PC-like layouts. */

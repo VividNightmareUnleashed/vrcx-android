@@ -9,6 +9,7 @@ import io.github.vrcxandroid.bridge.appapi.png.PngHelper
 import io.github.vrcxandroid.bridge.appapi.screenshot.ScreenshotMetadata
 import io.github.vrcxandroid.bridge.appapi.screenshot.ScreenshotParser
 import io.github.vrcxandroid.bridge.appapi.screenshot.ScreenshotSearchIndex
+import io.github.vrcxandroid.bridge.appapi.screenshot.ScreenshotTimes
 import io.github.vrcxandroid.bridge.arr
 import io.github.vrcxandroid.bridge.bool
 import io.github.vrcxandroid.bridge.int
@@ -95,8 +96,8 @@ class AppApi(
             openCalendarFile(a.str(0))
             JsonNull
         }
-        "CustomCss" -> jsonOf(readCustomFile("custom.css"))
-        "CustomScript" -> jsonOf(readCustomFile("custom.js"))
+        "CustomCss" -> jsonOf(readCustomFile(platform.externalFilesDir, CustomFiles.CSS))
+        "CustomScript" -> jsonOf(customScript())
         "CurrentCulture" -> jsonOf(platform.formatLocaleTag().ifEmpty { "en-US" })
         "CurrentLanguage" -> jsonOf(platform.uiLocaleTag())
 
@@ -233,8 +234,18 @@ class AppApi(
         }
     }
 
-    private fun readCustomFile(name: String): String {
-        val file = File(platform.externalFilesDir ?: return "", name)
+    /** custom.js only from [AppApiPlatform.customScriptDir]: it runs in the page with full bridge access. */
+    private fun customScript(): String {
+        val dir = platform.customScriptDir
+        val external = platform.externalFilesDir
+        if (external != null && dir?.absoluteFile != external.absoluteFile && File(external, CustomFiles.SCRIPT).isFile) {
+            platform.log("Ignoring ${CustomFiles.SCRIPT} in ${external.name}: other apps can write that folder on this Android version")
+        }
+        return readCustomFile(dir, CustomFiles.SCRIPT)
+    }
+
+    private fun readCustomFile(dir: File?, name: String): String {
+        val file = File(dir ?: return "", name)
         if (!file.isFile) return ""
         return try {
             file.readText(Charsets.UTF_8).removePrefix(BOM)
@@ -366,7 +377,7 @@ class AppApi(
             }
         }
         o.put("fileResolution", PngFile(doc.openRead()).use { PngHelper.readResolution(it) })
-        o.put("creationDate", LOCAL_DATE_TIME.format(Instant.ofEpochMilli(doc.creationTime()).atZone(zone())))
+        o.put("creationDate", LOCAL_DATE_TIME.format(Instant.ofEpochMilli(ScreenshotTimes.creationTime(doc, zone())).atZone(zone())))
         val size = doc.length()
         o.put("fileSizeBytes", size.toString())
         o.put("fileName", nameWithoutExtension(doc.name))
@@ -409,9 +420,11 @@ class AppApi(
 
     suspend fun getLastScreenshot(): JsonElement = withContext(Dispatchers.IO) {
         val entries = platform.photos.listPngs() ?: return@withContext JsonNull
+        val zone = zone()
+        // upstream: OrderByDescending(Directory.GetCreationTime).FirstOrDefault(), stable on ties like maxByOrNull
         val newest = entries
             .filter { e -> e.relativeDir.split('/').none { it.lowercase() in UGC_FOLDERS } }
-            .maxByOrNull { it.doc.creationTime() }
+            .maxByOrNull { ScreenshotTimes.creationTime(it.doc, zone) }
             ?: return@withContext JsonNull
         JsonPrimitive(docs.displayPath(newest.doc, materialize = false))
     }

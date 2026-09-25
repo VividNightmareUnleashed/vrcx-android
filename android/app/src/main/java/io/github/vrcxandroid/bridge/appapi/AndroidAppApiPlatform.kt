@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.LocaleList
 import android.provider.CalendarContract
 import android.util.Log
@@ -32,6 +33,8 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
     override val httpClient: OkHttpClient get() = AppGraph.http.client
     override val cacheDir: File get() = context.cacheDir
     override val externalFilesDir: File? get() = context.getExternalFilesDir(null)
+    override val customScriptDir: File?
+        get() = CustomFiles.scriptDir(Build.VERSION.SDK_INT, externalFilesDir, context.filesDir)
 
     override val images: ImageCodec = AndroidImageCodec()
     override val ugc: UgcStorage = AndroidUgcStorage(context, prefs) { uri, type -> viewUri(uri.toString(), type) }
@@ -39,7 +42,7 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
         context,
         prefs,
         view = { uri, type -> viewUri(uri.toString(), type) },
-        pickDirectory = { host.pickDirectory() },
+        picker = BackgroundPicker(AppGraph.scope, { host.pickDirectory() }, ::log),
     )
 
     override fun emit(event: String, data: JsonElement?) = host.emit(event, data)

@@ -2,19 +2,24 @@ package io.github.vrcxandroid.bridge.appapi.docs
 
 import android.content.ContentResolver
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.annotation.RequiresApi
 import io.github.vrcxandroid.bridge.appapi.png.ChannelSeekableStream
 import io.github.vrcxandroid.bridge.appapi.png.MemorySeekableStream
 import io.github.vrcxandroid.bridge.appapi.png.SeekableStream
 import java.io.FileNotFoundException
 
-/** Name, size and modification time of a content document. */
-class DocInfo(val name: String, val size: Long, val lastModified: Long)
+/**
+ * Name, size, modification time and creation time (MediaStore `DATE_ADDED`, which rewrites keep; 0 when the provider
+ * has none, as for SAF documents) of a content document, times in epoch milliseconds.
+ */
+class DocInfo(val name: String, val size: Long, val lastModified: Long, val created: Long = 0)
 
 /**
  * A SAF document (possibly inside a granted tree) or a MediaStore item. Metadata is read lazily with one query and
@@ -35,6 +40,7 @@ class ContentDoc(
     override fun exists(): Boolean = info() != null
     override fun length(): Long = info()?.size ?: 0
     override fun lastModified(): Long = info()?.lastModified ?: 0
+    override fun creationTime(): Long = info()?.created?.takeIf { it > 0 } ?: lastModified()
 
     private fun info(): DocInfo? {
         if (!queried) {
@@ -96,6 +102,7 @@ class ContentDoc(
         return listTreeChildren(context, uri, parentId).filter { !it.isDirectory }.map { it.doc }
     }
 
+    @RequiresApi(29)
     private fun mediaSiblings(): List<Doc>? {
         val relative = resolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
@@ -112,15 +119,11 @@ class ContentDoc(
             return segments.size >= 4 && segments[0] == "tree" && segments[2] == "document"
         }
 
-        /** Name, size and modification time of [uri], or null when it does not exist or cannot be read. */
+        /** Name, size and times of [uri], or null when it does not exist or cannot be read. */
         fun query(context: Context, uri: Uri): DocInfo? = try {
             if (uri.authority == MediaStore.AUTHORITY) {
-                context.contentResolver.query(
-                    uri,
-                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED),
-                    null, null, null,
-                )?.use { c ->
-                    if (!c.moveToFirst()) null else DocInfo(c.getString(0).orEmpty(), c.getLong(1), c.getLong(2) * 1000)
+                context.contentResolver.query(uri, MEDIA_INFO_COLUMNS, null, null, null)?.use { c ->
+                    if (!c.moveToFirst()) null else mediaInfo(c, 0)
                 }
             } else if (DocumentsContract.isDocumentUri(context, uri)) {
                 context.contentResolver.query(
@@ -173,22 +176,33 @@ class ContentDoc(
             return out
         }
 
+        /** Columns [mediaInfo] reads, in order. */
+        val MEDIA_INFO_COLUMNS = arrayOf(
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.DATE_ADDED,
+        )
+
+        /** [DocInfo] from the [MEDIA_INFO_COLUMNS] starting at column [first] (MediaStore dates are in seconds). */
+        fun mediaInfo(c: Cursor, first: Int): DocInfo = DocInfo(
+            c.getString(first).orEmpty(),
+            c.getLong(first + 1),
+            c.getLong(first + 2) * 1000,
+            if (c.isNull(first + 3)) 0 else c.getLong(first + 3) * 1000,
+        )
+
         /** MediaStore image items matching [selection], as documents. */
         fun queryMedia(context: Context, collection: Uri, selection: String, args: Array<String>): List<ContentDoc> {
             val out = mutableListOf<ContentDoc>()
             context.contentResolver.query(
                 collection,
-                arrayOf(
-                    MediaStore.MediaColumns._ID,
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    MediaStore.MediaColumns.SIZE,
-                    MediaStore.MediaColumns.DATE_MODIFIED,
-                ),
+                arrayOf(MediaStore.MediaColumns._ID, *MEDIA_INFO_COLUMNS),
                 selection, args, null,
             )?.use { c ->
                 while (c.moveToNext()) {
                     val uri = android.content.ContentUris.withAppendedId(collection, c.getLong(0))
-                    out += ContentDoc(context, uri, DocInfo(c.getString(1).orEmpty(), c.getLong(2), c.getLong(3) * 1000))
+                    out += ContentDoc(context, uri, mediaInfo(c, 1))
                 }
             }
             return out

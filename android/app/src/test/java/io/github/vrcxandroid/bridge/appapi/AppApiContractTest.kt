@@ -248,7 +248,28 @@ class AppApiContractTest {
         assertEquals("body{color:red}", call("CustomCss").jsonPrimitive.content)
         assertEquals("console.log(1)", call("CustomScript").jsonPrimitive.content)
         platform.externalFilesDir = null
+        platform.customScriptDir = null
         assertEquals("", call("CustomScript").jsonPrimitive.content)
+    }
+
+    @Test
+    fun customScriptIsOnlyReadFromAFolderOtherAppsCannotWrite() {
+        val external = platform.externalFilesDir!!
+        val internal = tmp.newFolder("internal")
+        File(external, "custom.css").writeText("a{}")
+        File(external, "custom.js").writeText("planted()")
+        // Android 8-10: other apps holding WRITE_EXTERNAL_STORAGE can write Android/data/<package>
+        platform.customScriptDir = CustomFiles.scriptDir(29, external, internal)
+        assertEquals(internal, platform.customScriptDir)
+        assertEquals("", call("CustomScript").jsonPrimitive.content)
+        assertTrue(platform.logs.toString(), platform.logs.any { it.startsWith("Ignoring custom.js") })
+        // custom.css cannot run code and keeps the documented location
+        assertEquals("a{}", call("CustomCss").jsonPrimitive.content)
+        File(internal, "custom.js").writeText("mine()")
+        assertEquals("mine()", call("CustomScript").jsonPrimitive.content)
+        // Android 11+: scoped storage keeps other apps out, so the documented external folder is used
+        assertEquals(external, CustomFiles.scriptDir(30, external, internal))
+        assertEquals(null, CustomFiles.scriptDir(34, null, internal))
     }
 
     @Test
