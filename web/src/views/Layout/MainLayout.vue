@@ -1,15 +1,35 @@
 <template>
     <template v-if="watchState.isLoggedIn">
-        <div class="flex flex-col flex-1 h-full min-h-0 min-w-0 overflow-hidden">
+        <!-- Phone frame (Android, compact layout): docs/DESIGN.md §2. Only the frame differs; the routed view,
+             dialogs and watchers below are shared. -->
+        <CompactFrame v-if="isCompact && CompactFrame">
+            <template #nav>
+                <NavMenu sheet>
+                    <template #sheet-footer>
+                        <StatusBar variant="sheet" />
+                    </template>
+                </NavMenu>
+            </template>
+            <template #main>
+                <RoutedView :max="COMPACT_KEEP_ALIVE_MAX" />
+            </template>
+            <template #friends>
+                <Sidebar></Sidebar>
+            </template>
+        </CompactFrame>
+
+        <div v-else class="vrcx-shell flex flex-col flex-1 h-full min-h-0 min-w-0 overflow-hidden">
             <SidebarProvider
                 :open="sidebarOpen"
                 :width="navWidth"
                 :width-icon="48"
+                :mobile="desktopNavMobile"
                 class="relative flex-1 h-full min-w-0 min-h-0"
                 @update:open="handleSidebarOpenChange">
                 <NavMenu />
 
                 <div
+                    v-if="!isCoarsePointer"
                     v-show="sidebarOpen"
                     class="absolute top-0 bottom-0 z-30 w-1 cursor-ew-resize select-none"
                     :style="{ left: 'var(--sidebar-width)' }"
@@ -26,11 +46,7 @@
                         @layout="handleLayout">
                         <template #default="{ layout }">
                             <ResizablePanel :default-size="mainDefaultSize" :order="1">
-                                <RouterView v-slot="{ Component }">
-                                    <KeepAlive exclude="ChartsInstance, ChartsMutual">
-                                        <component :is="Component" />
-                                    </KeepAlive>
-                                </RouterView>
+                                <RoutedView />
                             </ResizablePanel>
 
                             <ResizableHandle
@@ -79,7 +95,7 @@
 </template>
 
 <script setup>
-    import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+    import { computed, defineAsyncComponent, nextTick, onUnmounted, ref, watch } from 'vue';
     import { storeToRefs } from 'pinia';
     import { useRouter } from 'vue-router';
 
@@ -87,7 +103,10 @@
     import { SidebarInset, SidebarProvider } from '../../components/ui/sidebar';
     import { useAppearanceSettingsStore } from '../../stores';
     import { useMainLayoutResizable } from '../../composables/useMainLayoutResizable';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { watchState } from '../../services/watchState';
+    import { isAndroid } from '../../shared/utils/platform';
+    import { COMPACT_KEEP_ALIVE_MAX } from './keepAlive';
 
     import AvatarImportDialog from '../Favorites/dialogs/AvatarImportDialog.vue';
     import ChangelogDialog from '../Settings/dialogs/ChangelogDialog.vue';
@@ -110,8 +129,19 @@
     import WorldImportDialog from '../Favorites/dialogs/WorldImportDialog.vue';
     import WhatsNewDialog from '../../components/onboarding/WhatsNewDialog.vue';
     import SpotlightDialog from '../../components/onboarding/SpotlightDialog.vue';
+    import RoutedView from './RoutedView.vue';
+
+    // Android only: the phone frame is a separate chunk. The build-time define (not the isAndroid re-export) lets the
+    // bundler drop the import from desktop builds.
+    const CompactFrame = ANDROID ? defineAsyncComponent(() => import('./CompactFrame.vue')) : null;
 
     const router = useRouter();
+
+    // Always false on desktop builds (useCompactLayout never matches there).
+    const { isCompact, isCoarsePointer } = useCompactLayout();
+    // Android tablets keep the PC frame with its PC nav at every width (upstream switches the nav to a Sheet at
+    // 768px, which has no trigger in the PC frame). Desktop builds keep the upstream media query.
+    const desktopNavMobile = isAndroid ? false : undefined;
 
     const appearanceSettingsStore = useAppearanceSettingsStore();
     const { navWidth, isNavCollapsed } = storeToRefs(appearanceSettingsStore);

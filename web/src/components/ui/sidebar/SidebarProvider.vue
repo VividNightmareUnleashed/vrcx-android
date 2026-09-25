@@ -30,6 +30,11 @@
             type: [String, Number],
             default: undefined
         },
+        // Forces the mobile (Sheet) or desktop nav. Undefined keeps the upstream media query.
+        mobile: {
+            type: Boolean,
+            default: undefined
+        },
         class: {
             type: [String, Array, Object],
             default: undefined
@@ -38,7 +43,8 @@
 
     const emits = defineEmits(['update:open']);
 
-    const isMobile = useMediaQuery('(max-width: 768px)');
+    const mediaIsMobile = useMediaQuery('(max-width: 768px)');
+    const isMobile = computed(() => (props.mobile === undefined ? mediaIsMobile.value : props.mobile));
     const openMobile = ref(false);
 
     let open;

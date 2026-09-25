@@ -170,7 +170,9 @@ export const columns = [
         minSize: 0,
         maxSize: 20,
         meta: {
-            expandedRow
+            expandedRow,
+            // Phone card slots (docs/DESIGN.md §3.1): reference implementation for the other tables.
+            mobile: { slot: 'leading' }
         },
         cell: ({ row }) => {
             if (!row.getCanExpand()) {
@@ -193,7 +195,7 @@ export const columns = [
     {
         accessorKey: 'created_at',
         size: 140,
-        meta: { label: () => t('table.feed.date') },
+        meta: { label: () => t('table.feed.date'), mobile: { slot: 'trailing' } },
         header: ({ column }) => (
             <Button variant="ghost" class="pl-0!" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
                 {t('table.feed.date')}
@@ -221,7 +223,7 @@ export const columns = [
         accessorKey: 'type',
         size: 130,
         header: () => t('table.feed.type'),
-        meta: { label: () => t('table.feed.type') },
+        meta: { label: () => t('table.feed.type'), mobile: { slot: 'badge' } },
         cell: ({ row }) => {
             const type = row.getValue('type');
             return (
@@ -237,7 +239,7 @@ export const columns = [
         accessorKey: 'displayName',
         size: 190,
         header: () => t('table.feed.user'),
-        meta: { label: () => t('table.feed.user') },
+        meta: { label: () => t('table.feed.user'), mobile: { slot: 'title' } },
         cell: ({ row }) => {
             const original = row.original;
             const friend = getFriendStore().friends.get(original.userId);
@@ -261,7 +263,8 @@ export const columns = [
         minSize: 100,
         meta: {
             stretch: true,
-            label: () => t('table.feed.detail')
+            label: () => t('table.feed.detail'),
+            mobile: { slot: 'body' }
         },
         cell: ({ row }) => {
             const original = row.original;

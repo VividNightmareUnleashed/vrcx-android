@@ -9,7 +9,7 @@
                             <span v-show="!isCollapsed">{{ t('nav_tooltip.help_support') }}</span>
                         </SidebarMenuButton>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent side="right" align="start" class="w-56">
+                    <DropdownMenuContent :side="menuSide" align="start" class="w-56">
                         <DropdownMenuItem @click="emit('show-changelog')">
                             <span>{{ t('nav_menu.changelog') }}</span>
                         </DropdownMenuItem>
@@ -43,7 +43,7 @@
                             <span v-show="!isCollapsed">{{ t('nav_tooltip.manage') }}</span>
                         </SidebarMenuButton>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent side="right" align="start" class="w-54">
+                    <DropdownMenuContent :side="menuSide" align="start" class="w-54">
                         <div class="flex items-center gap-2 px-2 py-1.5">
                             <img
                                 class="h-6 w-6 cursor-pointer"
@@ -153,7 +153,7 @@
                 </DropdownMenu>
             </SidebarMenuItem>
 
-            <SidebarMenuItem>
+            <SidebarMenuItem v-if="!sheet">
                 <SidebarMenuButton
                     :tooltip="isCollapsed ? t('nav_tooltip.expand_menu') : t('nav_tooltip.collapse_menu')"
                     @click="emit('toggle-nav-collapse')">
@@ -186,7 +186,12 @@
     } from '@/components/ui/dropdown-menu';
     import { SidebarFooter, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 
-    defineProps({
+    const props = defineProps({
+        // Inside the phone nav sheet: no Collapse item, menus open upwards instead of off-screen to the right.
+        sheet: {
+            type: Boolean,
+            default: false
+        },
         isCollapsed: {
             type: Boolean,
             default: false
@@ -244,6 +249,8 @@
             required: true
         }
     });
+
+    const menuSide = computed(() => (props.sheet ? 'top' : 'right'));
 
     const emit = defineEmits([
         'show-changelog',

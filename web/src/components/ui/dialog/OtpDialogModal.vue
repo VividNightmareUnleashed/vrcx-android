@@ -71,6 +71,8 @@
 <template>
     <Dialog :open="otpOpen" @update:open="modalStore.setOtpOpen">
         <DialogContent
+            data-mobile="card"
+            data-mobile-autofocus
             :show-close-button="false"
             @escapeKeyDown="onEscapeKeyDown"
             @pointerDownOutside="onPointerDownOutside"

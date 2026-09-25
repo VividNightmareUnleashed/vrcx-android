@@ -5,15 +5,18 @@
                 :class="cn('fixed inset-0 bg-background/80', !disableGpuAcceleration && 'backdrop-blur-sm')" />
 
             <RekaDialogContent
-                class="fixed inset-0 p-6 sm:p-10 border-0 bg-transparent shadow-none outline-none"
+                class="fixed inset-0 p-6 sm:p-10 border-0 bg-transparent shadow-none outline-none compact:p-0"
                 @click="closeDialog"
                 @open-auto-focus.prevent
                 @close-auto-focus.prevent>
-                <div ref="viewerEl" class="relative h-full w-full overflow-hidden select-none">
+                <div
+                    ref="viewerEl"
+                    class="relative h-full w-full overflow-hidden select-none"
+                    @click.capture="onViewerClickCapture">
                     <!-- toolbar -->
                     <div
                         @click.stop
-                        class="absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md bg-background/70 backdrop-blur px-2 py-1 border">
+                        class="vrcx-viewer-toolbar absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md bg-background/70 backdrop-blur px-2 py-1 border compact:gap-0.5 compact:px-1">
                         <Button
                             variant="ghost"
                             size="icon"
@@ -34,7 +37,7 @@
                             <Download class="h-4 w-4" />
                         </Button>
 
-                        <div class="mx-1 h-5 w-px bg-border" />
+                        <div class="mx-1 h-5 w-px bg-border compact:hidden" />
 
                         <Button
                             variant="ghost"
@@ -79,7 +82,7 @@
                             <RefreshCcw class="h-4 w-4" />
                         </Button>
 
-                        <div class="mx-1 h-5 w-px bg-border" />
+                        <div class="mx-1 h-5 w-px bg-border compact:hidden" />
 
                         <Button
                             variant="ghost"
@@ -91,16 +94,21 @@
                         </Button>
                     </div>
 
-                    <div class="h-full w-full flex items-center justify-center" @wheel="onWheel">
+                    <!-- Pointer handling lives on the stage so a pinch can start beside the image; touch-action none
+                         keeps the browser from turning touches into scrolls (docs/DESIGN.md §3.3). -->
+                    <div
+                        class="h-full w-full flex items-center justify-center touch-none"
+                        @wheel="onWheel"
+                        @pointerdown="onPointerDown"
+                        @pointermove="onPointerMove"
+                        @pointerup="onPointerUp"
+                        @pointercancel="onPointerUp">
                         <img
-                            @pointerdown="onPointerDown"
-                            @pointermove="onPointerMove"
-                            @pointerup="onPointerUp"
-                            @pointercancel="onPointerUp"
+                            ref="imageEl"
                             @click.stop
                             v-if="imageUrl"
                             :src="imageUrl"
-                            class="max-h-full max-w-full x-viewer-img"
+                            class="max-h-full max-w-full x-viewer-img touch-none"
                             :style="transformStyle"
                             draggable="false" />
                     </div>
@@ -126,6 +134,16 @@
 
     import { extractFileId } from '../shared/utils';
     import { useGalleryStore } from '../stores';
+    import {
+        TAP_MAX_MOVE_PX,
+        clamp,
+        distance,
+        doubleTapState,
+        isDoubleTap,
+        midpoint,
+        pinchState,
+        zoomAtPoint
+    } from './ui/zoom-pan/zoomPan';
 
     const galleryStore = useGalleryStore();
     const { fullscreenImageDialog } = storeToRefs(galleryStore);
@@ -133,6 +151,7 @@
     const { t } = useI18n();
 
     const viewerEl = ref(null);
+    const imageEl = ref(null);
     const portalLayer = acquireModalPortalLayer();
     const portalTo = portalLayer.element;
 
@@ -156,13 +175,6 @@
         }
     });
 
-    function clamp(n, min, max) {
-        return Math.min(max, Math.max(min, n));
-    }
-    function degToRad(deg) {
-        return (deg * Math.PI) / 180;
-    }
-
     function resetTransform() {
         scale.value = 1;
         rotate.value = 0;
@@ -175,12 +187,6 @@
     }
 
     function zoomAtCenter(factor) {
-        const el = viewerEl.value;
-        if (!el) {
-            scale.value = clamp(scale.value * factor, 0.1, 10);
-            return;
-        }
-
         scale.value = clamp(scale.value * factor, 0.1, 10);
     }
 
@@ -198,43 +204,32 @@
         rotate.value = (rotate.value - 90 + 360) % 360;
     }
 
+    function getViewState() {
+        return { scale: scale.value, rotate: rotate.value, tx: tx.value, ty: ty.value };
+    }
+
+    function applyViewState(state) {
+        scale.value = state.scale;
+        rotate.value = state.rotate;
+        tx.value = state.tx;
+        ty.value = state.ty;
+    }
+
+    /**
+     * Client coordinates relative to the viewer centre.
+     *
+     * @param {{ x: number; y: number }} point
+     * @param {DOMRect} rect
+     */
+    function toViewerPoint(point, rect) {
+        return { x: point.x - rect.left - rect.width / 2, y: point.y - rect.top - rect.height / 2 };
+    }
+
     function zoomAtPointer(e, factor) {
         const el = viewerEl.value;
         if (!el) return;
-
         const rect = el.getBoundingClientRect();
-
-        // mouse in container space
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-
-        // container center
-        const cx = rect.width / 2;
-        const cy = rect.height / 2;
-
-        const oldScale = scale.value;
-        const newScale = clamp(oldScale * factor, 0.1, 10);
-
-        const r = degToRad(rotate.value);
-        const cos = Math.cos(r);
-        const sin = Math.sin(r);
-
-        // vector from transformed center (includes current translation)
-        const vx = mx - cx - tx.value;
-        const vy = my - cy - ty.value;
-
-        // inverse rotate + unscale => local point
-        const ux = (vx * cos + vy * sin) / oldScale;
-        const uy = (-vx * sin + vy * cos) / oldScale;
-
-        // forward rotate + scale => new vector
-        const v2x = (ux * cos - uy * sin) * newScale;
-        const v2y = (ux * sin + uy * cos) * newScale;
-
-        // keep pointer anchored
-        tx.value = mx - cx - v2x;
-        ty.value = my - cy - v2y;
-        scale.value = newScale;
+        applyViewState(zoomAtPoint(getViewState(), toViewerPoint({ x: e.clientX, y: e.clientY }, rect), factor));
     }
 
     function onWheel(e) {
@@ -243,17 +238,79 @@
         zoomAtPointer(e, factor);
     }
 
-    function onPointerDown(e) {
-        if (e.button !== 0) return;
+    // Touch gestures: one finger pans (from the image), two fingers pinch, double-tap toggles zoom.
+    const touchPointers = new Map();
+    let pinch = null;
+    let tapStart = null;
+    let lastTap = null;
+    let suppressClick = false;
+
+    function startDrag(x, y) {
         isDragging.value = true;
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-        dragStartX.value = e.clientX;
-        dragStartY.value = e.clientY;
+        dragStartX.value = x;
+        dragStartY.value = y;
         startTx.value = tx.value;
         startTy.value = ty.value;
     }
 
+    function onPointerDown(e) {
+        if (e.pointerType === 'mouse') {
+            if (e.button !== 0 || !imageEl.value || e.target !== imageEl.value) return;
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            startDrag(e.clientX, e.clientY);
+            return;
+        }
+
+        suppressClick = false;
+        touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+
+        if (touchPointers.size === 1) {
+            tapStart = { x: e.clientX, y: e.clientY, time: e.timeStamp, onImage: e.target === imageEl.value };
+            if (tapStart.onImage) {
+                startDrag(e.clientX, e.clientY);
+            }
+            return;
+        }
+
+        if (touchPointers.size === 2 && viewerEl.value) {
+            // The layout read happens once per pinch, not per move.
+            const rect = viewerEl.value.getBoundingClientRect();
+            const [a, b] = [...touchPointers.values()];
+            isDragging.value = false;
+            tapStart = null;
+            suppressClick = true;
+            pinch = {
+                rect,
+                startDistance: distance(a, b),
+                startMid: toViewerPoint(midpoint(a, b), rect),
+                startState: getViewState()
+            };
+        }
+    }
+
     function onPointerMove(e) {
+        if (e.pointerType !== 'mouse') {
+            if (!touchPointers.has(e.pointerId)) return;
+            touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinch && touchPointers.size >= 2) {
+                const [a, b] = [...touchPointers.values()];
+                applyViewState(
+                    pinchState(
+                        pinch.startState,
+                        pinch.startMid,
+                        pinch.startDistance,
+                        toViewerPoint(midpoint(a, b), pinch.rect),
+                        distance(a, b)
+                    )
+                );
+                return;
+            }
+            if (tapStart && distance(tapStart, { x: e.clientX, y: e.clientY }) > TAP_MAX_MOVE_PX) {
+                tapStart = null;
+                suppressClick = true;
+            }
+        }
         if (!isDragging.value) return;
         const dx = e.clientX - dragStartX.value;
         const dy = e.clientY - dragStartY.value;
@@ -262,9 +319,53 @@
     }
 
     function onPointerUp(e) {
-        if (!isDragging.value) return;
-        isDragging.value = false;
+        if (e.pointerType === 'mouse') {
+            if (!isDragging.value) return;
+            isDragging.value = false;
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+            return;
+        }
+
+        touchPointers.delete(e.pointerId);
         e.currentTarget.releasePointerCapture?.(e.pointerId);
+
+        if (pinch) {
+            if (touchPointers.size < 2) {
+                pinch = null;
+                // Keep panning with the finger that stays down.
+                const [rest] = [...touchPointers.values()];
+                if (rest) {
+                    startDrag(rest.x, rest.y);
+                } else {
+                    isDragging.value = false;
+                }
+            }
+            return;
+        }
+
+        isDragging.value = false;
+        if (e.type !== 'pointerup' || !tapStart) {
+            tapStart = null;
+            return;
+        }
+        const tap = { x: e.clientX, y: e.clientY, time: e.timeStamp };
+        if (tapStart.onImage && isDoubleTap(lastTap, tap) && viewerEl.value) {
+            const rect = viewerEl.value.getBoundingClientRect();
+            applyViewState(doubleTapState(getViewState(), toViewerPoint(tap, rect)));
+            lastTap = null;
+            suppressClick = true;
+        } else {
+            lastTap = tap;
+        }
+        tapStart = null;
+    }
+
+    // A pan or pinch that ends beside the image must not count as a tap on the backdrop (which closes the viewer).
+    function onViewerClickCapture(e) {
+        if (suppressClick) {
+            suppressClick = false;
+            e.stopPropagation();
+        }
     }
 
     const transformStyle = computed(() => ({
@@ -361,5 +462,10 @@
     }
     .x-viewer-img:active {
         cursor: grabbing;
+    }
+
+    :global(html.vrcx-compact) .vrcx-viewer-toolbar {
+        top: calc(var(--safe-top, 0px) + 8px);
+        right: calc(var(--safe-right, 0px) + 8px);
     }
 </style>

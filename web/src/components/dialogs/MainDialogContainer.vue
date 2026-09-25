@@ -24,11 +24,14 @@
         DropdownMenuTrigger
     } from '@/components/ui/dropdown-menu';
     import { Dialog, DialogContent } from '@/components/ui/dialog';
-    import { ArrowLeft } from 'lucide-vue-next';
+    import { ArrowLeft, ChevronDown, X } from 'lucide-vue-next';
     import { Button } from '@/components/ui/button';
     import { TooltipWrapper } from '@/components/ui/tooltip';
     import { computed, ref } from 'vue';
     import { storeToRefs } from 'pinia';
+    import { useI18n } from 'vue-i18n';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
+    import { isAndroid } from '@/shared/utils/platform';
 
     import AvatarDialog from './AvatarDialog/AvatarDialog.vue';
     import GroupDialog from './GroupDialog/GroupDialog.vue';
@@ -49,6 +52,12 @@
     const appearanceSettingsStore = useAppearanceSettingsStore();
 
     const { previousInstancesInfoDialog, previousInstancesListDialog } = storeToRefs(instanceStore);
+
+    const { t } = useI18n();
+    // Phones: a full-screen page with a 48px app bar and one scroller (docs/DESIGN.md §3.2). Always false on desktop.
+    const { isCompact } = useCompactLayout();
+    // Marks the entity dialog host for the Android back handler (platform/android/shell/backHandler.js).
+    const mainDialogMarker = isAndroid ? '' : undefined;
 
     const previousIds = ref({
         userDialog: {
@@ -140,6 +149,9 @@
     });
 
     const dialogClass = computed(() => {
+        if (isCompact.value) {
+            return 'x-dialog flex flex-col gap-0 overflow-hidden p-0';
+        }
         switch (activeType.value) {
             case 'user':
             case 'group':
@@ -176,6 +188,20 @@
 
     function handleBreadcrumbClick(index) {
         uiStore.handleBreadcrumbClick(index);
+    }
+
+    const currentCrumbLabel = computed(() => {
+        const current = dialogCrumbs.value[dialogCrumbs.value.length - 1];
+        return current?.label || current?.id || '';
+    });
+
+    // Compact app bar: back steps through the crumb history and closes the dialog after the first crumb.
+    function handleCompactBack() {
+        uiStore.jumpBackDialogCrumb();
+    }
+
+    function handleCompactClose() {
+        uiStore.closeMainDialog();
     }
 
     const dialogStyle = computed(() => {
@@ -229,9 +255,58 @@
 
 <template>
     <Dialog v-if="isOpen" v-model:open="isOpen">
-        <DialogContent :class="dialogClass" style="top: 10vh" :show-close-button="false" :style="dialogStyle">
+        <DialogContent
+            :class="dialogClass"
+            style="top: 10vh"
+            :show-close-button="false"
+            :style="dialogStyle"
+            :data-vrcx-main-dialog="mainDialogMarker"
+            :data-mobile="isCompact ? 'bare' : undefined">
+            <!-- Phone: dialog app bar with back (crumb history), the current crumb and close. -->
+            <header
+                v-if="isCompact"
+                class="vrcx-dialog-app-bar flex shrink-0 items-center gap-1 border-b border-border bg-(--profile-card) px-1"
+                data-slot="dialog-app-bar">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-10 shrink-0 rounded-full"
+                    :aria-label="t('android.shell.dialog.back')"
+                    @click="handleCompactBack">
+                    <ArrowLeft class="size-5" />
+                </Button>
+                <DropdownMenu v-if="dialogCrumbs.length > 1">
+                    <DropdownMenuTrigger as-child>
+                        <button
+                            type="button"
+                            class="flex h-10 min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            :aria-label="t('android.shell.dialog.history')">
+                            <span class="truncate text-base font-semibold">{{ currentCrumbLabel }}</span>
+                            <ChevronDown class="size-4 shrink-0 opacity-60" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" class="w-64 max-w-[calc(100vw-2rem)]">
+                        <DropdownMenuItem
+                            v-for="(crumb, index) in dialogCrumbs"
+                            :key="`${crumb.type}-${crumb.id}`"
+                            :disabled="index === dialogCrumbs.length - 1"
+                            @click="handleBreadcrumbClick(index)">
+                            <span class="truncate">{{ crumb.label || crumb.id }}</span>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                <span v-else class="min-w-0 flex-1 truncate px-1 text-base font-semibold">{{ currentCrumbLabel }}</span>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-10 shrink-0 rounded-full"
+                    :aria-label="t('android.shell.dialog.close')"
+                    @click="handleCompactClose">
+                    <X class="size-5" />
+                </Button>
+            </header>
             <Breadcrumb
-                v-if="shouldShowBreadcrumbs"
+                v-if="shouldShowBreadcrumbs && !isCompact"
                 class="mb-2 flex-shrink-0 rounded-xl bg-(--profile-card) w-fit pr-4">
                 <BreadcrumbList>
                     <TooltipWrapper :content="backCrumbLabel" :disabled="!backCrumbLabel" :delayDuration="500">
@@ -334,7 +409,37 @@
                 </BreadcrumbList>
             </Breadcrumb>
 
-            <component :is="activeComponent" v-if="activeComponent" v-bind="activeComponentProps" :key="activeType" />
+            <!-- Phone: one scroller for the whole page. The entity dialogs stack their rail and tabs inside it. -->
+            <div
+                v-if="isCompact"
+                class="vrcx-main-dialog-body flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-3"
+                data-slot="main-dialog-scroller">
+                <component
+                    :is="activeComponent"
+                    v-if="activeComponent"
+                    v-bind="activeComponentProps"
+                    :key="activeType" />
+            </div>
+            <component
+                :is="activeComponent"
+                v-else-if="activeComponent"
+                v-bind="activeComponentProps"
+                :key="activeType" />
         </DialogContent>
     </Dialog>
 </template>
+
+<style scoped>
+    .vrcx-dialog-app-bar {
+        height: calc(48px + var(--safe-top, 0px));
+        padding-top: var(--safe-top, 0px);
+        padding-left: calc(4px + var(--safe-left, 0px));
+        padding-right: calc(4px + var(--safe-right, 0px));
+    }
+
+    .vrcx-main-dialog-body {
+        padding-left: calc(12px + var(--safe-left, 0px));
+        padding-right: calc(12px + var(--safe-right, 0px));
+        padding-bottom: calc(12px + var(--vrcx-bottom-inset, 0px));
+    }
+</style>
