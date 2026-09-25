@@ -16,6 +16,7 @@ import {
     sanitizeUserJson,
     getReadableProfileThemeColor
 } from '../shared/utils';
+import { hasLocalVrchatFiles } from '../shared/utils/platform';
 import { getUserMemo } from './memoCoordinator';
 import { avatarRequest, instanceRequest, queryRequest, userRequest } from '../api';
 import { processBulk, request } from '../services/request';
@@ -475,14 +476,17 @@ export function showUserDialog(userId) {
                             });
                         });
                     });
-                    AppApi.GetVRChatUserModeration(currentUser.id, userId).then((result) => {
-                        D.avatarModeration = result;
-                        if (result === 4) {
-                            D.isHideAvatar = true;
-                        } else if (result === 5) {
-                            D.isShowAvatar = true;
-                        }
-                    });
+                    // Show/Hide Avatar is stored in VRChat's local files on the PC.
+                    if (hasLocalVrchatFiles) {
+                        AppApi.GetVRChatUserModeration(currentUser.id, userId).then((result) => {
+                            D.avatarModeration = result;
+                            if (result === 4) {
+                                D.isHideAvatar = true;
+                            } else if (result === 5) {
+                                D.isShowAvatar = true;
+                            }
+                        });
+                    }
                     if (!currentUser.hasSharedConnectionsOptOut) {
                         try {
                             queryRequest.fetch('mutualCounts', { userId }).then((args) => {

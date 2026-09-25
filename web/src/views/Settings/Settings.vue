@@ -4,9 +4,18 @@
             <div class="shrink-0 p-1.5">
                 <span class="text-lg font-semibold text-foreground">{{ t('view.settings.header') }}</span>
             </div>
-            <TabsUnderline default-value="system" :items="settingsTabs" :unmount-on-hide="false" fill>
+            <TabsUnderline
+                v-model="activeTab"
+                default-value="system"
+                :items="settingsTabs"
+                :unmount-on-hide="false"
+                fill
+                @update:model-value="onTabChange">
                 <template #system>
                     <SystemTab />
+                </template>
+                <template v-if="isAndroid" #companion>
+                    <CompanionSettingsTab />
                 </template>
                 <template #interface>
                     <InterfaceTab />
@@ -17,7 +26,7 @@
                 <template #notifications>
                     <NotificationsTab />
                 </template>
-                <template #vr>
+                <template v-if="hasVrOverlay" #vr>
                     <VrTab />
                 </template>
                 <template #media>
@@ -35,9 +44,13 @@
 </template>
 
 <script setup>
-    import { computed, onBeforeMount } from 'vue';
+    import { computed, defineAsyncComponent, onBeforeMount, ref, watch } from 'vue';
+    import { useRoute, useRouter } from 'vue-router';
     import { TabsUnderline } from '@/components/ui/tabs';
     import { useI18n } from 'vue-i18n';
+
+    import { buildSettingsTabs, resolveSettingsTab } from './settingsTabs';
+    import { hasVrOverlay, isAndroid } from '../../shared/utils/platform';
 
     import AdvancedTab from './components/Tabs/AdvancedTab.vue';
     import InterfaceTab from './components/Tabs/InterfaceTab.vue';
@@ -48,17 +61,39 @@
     import SystemTab from './components/Tabs/SystemTab.vue';
     import VrTab from './components/Tabs/VrTab.vue';
 
+    // The Android-only tab is loaded only where it is shown.
+    const CompanionSettingsTab = isAndroid
+        ? defineAsyncComponent(() => import('../../platform/android/components/settings/CompanionSettingsTab.vue'))
+        : null;
+
     const { t } = useI18n();
-    const settingsTabs = computed(() => [
-        { value: 'system', label: t('view.settings.category.system') },
-        { value: 'interface', label: t('view.settings.category.interface') },
-        { value: 'social', label: t('view.settings.category.social') },
-        { value: 'notifications', label: t('view.settings.category.notifications') },
-        { value: 'vr', label: t('view.settings.category.vr') },
-        { value: 'media', label: t('view.settings.category.media') },
-        { value: 'integrations', label: t('view.settings.category.integrations') },
-        { value: 'advanced', label: t('view.settings.category.advanced') }
-    ]);
+    const route = useRoute();
+    const router = useRouter();
+
+    const settingsTabs = computed(() => buildSettingsTabs(t));
+
+    // `?tab=<value>` opens a specific tab, for example `?tab=companion` from the companion empty states.
+    const activeTab = ref(resolveSettingsTab(route?.query?.tab, settingsTabs.value));
+
+    watch(
+        () => route?.query?.tab,
+        (tab) => {
+            if (tab) {
+                activeTab.value = resolveSettingsTab(tab, settingsTabs.value);
+            }
+        }
+    );
+
+    /**
+     * @param {string} value
+     */
+    function onTabChange(value) {
+        // Drop a stale `?tab=` so the same link opens that tab again next time.
+        if (route?.query?.tab && route.query.tab !== value) {
+            const { tab: _tab, ...query } = route.query;
+            router?.replace({ query });
+        }
+    }
 
     onBeforeMount(() => {
         const menuItem = document.querySelector('li[role="menuitem"].is-active');

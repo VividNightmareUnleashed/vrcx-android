@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { watch } from 'vue';
 
 import { isRpcWorld } from '../shared/utils';
+import { hasVrOverlay } from '../shared/utils/platform';
 import { useAdvancedSettingsStore } from './settings/advanced';
 import { useAppearanceSettingsStore } from './settings/appearance';
 import { useFriendStore } from './friend';
@@ -28,10 +29,12 @@ export const useVrStore = defineStore('Vr', () => {
     const userStore = useUserStore();
     const sharedFeedStore = useSharedFeedStore();
 
+    // Without a VR overlay (Android) every function below is a no-op: the overlay page does not exist, and
+    // serializing the feed for it every second would only cost battery.
     watch(
         () => watchState.isFriendsLoaded,
         (isFriendsLoaded) => {
-            if (isFriendsLoaded) {
+            if (isFriendsLoaded && hasVrOverlay) {
                 vrInit();
             }
         },
@@ -40,6 +43,7 @@ export const useVrStore = defineStore('Vr', () => {
 
     // also runs from CEF C# on overlay browser startup
     function vrInit() {
+        if (!hasVrOverlay) return;
         updateVRConfigVars();
         updateVRLastLocation();
         updateVrNowPlaying();
@@ -49,6 +53,7 @@ export const useVrStore = defineStore('Vr', () => {
     }
 
     async function saveOpenVROption() {
+        if (!hasVrOverlay) return;
         updateVRConfigVars();
         updateVRLastLocation();
         AppApi.ExecuteVrOverlayFunction('notyClear', '');
@@ -56,11 +61,13 @@ export const useVrStore = defineStore('Vr', () => {
     }
 
     function updateVrNowPlaying() {
+        if (!hasVrOverlay) return;
         const json = JSON.stringify(gameLogStore.nowPlaying);
         AppApi.ExecuteVrOverlayFunction('nowPlayingUpdate', json);
     }
 
     function updateVRLastLocation() {
+        if (!hasVrOverlay) return;
         let progressPie = false;
         if (advancedSettingsStore.progressPie) {
             progressPie = true;
@@ -88,6 +95,7 @@ export const useVrStore = defineStore('Vr', () => {
     }
 
     function updateVRConfigVars() {
+        if (!hasVrOverlay) return;
         let notificationTheme = 'relax';
         if (appearanceSettingsStore.isDarkMode) {
             notificationTheme = 'sunset';
@@ -135,6 +143,10 @@ export const useVrStore = defineStore('Vr', () => {
     }
 
     function updateOpenVR() {
+        if (!hasVrOverlay) {
+            gameStore.setIsHmdAfk(false);
+            return;
+        }
         let newState = {
             active: false,
             hmdOverlay: false,

@@ -1,7 +1,7 @@
 <template>
     <div class="flex flex-col gap-10 py-2">
         <!-- Discord Rich Presence -->
-        <SettingsGroup :title="t('view.settings.discord_presence.discord_presence.header')">
+        <SettingsGroup v-if="hasDiscordPresence" :title="t('view.settings.discord_presence.discord_presence.header')">
             <template #description>
                 <p class="m-0">{{ t('view.settings.discord_presence.discord_presence.description') }}</p>
                 <p class="m-0 cursor-pointer hover:text-foreground transition-colors" @click="showVRChatConfig">
@@ -177,6 +177,8 @@
         useDiscordPresenceSettingsStore,
         useVrStore
     } from '@/stores';
+
+    import { hasDiscordPresence } from '@/shared/utils/platform';
 
     import AvatarProviderDialog from '../../dialogs/AvatarProviderDialog.vue';
     import TranslationApiDialog from '../../dialogs/TranslationApiDialog.vue';

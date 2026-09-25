@@ -3,10 +3,28 @@ import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import { sharedFeedFiltersDefaults } from '../../shared/constants';
+import { hasVrOverlay, isAndroid } from '../../shared/utils/platform';
 import { useModalStore } from '../modal';
 import { useVrStore } from '../vr';
 
 import configRepository from '../../services/config';
+
+/** Notification conditions that need VR/HMD state from this machine; hidden when there is no VR overlay. */
+export const VR_ONLY_NOTIFICATION_CONDITIONS = Object.freeze(['Inside VR', 'Outside VR']);
+
+/**
+ * Replaces a condition that cannot be evaluated on this platform (docs/ARCHITECTURE.md §9) with `Always`.
+ *
+ * @param {string} value Stored condition
+ * @param {boolean} [vrAvailable]
+ * @returns {string}
+ */
+export function coerceNotificationCondition(value, vrAvailable = hasVrOverlay) {
+    if (!vrAvailable && VR_ONLY_NOTIFICATION_CONDITIONS.includes(value)) {
+        return 'Always';
+    }
+    return value;
+}
 
 export const useNotificationsSettingsStore = defineStore('NotificationsSettings', () => {
     const vrStore = useVrStore();
@@ -170,6 +188,22 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         desktopToast.value = desktopToastConfig;
         afkDesktopToast.value = afkDesktopToastConfig;
         notificationTTS.value = notificationTTSConfig;
+        if (!hasVrOverlay) {
+            // No SteamVR overlay, XSOverlay or OVR Toolkit here: keep them off so no notification image is
+            // downloaded just for them, and move hidden VR-only conditions to a visible one (persisted).
+            openVR.value = false;
+            overlayNotifications.value = false;
+            xsNotifications.value = false;
+            ovrtHudNotifications.value = false;
+            ovrtWristNotifications.value = false;
+            afkDesktopToast.value = false;
+            if (coerceNotificationCondition(desktopToastConfig) !== desktopToastConfig) {
+                setDesktopToast(coerceNotificationCondition(desktopToastConfig));
+            }
+            if (coerceNotificationCondition(notificationTTSConfig) !== notificationTTSConfig) {
+                setNotificationTTS(coerceNotificationCondition(notificationTTSConfig));
+            }
+        }
         notificationTTSNickName.value = notificationTTSNickNameConfig;
         sharedFeedFilters.value = JSON.parse(sharedFeedFiltersConfig);
         notificationTTSVoice.value = Number(notificationTTSVoiceConfig);
@@ -337,7 +371,9 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
 
     function updateTTSVoices() {
         TTSvoices.value = speechSynthesis.getVoices();
-        if (LINUX) {
+        // Electron's voice list is reduced to one English voice per language. Android's TextToSpeech polyfill
+        // lists every installed voice, and speak() indexes the unfiltered list, so keep it whole there.
+        if (LINUX && !isAndroid) {
             const voices = speechSynthesis.getVoices();
             let uniqueVoices = [];
             voices.forEach((voice) => {

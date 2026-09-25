@@ -1,6 +1,6 @@
 <template>
     <div class="flex flex-col gap-10 py-2">
-        <SettingsGroup :title="t('view.settings.advanced.advanced.vrchat_settings.header')">
+        <SettingsGroup v-if="hasLocalGame" :title="t('view.settings.advanced.advanced.vrchat_settings.header')">
             <SettingsItem
                 :label="t('view.settings.advanced.advanced.relaunch_vrchat.header')"
                 :description="t('view.settings.advanced.advanced.relaunch_vrchat.description')">
@@ -192,12 +192,14 @@
                 ></span>
             </div>
 
-            <SettingsItem :label="t('view.settings.advanced.advanced.cache_debug.show_console')">
+            <SettingsItem v-if="hasDesktopShell" :label="t('view.settings.advanced.advanced.cache_debug.show_console')">
                 <Button size="sm" variant="outline" @click="showConsole">{{
                     t('view.settings.advanced.advanced.cache_debug.show_console')
                 }}</Button>
             </SettingsItem>
         </SettingsGroup>
+
+        <AndroidCustomFilesSettings v-if="isAndroid" />
 
         <SettingsGroup :title="t('view.settings.advanced_groups.database.header')">
             <SettingsItem :label="t('view.settings.advanced.advanced.sqlite_table_size.refresh')">
@@ -404,14 +406,14 @@
             </SettingsGroup>
         </template>
 
-        <RegistryBackupDialog />
+        <RegistryBackupDialog v-if="hasLocalVrchatFiles" />
         <PhotonSettings v-if="photonLoggingEnabled" />
     </div>
 </template>
 
 <script setup>
     import { Trash2, TriangleAlert } from 'lucide-vue-next';
-    import { computed, reactive, ref } from 'vue';
+    import { computed, defineAsyncComponent, reactive, ref } from 'vue';
     import { Button } from '@/components/ui/button';
     import { Switch } from '@/components/ui/switch';
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -440,11 +442,17 @@
     import { disableGameLogDialog } from '@/coordinators/gameLogCoordinator';
     import { clearVRCXCache } from '@/coordinators/vrcxCoordinator';
     import { openExternalLink } from '@/shared/utils';
+    import { hasDesktopShell, hasLocalGame, hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
 
     import PhotonSettings from '../PhotonSettings.vue';
     import RegistryBackupDialog from '../../../Tools/dialogs/RegistryBackupDialog.vue';
     import SettingsGroup from '../SettingsGroup.vue';
     import SettingsItem from '../SettingsItem.vue';
+
+    // Android: reload custom.css / custom.js without the Alt+Shift+R hotkey (docs/ARCHITECTURE.md §9).
+    const AndroidCustomFilesSettings = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/settings/AndroidCustomFilesSettings.vue'))
+        : null;
 
     const { t } = useI18n();
 

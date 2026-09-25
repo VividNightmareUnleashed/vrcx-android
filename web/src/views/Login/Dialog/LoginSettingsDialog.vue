@@ -10,7 +10,7 @@
                 <DialogTitle>{{ t('view.login.settings') }}</DialogTitle>
             </DialogHeader>
             <FieldGroup class="gap-3">
-                <template v-if="!isLinux">
+                <template v-if="!isLinux || isAndroid">
                     <Field>
                         <FieldLabel for="login-settings-proxy">{{ t('view.login.proxy_settings') }}</FieldLabel>
                         <FieldContent>
@@ -83,6 +83,7 @@
 
     import { useAuthStore, useVRCXUpdaterStore, useVrcxStore } from '../../../stores';
     import { AppDebug } from '../../../services/appConfig';
+    import { isAndroid } from '../../../shared/utils/platform';
 
     const { loginForm, enableCustomEndpoint } = storeToRefs(useAuthStore());
     const { toggleCustomEndpoint } = useAuthStore();

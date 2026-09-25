@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { watch } from 'vue';
 
 import { compareByCreatedAt, getGroupName, getWorldName } from '../shared/utils';
+import { hasVrOverlay } from '../shared/utils/platform';
 import { database } from '../services/database';
 import { useFriendStore } from './friend';
 import { useInstanceStore } from './instance';
@@ -26,7 +27,10 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
 
     const onPlayerJoining = ref([]);
 
+    // The shared feed only feeds the VR wrist overlay. Without one (Android) its bookkeeping is skipped; addEntry still
+    // runs the moderation check that raises the Blocked/Muted join and leave notifications.
     async function rebuildOnPlayerJoining() {
+        if (!hasVrOverlay) return;
         const wristFilter = notificationsSettingsStore.sharedFeedFilters.wrist.OnPlayerJoining;
         let newOnPlayerJoining = [];
         for (const ref of userStore.currentTravelers.values()) {
@@ -98,6 +102,7 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     const maxEntries = 25;
 
     async function loadSharedFeed() {
+        if (!hasVrOverlay) return;
         let newFeed = [];
         const wristFilter = notificationsSettingsStore.sharedFeedFilters.wrist;
         // run after fav and friendlist init
@@ -208,9 +213,9 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
             isFavorite = friendStore.localFavoriteFriends.has(userId);
             tagColour = userStore.customUserTags.get(userId)?.colour ?? '';
         }
-        // tack on instance names
+        // tack on instance names (only shown in the wrist feed)
         const location = ctx.location || ctx.details?.location;
-        if (location) {
+        if (location && hasVrOverlay) {
             ctx.instanceDisplayName = await instanceStore.getInstanceName(location);
         }
 
@@ -265,12 +270,18 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
         }
 
         if (ctx.type === 'OnPlayerJoined' || ctx.type === 'OnPlayerLeft') {
+            // Also raises the Blocked/Muted join and leave notifications, which Android keeps.
             moderationAgainstCheck({
                 ...ctx,
                 isFavorite,
                 isFriend,
                 tagColour
             });
+        }
+
+        if (!hasVrOverlay) {
+            // No wrist feed without a VR overlay (Android).
+            return;
         }
 
         if (
@@ -290,6 +301,7 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     }
 
     function addToSharedFeed(ref) {
+        if (!hasVrOverlay) return;
         sharedFeedData.value.unshift(ref);
         if (sharedFeedData.value.length > maxEntries) {
             sharedFeedData.value.splice(maxEntries);
@@ -336,6 +348,7 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     }
 
     function addTag(userId, colour) {
+        if (!hasVrOverlay) return;
         let changed = false;
         for (const entry of sharedFeedData.value) {
             if (entry.userId === userId) {
@@ -349,6 +362,10 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     }
 
     async function sendSharedFeed() {
+        if (!hasVrOverlay) {
+            // The wrist feed lives in the VR overlay, which does not exist on Android.
+            return;
+        }
         await AppApi.ExecuteVrOverlayFunction('wristFeedUpdate', JSON.stringify(sharedFeedData.value));
     }
 

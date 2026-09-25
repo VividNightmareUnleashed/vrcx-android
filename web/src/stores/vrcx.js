@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { DEFAULT_MAX_TABLE_SIZE, DEFAULT_SEARCH_LIMIT, SEARCH_LIMIT_MAX, SEARCH_LIMIT_MIN } from '../shared/constants';
 import { avatarRequest, queryRequest } from '../api';
 import { debounce, parseLocation } from '../shared/utils';
+import { hasLocalVrchatFiles } from '../shared/utils/platform';
 import { AppDebug } from '../services/appConfig';
 import { database } from '../services/database';
 import { refreshCustomScript } from '../shared/utils/base/ui';
@@ -313,6 +314,10 @@ export const useVrcxStore = defineStore('Vrcx', () => {
      * @param path
      */
     async function processScreenshot(path) {
+        if (!hasLocalVrchatFiles) {
+            // The path comes from the PC's log; the file is not on this device.
+            return;
+        }
         let newPath = path;
         if (advancedSettingsStore.screenshotHelper) {
             const location = parseLocation(locationStore.lastLocation.location);
@@ -635,6 +640,7 @@ export const useVrcxStore = defineStore('Vrcx', () => {
      * @param name
      */
     async function backupVrcRegistry(name) {
+        if (!hasLocalVrchatFiles) return;
         let regJson;
         try {
             if (WINDOWS) {
@@ -663,6 +669,11 @@ export const useVrcxStore = defineStore('Vrcx', () => {
     }
 
     async function checkAutoBackupRestoreVrcRegistry() {
+        // VRChat's registry lives on the PC. Without this gate a failed backup still stamps a backup date and the
+        // next start would ask to restore the registry.
+        if (!hasLocalVrchatFiles) {
+            return;
+        }
         if (!advancedSettingsStore.vrcRegistryAutoBackup || !advancedSettingsStore.vrcRegistryAskRestore) {
             return;
         }
@@ -690,11 +701,12 @@ export const useVrcxStore = defineStore('Vrcx', () => {
     }
 
     function showRegistryBackupDialog() {
+        if (!hasLocalVrchatFiles) return;
         isRegistryBackupDialogVisible.value = true;
     }
 
     async function tryAutoBackupVrcRegistry() {
-        if (!advancedSettingsStore.vrcRegistryAutoBackup) {
+        if (!hasLocalVrchatFiles || !advancedSettingsStore.vrcRegistryAutoBackup) {
             return;
         }
         const date = new Date();

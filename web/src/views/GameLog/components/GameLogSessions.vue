@@ -95,7 +95,11 @@
             </div>
 
             <div v-else-if="segments.length === 0" class="m-4">
-                <DataTableEmpty v-if="!sessionsLoading" type="nodata" />
+                <CompanionEmptyState
+                    v-if="isAndroid"
+                    :loading="sessionsLoading"
+                    :filtered="Boolean(sessionsVipFilter || String(sessionsSearch ?? '').trim() || hasDateFilter)" />
+                <DataTableEmpty v-else-if="!sessionsLoading" type="nodata" />
             </div>
 
             <template v-else>
@@ -123,7 +127,7 @@
 </template>
 
 <script setup>
-    import { computed, nextTick, ref, watch } from 'vue';
+    import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue';
     import { useInfiniteScroll, useIntersectionObserver } from '@vueuse/core';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
@@ -134,6 +138,7 @@
     import { Badge } from '../../../components/ui/badge';
     import { Button } from '../../../components/ui/button';
     import DataTableEmpty from '../../../components/ui/data-table/DataTableEmpty.vue';
+    import { isAndroid } from '../../../shared/utils/platform';
     import { InputGroupField } from '../../../components/ui/input-group';
     import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
     import { RangeCalendar } from '../../../components/ui/range-calendar';
@@ -144,6 +149,10 @@
     import { TooltipWrapper } from '../../../components/ui/tooltip';
     import { useAppearanceSettingsStore, useGameLogStore } from '../../../stores';
     import GameLogSessionsSegment from './GameLogSessionsSegment.vue';
+
+    const CompanionEmptyState = isAndroid
+        ? defineAsyncComponent(() => import('../../../platform/android/components/CompanionEmptyState.vue'))
+        : null;
 
     const { t, locale } = useI18n();
 

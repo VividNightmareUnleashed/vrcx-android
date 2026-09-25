@@ -134,6 +134,10 @@
                     </TableRow>
                 </TableBody>
             </Table>
+            <CompanionEmptyState
+                v-else-if="isAndroid"
+                variant="widget"
+                :fallback-text="t('dashboard.widget.no_data')" />
             <div v-else class="flex h-full items-center justify-center text-[13px] text-muted-foreground">
                 {{ t('dashboard.widget.no_data') }}
             </div>
@@ -142,7 +146,7 @@
 </template>
 
 <script setup>
-    import { computed, onMounted, shallowRef, watch } from 'vue';
+    import { computed, defineAsyncComponent, onMounted, shallowRef, watch } from 'vue';
     import { useI18n } from 'vue-i18n';
     import { LogIn, LogOut, MapPin, Settings, Play, Waypoints } from 'lucide-vue-next';
 
@@ -164,6 +168,11 @@
     import { TooltipWrapper } from '@/components/ui/tooltip';
     import WidgetHeader from './WidgetHeader.vue';
     import { Table, TableBody, TableRow, TableCell } from '@/components/ui/table';
+    import { isAndroid } from '@/shared/utils/platform';
+
+    const CompanionEmptyState = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/CompanionEmptyState.vue'))
+        : null;
 
     const GAMELOG_TYPES = [
         'Location',

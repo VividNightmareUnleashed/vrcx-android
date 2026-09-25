@@ -126,6 +126,11 @@
                             @change="gameLogTableLookup" />
                     </div>
                 </template>
+                <template v-if="isAndroid" #empty>
+                    <CompanionEmptyState
+                        :loading="gameLogTable.loading"
+                        :filtered="Boolean(gameLogTable.search || gameLogTable.filter?.length || gameLogTable.vip)" />
+                </template>
             </DataTableLayout>
         </template>
     </div>
@@ -133,7 +138,7 @@
 
 <script setup>
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-    import { computed, ref } from 'vue';
+    import { computed, defineAsyncComponent, ref } from 'vue';
     import { Logs, Star, Table2 } from 'lucide-vue-next';
     import { Toggle } from '@/components/ui/toggle';
     import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -148,6 +153,11 @@
     import { database } from '../../services/database';
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
     import GameLogSessions from './components/GameLogSessions.vue';
+    import { isAndroid } from '../../shared/utils/platform';
+
+    const CompanionEmptyState = isAndroid
+        ? defineAsyncComponent(() => import('../../platform/android/components/CompanionEmptyState.vue'))
+        : null;
 
     const { gameLogTableLookup, setSessionsViewMode } = useGameLogStore();
     const { gameLogTable, gameLogTableData, sessionsViewMode } = storeToRefs(useGameLogStore());

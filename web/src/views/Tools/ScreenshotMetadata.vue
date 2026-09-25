@@ -18,7 +18,7 @@
                 {{ t('dialog.screenshot_metadata.last_screenshot') }}
             </Button>
             <Button
-                v-if="screenshotMetadataDialog.metadata.filePath"
+                v-if="screenshotMetadataDialog.metadata.filePath && hasLocalVrchatFiles"
                 size="sm"
                 variant="outline"
                 @click="openImageFolder(screenshotMetadataDialog.metadata.filePath)">
@@ -173,18 +173,20 @@
                             <ChevronRight />
                         </Button>
                     </template>
-                    <span v-else class="text-muted-foreground text-sm">{{ t('dialog.screenshot_metadata.drag') }}</span>
+                    <span v-else-if="!isAndroid" class="text-muted-foreground text-sm">{{
+                        t('dialog.screenshot_metadata.drag')
+                    }}</span>
                 </div>
                 <div class="shrink-0 flex items-center justify-center h-[50px]">
                     <ButtonGroup class="shadow-lg rounded-lg">
                         <Button variant="outline" size="sm" @click="navigatePrev">
                             <ArrowLeft />
-                            <Kbd class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
-                            <Kbd>←</Kbd>
+                            <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
+                            <Kbd v-if="!isAndroid">←</Kbd>
                         </Button>
                         <Button variant="outline" size="sm" @click="navigateNext">
-                            <Kbd class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
-                            <Kbd>→</Kbd>
+                            <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
+                            <Kbd v-if="!isAndroid">→</Kbd>
                             <ArrowRight />
                         </Button>
                     </ButtonGroup>
@@ -349,6 +351,7 @@
     import { useRouter } from 'vue-router';
     import { vrcPlusImageRequest } from '@/api';
     import { lookupUser } from '@/coordinators/userCoordinator';
+    import { hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
 
     const router = useRouter();
     const { t } = useI18n();

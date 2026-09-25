@@ -4,6 +4,7 @@ import { defineStore } from 'pinia';
 import { inviteMessagesRequest } from '../api';
 import { useAdvancedSettingsStore } from './settings/advanced';
 import { useGameStore } from './game';
+import { hasLocalGame } from '../shared/utils/platform';
 import { watchState } from '../services/watchState';
 
 export const useInviteStore = defineStore('Invite', () => {
@@ -49,8 +50,9 @@ export const useInviteStore = defineStore('Invite', () => {
         { flush: 'sync' }
     );
 
+    // "Open in-game" talks to a VRChat process on this machine; on Android every path self-invites instead.
     const canOpenInstanceInGame = computed(() => {
-        return gameStore.isGameRunning && !advancedSettingsStore.selfInviteOverride;
+        return hasLocalGame && gameStore.isGameRunning && !advancedSettingsStore.selfInviteOverride;
     });
 
     /**

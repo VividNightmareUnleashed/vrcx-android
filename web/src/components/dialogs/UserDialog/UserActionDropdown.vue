@@ -205,12 +205,12 @@
                                 <MessageCircle class="size-4" />
                                 {{ t('dialog.user.actions.moderation_disable_chatbox') }}
                             </DropdownMenuItem>
-                            <DropdownMenuItem @click="onCommand('Show Avatar')">
+                            <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Show Avatar')">
                                 <User class="size-4" />
                                 <Check v-if="userDialog.isShowAvatar" class="size-4" />
                                 <span>{{ t('dialog.user.actions.moderation_show_avatar') }}</span>
                             </DropdownMenuItem>
-                            <DropdownMenuItem @click="onCommand('Hide Avatar')">
+                            <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Hide Avatar')">
                                 <User class="size-4" />
                                 <Check v-if="userDialog.isHideAvatar" class="size-4" />
                                 <span>{{ t('dialog.user.actions.moderation_hide_avatar') }}</span>
@@ -320,6 +320,7 @@
     import { useInviteChecks } from '../../../composables/useInviteChecks';
     import { isActionRecent } from '../../../composables/useRecentActions';
     import { invertHexColor } from '@/shared/utils';
+    import { hasLocalVrchatFiles } from '@/shared/utils/platform';
 
     const props = defineProps({
         userDialogCommand: {

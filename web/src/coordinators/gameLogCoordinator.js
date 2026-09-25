@@ -16,6 +16,7 @@ import { AppDebug, logWebRequest } from '../services/appConfig';
 import { database } from '../services/database';
 import { runLastLocationResetFlow, runUpdateCurrentUserLocationFlow } from './locationCoordinator';
 import { getGroupName } from '../shared/utils';
+import { hasLocalGame } from '../shared/utils/platform';
 import { userRequest } from '../api';
 import { watchState } from '../services/watchState';
 import { toast } from 'vue-sonner';
@@ -384,7 +385,8 @@ export function addGameLogEntry(gameLog, location) {
             if (!gameStore.isGameRunning) {
                 break;
             }
-            if (advancedSettingsStore.vrcQuitFix) {
+            // QuitFix kills the VRChat process on this machine; the game runs on the PC on Android.
+            if (hasLocalGame && advancedSettingsStore.vrcQuitFix) {
                 const bias = Date.parse(gameLog.dt) + 3000;
                 if (bias < Date.now()) {
                     console.log('QuitFix: Bias too low, not killing VRC');

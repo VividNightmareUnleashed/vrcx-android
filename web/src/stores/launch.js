@@ -5,9 +5,38 @@ import { useI18n } from 'vue-i18n';
 
 import { instanceRequest } from '../api';
 import { parseLocation } from '../shared/utils';
+import { getAndroidHost, isAndroid, onAndroidEvent } from '../shared/utils/platform';
 import { watchState } from '../services/watchState';
 
 import configRepository from '../services/config';
+
+/** Minimum time between two `CanLaunchVRChat` checks triggered by the app returning to the foreground. */
+const CAN_LAUNCH_RECHECK_MS = 30_000;
+
+/**
+ * Arguments for `AppApi.StartGame`. On Android only the `vrchat://launch` URL is passed: PC launch options and
+ * `--no-vr` mean nothing to VRChat on a phone.
+ *
+ * @param {string} launchUrl
+ * @param {object} options
+ * @param {string | null} [options.launchArguments]
+ * @param {boolean} [options.desktopMode]
+ * @param {boolean} [options.android]
+ * @returns {string[]}
+ */
+export function buildLaunchArgs(launchUrl, { launchArguments = null, desktopMode = false, android = isAndroid } = {}) {
+    const args = [launchUrl];
+    if (android) {
+        return args;
+    }
+    if (launchArguments) {
+        args.push(launchArguments);
+    }
+    if (desktopMode) {
+        args.push('--no-vr');
+    }
+    return args;
+}
 
 export const useLaunchStore = defineStore('Launch', () => {
     const isLaunchOptionsDialogVisible = ref(false);
@@ -19,6 +48,50 @@ export const useLaunchStore = defineStore('Launch', () => {
         tag: '',
         shortName: ''
     });
+    /**
+     * Whether the Launch buttons are shown. Always true on desktop. On Android only when an installed app handles
+     * `vrchat://launch` (AndroidHost.CanLaunchVRChat), re-checked when the app returns to the foreground.
+     */
+    const canLaunchGame = ref(!isAndroid);
+    let lastCanLaunchCheck = 0;
+
+    /**
+     * @param {boolean} [force] Ignore the foreground re-check throttle
+     * @returns {Promise<boolean>}
+     */
+    async function refreshCanLaunchGame(force = false) {
+        if (!isAndroid) {
+            return true;
+        }
+        const now = Date.now();
+        if (!force && lastCanLaunchCheck && now - lastCanLaunchCheck < CAN_LAUNCH_RECHECK_MS) {
+            return canLaunchGame.value;
+        }
+        lastCanLaunchCheck = now;
+        const host = getAndroidHost();
+        if (!host) {
+            canLaunchGame.value = false;
+            return false;
+        }
+        try {
+            canLaunchGame.value = (await host.CanLaunchVRChat()) === true;
+        } catch (e) {
+            console.error('CanLaunchVRChat failed', e);
+            canLaunchGame.value = false;
+        }
+        return canLaunchGame.value;
+    }
+
+    if (isAndroid) {
+        refreshCanLaunchGame(true);
+        // VRChat may be installed or removed while VRCX is in the background.
+        onAndroidEvent('focus', () => refreshCanLaunchGame());
+        onAndroidEvent('visibility', (payload) => {
+            if (payload?.visible !== false) {
+                refreshCanLaunchGame();
+            }
+        });
+    }
 
     watch(
         () => watchState.isLoggedIn,
@@ -29,6 +102,10 @@ export const useLaunchStore = defineStore('Launch', () => {
     );
 
     function showLaunchOptions() {
+        if (isAndroid) {
+            // Launch options (--fps, custom path) are for the PC client.
+            return;
+        }
         isLaunchOptionsDialogVisible.value = true;
     }
 
@@ -127,14 +204,24 @@ export const useLaunchStore = defineStore('Launch', () => {
      */
     async function launchGame(location, shortName, desktopMode) {
         const launchUrl = await getLaunchUrl(location, shortName);
-        const args = [launchUrl];
         const launchArguments = await configRepository.getString('launchArguments');
         const vrcLaunchPathOverride = await configRepository.getString('vrcLaunchPathOverride');
-        if (launchArguments) {
-            args.push(launchArguments);
-        }
-        if (desktopMode) {
-            args.push('--no-vr');
+        const args = buildLaunchArgs(launchUrl, { launchArguments, desktopMode });
+        if (isAndroid) {
+            // StartGame opens the vrchat://launch link in the VRChat app on this device.
+            try {
+                const result = await AppApi.StartGame(args.join(' '));
+                if (!result) {
+                    toast.error(t('android.launch.failed'));
+                } else {
+                    toast.success(t('android.launch.launched'));
+                }
+            } catch (e) {
+                console.error(e);
+                toast.error(t('android.launch.failed'));
+            }
+            console.log('Launch Game', args.join(' '));
+            return;
         }
         try {
             if (vrcLaunchPathOverride && !LINUX) {
@@ -163,6 +250,8 @@ export const useLaunchStore = defineStore('Launch', () => {
         isLaunchOptionsDialogVisible,
         isOpeningInstance,
         launchDialogData,
+        canLaunchGame,
+        refreshCanLaunchGame,
         showLaunchOptions,
         showLaunchDialog,
         getLaunchUrl,

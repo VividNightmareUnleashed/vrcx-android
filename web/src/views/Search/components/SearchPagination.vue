@@ -3,12 +3,12 @@
         <ButtonGroup class="shadow-lg rounded-lg">
             <Button variant="outline" size="sm" :disabled="prevDisabled" @click="$emit('prev')">
                 <ArrowLeft />
-                <Kbd class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
-                <Kbd>←</Kbd>
+                <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
+                <Kbd v-if="!isAndroid">←</Kbd>
             </Button>
             <Button variant="outline" size="sm" :disabled="nextDisabled" @click="$emit('next')">
-                <Kbd class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
-                <Kbd>→</Kbd>
+                <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
+                <Kbd v-if="!isAndroid">→</Kbd>
                 <ArrowRight />
             </Button>
         </ButtonGroup>
@@ -20,6 +20,7 @@
     import { Button } from '@/components/ui/button';
     import { ButtonGroup } from '@/components/ui/button-group';
     import { Kbd } from '@/components/ui/kbd';
+    import { isAndroid } from '@/shared/utils/platform';
 
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 

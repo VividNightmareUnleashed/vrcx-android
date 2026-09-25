@@ -94,13 +94,13 @@
                     @click="selfInvite(launchDialog.location, launchDialog.shortName)">
                     {{ t('dialog.launch.self_invite') }}
                 </Button>
-                <ButtonGroup>
+                <ButtonGroup v-if="canLaunchGame">
                     <Button
                         :disabled="!launchDialog.secureOrShortName"
                         @click="handleLaunchDefault(launchDialog.location, launchDialog.shortName)">
                         {{ launchModeLabel }}
                     </Button>
-                    <DropdownMenu>
+                    <DropdownMenu v-if="hasLocalGame">
                         <DropdownMenuTrigger as-child>
                             <Button
                                 size="icon"
@@ -173,6 +173,7 @@
 
     import InviteDialog from './InviteDialog/InviteDialog.vue';
     import configRepository from '../../services/config';
+    import { hasLocalGame } from '../../shared/utils/platform';
 
     const { t } = useI18n();
 
@@ -181,7 +182,7 @@
     const { friends } = storeToRefs(useFriendStore());
     const { lastLocation } = storeToRefs(useLocationStore());
     const { launchGame, tryOpenInstanceInVrc } = useLaunchStore();
-    const { launchDialogData } = storeToRefs(useLaunchStore());
+    const { launchDialogData, canLaunchGame } = storeToRefs(useLaunchStore());
 
     const { canOpenInstanceInGame } = storeToRefs(useInviteStore());
     const { isGameRunning } = storeToRefs(useGameStore());

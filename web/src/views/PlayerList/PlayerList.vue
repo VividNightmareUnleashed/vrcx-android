@@ -174,7 +174,11 @@
                     auto-height
                     :loading="false"
                     :show-pagination="false"
-                    :on-row-click="handlePlayerListRowClick" />
+                    :on-row-click="handlePlayerListRowClick">
+                    <template v-if="isAndroid" #empty>
+                        <CompanionEmptyState kind="playerList" />
+                    </template>
+                </DataTableLayout>
             </div>
         </div>
         <ChatboxBlacklistDialog
@@ -184,7 +188,7 @@
 </template>
 
 <script setup>
-    import { computed, onActivated, onMounted, ref, watch } from 'vue';
+    import { computed, defineAsyncComponent, onActivated, onMounted, ref, watch } from 'vue';
     import { Apple, Home, Image, Monitor, Smartphone } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
@@ -210,6 +214,11 @@
 
     import PhotonEventTable from './components/PhotonEventTable.vue';
     import { useUserDisplay } from '../../composables/useUserDisplay';
+    import { isAndroid } from '../../shared/utils/platform';
+
+    const CompanionEmptyState = isAndroid
+        ? defineAsyncComponent(() => import('../../platform/android/components/CompanionEmptyState.vue'))
+        : null;
 
     const { randomUserColours } = storeToRefs(useAppearanceSettingsStore());
     const { userImage } = useUserDisplay();

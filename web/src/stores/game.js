@@ -1,6 +1,8 @@
 import { reactive, ref } from 'vue';
 import { defineStore } from 'pinia';
 
+import { hasLocalVrchatFiles } from '../shared/utils/platform';
+
 import configRepository from '../services/config.js';
 
 export const useGameStore = defineStore('Game', () => {
@@ -99,6 +101,10 @@ export const useGameStore = defineStore('Game', () => {
      * @returns {Promise<unknown>} Registry key value.
      */
     async function getVRChatRegistryKey(key) {
+        if (!hasLocalVrchatFiles) {
+            // VRChat's registry is on the PC (in-game group order, debug logging flag).
+            return null;
+        }
         if (LINUX) {
             return AppApi.GetVRChatRegistryKeyString(key);
         }
