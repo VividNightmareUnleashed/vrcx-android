@@ -264,6 +264,70 @@ class LogWatcherTest {
     }
 
     @Test
+    fun reconnectPublishesAStopAfterTheMissedBytes() {
+        val w = watcher(LogWatcher.Config(logAvailableIntervalMs = 60_000))
+        startSession(w)
+        runBlocking { w.setDateTill("2024-05-01T00:00:00.000Z") }
+        w.onSyncComplete()
+        val pc = Pc(w)
+        pc.write(joined("Before"))
+        w.awaitIdle()
+        assertEquals(listOf("Before"), queueNames(w))
+        w.onDisconnected()
+
+        // VRChat quit while the phone was away. On reconnect `process` comes first (PROTOCOL.md §5.5), then the bytes
+        // written before the quit, then syncComplete.
+        w.onSessionStarted("pc-1", companionInfo())
+        val mark = env.events.size
+        w.onProcessState(vrchatRunning = false, steamVrRunning = false, pcUtcNowMs = 0)
+        assertTrue("the stop waits for the missed bytes", w.isGameRunning)
+        pc.write(joined("Missed", "2024.05.10 12:00:01") + "2024.05.10 12:00:02 Log        -  VRCApplication: OnApplicationQuit at 5.0\n")
+        w.awaitIdle()
+        assertTrue(w.isGameRunning)
+        assertTrue("the quit line was parsed while the game still counts as running", w.vrcClosedGracefully)
+        w.onSyncComplete()
+        assertFalse(w.isGameRunning)
+        val after = synchronized(env.events) { env.events.drop(mark).map { it.first } }
+        assertEquals(listOf(LogWatcher.EVENT_LOG_AVAILABLE, LogWatcher.EVENT_GAME_STATE), after)
+        val types = runBlocking { w.getLogLines() }.map {
+            kotlinx.serialization.json.Json.parseToJsonElement(it.jsonPrimitive.content).jsonArray[2].jsonPrimitive.content
+        }
+        assertEquals(listOf("player-joined", "vrc-quit"), types)
+    }
+
+    @Test
+    fun startsAndOtherCompanionsArePublishedAtOnce() {
+        val w = watcher(LogWatcher.Config(disconnectGraceMs = 300))
+        startSession(w, "pc-a")
+        w.onProcessState(vrchatRunning = false, steamVrRunning = false, pcUtcNowMs = 0)
+        assertFalse(w.isGameRunning)
+        // VRChat started while the phone was away: the new session's records must see a running game
+        w.onDisconnected()
+        w.onSessionStarted("pc-a", companionInfo())
+        w.onProcessState(vrchatRunning = true, steamVrRunning = true, pcUtcNowMs = 0)
+        assertTrue(w.isGameRunning)
+        assertTrue(w.isSteamVRRunning)
+        // a stop reported by another PC is not a catch-up of the published state
+        w.onDisconnected()
+        w.onSessionStarted("pc-b", companionInfo())
+        w.onProcessState(vrchatRunning = false, steamVrRunning = false, pcUtcNowMs = 0)
+        assertFalse(w.isGameRunning)
+        w.onSyncComplete()
+
+        // a held-back stop is dropped when the catch-up breaks off; the grace period applies instead
+        w.onProcessState(vrchatRunning = true, steamVrRunning = false, pcUtcNowMs = 0)
+        w.onDisconnected()
+        w.onSessionStarted("pc-b", companionInfo())
+        w.onProcessState(vrchatRunning = false, steamVrRunning = false, pcUtcNowMs = 0)
+        assertTrue(w.isGameRunning)
+        w.onDisconnected()
+        assertTrue(w.isGameRunning)
+        Thread.sleep(600)
+        w.awaitIdle()
+        assertFalse(w.isGameRunning)
+    }
+
+    @Test
     fun logAvailableIsThrottledAndPrecedesGameState() {
         val w = watcher(LogWatcher.Config(logAvailableIntervalMs = 60_000))
         startSession(w)

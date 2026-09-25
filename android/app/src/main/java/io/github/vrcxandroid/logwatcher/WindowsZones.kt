@@ -3,7 +3,8 @@ package io.github.vrcxandroid.logwatcher
 /**
  * Windows time zone id -> IANA id (CLDR "001" territory mapping), used when the companion reports a Windows zone
  * without an IANA id. Generated from .NET 10 `TimeZoneInfo.TryConvertWindowsIdToIanaId` over every zone Windows ships
- * (test resource logwatcher/probes/zones.txt); `WindowsZonesTest` checks the table against that file.
+ * (test resource logwatcher/probes/zones.txt); `PcTimeTest.windowsZoneTableMatchesDotNet` checks the table against
+ * that file.
  */
 internal object WindowsZones {
     private val map: Map<String, String> = hashMapOf(

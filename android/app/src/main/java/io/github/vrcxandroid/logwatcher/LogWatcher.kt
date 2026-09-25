@@ -32,18 +32,27 @@ import kotlin.math.abs
  *
  * Threading: all state lives on one dedicated thread ("LogWatcher"). The bridge methods ([setDateTill], [get],
  * [getLogLines], [reset]) hop to it; the [LogSink] calls block their caller until they are applied, in wire order,
- * which gives the companion client natural backpressure. Nothing polls: `Update()` runs when data, a snapshot, a
- * truncation, a process change or the end of the initial sync arrives (after `SetDateTill`, like upstream's thread),
- * and inside `Get()`.
+ * which gives the companion client natural backpressure (call them from the connection's I/O thread, never from the
+ * main thread). Nothing polls: `Update()` runs when data, a snapshot, a truncation, a process change or the end of
+ * the initial sync arrives (after `SetDateTill`, like upstream's thread), and inside `Get()`.
  *
  * Delivery is pull mode only (`LINUX = true` frontend): records parsed after the first run are queued for
  * `GetLogLines()`, and the page is told with the event `log-available` (no payload) at most once per second.
  * `game-state` `{isGameRunning, isSteamVRRunning}` is emitted on every change, after any `log-available` for records
- * that precede the change.
+ * that precede the change (that one `log-available` is sent at once, even inside the one-second window).
+ *
+ * Game state (ARCHITECTURE.md §8): the companion's process flags, kept for [Config.disconnectGraceMs] after a
+ * disconnect, then `false`. On a reconnect the companion sends `process` before the bytes it missed
+ * (PROTOCOL.md §5.5), yet those bytes were written while the published state held. So a "VRChat stopped" received
+ * during the sync of a session with the companion whose state is published waits for `syncComplete`: the missed
+ * lines (the quit line among them) are queued first, as upstream orders them on the PC. A "started" change is
+ * published at once, so the records of the new game session see a running game.
  *
  * Deliberate differences from upstream:
- * - only complete lines are parsed; an unterminated tail waits for its terminator unless the file is final
- *   (a newer file exists, or the live companion reports VRChat stopped) and fully mirrored;
+ * - only complete lines are parsed; an unterminated tail waits for its terminator unless the file is fully mirrored
+ *   and final: a newer file was created after its last write, or the live companion (outside its initial sync)
+ *   reports VRChat stopped;
+ * - change detection compares the mirrored size instead of the PC's directory-entry length;
  * - `m_FirstRun` stays true until the companion's initial sync completed or the first `Get()` ran, and that first
  *   `Get()` waits up to 8 s for the initial sync while a companion session is syncing or connecting;
  * - after the startup `Get()` loop has emptied the list, the list keeps only the newest 10 000 records (nothing
@@ -53,7 +62,7 @@ import kotlin.math.abs
  * Gap handling for the companion client: when `data` arrives beyond the mirrored length, the bytes are dropped and a
  * [ResyncRequest] is reported through [resyncListener] (once per gap, on the LogWatcher thread; the listener must not
  * block) and listed by [pendingResyncs] until contiguous data arrives. The client answers it with a `fetch`
- * (PROTOCOL.md §5.9).
+ * (PROTOCOL.md §5.9). When the user forgets a paired PC, the client calls [forgetCompanion] to delete its mirror.
  */
 class LogWatcher internal constructor(
     private val root: File,
@@ -126,6 +135,15 @@ class LogWatcher internal constructor(
     private var graceTask: ScheduledFuture<*>? = null
     private var indexFlushTask: ScheduledFuture<*>? = null
     private val reportedResyncs = HashMap<String, ResyncRequest>()
+
+    /** The companion whose process flags are the published game state (null: none since start). */
+    private var stateCompanionId: String? = null
+
+    /** The current session catches up with a companion whose state is published (a reconnect). */
+    private var catchUp = false
+
+    /** A "VRChat stopped" state held back until the catch-up sync completes (see the class KDoc). */
+    private var deferredState: Pair<Boolean, Boolean>? = null
 
     // --- read from other threads ---
     @Volatile
@@ -248,6 +266,8 @@ class LogWatcher internal constructor(
         sessionActive = true
         syncing = true
         processKnown = false
+        catchUp = stateCompanionId == companionId
+        deferredState = null
         applyInfo(info)
         requestUpdate()
     }
@@ -308,9 +328,16 @@ class LogWatcher internal constructor(
             cancelGrace()
             processKnown = true
             this.vrchatRunning = vrchatRunning
+            mirror?.let { stateCompanionId = it.companionId }
             // Bytes written before the change are parsed (and a final tail flushed) before the new state is shown.
             if (threadActive) runUpdate()
-            setGameState(vrchatRunning, steamVrRunning)
+            if (syncing && catchUp && gameRunning && !vrchatRunning) {
+                // The bytes missed while disconnected are still to come: publish the stop after them.
+                deferredState = vrchatRunning to steamVrRunning
+            } else {
+                deferredState = null
+                setGameState(vrchatRunning, steamVrRunning)
+            }
         }
 
     override fun onSyncComplete(): Unit = sink("onSyncComplete", Unit) {
@@ -320,6 +347,10 @@ class LogWatcher internal constructor(
             initialSync.complete(Unit)
         }
         if (threadActive) runUpdate()
+        deferredState?.let { (vrc, steamVr) ->
+            deferredState = null
+            setGameState(vrc, steamVr)
+        }
         mirror?.flushIndex()
     }
 
@@ -334,6 +365,8 @@ class LogWatcher internal constructor(
         sessionActive = false
         syncing = false
         processKnown = false
+        // A stop that waited for missed bytes that never came: the last published state goes through the grace period.
+        deferredState = null
         mirror?.flushIndex()
         cancelGrace()
         graceTask = executor.schedule(
@@ -353,6 +386,7 @@ class LogWatcher internal constructor(
 
     /** Deletes the mirror of a companion the user forgot. */
     fun forgetCompanion(companionId: String): Unit = sink("forgetCompanion", Unit) {
+        if (stateCompanionId == companionId) stateCompanionId = null
         val m = mirror
         if (m != null && m.companionId == companionId) {
             m.deleteAll()

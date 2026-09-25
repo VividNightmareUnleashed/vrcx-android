@@ -703,7 +703,8 @@ internal class LogEngine(
  * at their first byte.
  */
 internal class MirrorLineReader(private val raf: RandomAccessFile, private val start: Long, private val end: Long) {
-    private val buffer = ByteArray(65536)
+    // Live passes read a few hundred bytes; only the initial sync needs the full 64 KiB.
+    private val buffer = ByteArray((end - start).coerceIn(16, 65536).toInt())
     private var bufferStart = start
     private var bufferLength = 0
     private var bufferIndex = 0
