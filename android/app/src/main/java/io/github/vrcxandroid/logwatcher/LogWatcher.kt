@@ -431,7 +431,9 @@ class LogWatcher internal constructor(
         val newest = entries.maxOfOrNull { it.creationTicks } ?: 0L
         val vrchatStopped = processKnown && !vrchatRunning && !syncing
         return entries.map { e ->
-            val final = e.size >= e.pcLength && (e.creationTicks < newest || vrchatStopped)
+            // Final: fully mirrored, and VRChat stopped or a newer file was created after this
+            // file's last write (a second VRChat instance writing concurrently does not end the older file).
+            val final = e.size >= e.pcLength && (vrchatStopped || (newest > e.creationTicks && newest > e.lastWriteTicks))
             LogFileView(e.name, e.creationTicks, e.lastWriteTicks, e.size, final) { m.openRead(e) }
         }
     }

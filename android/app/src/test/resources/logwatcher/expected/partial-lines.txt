@@ -1,0 +1,32 @@
+--- get
+--- end get calls=1
+--- lines count=0
+--- flag false
+--- get
+--- end get calls=1
+--- lines count=0
+--- flag false
+--- get
+["output_log_2024-05-11_10-00-00.txt","2024-05-11T10:00:01.000Z","location","wrld_split:123~private(usr_x)~region(us)","Split World"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-11_10-00-00.txt","2024-05-11T10:00:01.000Z","location","wrld_split:123~private(usr_x)~region(us)","Split World"]
+--- flag false
+--- get
+["output_log_2024-05-11_10-00-00.txt","2024-05-11T10:00:02.000Z","player-joined","NoNewlineAtEnd","usr_n"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-11_10-00-00.txt","2024-05-11T10:00:02.000Z","player-joined","NoNewlineAtEnd","usr_n"]
+--- flag false
+--- get
+["output_log_2024-05-11_11-00-00.txt","2024-05-11T11:00:00.000Z","player-joined","Second","usr_s"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-11_11-00-00.txt","2024-05-11T11:00:00.000Z","player-joined","Second","usr_s"]
+--- flag false
+--- get
+["output_log_2024-05-11_11-00-00.txt","2024-05-11T11:00:01.000Z","player-joined","HeldTail","usr_h"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-11_11-00-00.txt","2024-05-11T11:00:01.000Z","player-joined","HeldTail","usr_h"]
+--- flag false

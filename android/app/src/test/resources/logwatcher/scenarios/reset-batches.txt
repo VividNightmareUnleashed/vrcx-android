@@ -1,0 +1,16 @@
+# Get() returns at most 1000 rows per call; Reset() re-parses everything as a new first run.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-14_10-00-00.txt 2024-05-14T08:00:00Z
+write output_log_2024-05-14_10-00-00.txt 2024-05-14T09:00:00Z batches.bin
+get
+text output_log_2024-05-14_10-00-00.txt 2024-05-14T09:00:01Z 2024.05.14 11:00:00 Log        -  [Behaviour] Joining wrld_after:1\n2024.05.14 11:00:01 Log        -  VRCApplication: OnApplicationQuit at 1.0\n
+get
+lines
+flag
+text output_log_2024-05-14_10-00-00.txt 2024-05-14T09:00:02Z 2024.05.14 11:00:02 Log        -  [Behaviour] OnPlayerJoined Queued (usr_q)\n
+get
+reset
+get
+lines
+flag

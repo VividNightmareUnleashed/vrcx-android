@@ -1,0 +1,50 @@
+--- get
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:01.000Z","player-joined","B-After","usr_b3"]
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to \u0027X\u0027. ---\u003ESystem.NullReferenceException"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:03.000Z","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: dated continuation"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:04.000Z","udon-exception","2024.05.10 12:00:04 Log        -  [PyPyDance] [Behaviour] OnPlayerJoined NotAJoin (usr_c)"]
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception","[PyPyDance] no date prefix but long enough"]
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: "]
+["output_log_2024-05-10_11-30-00.txt","2025-12-31T22:59:59.000Z","player-joined","PastYear","usr_d"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:07.000Z","player-joined","B-Last","usr_b4"]
+--- end get calls=2
+--- lines count=0
+--- flag false
+--- get
+["output_log_2024-05-10_11-00-00.txt","2022-12-31T23:00:00.000Z","udon-exception","2023.01.01 00:00:00 Log        -  [PyPyDance] old but always emitted"]
+["output_log_2024-05-10_11-00-00.txt","2024-05-10T10:00:05.000Z","player-joined","A-After","usr_a2"]
+--- end get calls=2
+--- lines count=2
+Q ["output_log_2024-05-10_11-00-00.txt","2022-12-31T23:00:00.000Z","udon-exception","2023.01.01 00:00:00 Log        -  [PyPyDance] old but always emitted"]
+Q ["output_log_2024-05-10_11-00-00.txt","2024-05-10T10:00:05.000Z","player-joined","A-After","usr_a2"]
+--- flag false
+--- get
+--- end get calls=1
+--- lines count=0
+--- flag false
+--- get
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to \u0027X\u0027. ---\u003ESystem.NullReferenceException"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:03.000Z","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: dated continuation"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:04.000Z","udon-exception","2024.05.10 12:00:04 Log        -  [PyPyDance] [Behaviour] OnPlayerJoined NotAJoin (usr_c)"]
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception","[PyPyDance] no date prefix but long enough"]
+["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: "]
+["output_log_2024-05-10_11-30-00.txt","2025-12-31T22:59:59.000Z","player-joined","PastYear","usr_d"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:07.000Z","player-joined","B-Last","usr_b4"]
+["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:04.000Z","player-joined","B-New","usr_b6"]
+--- end get calls=2
+--- lines count=8
+Q ["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to \u0027X\u0027. ---\u003ESystem.NullReferenceException"]
+Q ["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:03.000Z","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: dated continuation"]
+Q ["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:04.000Z","udon-exception","2024.05.10 12:00:04 Log        -  [PyPyDance] [Behaviour] OnPlayerJoined NotAJoin (usr_c)"]
+Q ["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception","[PyPyDance] no date prefix but long enough"]
+Q ["output_log_2024-05-10_11-30-00.txt","\u003CNOW\u003E","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: "]
+Q ["output_log_2024-05-10_11-30-00.txt","2025-12-31T22:59:59.000Z","player-joined","PastYear","usr_d"]
+Q ["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:07.000Z","player-joined","B-Last","usr_b4"]
+Q ["output_log_2024-05-10_11-30-00.txt","2024-05-10T10:00:04.000Z","player-joined","B-New","usr_b6"]
+--- flag false
+--- get
+["output_log_2024-05-10_11-00-00.txt","2024-05-10T10:00:30.000Z","player-joined","A-New","usr_a4"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-10_11-00-00.txt","2024-05-10T10:00:30.000Z","player-joined","A-New","usr_a4"]
+--- flag false

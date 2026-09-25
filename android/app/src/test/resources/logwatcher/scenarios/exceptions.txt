@@ -1,0 +1,46 @@
+# Every reachable throwing site of LogWatcher.cs, one file each: abort, re-emission, stall.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-10_15-00-00.txt 2024-05-10T13:00:00Z
+text output_log_2024-05-10_15-00-00.txt 2024-05-10T13:00:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-pypy-short (usr_before)\n[PyPyDance] x\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-pypy-short (usr_after)\n
+file output_log_2024-05-10_15-01-00.txt 2024-05-10T13:01:00Z
+text output_log_2024-05-10_15-01-00.txt 2024-05-10T13:01:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-userinfo (usr_before)\n2024.05.10 15:00:01 Log        -  [Behaviour] OnPlayerJoined Broken (name\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-userinfo (usr_after)\n
+file output_log_2024-05-10_15-02-00.txt 2024-05-10T13:02:00Z
+text output_log_2024-05-10_15-02-00.txt 2024-05-10T13:02:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-userinfo-left (usr_before)\n2024.05.10 15:00:01 Log        -  [Behaviour] OnPlayerLeft A (b) (c\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-userinfo-left (usr_after)\n
+file output_log_2024-05-10_15-03-00.txt 2024-05-10T13:03:00Z
+text output_log_2024-05-10_15-03-00.txt 2024-05-10T13:03:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-videochange (usr_before)\n2024.05.10 15:00:01 Log        -  [Video Playback] Attempting to resolve URL '\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-videochange (usr_after)\n
+file output_log_2024-05-10_15-04-00.txt 2024-05-10T13:04:00Z
+text output_log_2024-05-10_15-04-00.txt 2024-05-10T13:04:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-avprochange (usr_before)\n2024.05.10 15:00:01 Log        -  [Video Playback] Resolving URL '\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-avprochange (usr_after)\n
+file output_log_2024-05-10_15-05-00.txt 2024-05-10T13:05:00Z
+text output_log_2024-05-10_15-05-00.txt 2024-05-10T13:05:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-stringdl (usr_before)\n2024.05.10 15:00:01 Log        -  [String Download] Attempting to load String from URL '\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-stringdl (usr_after)\n
+file output_log_2024-05-10_15-06-00.txt 2024-05-10T13:06:00Z
+text output_log_2024-05-10_15-06-00.txt 2024-05-10T13:06:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-imagedl (usr_before)\n2024.05.10 15:00:01 Log        -  [Image Download] Attempting to load image from URL '\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-imagedl (usr_after)\n
+file output_log_2024-05-10_15-07-00.txt 2024-05-10T13:07:00Z
+text output_log_2024-05-10_15-07-00.txt 2024-05-10T13:07:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-sdk2 (usr_before)\n2024.05.10 15:00:01 Log        -  User added URL https://x\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-sdk2 (usr_after)\n
+file output_log_2024-05-10_15-08-00.txt 2024-05-10T13:08:00Z
+text output_log_2024-05-10_15-08-00.txt 2024-05-10T13:08:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-avatar (usr_before)\n2024.05.10 15:00:01 Log        -  [Behaviour] Switching to avatar X\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-avatar (usr_after)\n
+file output_log_2024-05-10_15-09-00.txt 2024-05-10T13:09:00Z
+text output_log_2024-05-10_15-09-00.txt 2024-05-10T13:09:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-sticker (usr_before)\n2024.05.10 15:00:01 Log        -  [x] inv_1 spawned sticker [StickersManager] User usr_x (Name)\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-sticker (usr_after)\n
+file output_log_2024-05-10_15-10-00.txt 2024-05-10T13:10:00Z
+text output_log_2024-05-10_15-10-00.txt 2024-05-10T13:10:30Z 2024.05.10 15:00:00 Log        -  [Behaviour] OnPlayerJoined Before-sticker-userinfo (usr_before)\n2024.05.10 15:00:01 Log        -  [StickersManager] User a (b spawned sticker inv_1\n2024.05.10 15:00:02 Log        -  [Behaviour] OnPlayerJoined After-sticker-userinfo (usr_after)\n
+get
+lines
+flag
+text output_log_2024-05-10_15-00-00.txt 2024-05-10T13:00:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-pypy-short (usr_app)\n
+text output_log_2024-05-10_15-01-00.txt 2024-05-10T13:01:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-userinfo (usr_app)\n
+text output_log_2024-05-10_15-02-00.txt 2024-05-10T13:02:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-userinfo-left (usr_app)\n
+text output_log_2024-05-10_15-03-00.txt 2024-05-10T13:03:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-videochange (usr_app)\n
+text output_log_2024-05-10_15-04-00.txt 2024-05-10T13:04:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-avprochange (usr_app)\n
+text output_log_2024-05-10_15-05-00.txt 2024-05-10T13:05:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-stringdl (usr_app)\n
+text output_log_2024-05-10_15-06-00.txt 2024-05-10T13:06:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-imagedl (usr_app)\n
+text output_log_2024-05-10_15-07-00.txt 2024-05-10T13:07:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-sdk2 (usr_app)\n
+text output_log_2024-05-10_15-08-00.txt 2024-05-10T13:08:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-avatar (usr_app)\n
+text output_log_2024-05-10_15-09-00.txt 2024-05-10T13:09:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-sticker (usr_app)\n
+text output_log_2024-05-10_15-10-00.txt 2024-05-10T13:10:40Z 2024.05.10 15:00:03 Log        -  [Behaviour] OnPlayerJoined Appended-sticker-userinfo (usr_app)\n
+get
+lines
+flag
+text output_log_2024-05-10_15-00-00.txt 2024-05-10T13:00:50Z 2024.05.10 15:00:04 Log        -  [Behaviour] OnPlayerJoined Again (usr_again)\n
+get
+lines
+flag

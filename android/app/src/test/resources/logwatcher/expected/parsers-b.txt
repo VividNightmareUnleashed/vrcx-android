@@ -1,0 +1,31 @@
+--- get
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:00.000Z","event","Shader Keyword Limit has been reached"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:03.000Z","video-play","https://www.youtube.com/watch?v=dQw4w9WgXcQ","Natsumi-sama"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:04.000Z","video-play","https://empty.name",""]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:05.000Z","video-play","y","A added URL x"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:08.000Z","vrc-quit"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:09.000Z","vrc-quit"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:11.000Z","openvr-init"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:12.000Z","openvr-init"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:15.000Z","openvr-init"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:16.000Z","desktop-mode"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:17.000Z","desktop-mode"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:19.000Z","event","VRChat couldn\u0027t start OSC server, \u0022Could not Start OSC: Address already in use\u0022"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:20.000Z","event","VRChat couldn\u0027t start OSC server, \u0022Could not Start OSC: \u0022"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:21.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:23.000Z","event","VideoError: Prefix: Attempted to play an untrusted URL (Domain: x)"]
+--- end get calls=2
+--- lines count=0
+--- flag true
+--- get
+["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:00.000Z","event","Shader Keyword Limit has been reached"]
+["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:01.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
+["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:02.000Z","location","wrld_c:3",null]
+["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:03.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
+--- end get calls=2
+--- lines count=4
+Q ["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:00.000Z","event","Shader Keyword Limit has been reached"]
+Q ["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:01.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
+Q ["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:02.000Z","location","wrld_c:3",null]
+Q ["output_log_2024-05-10_13-59-00.txt","2024-05-10T12:00:03.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
+--- flag false

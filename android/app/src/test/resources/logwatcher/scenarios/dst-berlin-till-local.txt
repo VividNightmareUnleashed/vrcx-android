@@ -1,0 +1,6 @@
+# tillDate without a zone designator is PC-local time (standard offset when ambiguous).
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-10-27T02:30:00
+file output_log_dst.txt 2020-01-01T00:00:00Z
+text output_log_dst.txt 2025-12-31T00:00:00Z 2024.10.27 02:00:00 Log        -  [Behaviour] OnPlayerJoined T2024.10.27_02-00-00 (usr_0)\n2024.10.27 02:30:00 Log        -  [Behaviour] OnPlayerJoined T2024.10.27_02-30-00 (usr_1)\n2024.10.27 02:30:01 Log        -  [Behaviour] OnPlayerJoined T2024.10.27_02-30-01 (usr_2)\n2024.10.27 03:00:00 Log        -  [Behaviour] OnPlayerJoined T2024.10.27_03-00-00 (usr_3)\n
+get
