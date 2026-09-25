@@ -69,8 +69,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // appapi
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    androidTestImplementation("androidx.test:runner:1.5.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("junit:junit:4.13.2")
     // appapi: instrumented tests need the AndroidX runner (belongs in defaultConfig; kept here to stay in the appapi block)
     android.defaultConfig.testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
