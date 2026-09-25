@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DayNight through resource qualifiers (values-night overrides the parent). The window background is the VRCX
+         frame colour; the page draws edge-to-edge and pads itself from the `insets` event. -->
+    <style name="Theme.VRCX" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/vrcx_frame</item>
+        <item name="android:colorBackground">@color/vrcx_frame</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:colorAccent">@color/vrcx_on_frame</item>
+    </style>
+
+    <!-- Invisible trampoline used by RestartActivity (separate process). -->
+    <style name="Theme.VRCX.NoDisplay" parent="android:Theme.Translucent.NoTitleBar" />
+</resources>

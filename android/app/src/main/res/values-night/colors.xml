@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark frame colour (the sidebar CSS token in .dark). -->
+    <color name="vrcx_frame">#171717</color>
+    <color name="vrcx_on_frame">#FAFAFA</color>
+    <color name="vrcx_muted">#A1A1A1</color>
+</resources>

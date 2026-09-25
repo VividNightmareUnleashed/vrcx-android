@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots (authority "${applicationId}.fileprovider", see host/HostFiles.kt): clipboard images, calendar
+     files, cached images and the files the page can display under filesDir/local. -->
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="local" path="local/" />
+</paths>
