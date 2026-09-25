@@ -173,6 +173,13 @@ class WebApiEngineTest {
     }
 
     @Test
+    fun headerValuesWithNewLinesAreRejected() {
+        val result = exec(buildJsonObject { put("url", url()); putJsonObject("headers") { put("X-Evil", "a\r\nInjected: 1") } })
+        assertEquals(-1, result.status)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun nonSuccessStatusesAreResults() {
         server.enqueue(MockResponse().setResponseCode(401).setBody("{\"error\":{\"message\":\"\\\"Missing Credentials\\\"\"}}"))
         val result = exec(buildJsonObject { put("url", url()) })

@@ -9,7 +9,6 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
@@ -151,9 +150,13 @@ class PersistentCookieJarTest {
     }
 
     @Test
-    fun flushWithoutChangesDoesNotWriteButLoads() = runTest(dispatcher) {
+    fun flushOfAnUntouchedJarDoesNothing() = runTest(dispatcher) {
         val store = MemoryBlobStore("W10=")
         val jar = PersistentCookieJar(store, backgroundScope, 1000) { clock }
+        jar.flush()
+        assertEquals(0, store.saves)
+        assertEquals(0, store.loads)
+        jar.loadForRequest(api)
         jar.flush()
         assertEquals(0, store.saves)
         assertEquals(1, store.loads)
@@ -189,6 +192,6 @@ class PersistentCookieJarTest {
     fun corruptStoredBlobStartsEmpty() {
         val jar = jar(MemoryBlobStore("%%%"))
         assertEquals(emptyList<Cookie>(), jar.loadForRequest(api))
-        assertNull(null)
+        assertEquals(emptyList<StoredCookie>(), jar.cookies())
     }
 }

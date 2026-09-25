@@ -98,6 +98,10 @@ class WebApiEngine(
             val merged = builder.build().headers.newBuilder()
             for ((key, value) in headers) {
                 if (key.equals("Content-Type", ignoreCase = true)) continue
+                if (value.any { it == '\r' || it == '\n' || it == '\u0000' }) {
+                    // .NET accepts the value in TryAddWithoutValidation but refuses to send it.
+                    throw WebApiException("New-line or NUL characters are not allowed in header values.")
+                }
                 if (key.equals("Referer", ignoreCase = true)) {
                     merged.set("Referer", referrer(value))
                 } else {

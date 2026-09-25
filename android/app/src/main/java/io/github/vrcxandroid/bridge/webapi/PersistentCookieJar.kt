@@ -136,7 +136,8 @@ class PersistentCookieJar(
 
     /** Saves now if anything changed since the last save. */
     suspend fun flush() {
-        ensureLoaded()
+        // Every change loads the jar first, so an unloaded jar has nothing to write (and restart stays cheap).
+        if (!loaded) return
         val blob = synchronized(lock) {
             if (!dirty) return
             dirty = false

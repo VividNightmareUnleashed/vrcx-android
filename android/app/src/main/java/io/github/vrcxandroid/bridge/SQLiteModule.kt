@@ -24,7 +24,8 @@ import java.io.IOException
  *
  * One connection, used only on this module's serialized lane: page calls arrive there through the dispatcher, and native
  * code must go through [runNative] (which is `AppGraph.dispatcher.runSerialized("SQLite")`). The connection is opened
- * lazily on the lane, never on the main thread.
+ * lazily on the lane, never on the main thread. `VRCXStorage["VRCX_DatabaseLocation"]` (a PC path, only ever written as
+ * `''` by the frontend) is ignored: the database always lives in app-private storage.
  */
 class SQLiteModule internal constructor(
     private val context: Context,
@@ -49,7 +50,10 @@ class SQLiteModule internal constructor(
 
     override suspend fun invoke(method: String, args: JsonArray): JsonElement = SqliteBridge.invoke(session, method, args)
 
-    /** Runs [block] on the SQLite lane, in order with the page's calls. */
+    /**
+     * Runs [block] on the SQLite lane, in order with the page's calls. Must not be called from the lane itself (it
+     * would wait for its own queue).
+     */
     internal suspend fun <T> runNative(block: (SqliteSession) -> T): T =
         dispatcher().runSerialized(className) { block(session) }
 
