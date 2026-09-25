@@ -27,7 +27,8 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
 
     const onPlayerJoining = ref([]);
 
-    // The shared feed only feeds the VR wrist overlay. Without one (Android) its bookkeeping is skipped entirely.
+    // The shared feed only feeds the VR wrist overlay. Without one (Android) its bookkeeping is skipped; addEntry still
+    // runs the moderation check that raises the Blocked/Muted join and leave notifications.
     async function rebuildOnPlayerJoining() {
         if (!hasVrOverlay) return;
         const wristFilter = notificationsSettingsStore.sharedFeedFilters.wrist.OnPlayerJoining;
@@ -191,7 +192,6 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     }
 
     async function addEntry(data) {
-        if (!hasVrOverlay) return;
         const ctx = { ...data };
         const userId = ctx.userId || ctx.senderUserId;
         const wristFilter = notificationsSettingsStore.sharedFeedFilters.wrist;
@@ -213,9 +213,9 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
             isFavorite = friendStore.localFavoriteFriends.has(userId);
             tagColour = userStore.customUserTags.get(userId)?.colour ?? '';
         }
-        // tack on instance names
+        // tack on instance names (only shown in the wrist feed)
         const location = ctx.location || ctx.details?.location;
-        if (location) {
+        if (location && hasVrOverlay) {
             ctx.instanceDisplayName = await instanceStore.getInstanceName(location);
         }
 
@@ -270,12 +270,18 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
         }
 
         if (ctx.type === 'OnPlayerJoined' || ctx.type === 'OnPlayerLeft') {
+            // Also raises the Blocked/Muted join and leave notifications, which Android keeps.
             moderationAgainstCheck({
                 ...ctx,
                 isFavorite,
                 isFriend,
                 tagColour
             });
+        }
+
+        if (!hasVrOverlay) {
+            // No wrist feed without a VR overlay (Android).
+            return;
         }
 
         if (
@@ -295,6 +301,7 @@ export const useSharedFeedStore = defineStore('SharedFeed', () => {
     }
 
     function addToSharedFeed(ref) {
+        if (!hasVrOverlay) return;
         sharedFeedData.value.unshift(ref);
         if (sharedFeedData.value.length > maxEntries) {
             sharedFeedData.value.splice(maxEntries);
