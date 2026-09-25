@@ -12,6 +12,7 @@
                 <div
                     ref="viewerEl"
                     class="relative h-full w-full overflow-hidden select-none"
+                    @pointerdown.capture="onViewerPointerDownCapture"
                     @click.capture="onViewerClickCapture">
                     <!-- toolbar -->
                     <div
@@ -97,6 +98,7 @@
                     <!-- Pointer handling lives on the stage so a pinch can start beside the image; touch-action none
                          keeps the browser from turning touches into scrolls (docs/DESIGN.md §3.3). -->
                     <div
+                        data-slot="viewer-stage"
                         class="h-full w-full flex items-center justify-center touch-none"
                         @wheel="onWheel"
                         @pointerdown="onPointerDown"
@@ -135,6 +137,7 @@
     import { extractFileId } from '../shared/utils';
     import { useGalleryStore } from '../stores';
     import {
+        DOUBLE_TAP_MAX_DELAY_MS,
         TAP_MAX_MOVE_PX,
         clamp,
         distance,
@@ -238,12 +241,34 @@
         zoomAtPointer(e, factor);
     }
 
-    // Touch gestures: one finger pans (from the image), two fingers pinch, double-tap toggles zoom.
+    // Touch gestures: one finger pans (from the image), two fingers pinch, double-tap toggles zoom, and a single tap
+    // beside the image closes the viewer once the double-tap window has passed.
+    //
+    // Mouse keeps the upstream behaviour: a drag from the image pans it, and the pointer is captured by the image, so
+    // the click that ends the drag lands on the image (whose @click.stop keeps the viewer open) and not on the stage.
+    // Touch pointers are captured by the stage (a pinch can start beside the image), which retargets the click after
+    // a tap to the stage: every touch click is swallowed and taps are resolved from the pointer events instead.
     const touchPointers = new Map();
     let pinch = null;
     let tapStart = null;
     let lastTap = null;
     let suppressClick = false;
+    let closeTimer = 0;
+
+    function cancelPendingClose() {
+        if (closeTimer) {
+            clearTimeout(closeTimer);
+            closeTimer = 0;
+        }
+    }
+
+    function scheduleBackdropClose() {
+        cancelPendingClose();
+        closeTimer = setTimeout(() => {
+            closeTimer = 0;
+            closeDialog();
+        }, DOUBLE_TAP_MAX_DELAY_MS);
+    }
 
     function startDrag(x, y) {
         isDragging.value = true;
@@ -253,15 +278,24 @@
         startTy.value = ty.value;
     }
 
+    // Every gesture starts with a clean slate: a pan or pinch that ended without a click must not swallow the click
+    // of the next tap (a toolbar button, for example).
+    function onViewerPointerDownCapture() {
+        suppressClick = false;
+    }
+
     function onPointerDown(e) {
         if (e.pointerType === 'mouse') {
-            if (e.button !== 0 || !imageEl.value || e.target !== imageEl.value) return;
-            e.currentTarget.setPointerCapture?.(e.pointerId);
+            const img = imageEl.value;
+            if (e.button !== 0 || !img || e.target !== img) return;
+            img.setPointerCapture?.(e.pointerId);
             startDrag(e.clientX, e.clientY);
             return;
         }
 
-        suppressClick = false;
+        // A second tap is on its way: the first one was not a backdrop tap.
+        cancelPendingClose();
+        suppressClick = true;
         touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         e.currentTarget.setPointerCapture?.(e.pointerId);
 
@@ -279,7 +313,7 @@
             const [a, b] = [...touchPointers.values()];
             isDragging.value = false;
             tapStart = null;
-            suppressClick = true;
+            lastTap = null;
             pinch = {
                 rect,
                 startDistance: distance(a, b),
@@ -308,7 +342,7 @@
             }
             if (tapStart && distance(tapStart, { x: e.clientX, y: e.clientY }) > TAP_MAX_MOVE_PX) {
                 tapStart = null;
-                suppressClick = true;
+                lastTap = null;
             }
         }
         if (!isDragging.value) return;
@@ -322,7 +356,7 @@
         if (e.pointerType === 'mouse') {
             if (!isDragging.value) return;
             isDragging.value = false;
-            e.currentTarget.releasePointerCapture?.(e.pointerId);
+            imageEl.value?.releasePointerCapture?.(e.pointerId);
             return;
         }
 
@@ -349,18 +383,24 @@
             return;
         }
         const tap = { x: e.clientX, y: e.clientY, time: e.timeStamp };
-        if (tapStart.onImage && isDoubleTap(lastTap, tap) && viewerEl.value) {
+        const { onImage } = tapStart;
+        tapStart = null;
+        if (isDoubleTap(lastTap, tap) && viewerEl.value) {
+            // Double-tap anywhere on the stage: small images leave most of it to the backdrop.
             const rect = viewerEl.value.getBoundingClientRect();
             applyViewState(doubleTapState(getViewState(), toViewerPoint(tap, rect)));
             lastTap = null;
-            suppressClick = true;
-        } else {
-            lastTap = tap;
+            return;
         }
-        tapStart = null;
+        lastTap = tap;
+        // A tap on the image does nothing (as a click does on PC); a tap beside it closes the viewer, unless it turns
+        // out to be the first half of a double-tap.
+        if (!onImage) {
+            scheduleBackdropClose();
+        }
     }
 
-    // A pan or pinch that ends beside the image must not count as a tap on the backdrop (which closes the viewer).
+    // Touch clicks (taps are handled above) must not reach the backdrop's close handler.
     function onViewerClickCapture(e) {
         if (suppressClick) {
             suppressClick = false;
@@ -379,11 +419,15 @@
             if (v) {
                 portalLayer.bringToFront();
                 resetTransform();
+            } else {
+                cancelPendingClose();
             }
+            lastTap = null;
         }
     );
 
     onBeforeUnmount(() => {
+        cancelPendingClose();
         portalLayer.release();
     });
 
