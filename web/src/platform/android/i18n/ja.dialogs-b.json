@@ -1,0 +1,25 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "right_click": {
+                    "description": "項目を長押しして、クイックアクションと追加オプションを表示します。"
+                },
+                "quick_search": {
+                    "description": "上部バーの検索アイコンをタップして、ユーザー、ワールド、およびアバターをすぐに検索できます。"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "right_click_menus": {
+                            "description": "フレンド、テーブルの行、ヘッダーを長押ししてクイックアクションを実行。"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

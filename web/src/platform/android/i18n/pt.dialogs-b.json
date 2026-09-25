@@ -1,0 +1,17 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "user_profiles": {
+                    "description": "Toque em qualquer usuário para ver amigos mútuos, mapas de calor de atividade e logs de sessão com detalhes de entrada/saída"
+                },
+                "right_click": {
+                    "description": "Toque e segure em elementos-chave para ações rápidas e opções adicionais"
+                },
+                "quick_search": {
+                    "description": "Toque no ícone de pesquisa na barra superior para pesquisar instantaneamente usuários, mundos e avatares"
+                }
+            }
+        }
+    }
+}

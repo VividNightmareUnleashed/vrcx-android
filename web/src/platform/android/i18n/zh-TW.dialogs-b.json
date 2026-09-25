@@ -1,0 +1,28 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "right_click": {
+                    "description": "長按關鍵元素可進行快速操作與使用其他選項"
+                },
+                "quick_search": {
+                    "description": "點擊頂部列的搜尋圖示，即時搜尋用戶、世界和角色"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "quick_search": {
+                            "description": "點擊頂部列的搜尋圖示，尋找用戶、世界、群組和角色。"
+                        },
+                        "right_click_menus": {
+                            "description": "在好友、表格列與標題上長按可進行快速操作。"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

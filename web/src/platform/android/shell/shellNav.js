@@ -41,6 +41,79 @@ export function getEntryLabel(entry, t) {
 }
 
 /**
+ * Width budget of a dock label, in em of its 10.5px font: a portrait slot on a 360px phone is 72px wide, 70px of which
+ * hold text.
+ */
+export const DOCK_LABEL_MAX_EM = 6.6;
+
+const ELLIPSIS = '…';
+
+/**
+ * Rough rendered width of a label in em: CJK, Hangul and full-width characters take a full em, everything else about
+ * half (measured on Inter at 10.5px: "Direct Access" = 6.56em). Cheap enough to run on every dock render, and it never
+ * reads layout.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+export function estimateLabelEm(text) {
+    let width = 0;
+    for (const char of String(text ?? '')) {
+        width += (char.codePointAt(0) ?? 0) >= 0x1100 ? 1 : 0.5;
+    }
+    return width;
+}
+
+/**
+ * Shortens a label that would not fit a dock slot at a word boundary ("Position des amis" → "Position…"), so the
+ * dock never cuts a word in half ("Friends Lo…"). Single words and scripts without spaces are returned whole and
+ * left to the CSS ellipsis.
+ *
+ * @param {string} label
+ * @param {number} [maxEm]
+ * @returns {string}
+ */
+export function shortenDockLabel(label, maxEm = DOCK_LABEL_MAX_EM) {
+    const text = String(label ?? '')
+        .trim()
+        .replace(/\s+/g, ' ');
+    if (estimateLabelEm(text) <= maxEm) return text;
+    const words = text.split(' ');
+    if (words.length < 2) return text;
+    // The ellipsis itself is about 1em wide.
+    const budget = maxEm - 1;
+    let result = words[0];
+    if (estimateLabelEm(result) > budget) return text;
+    for (const word of words.slice(1)) {
+        const next = `${result} ${word}`;
+        if (estimateLabelEm(next) > budget) break;
+        result = next;
+    }
+    // A stub such as "My…" says less than the CSS ellipsis would ("My Favouri…").
+    if (estimateLabelEm(result) < budget / 2) return text;
+    return `${result}${ELLIPSIS}`;
+}
+
+/**
+ * The label under a dock icon: the entry's short dock label when the locale has one (android.shell.dock_short.<key>,
+ * for built-in entries whose PC label is too long for a slot, such as "Friends Locations" → "Locations"), otherwise
+ * its nav label shortened at a word boundary. Folders and dashboards keep the user's own name.
+ *
+ * @param {object} entry Menu item or folder
+ * @param {(key: string) => string} t
+ * @param {(key: string) => boolean} [te] vue-i18n `te`, to look up the short label
+ * @returns {string}
+ */
+export function getDockLabel(entry, t, te) {
+    if (!entry) return '';
+    if (!entry.titleIsCustom && entry.index && typeof te === 'function') {
+        const shortKey = `android.shell.dock_short.${String(entry.index).replace(/-/g, '_')}`;
+        if (te(shortKey)) return t(shortKey);
+    }
+    return shortenDockLabel(getEntryLabel(entry, t));
+}
+
+/**
  * Nav keys a route belongs to, most specific first (mirrors useNavLayout's activeMenuIndex).
  *
  * @param {object} route Vue-router route

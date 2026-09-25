@@ -37,7 +37,7 @@
                                 aria-hidden="true" />
                             <span v-if="isNotified(entry)" class="vrcx-dock-dot bg-red-500" aria-hidden="true" />
                         </span>
-                        <span v-if="!rail" class="vrcx-dock-label">{{ getEntryLabel(entry, t) }}</span>
+                        <span v-if="!rail" class="vrcx-dock-label">{{ getDockLabel(entry, t, te) }}</span>
                     </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent :side="rail ? 'right' : 'top'" align="center" class="w-56">
@@ -76,7 +76,7 @@
                         aria-hidden="true" />
                     <span v-if="isNotified(entry)" class="vrcx-dock-dot bg-red-500" aria-hidden="true" />
                 </span>
-                <span v-if="!rail" class="vrcx-dock-label">{{ getEntryLabel(entry, t) }}</span>
+                <span v-if="!rail" class="vrcx-dock-label">{{ getDockLabel(entry, t, te) }}</span>
             </button>
         </template>
 
@@ -111,7 +111,7 @@
     } from '../../../components/ui/dropdown-menu';
     import { useSidebar } from '../../../components/ui/sidebar';
     import { useNavMenuModel } from '../../../components/nav-menu/navMenuModel';
-    import { getDockEntries, getEntryLabel, isEntryActive } from './shellNav';
+    import { getDockEntries, getDockLabel, getEntryLabel, isEntryActive } from './shellNav';
     import { setFriendsPanelOpen, shellState, toggleFriendsPanel } from './shellState';
 
     const props = defineProps({
@@ -121,7 +121,7 @@
         }
     });
 
-    const { t } = useI18n();
+    const { t, te } = useI18n();
     const sidebar = useSidebar();
     const modelRef = useNavMenuModel();
 
@@ -210,7 +210,7 @@
     .vrcx-dock-label {
         max-width: 100%;
         overflow: hidden;
-        padding: 0 2px;
+        padding: 0 1px;
         font-size: 10.5px;
         line-height: 14px;
         text-overflow: ellipsis;

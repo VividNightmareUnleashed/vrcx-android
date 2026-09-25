@@ -1,0 +1,28 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "right_click": {
+                    "description": "长按关键元素以快速操作并查看更多选项"
+                },
+                "quick_search": {
+                    "description": "点击顶部栏的搜索图标，可立即搜索玩家、世界和模型"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "quick_search": {
+                            "description": "点击顶部栏的搜索图标，可快速查找各种东西（包括你的好友、收藏的世界、加入的群组和模型）。"
+                        },
+                        "right_click_menus": {
+                            "description": "在好友、表格行以及标题上长按可以执行快速操作。"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

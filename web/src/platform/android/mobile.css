@@ -88,6 +88,32 @@ html.vrcx-compact-landscape :is(#noty_layout__bottomLeft, #noty_layout__topLeft)
     left: calc(20px + var(--rail-w) + var(--safe-left));
 }
 
+/* Inside the phone frame, toasts sit between the chrome: below the app bar and above the dock, so they never hide the
+ * title, the search button or the navigation. The Login page has no chrome and keeps the rules above. */
+html.vrcx-compact #x-app:has(> .vrcx-phone-shell) [data-sonner-toaster][data-y-position='top'] {
+    top: calc(var(--safe-top) + var(--app-bar-h) + 8px);
+}
+
+html.vrcx-compact #x-app:has(> .vrcx-phone-shell) [data-sonner-toaster][data-y-position='bottom'] {
+    bottom: calc(var(--vrcx-fixed-bottom) + 8px);
+}
+
+html.vrcx-compact :is(#noty_layout__topLeft, #noty_layout__top, #noty_layout__topRight) {
+    top: calc(var(--safe-top) + var(--app-bar-h) + 8px);
+}
+
+html.vrcx-compact :is(#noty_layout__bottomLeft, #noty_layout__bottom, #noty_layout__bottomRight) {
+    bottom: calc(var(--vrcx-fixed-bottom) + 8px);
+}
+
+/* Phone portrait: noty spans the page like the toasts do instead of a fixed 325px column at the left edge. */
+html.vrcx-compact:not(.vrcx-compact-landscape) :is(#noty_layout__bottomLeft, #noty_layout__topLeft) {
+    left: calc(var(--safe-left) + 12px);
+    width: auto;
+    right: calc(var(--safe-right) + 12px);
+    max-width: none;
+}
+
 /* ---------------------------------------------------------------- page card (DESIGN.md §2) */
 
 /* The routed view keeps its PC card, floating in the frame colour at 6px margins. MainLayout teleports it into a
