@@ -19,7 +19,7 @@ export const NOTIFICATION_PERMISSION_ASKED_KEY = 'VRCX_androidNotificationPermis
  *   (docs/ARCHITECTURE.md §9). An existing value, including one imported from a PC, is kept.
  * - `launchAsDesktop` is cleared: "Start as desktop" has no meaning on a phone and its menu entry is hidden.
  *
- * @param {Pick<typeof configRepository, 'getString'|'setString'|'getBool'|'setBool'>} config
+ * @param {Pick<typeof configRepository, 'getString' | 'setString' | 'getBool' | 'setBool'>} config
  */
 export async function applyAndroidDefaults(config = configRepository) {
     try {
@@ -44,7 +44,7 @@ export async function applyAndroidDefaults(config = configRepository) {
  * @param {object} [deps]
  * @param {typeof onAndroidEvent} [deps.on]
  * @param {typeof getAndroidHost} [deps.getHost]
- * @returns {{ ready: Promise<void>, dispose: () => void }}
+ * @returns {{ ready: Promise<void>; dispose: () => void }}
  */
 export function connectCompanionState(companionStore, { on = onAndroidEvent, getHost = getAndroidHost } = {}) {
     let eventSeen = false;
@@ -83,9 +83,9 @@ export function connectCompanionState(companionStore, { on = onAndroidEvent, get
  * (docs/ARCHITECTURE.md §6.11). Nothing happens when the permission was already granted or denied.
  *
  * @param {object} [deps]
- * @param {Pick<typeof configRepository, 'getBool'|'setBool'>} [deps.config]
+ * @param {Pick<typeof configRepository, 'getBool' | 'setBool'>} [deps.config]
  * @param {typeof getAndroidHost} [deps.getHost]
- * @returns {Promise<string|null>} the permission state after the request, or `null` when nothing was asked
+ * @returns {Promise<string | null>} The permission state after the request, or `null` when nothing was asked
  */
 export async function requestNotificationPermissionOnce({ config = configRepository, getHost = getAndroidHost } = {}) {
     const host = getHost();
@@ -112,7 +112,7 @@ export async function requestNotificationPermissionOnce({ config = configReposit
  * @param {object} [deps]
  * @param {{ isLoggedIn: boolean }} [deps.state]
  * @param {() => Promise<unknown>} [deps.request]
- * @returns {() => void} stop function
+ * @returns {() => void} Stop function
  */
 export function watchFirstLogin({ state = watchState, request = () => requestNotificationPermissionOnce() } = {}) {
     let done = false;
@@ -131,9 +131,9 @@ export function watchFirstLogin({ state = watchState, request = () => requestNot
 }
 
 /**
- * @param {import('vue').App} app
+ * @param {import('vue').App} _app
  */
-export async function initAndroidPlatform(app) {
+export async function initAndroidPlatform(_app) {
     await applyAndroidDefaults();
     connectCompanionState(useCompanionStore());
     watchFirstLogin();

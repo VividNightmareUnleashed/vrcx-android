@@ -231,9 +231,9 @@ const allToolDefinitions = [
  * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) on Android
  * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav.
  *
- * @param {Array<{ pcOnly?: boolean }>} tools
+ * @param {{ pcOnly?: boolean }[]} tools
  * @param {boolean} [android]
- * @returns {Array<object>}
+ * @returns {object[]}
  */
 function filterToolsForPlatform(tools, android = isAndroid) {
     return android ? tools.filter((tool) => !tool.pcOnly) : tools;
@@ -269,7 +269,7 @@ function getToolsByCategory(categoryKey) {
 }
 
 /**
- * @returns {Array<{ key: string, labelKey: string }>} categories that still hold at least one tool
+ * @returns {{ key: string; labelKey: string }[]} Categories that still hold at least one tool
  */
 function getVisibleToolCategories() {
     return toolCategories.filter((category) => getToolsByCategory(category.key).length > 0);

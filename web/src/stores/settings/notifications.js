@@ -15,7 +15,7 @@ export const VR_ONLY_NOTIFICATION_CONDITIONS = Object.freeze(['Inside VR', 'Outs
 /**
  * Replaces a condition that cannot be evaluated on this platform (docs/ARCHITECTURE.md §9) with `Always`.
  *
- * @param {string} value stored condition
+ * @param {string} value Stored condition
  * @param {boolean} [vrAvailable]
  * @returns {string}
  */

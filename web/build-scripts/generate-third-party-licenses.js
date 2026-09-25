@@ -435,7 +435,7 @@ function listCsprojFiles(directory) {
  * Gradle Kotlin script. Test configurations are ignored because they are not shipped.
  *
  * @param {string} gradleText
- * @returns {{ group: string, artifact: string, version: string }[]}
+ * @returns {{ group: string; artifact: string; version: string }[]}
  */
 function parseGradleDependencies(gradleText) {
     const pattern = /^\s*(?:implementation|api|runtimeOnly)\(\s*"([^":\s]+):([^":\s]+):([^"\s]+)"\s*\)/gm;
@@ -450,8 +450,16 @@ function parseGradleDependencies(gradleText) {
  * Turns the manual Android library list into manifest entries. When the Gradle script is available, the version of
  * each listed `group:artifact` comes from it, so the notice follows dependency updates.
  *
- * @param {{ name: string, version?: string, license?: string, projectUrl?: string, licenseUrl?: string, noticeText?: string, coordinates?: string }[]} libraries
- * @param {{ group: string, artifact: string, version: string }[]} [gradleDependencies]
+ * @param {{
+ *     name: string;
+ *     version?: string;
+ *     license?: string;
+ *     projectUrl?: string;
+ *     licenseUrl?: string;
+ *     noticeText?: string;
+ *     coordinates?: string;
+ * }[]} libraries
+ * @param {{ group: string; artifact: string; version: string }[]} [gradleDependencies]
  * @returns {ProjectLicense[]}
  */
 function createAndroidEntries(libraries, gradleDependencies = []) {
@@ -513,7 +521,13 @@ function createThirdPartyNoticeText(frontendLicenseMarkdown, entries) {
         if (sectionEntries.length === 0) {
             continue;
         }
-        lines.push('', '========================================', section.heading, '========================================', '');
+        lines.push(
+            '',
+            '========================================',
+            section.heading,
+            '========================================',
+            ''
+        );
         appendNoticeEntries(lines, sectionEntries);
     }
 

@@ -8,7 +8,7 @@ import { hasVrOverlay, isAndroid } from '../../shared/utils/platform';
  * @param {object} [platform]
  * @param {boolean} [platform.android]
  * @param {boolean} [platform.vr]
- * @returns {Array<{ value: string, label: string }>}
+ * @returns {{ value: string; label: string }[]}
  */
 export function buildSettingsTabs(t, { android = isAndroid, vr = hasVrOverlay } = {}) {
     const tabs = [{ value: 'system', label: t('view.settings.category.system') }];
@@ -32,9 +32,9 @@ export function buildSettingsTabs(t, { android = isAndroid, vr = hasVrOverlay } 
 }
 
 /**
- * @param {unknown} requested value of the `tab` route query
- * @param {Array<{ value: string }>} tabs
- * @returns {string} the requested tab when it exists, otherwise the first tab
+ * @param {unknown} requested Value of the `tab` route query
+ * @param {{ value: string }[]} tabs
+ * @returns {string} The requested tab when it exists, otherwise the first tab
  */
 export function resolveSettingsTab(requested, tabs) {
     const value = Array.isArray(requested) ? requested[0] : requested;

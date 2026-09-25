@@ -8,8 +8,8 @@ export const ANDROID_DEFAULT_UGC_FOLDER = 'Pictures/VRCX';
  * Turns the stored UGC folder (empty, or an SAF tree URI such as
  * `content://com.android.externalstorage.documents/tree/primary%3APictures%2FVRChat`) into a short label.
  *
- * @param {string | null | undefined} path value of `VRCX_userGeneratedContentPath`
- * @returns {string} for example `Pictures/VRChat`, or the default folder when none is set
+ * @param {string | null | undefined} path Value of `VRCX_userGeneratedContentPath`
+ * @returns {string} For example `Pictures/VRChat`, or the default folder when none is set
  */
 export function describeUgcFolder(path) {
     const value = typeof path === 'string' ? path.trim() : '';

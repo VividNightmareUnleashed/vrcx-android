@@ -64,13 +64,9 @@
                     @click="handleSetActive(pc)"
                     >{{ t('android.companion.set_active') }}</Button
                 >
-                <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="Boolean(companion.pending)"
-                    @click="handleForget(pc)"
-                    >{{ t('android.companion.forget') }}</Button
-                >
+                <Button size="sm" variant="outline" :disabled="Boolean(companion.pending)" @click="handleForget(pc)">{{
+                    t('android.companion.forget')
+                }}</Button>
             </SettingsItem>
         </SettingsGroup>
 
@@ -153,7 +149,12 @@
             <SettingsItem
                 :label="t('android.companion.import_label')"
                 :description="t('android.companion.import_description')">
-                <Button size="sm" variant="outline" :disabled="dataBusy" data-testid="companion-import" @click="handleImport">
+                <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="dataBusy"
+                    data-testid="companion-import"
+                    @click="handleImport">
                     {{ t('android.companion.import_button') }}
                 </Button>
             </SettingsItem>
@@ -161,7 +162,12 @@
             <SettingsItem
                 :label="t('android.companion.export_label')"
                 :description="t('android.companion.export_description')">
-                <Button size="sm" variant="outline" :disabled="dataBusy" data-testid="companion-export" @click="handleExport">
+                <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="dataBusy"
+                    data-testid="companion-export"
+                    @click="handleExport">
                     {{ t('android.companion.export_button') }}
                 </Button>
             </SettingsItem>
@@ -198,7 +204,11 @@
     const companion = useCompanionStore();
     const modalStore = useModalStore();
 
-    /** @type {import('vue').Ref<null | Array<{id:string,name:string,host:string,port:number,fp:string,pairing:boolean}>>} */
+    /**
+     * @type {import('vue').Ref<
+     *     null | { id: string; name: string; host: string; port: number; fp: string; pairing: boolean }[]
+     * >}
+     */
     const discovered = ref(null);
     const dataBusy = ref(false);
 
@@ -226,7 +236,7 @@
     const timeZoneText = computed(() => formatCompanionTimeZone(companion.tz));
 
     /**
-     * @param {{ hosts?: string[], port?: number, lastSeen?: number }} pc
+     * @param {{ hosts?: string[]; port?: number; lastSeen?: number }} pc
      */
     function pairedDescription(pc) {
         const endpoint = formatCompanionEndpoint(pc);
@@ -237,7 +247,7 @@
     }
 
     /**
-     * @param {{ host: string, port: number, pairing: boolean }} pc
+     * @param {{ host: string; port: number; pairing: boolean }} pc
      */
     function discoveredDescription(pc) {
         const state = pc.pairing ? t('android.companion.pairing_open') : t('android.companion.pairing_closed');
@@ -245,7 +255,7 @@
     }
 
     /**
-     * @param {{ ok: boolean, cancelled?: boolean, error?: { key: string, detail: string } }} outcome
+     * @param {{ ok: boolean; cancelled?: boolean; error?: { key: string; detail: string } }} outcome
      * @param {string} [successMessage]
      */
     function report(outcome, successMessage) {
@@ -303,7 +313,7 @@
     }
 
     /**
-     * @param {{ host: string, port: number, fp?: string, id?: string, name?: string }} target
+     * @param {{ host: string; port: number; fp?: string; id?: string; name?: string }} target
      */
     async function pairWith(target) {
         const code = await promptPairingCode(target.name || formatCompanionEndpoint(target));
@@ -316,7 +326,7 @@
     }
 
     /**
-     * @param {{ id: string, name: string, host: string, port: number, fp: string }} pc
+     * @param {{ id: string; name: string; host: string; port: number; fp: string }} pc
      */
     function handlePairDiscovered(pc) {
         return pairWith({ host: pc.host, port: pc.port, fp: pc.fp, id: pc.id, name: pc.name });
@@ -343,14 +353,14 @@
     }
 
     /**
-     * @param {{ id: string, name: string }} pc
+     * @param {{ id: string; name: string }} pc
      */
     async function handleSetActive(pc) {
         report(await companion.setActive(pc.id));
     }
 
     /**
-     * @param {{ id: string, name: string }} pc
+     * @param {{ id: string; name: string }} pc
      */
     async function handleForget(pc) {
         const { ok } = await modalStore

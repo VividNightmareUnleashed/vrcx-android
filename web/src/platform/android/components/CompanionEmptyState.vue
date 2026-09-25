@@ -81,9 +81,7 @@
     const pcName = computed(() => companion.activePc?.name || companion.machineName || '');
 
     const title = computed(() =>
-        mode.value === 'disconnected'
-            ? t('android.empty.disconnected_title')
-            : t('android.empty.unpaired_title')
+        mode.value === 'disconnected' ? t('android.empty.disconnected_title') : t('android.empty.unpaired_title')
     );
 
     const description = computed(() => {

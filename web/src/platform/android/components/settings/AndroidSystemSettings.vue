@@ -1,5 +1,7 @@
 <template>
-    <SettingsItem :label="t('android.system.background_label')" :description="t('android.system.background_description')">
+    <SettingsItem
+        :label="t('android.system.background_label')"
+        :description="t('android.system.background_description')">
         <Switch
             :model-value="backgroundMode"
             :disabled="backgroundMode === null"

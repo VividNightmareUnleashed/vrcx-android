@@ -35,8 +35,8 @@ export function normalizePairingCode(input) {
 }
 
 /**
- * @param {string} input raw user input
- * @returns {boolean} whether the normalized code has the right length and alphabet
+ * @param {string} input Raw user input
+ * @returns {boolean} Whether the normalized code has the right length and alphabet
  */
 export function isValidPairingCode(input) {
     const code = normalizePairingCode(input);
@@ -49,7 +49,7 @@ export function isValidPairingCode(input) {
  *
  * @param {string} input
  * @param {number} [defaultPort]
- * @returns {{ host: string, port: number } | null}
+ * @returns {{ host: string; port: number } | null}
  */
 export function parseCompanionAddress(input, defaultPort = COMPANION_DEFAULT_PORT) {
     let text = String(input ?? '').trim();
@@ -90,7 +90,7 @@ export function parseCompanionAddress(input, defaultPort = COMPANION_DEFAULT_POR
 
 /**
  * @param {unknown} error
- * @returns {boolean} whether the user cancelled a native flow (QR scanner, file picker)
+ * @returns {boolean} Whether the user cancelled a native flow (QR scanner, file picker)
  */
 export function isCancelledError(error) {
     const { type } = parseBridgeError(error);
@@ -110,7 +110,7 @@ const PAIRING_ERROR_KEYS = {
  * Maps a companion bridge rejection to an i18n key plus the raw detail (shown for unknown errors).
  *
  * @param {unknown} error
- * @returns {{ key: string, detail: string }}
+ * @returns {{ key: string; detail: string }}
  */
 export function describeCompanionError(error) {
     const { type, detail } = parseBridgeError(error);
@@ -125,7 +125,7 @@ export function describeCompanionError(error) {
 
 /**
  * @param {{ status?: string } | null | undefined} state
- * @returns {string} i18n key for the status line
+ * @returns {string} I18n key for the status line
  */
 export function companionStatusKey(state) {
     switch (state?.status) {
@@ -145,7 +145,7 @@ export function companionStatusKey(state) {
 }
 
 /**
- * @param {number} minutes offset from UTC in minutes
+ * @param {number} minutes Offset from UTC in minutes
  * @returns {string} `UTC+02:00` style label
  */
 export function formatUtcOffset(minutes) {
@@ -161,8 +161,8 @@ export function formatUtcOffset(minutes) {
 }
 
 /**
- * @param {{ windowsId?: string, ianaId?: string, currentUtcOffsetMin?: number, baseUtcOffsetMin?: number } | null} tz
- * @returns {string} for example `Europe/Berlin (UTC+02:00)`, or `''` when unknown
+ * @param {{ windowsId?: string; ianaId?: string; currentUtcOffsetMin?: number; baseUtcOffsetMin?: number } | null} tz
+ * @returns {string} For example `Europe/Berlin (UTC+02:00)`, or `''` when unknown
  */
 export function formatCompanionTimeZone(tz) {
     if (!tz || typeof tz !== 'object') {
@@ -180,7 +180,7 @@ export function formatCompanionTimeZone(tz) {
 }
 
 /**
- * @param {{ hosts?: string[], port?: number } | null} pc
+ * @param {{ hosts?: string[]; host?: string; port?: number } | null} pc paired PC (`hosts`) or discovery result (`host`)
  * @returns {string} `192.168.1.20:49460` style label (first host)
  */
 export function formatCompanionEndpoint(pc) {
@@ -202,9 +202,14 @@ export function formatCompanionEndpoint(pc) {
  * @param {boolean} [input.filtered]
  * @param {boolean} [input.isPaired]
  * @param {boolean} [input.isConnected]
- * @returns {'none'|'fallback'|'unpaired'|'disconnected'}
+ * @returns {'none' | 'fallback' | 'unpaired' | 'disconnected'}
  */
-export function resolveCompanionEmptyMode({ loading = false, filtered = false, isPaired = false, isConnected = false }) {
+export function resolveCompanionEmptyMode({
+    loading = false,
+    filtered = false,
+    isPaired = false,
+    isConnected = false
+}) {
     if (loading) {
         return 'none';
     }
@@ -215,10 +220,14 @@ export function resolveCompanionEmptyMode({ loading = false, filtered = false, i
 }
 
 export const useCompanionStore = defineStore('androidCompanion', () => {
-    /** @type {import('vue').Ref<'unpaired'|'idle'|'searching'|'connecting'|'connected'|'error'>} */
+    /** @type {import('vue').Ref<'unpaired' | 'idle' | 'searching' | 'connecting' | 'connected' | 'error'>} */
     const status = ref('unpaired');
     const activeId = ref(null);
-    /** @type {import('vue').Ref<Array<{id:string,name:string,hosts:string[],port:number,fp:string,pairedAt:number,lastSeen:number}>>} */
+    /**
+     * @type {import('vue').Ref<
+     *     { id: string; name: string; hosts: string[]; port: number; fp: string; pairedAt: number; lastSeen: number }[]
+     * >}
+     */
     const paired = ref([]);
     const machineName = ref(null);
     const tz = ref(null);
@@ -228,7 +237,7 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
     const lastError = ref(null);
     /** Number of native state snapshots applied (0 until the first one arrives). */
     const stateVersion = ref(0);
-    /** @type {import('vue').Ref<null|'scan'|'discover'|'pair'|'forget'|'setActive'>} */
+    /** @type {import('vue').Ref<null | 'scan' | 'discover' | 'pair' | 'forget' | 'setActive'>} */
     const pending = ref(null);
 
     const isPaired = computed(() => paired.value.length > 0);
@@ -236,7 +245,7 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
     const activePc = computed(() => paired.value.find((pc) => pc.id === activeId.value) ?? null);
 
     /**
-     * @param {object} state native CompanionController.state() object
+     * @param {object} state Native CompanionController.state() object
      */
     function applyState(state) {
         if (!state || typeof state !== 'object') return;
@@ -255,7 +264,7 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
     /**
      * Applies a `game-state` event (process flags only).
      *
-     * @param {{ isGameRunning?: boolean, isSteamVRRunning?: boolean }} gameState
+     * @param {{ isGameRunning?: boolean; isSteamVRRunning?: boolean }} gameState
      */
     function applyGameState(gameState) {
         if (!gameState || typeof gameState !== 'object') return;
@@ -278,9 +287,9 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
     /**
      * Runs one native companion call, applies the returned state and reports the outcome.
      *
-     * @param {'scan'|'discover'|'pair'|'forget'|'setActive'} kind
+     * @param {'scan' | 'discover' | 'pair' | 'forget' | 'setActive'} kind
      * @param {(host: any) => Promise<any>} call
-     * @returns {Promise<{ ok: boolean, cancelled?: boolean, error?: { key: string, detail: string }, result?: any }>}
+     * @returns {Promise<{ ok: boolean; cancelled?: boolean; error?: { key: string; detail: string }; result?: any }>}
      */
     async function run(kind, call) {
         pending.value = kind;
@@ -317,7 +326,10 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
 
     /**
      * @param {number} [timeoutMs]
-     * @returns {Promise<{ ok: boolean, result?: Array<{id:string,name:string,host:string,port:number,fp:string,pairing:boolean}> }>}
+     * @returns {Promise<{
+     *     ok: boolean;
+     *     result?: { id: string; name: string; host: string; port: number; fp: string; pairing: boolean }[];
+     * }>}
      */
     function discover(timeoutMs = COMPANION_DISCOVERY_TIMEOUT_MS) {
         return run('discover', async (host) => {
@@ -327,8 +339,8 @@ export const useCompanionStore = defineStore('androidCompanion', () => {
     }
 
     /**
-     * @param {{ host: string, port: number, fp?: string, id?: string, name?: string }} target
-     * @param {string} code pairing code as typed; normalized before sending
+     * @param {{ host: string; port: number; fp?: string; id?: string; name?: string }} target
+     * @param {string} code Pairing code as typed; normalized before sending
      */
     function pair(target, code) {
         const payload = { host: target.host, port: target.port };

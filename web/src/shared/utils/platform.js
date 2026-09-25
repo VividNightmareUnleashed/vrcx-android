@@ -41,10 +41,10 @@ export function isMacOS() {
  * provides it, otherwise the `vrcx-android:<name>` CustomEvent the shim dispatches on `window`.
  * Exported separately from {@link onAndroidEvent} so tests can pass their own target.
  *
- * @param {any} target object that owns `__vrcxAndroid` and the event listeners (normally `window`)
- * @param {string} name event name without prefix, for example `companion-state`
- * @param {(payload: any) => void} handler receives the event payload (`d`)
- * @returns {() => void} unsubscribe function (always callable)
+ * @param {any} target Object that owns `__vrcxAndroid` and the event listeners (normally `window`)
+ * @param {string} name Event name without prefix, for example `companion-state`
+ * @param {(payload: any) => void} handler Receives the event payload (`d`)
+ * @returns {() => void} Unsubscribe function (always callable)
  */
 export function subscribeNativeEvent(target, name, handler) {
     if (!target || typeof handler !== 'function') {
@@ -96,14 +96,14 @@ export function getAndroidHost() {
     if (typeof window === 'undefined') {
         return null;
     }
-    return window.AndroidHost ?? null;
+    return /** @type {any} */ (window).AndroidHost ?? null;
 }
 
 /**
  * Splits a bridge rejection (`"<ExceptionType>: <message>"`, docs/ARCHITECTURE.md §4.2) into its parts.
  *
  * @param {unknown} error
- * @returns {{ type: string, detail: string }}
+ * @returns {{ type: string; detail: string }}
  */
 export function parseBridgeError(error) {
     const text = String(error instanceof Error ? error.message : (error ?? '')).trim();

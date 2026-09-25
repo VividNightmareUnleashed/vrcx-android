@@ -56,7 +56,7 @@ export const useLaunchStore = defineStore('Launch', () => {
     let lastCanLaunchCheck = 0;
 
     /**
-     * @param {boolean} [force] ignore the foreground re-check throttle
+     * @param {boolean} [force] Ignore the foreground re-check throttle
      * @returns {Promise<boolean>}
      */
     async function refreshCanLaunchGame(force = false) {

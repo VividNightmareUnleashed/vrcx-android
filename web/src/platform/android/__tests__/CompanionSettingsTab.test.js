@@ -44,7 +44,9 @@ describe('CompanionSettingsTab', () => {
             CompanionScanQr: vi.fn().mockResolvedValue(connected),
             CompanionDiscover: vi
                 .fn()
-                .mockResolvedValue([{ id: 'pc-3', name: 'GAMING', host: '192.168.1.40', port: 49460, fp: 'c', pairing: true }]),
+                .mockResolvedValue([
+                    { id: 'pc-3', name: 'GAMING', host: '192.168.1.40', port: 49460, fp: 'c', pairing: true }
+                ]),
             CompanionPair: vi.fn().mockResolvedValue(connected),
             CompanionForget: vi.fn().mockResolvedValue({ ...connected, paired: [connected.paired[0]] }),
             CompanionSetActive: vi.fn().mockResolvedValue({ ...connected, activeId: 'pc-2' }),
