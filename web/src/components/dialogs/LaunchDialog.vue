@@ -12,6 +12,7 @@
                         <InputGroupField
                             v-model="launchDialog.url"
                             size="sm"
+                            :readonly="isCompact || undefined"
                             @click="$event.target.tagName === 'INPUT' && $event.target.select()" />
                         <TooltipWrapper side="right" :content="t('dialog.launch.copy_tooltip')">
                             <Button
@@ -29,7 +30,7 @@
                     <FieldLabel>
                         <span class="flex items-center gap-1">
                             <span>{{ t('dialog.launch.short_url') }}</span>
-                            <TooltipWrapper side="top" :content="t('dialog.launch.short_url_notice')">
+                            <TooltipWrapper v-if="!isCompact" side="top" :content="t('dialog.launch.short_url_notice')">
                                 <Info class="text-muted-foreground" :ariaLabel="t('dialog.launch.short_url_notice')" />
                             </TooltipWrapper>
                         </span>
@@ -38,6 +39,7 @@
                         <InputGroupField
                             v-model="launchDialog.shortUrl"
                             size="sm"
+                            :readonly="isCompact || undefined"
                             @click="$event.target.tagName === 'INPUT' && $event.target.select()" />
                         <TooltipWrapper side="right" :content="t('dialog.launch.copy_tooltip')">
                             <Button
@@ -50,6 +52,10 @@
                             /></Button>
                         </TooltipWrapper>
                     </FieldContent>
+                    <!-- Phones: the notice is shown inline instead of in the Info icon's tooltip (DESIGN.md §3.3). -->
+                    <FieldDescription v-if="isCompact" class="text-xs">
+                        {{ t('dialog.launch.short_url_notice') }}
+                    </FieldDescription>
                 </Field>
                 <Field>
                     <FieldLabel>{{ t('dialog.launch.location') }}</FieldLabel>
@@ -57,6 +63,7 @@
                         <InputGroupField
                             v-model="launchDialog.location"
                             size="sm"
+                            :readonly="isCompact || undefined"
                             @click="$event.target.tagName === 'INPUT' && $event.target.select()" />
                         <TooltipWrapper side="right" :content="t('dialog.launch.copy_tooltip')">
                             <Button
@@ -71,7 +78,8 @@
                     </FieldContent>
                 </Field>
             </FieldGroup>
-            <DialogFooter>
+            <DialogFooter
+                class="compact:grid compact:grid-flow-col compact:auto-cols-fr compact:gap-2 compact:[&>*]:mr-0">
                 <Button
                     class="mr-1.5"
                     variant="outline"
@@ -94,7 +102,7 @@
                     @click="selfInvite(launchDialog.location, launchDialog.shortName)">
                     {{ t('dialog.launch.self_invite') }}
                 </Button>
-                <ButtonGroup v-if="canLaunchGame">
+                <ButtonGroup v-if="canLaunchGame" class="compact:w-full compact:[&>*:first-child]:flex-1">
                     <Button
                         :disabled="!launchDialog.secureOrShortName"
                         @click="handleLaunchDefault(launchDialog.location, launchDialog.shortName)">
@@ -149,7 +157,7 @@
         DropdownMenuItem,
         DropdownMenuTrigger
     } from '@/components/ui/dropdown-menu';
-    import { Field, FieldContent, FieldGroup, FieldLabel } from '@/components/ui/field';
+    import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
     import { computed, onBeforeUnmount, ref, watch } from 'vue';
     import { Copy, Info, MoreHorizontal } from 'lucide-vue-next';
     import { Button } from '@/components/ui/button';
@@ -174,8 +182,11 @@
     import InviteDialog from './InviteDialog/InviteDialog.vue';
     import configRepository from '../../services/config';
     import { hasLocalGame } from '../../shared/utils/platform';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
 
     const { t } = useI18n();
+    // Phones: read-only link fields (copy buttons instead of the keyboard) and an inline short-URL notice.
+    const { isCompact } = useCompactLayout();
 
     const modalStore = useModalStore();
 

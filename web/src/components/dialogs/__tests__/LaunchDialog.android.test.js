@@ -87,7 +87,8 @@ vi.mock('@/components/ui/field', () => ({
     Field: { template: '<div><slot /></div>' },
     FieldGroup: { template: '<div><slot /></div>' },
     FieldLabel: { template: '<div><slot /></div>' },
-    FieldContent: { template: '<div><slot /></div>' }
+    FieldContent: { template: '<div><slot /></div>' },
+    FieldDescription: { template: '<p><slot /></p>' }
 }));
 vi.mock('@/components/ui/button', () => ({
     Button: {

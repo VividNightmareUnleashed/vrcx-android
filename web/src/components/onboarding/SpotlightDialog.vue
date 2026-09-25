@@ -1,7 +1,8 @@
 <template>
     <Dialog v-model:open="isOpen">
         <DialogContent
-            class="border border-border bg-background/85 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl"
+            class="border border-border bg-background/85 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl compact:bg-background"
+            data-mobile="card"
             :show-close-button="false"
             @escape-key-down="handleDismiss"
             @pointer-down-outside="handleDismiss"
@@ -14,7 +15,7 @@
                 <p class="mt-1.5 text-sm text-muted-foreground">{{ t('onboarding.welcome.subtitle') }}</p>
             </div>
 
-            <div class="my-4 grid auto-rows-fr grid-cols-4 gap-2.5">
+            <div class="my-4 grid auto-rows-fr grid-cols-4 gap-2.5 compact:grid-cols-2 compact-landscape:grid-cols-4">
                 <div
                     v-for="(feature, index) in features"
                     :key="feature.key"

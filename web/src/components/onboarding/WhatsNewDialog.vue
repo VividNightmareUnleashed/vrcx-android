@@ -1,7 +1,8 @@
 <template>
     <Dialog v-model:open="whatsNewDialog.visible">
         <DialogContent
-            class="border border-border bg-background/88 p-5 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl"
+            class="border border-border bg-background/88 p-5 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl compact:bg-background"
+            data-mobile="card"
             :show-close-button="false"
             @escape-key-down="handleDismiss"
             @pointer-down-outside="handleDismiss"
@@ -22,7 +23,7 @@
             </div>
 
             <!-- Feature Cards -->
-            <div class="my-2 grid auto-rows-fr grid-cols-4 gap-2.5">
+            <div class="my-2 grid auto-rows-fr grid-cols-4 gap-2.5 compact:grid-cols-2 compact-landscape:grid-cols-4">
                 <div
                     v-for="(feature, index) in whatsNewDialog.items"
                     :key="feature.key"

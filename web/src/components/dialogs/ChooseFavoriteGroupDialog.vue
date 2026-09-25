@@ -1,6 +1,6 @@
 <template>
     <Dialog v-model:open="isVisible">
-        <DialogContent>
+        <DialogContent data-mobile="card" class="compact:[&_[data-slot=button]]:min-h-10">
             <DialogHeader>
                 <DialogTitle>{{ t('dialog.favorite.header') }}</DialogTitle>
             </DialogHeader>

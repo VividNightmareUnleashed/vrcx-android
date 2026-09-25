@@ -14,7 +14,7 @@
             <div v-if="cropperImageSrc" class="mt-4">
                 <Cropper
                     ref="cropperRef"
-                    class="h-100 max-h-full"
+                    class="h-100 max-h-full compact:h-[min(60dvh,100vw)]"
                     :src="cropperImageSrc"
                     :stencil-props="{ aspectRatio, movable: !loading, resizable: !loading }"
                     :move-image="!loading"
@@ -24,12 +24,12 @@
                     @change="onCropperChange" />
 
                 <!-- Toolbar -->
-                <div class="flex items-center justify-center gap-1 mt-3">
+                <div class="flex items-center justify-center gap-1 mt-3 compact:flex-wrap compact:gap-y-3">
                     <TooltipWrapper :content="t('dialog.image_crop.rotate_left')">
                         <Button
                             size="icon-sm"
                             variant="outline"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="t('dialog.image_crop.rotate_left')"
                             @click="cropperRef?.rotate(-90)">
@@ -40,7 +40,7 @@
                         <Button
                             size="icon-sm"
                             variant="outline"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="t('dialog.image_crop.rotate_right')"
                             @click="cropperRef?.rotate(90)">
@@ -54,7 +54,7 @@
                         <Button
                             size="icon-sm"
                             variant="outline"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="t('dialog.image_crop.flip_h')"
                             @click="cropperRef?.flip(true, false)">
@@ -65,7 +65,7 @@
                         <Button
                             size="icon-sm"
                             variant="outline"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="t('dialog.image_crop.flip_v')"
                             @click="cropperRef?.flip(false, true)">
@@ -75,38 +75,42 @@
 
                     <div class="w-px h-5 bg-border mx-1" />
 
-                    <TooltipWrapper :content="t('dialog.image_crop.zoom_out')">
-                        <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            class="rounded-full h-7 w-7"
+                    <!-- Zoom: part of the single PC row (display: contents); on phones its own full-width row
+                         under the other tools, with a wide slider. -->
+                    <div class="contents compact:order-last compact:flex compact:w-full compact:items-center compact:gap-2">
+                        <TooltipWrapper :content="t('dialog.image_crop.zoom_out')">
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                class="rounded-full h-7 w-7 compact:h-10 compact:w-10"
+                                :disabled="loading"
+                                :ariaLabel="t('dialog.image_crop.zoom_out')"
+                                @click="cropperRef?.zoom(0.8)">
+                                <ZoomOut class="h-3.5 w-3.5 compact:h-4 compact:w-4" />
+                            </Button>
+                        </TooltipWrapper>
+                        <Slider
+                            v-model="zoomSliderValue"
+                            :min="0"
+                            :max="100"
+                            :step="1"
                             :disabled="loading"
-                            :ariaLabel="t('dialog.image_crop.zoom_out')"
-                            @click="cropperRef?.zoom(0.8)">
-                            <ZoomOut class="h-3.5 w-3.5" />
-                        </Button>
-                    </TooltipWrapper>
-                    <Slider
-                        v-model="zoomSliderValue"
-                        :min="0"
-                        :max="100"
-                        :step="1"
-                        :disabled="loading"
-                        class="w-28"
-                        @value-commit="onZoomCommit" />
-                    <TooltipWrapper :content="t('dialog.image_crop.zoom_in')">
-                        <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            class="rounded-full h-7 w-7"
-                            :disabled="loading"
-                            :ariaLabel="t('dialog.image_crop.zoom_in')"
-                            @click="cropperRef?.zoom(1.2)">
-                            <ZoomIn class="h-3.5 w-3.5" />
-                        </Button>
-                    </TooltipWrapper>
+                            class="w-28 compact:w-auto compact:flex-1"
+                            @value-commit="onZoomCommit" />
+                        <TooltipWrapper :content="t('dialog.image_crop.zoom_in')">
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                class="rounded-full h-7 w-7 compact:h-10 compact:w-10"
+                                :disabled="loading"
+                                :ariaLabel="t('dialog.image_crop.zoom_in')"
+                                @click="cropperRef?.zoom(1.2)">
+                                <ZoomIn class="h-3.5 w-3.5 compact:h-4 compact:w-4" />
+                            </Button>
+                        </TooltipWrapper>
+                    </div>
 
-                    <div class="w-px h-5 bg-border mx-1" />
+                    <div class="w-px h-5 bg-border mx-1 compact:hidden" />
 
                     <TooltipWrapper
                         :content="freeMode ? t('dialog.image_crop.mode_fit') : t('dialog.image_crop.mode_free')">
@@ -114,7 +118,7 @@
                             data-testid="crop-mode-toggle"
                             size="icon-sm"
                             :variant="freeMode ? 'default' : 'outline'"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="freeMode ? t('dialog.image_crop.mode_fit') : t('dialog.image_crop.mode_free')"
                             @click="toggleMode">
@@ -127,7 +131,7 @@
                         <Button
                             size="icon-sm"
                             variant="outline"
-                            class="rounded-full h-8 w-8"
+                            class="rounded-full h-8 w-8 compact:h-10 compact:w-10"
                             :disabled="loading"
                             :ariaLabel="t('dialog.image_crop.reset')"
                             @click="handleReset">

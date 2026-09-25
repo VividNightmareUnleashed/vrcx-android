@@ -90,7 +90,7 @@
             <button
                 v-if="hasChildren"
                 type="button"
-                class="flex size-4 shrink-0 items-center justify-center rounded transition-transform cursor-pointer"
+                class="flex size-4 shrink-0 items-center justify-center rounded transition-transform cursor-pointer pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-3 pointer-coarse:after:content-['']"
                 :class="isExpanded ? 'rotate-90' : ''"
                 @click.stop="emit('toggle')">
                 <ChevronRight class="size-3.5" />
@@ -107,7 +107,7 @@
                         size="icon-sm"
                         variant="ghost"
                         :ariaLabel="t('nav_tooltip.manage')"
-                        class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100"
+                        class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100 pointer-coarse:size-8"
                         @click.stop>
                         <Ellipsis class="size-3.5" />
                     </Button>

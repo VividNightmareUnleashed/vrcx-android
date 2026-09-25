@@ -3,9 +3,15 @@
         <DialogContent class="sm:min-w-180">
             <DialogHeader>
                 <DialogTitle>{{ t('nav_menu.custom_nav.dialog_title') }}</DialogTitle>
+                <!-- Touch: items move after a 250 ms long-press (dnd-kit's touch delay), which nothing else hints at. -->
+                <p v-if="isCoarsePointer" class="text-xs text-muted-foreground">
+                    {{ t('android.dialogs.custom_nav.drag_hint') }}
+                </p>
             </DialogHeader>
 
-            <div class="min-h-[40vh] max-h-[60vh] overflow-y-auto">
+            <!-- Phones: the tree fills the page between the header and the footer instead of 40-60vh. -->
+            <div
+                class="min-h-[40vh] max-h-[60vh] overflow-y-auto compact:min-h-0 compact:max-h-none compact:flex-1 compact:overscroll-contain">
                 <DragDropProvider @dragStart="onDragStart" @dragOver="onDragOver" @dragEnd="onDragEnd">
                     <Tree
                         :items="treeItems"
@@ -60,7 +66,7 @@
                             <Button
                                 size="icon-sm"
                                 variant="ghost"
-                                class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100"
+                                class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100 pointer-coarse:size-8"
                                 @click.stop="handleShowItem(item.key)">
                                 <Minus class="size-3.5" />
                             </Button>
@@ -70,19 +76,30 @@
             </div>
 
             <DialogFooter>
-                <div class="flex w-full items-center justify-between">
-                    <div class="flex gap-2">
-                        <Button variant="outline" @click="handleAddFolder">
+                <!-- Phones: two rows. New folder | New dashboard, then Restore default on the left and Cancel/Confirm on
+                     the right (the inner groups become display: contents so the five buttons share one wrapping row). -->
+                <div class="flex w-full items-center justify-between compact:gap-2">
+                    <div class="flex gap-2 compact:contents">
+                        <Button
+                            variant="outline"
+                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)]"
+                            @click="handleAddFolder">
                             {{ t('nav_menu.custom_nav.new_folder') }}
                         </Button>
-                        <Button variant="outline" @click="handleAddDashboard">
+                        <Button
+                            variant="outline"
+                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)]"
+                            @click="handleAddDashboard">
                             {{ t('dashboard.new_dashboard') }}
                         </Button>
-                        <Button variant="ghost" class="text-destructive" @click="handleReset">
+                        <Button
+                            variant="ghost"
+                            class="text-destructive compact:mr-auto compact:px-2"
+                            @click="handleReset">
                             {{ t('nav_menu.custom_nav.restore_default') }}
                         </Button>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 compact:contents">
                         <Button variant="secondary" @click="handleClose">
                             {{ t('nav_menu.custom_nav.cancel') }}
                         </Button>
@@ -96,7 +113,8 @@
     </Dialog>
 
     <Dialog v-model:open="folderEditor.visible">
-        <DialogContent class="sm:max-w-100">
+        <!-- Phones: a small form over the editor, like a prompt (a card, not a page). -->
+        <DialogContent class="sm:max-w-100" data-mobile="card">
             <DialogHeader>
                 <DialogTitle>
                     {{
@@ -114,7 +132,36 @@
                     v-model="folderEditor.data.icon"
                     :placeholder="t('nav_menu.custom_nav.folder_icon_placeholder')">
                     <template #trailing>
-                        <HoverCard>
+                        <DefineIconHelp>
+                            <div class="text-sm leading-snug">
+                                <div>
+                                    Find the icon you want on this site and paste its class name here, e.g.
+                                    <span class="font-mono">ri-arrow-left-up-line</span>
+                                </div>
+                                <div class="mt-2">
+                                    <a
+                                        class="cursor-pointer text-blue-600"
+                                        @click.prevent="openExternalLink('https://remixicon.com/')">
+                                        https://remixicon.com/
+                                    </a>
+                                </div>
+                            </div>
+                        </DefineIconHelp>
+                        <!-- Touch: the help opens on tap and stays open while the link is tapped. -->
+                        <Popover v-if="isCoarsePointer">
+                            <PopoverTrigger as-child>
+                                <InputGroupButton
+                                    size="icon-xs"
+                                    class="pointer-coarse:size-8"
+                                    :aria-label="t('nav_menu.custom_nav.folder_icon_placeholder')">
+                                    <LinkIcon class="size-3.5" />
+                                </InputGroupButton>
+                            </PopoverTrigger>
+                            <PopoverContent side="bottom" align="end" :collision-padding="12" class="w-80 max-w-[calc(100vw-24px)]">
+                                <ReuseIconHelp />
+                            </PopoverContent>
+                        </Popover>
+                        <HoverCard v-else>
                             <HoverCardTrigger as-child>
                                 <InputGroupButton
                                     size="icon-xs"
@@ -123,19 +170,7 @@
                                 </InputGroupButton>
                             </HoverCardTrigger>
                             <HoverCardContent side="bottom" align="end" class="w-80">
-                                <div class="text-sm leading-snug">
-                                    <div>
-                                        Find the icon you want on this site and paste its class name here, e.g.
-                                        <span class="font-mono">ri-arrow-left-up-line</span>
-                                    </div>
-                                    <div class="mt-2">
-                                        <a
-                                            class="cursor-pointer text-blue-600"
-                                            @click.prevent="openExternalLink('https://remixicon.com/')">
-                                            https://remixicon.com/
-                                        </a>
-                                    </div>
-                                </div>
+                                <ReuseIconHelp />
                             </HoverCardContent>
                         </HoverCard>
                     </template>
@@ -158,7 +193,9 @@
     import { computed, reactive, ref, watch } from 'vue';
     import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
     import { Link as LinkIcon, Minus } from 'lucide-vue-next';
+    import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
     import { Button } from '@/components/ui/button';
+    import { createReusableTemplate } from '@vueuse/core';
     import { DragDropProvider } from '@dnd-kit/vue';
     import { isSortable } from '@dnd-kit/vue/sortable';
     import { openExternalLink } from '@/shared/utils/common';
@@ -176,6 +213,11 @@
     import { useDashboardStore, useModalStore, useNotificationsSettingsStore } from '../../stores';
 
     import SortableTreeNode from './SortableTreeNode.vue';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+
+    // Android touch layouts (always false on desktop): drag hint and tap-to-open icon help (docs/DESIGN.md §3.3).
+    const { isCoarsePointer } = useCompactLayout();
+    const [DefineIconHelp, ReuseIconHelp] = createReusableTemplate();
 
     const props = defineProps({
         visible: {
