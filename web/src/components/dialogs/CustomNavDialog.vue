@@ -76,19 +76,20 @@
             </div>
 
             <DialogFooter>
-                <!-- Phones: two rows. New folder | New dashboard, then Restore default on the left and Cancel/Confirm on
-                     the right (the inner groups become display: contents so the five buttons share one wrapping row). -->
+                <!-- Phones: two rows (one in landscape). New folder | New dashboard, then Restore default on the left and
+                     Cancel/Confirm on the right (the inner groups become display: contents so the five buttons share
+                     one wrapping row). -->
                 <div class="flex w-full items-center justify-between compact:gap-2">
                     <div class="flex gap-2 compact:contents">
                         <Button
                             variant="outline"
-                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)]"
+                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)] compact-landscape:flex-none compact-landscape:basis-auto"
                             @click="handleAddFolder">
                             {{ t('nav_menu.custom_nav.new_folder') }}
                         </Button>
                         <Button
                             variant="outline"
-                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)]"
+                            class="compact:min-w-0 compact:flex-1 compact:basis-[calc(50%-4px)] compact-landscape:flex-none compact-landscape:basis-auto"
                             @click="handleAddDashboard">
                             {{ t('dashboard.new_dashboard') }}
                         </Button>

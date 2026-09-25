@@ -79,7 +79,7 @@
                 </Field>
             </FieldGroup>
             <DialogFooter
-                class="compact:grid compact:grid-flow-col compact:auto-cols-fr compact:gap-2 compact:[&>*]:mr-0">
+                class="compact:grid compact:grid-flow-col compact:auto-cols-fr compact:gap-2 compact:[&>*]:mr-0 compact-landscape:flex">
                 <Button
                     class="mr-1.5"
                     variant="outline"
@@ -102,7 +102,9 @@
                     @click="selfInvite(launchDialog.location, launchDialog.shortName)">
                     {{ t('dialog.launch.self_invite') }}
                 </Button>
-                <ButtonGroup v-if="canLaunchGame" class="compact:w-full compact:[&>*:first-child]:flex-1">
+                <ButtonGroup
+                    v-if="canLaunchGame"
+                    class="compact:w-full compact:[&>*:first-child]:flex-1 compact-landscape:w-auto">
                     <Button
                         :disabled="!launchDialog.secureOrShortName"
                         @click="handleLaunchDefault(launchDialog.location, launchDialog.shortName)">
