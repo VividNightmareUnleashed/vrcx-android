@@ -85,22 +85,23 @@ class AndroidImageCodec : ImageCodec {
     }
 
     override fun cropPrint(bytes: ByteArray): ByteArray? {
-        val (w, h) = bounds(bytes)
-        if (w != ImageGeometry.PRINT_WIDTH || h != ImageGeometry.PRINT_HEIGHT) return null
+        val (srcW, srcH) = bounds(bytes)
+        if (srcW != ImageGeometry.PRINT_WIDTH || srcH != ImageGeometry.PRINT_HEIGHT) return null
         val options = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inPremultiplied = false
             inScaled = false
         }
         val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: throw unknownFormat()
-        val crop = Bitmap.createBitmap(
-            full,
-            ImageGeometry.PRINT_BORDER_X,
-            ImageGeometry.PRINT_BORDER_Y,
-            ImageGeometry.PRINT_PICTURE_WIDTH,
-            ImageGeometry.PRINT_PICTURE_HEIGHT,
-        )
-        if (crop !== full) full.recycle()
+        // Copy the unpremultiplied pixels as they are (a Canvas cannot draw non-premultiplied bitmaps).
+        val w = ImageGeometry.PRINT_PICTURE_WIDTH
+        val h = ImageGeometry.PRINT_PICTURE_HEIGHT
+        val pixels = IntArray(w * h)
+        full.getPixels(pixels, 0, w, ImageGeometry.PRINT_BORDER_X, ImageGeometry.PRINT_BORDER_Y, w, h)
+        full.recycle()
+        val crop = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        crop.isPremultiplied = false
+        crop.setPixels(pixels, 0, w, 0, 0, w, h)
         return encodePng(crop).also { crop.recycle() }
     }
 
