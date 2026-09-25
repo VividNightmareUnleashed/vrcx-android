@@ -108,4 +108,27 @@ describe('isInfoOnlyTrigger', () => {
         expect(isInfoOnlyTrigger(inner)).toBe(false);
         expect(isInfoOnlyTrigger(null)).toBe(false);
     });
+
+    it('is false for wrappers around something tappable and inside clickable rows', () => {
+        // <TooltipWrapper><span><Button size="icon" /></span></TooltipWrapper>
+        const wrapper = document.createElement('span');
+        const button = document.createElement('button');
+        button.appendChild(document.createElement('svg'));
+        wrapper.appendChild(button);
+        document.body.appendChild(wrapper);
+        expect(isInfoOnlyTrigger(wrapper)).toBe(false);
+
+        // A status dot inside a row whose click opens a dialog.
+        const row = document.createElement('div');
+        row.style.cursor = 'pointer';
+        const dot = document.createElement('i');
+        row.appendChild(dot);
+        document.body.appendChild(row);
+        expect(isInfoOnlyTrigger(dot)).toBe(false);
+
+        const plainDot = document.createElement('i');
+        document.body.appendChild(plainDot);
+        expect(isInfoOnlyTrigger(plainDot)).toBe(true);
+        document.body.innerHTML = '';
+    });
 });

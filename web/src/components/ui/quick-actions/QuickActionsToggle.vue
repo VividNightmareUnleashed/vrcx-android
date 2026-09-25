@@ -1,17 +1,20 @@
 <template>
+    <!-- The span carries the tooltip trigger: as-child on the Toggle itself would overwrite its data-state="on". -->
     <TooltipWrapper side="bottom" :content="t('android.shell.quick_actions.hint')">
-        <Toggle
-            variant="outline"
-            size="sm"
-            data-slot="quick-actions-toggle"
-            class="shrink-0 gap-1.5"
-            :class="pressed && 'border-destructive/60 text-destructive data-[state=on]:text-destructive'"
-            :model-value="pressed"
-            :aria-label="t('android.shell.quick_actions.label')"
-            @update:model-value="setPressed">
-            <Zap />
-            <span v-if="showLabel">{{ t('android.shell.quick_actions.label') }}</span>
-        </Toggle>
+        <span class="inline-flex shrink-0">
+            <Toggle
+                variant="outline"
+                size="sm"
+                data-slot="quick-actions-toggle"
+                class="shrink-0 gap-1.5"
+                :class="pressed && 'border-destructive/60 text-destructive data-[state=on]:text-destructive'"
+                :model-value="pressed"
+                :aria-label="t('android.shell.quick_actions.label')"
+                @update:model-value="setPressed">
+                <Zap />
+                <span v-if="showLabel">{{ t('android.shell.quick_actions.label') }}</span>
+            </Toggle>
+        </span>
     </TooltipWrapper>
 </template>
 

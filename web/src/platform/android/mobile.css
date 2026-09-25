@@ -270,6 +270,15 @@ html.vrcx-compact [data-slot='sheet-content'].bottom-0 {
     overflow-y: auto;
 }
 
+/* ---------------------------------------------------------------- stacking */
+
+/* Long-press menus are the touch stand-in for right-click, so they must show above dialogs. Upstream ContextMenu
+ * content is z-50 (every other floating element is z-12000), which hides a menu opened inside a full-screen dialog;
+ * reka copies that value inline onto the popper wrapper. */
+html.is-android [data-reka-popper-content-wrapper]:has(> [data-slot^='context-menu']) {
+    z-index: 12000 !important;
+}
+
 /* ---------------------------------------------------------------- performance (DESIGN.md §7) */
 
 /* No backdrop-filter on overlays or bars in compact layout. */

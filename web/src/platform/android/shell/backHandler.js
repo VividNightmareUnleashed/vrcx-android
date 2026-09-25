@@ -21,9 +21,17 @@ export function isLiveLayer(layer) {
     return !layer.closest('[hidden]');
 }
 
+/** Reka wraps menus, popovers, selects, tooltips and hover cards in a positioned wrapper appended to <body>. */
+const POPPER_WRAPPER_SELECTOR = '[data-reka-popper-content-wrapper]';
+
 /**
- * The top-most open reka dismissable layer: the layer holding focus (reka moves focus into the newest modal layer),
- * else the last one in document order (popovers, menus and sheets are appended to <body> as they open).
+ * The top-most open reka dismissable layer (DESIGN.md §6: the last one in document order), refined where document
+ * order and stacking order differ:
+ *
+ * - Floating content (menus, popovers, tooltips, hover cards) opens over its anchor, so the newest one wins even when it
+ *   does not take focus (a long-pressed tooltip over a dialog);
+ * - Among dialogs and sheets, the layer holding focus wins: reka moves focus into the newest modal layer, while dialogs
+ *   live in the modal portal root inside #root, before the sheets appended to <body>.
  *
  * @param {Document} doc
  * @returns {Element | null}
@@ -32,6 +40,11 @@ export function findTopLayer(doc) {
     const layers = Array.from(doc.querySelectorAll(LAYER_SELECTOR)).filter(isLiveLayer);
     if (layers.length === 0) {
         return null;
+    }
+    for (let i = layers.length - 1; i >= 0; i--) {
+        if (layers[i].closest(POPPER_WRAPPER_SELECTOR)) {
+            return layers[i];
+        }
     }
     const active = doc.activeElement;
     if (active && active !== doc.body && active !== doc.documentElement) {

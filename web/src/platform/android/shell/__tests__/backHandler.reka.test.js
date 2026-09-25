@@ -11,6 +11,12 @@ vi.mock('@/stores/settings/general', () => ({
 vi.mock('pinia', async (importOriginal) => ({ ...(await importOriginal()), storeToRefs: (store) => store }));
 
 import { Dialog, DialogContent, DialogTitle } from '../../../../components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
+} from '../../../../components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '../../../../components/ui/sheet';
 import { createBackHandler } from '../backHandler';
 
@@ -107,6 +113,41 @@ describe('Android back handler with reka layers', () => {
 
         expect(ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
         expect(open.value).toBe(true);
+    });
+
+    it('closes a menu opened inside the entity dialog before stepping back a crumb', async () => {
+        const open = ref(true);
+        const menuOpen = ref(false);
+        const Host = defineComponent({
+            setup: () => () =>
+                h(Dialog, { open: open.value, 'onUpdate:open': (value) => (open.value = value) }, () =>
+                    h(DialogContent, { 'data-vrcx-main-dialog': '' }, () => [
+                        h(DialogTitle, null, () => 'User'),
+                        h(
+                            DropdownMenu,
+                            { open: menuOpen.value, 'onUpdate:open': (value) => (menuOpen.value = value) },
+                            () => [
+                                h(DropdownMenuTrigger, null, () => 'More'),
+                                h(DropdownMenuContent, null, () => h(DropdownMenuItem, null, () => 'Share'))
+                            ]
+                        )
+                    ])
+                )
+        });
+        wrapper = mount(Host, { attachTo: document.body });
+        await settle();
+        menuOpen.value = true;
+        await settle();
+
+        const { ui, handleBack } = createHandler({ crumbs: [{ type: 'user' }, { type: 'world' }] });
+        expect(handleBack()).toBe(true);
+        await settle();
+        expect(menuOpen.value).toBe(false);
+        expect(open.value).toBe(true);
+        expect(ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
+
+        expect(handleBack()).toBe(true);
+        expect(ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
     });
 
     it('leaves a dialog that blocks Escape open, but still handles the press', async () => {

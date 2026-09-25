@@ -4,7 +4,7 @@
             type="button"
             class="vrcx-game-indicator inline-flex size-10 shrink-0 items-center justify-center rounded-full cursor-pointer"
             :aria-label="label"
-            :data-state="state"
+            :data-game-state="state"
             @click="openCompanionSettings(router)">
             <span class="inline-block size-2.5 rounded-full" :class="dotClass" />
         </button>

@@ -12,6 +12,8 @@
 
     const props = defineProps({
         class: { type: null, required: false },
+        // Extra classes for the overlay (for example a z-index that puts a sheet opened from a dialog above it).
+        overlayClass: { type: null, required: false },
         side: { type: String, required: false, default: 'right' },
         forceMount: { type: Boolean, required: false },
         disableOutsidePointerEvents: { type: Boolean, required: false },
@@ -27,14 +29,14 @@
         'closeAutoFocus'
     ]);
 
-    const delegatedProps = reactiveOmit(props, 'class', 'side');
+    const delegatedProps = reactiveOmit(props, 'class', 'side', 'overlayClass');
 
     const forwarded = useForwardPropsEmits(delegatedProps, emits);
 </script>
 
 <template>
     <DialogPortal>
-        <SheetOverlay />
+        <SheetOverlay :class="overlayClass" />
         <DialogContent
             data-slot="sheet-content"
             :class="

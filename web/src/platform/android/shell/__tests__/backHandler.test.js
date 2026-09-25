@@ -142,6 +142,23 @@ describe('Android back handler (DESIGN.md §6)', () => {
         expect(setup.ui.jumpBackDialogCrumb).toHaveBeenCalledTimes(1);
     });
 
+    it('closes floating content first even when focus stays in the dialog (a long-pressed tooltip)', () => {
+        setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
+        const portal = document.createElement('div');
+        document.body.appendChild(portal);
+        const dialog = addLayer({ parent: portal, attrs: { 'data-vrcx-main-dialog': '' }, focusable: true });
+        dialog.focusTarget.focus();
+        const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-reka-popper-content-wrapper', '');
+        document.body.appendChild(wrapper);
+        const tooltip = addLayer({ parent: wrapper, attrs: { 'data-slot': 'tooltip-content' } });
+
+        expect(findTopLayer(document)).toBe(tooltip);
+        expect(setup.handleBack()).toBe(true);
+        expect(setup.escapes).toHaveLength(1);
+        expect(setup.ui.jumpBackDialogCrumb).not.toHaveBeenCalled();
+    });
+
     it('skips a layer that is playing its exit animation', () => {
         setup = createSetup({ crumbs: [{ type: 'user' }, { type: 'world' }] });
         const dialog = addLayer({ attrs: { 'data-vrcx-main-dialog': '', 'data-state': 'open' } });

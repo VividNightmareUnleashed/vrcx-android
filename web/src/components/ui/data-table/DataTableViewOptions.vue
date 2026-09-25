@@ -10,7 +10,9 @@
                 <SlidersHorizontal />
             </Button>
         </SheetTrigger>
-        <SheetContent side="bottom" class="gap-0 rounded-t-lg p-0">
+        <!-- Above dialogs (the modal portal root is z-10000): tables inside full-screen dialogs have this button too.
+             Below floating content (z-12000), so its selects still open on top. -->
+        <SheetContent side="bottom" class="z-[10001] gap-0 rounded-t-lg p-0" overlay-class="z-[10001]">
             <SheetHeader class="border-b pb-3">
                 <SheetTitle>{{ t('android.shell.view_options.title') }}</SheetTitle>
                 <SheetDescription class="sr-only">{{ t('android.shell.view_options.title') }}</SheetDescription>

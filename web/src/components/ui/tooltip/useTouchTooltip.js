@@ -10,14 +10,20 @@ const INTERACTIVE_SELECTOR =
 
 /**
  * An information-only trigger: nothing to activate and no text of its own (an info icon, a status dot).
+ * A trigger that is, sits inside or wraps something tappable (a button, a link, a clickable row, anything drawn with a
+ * pointer cursor) is not: a tap there must reach that element.
  *
  * @param {Element | null} element
  * @returns {boolean}
  */
 export function isInfoOnlyTrigger(element) {
     if (!element || typeof element.closest !== 'function') return false;
-    if (element.closest(INTERACTIVE_SELECTOR)) return false;
-    return (element.textContent ?? '').trim() === '';
+    if (element.closest(INTERACTIVE_SELECTOR) || element.querySelector(INTERACTIVE_SELECTOR)) return false;
+    if ((element.textContent ?? '').trim() !== '') return false;
+    // `cursor` is inherited, so this also catches clickable ancestors (VRCX marks them with cursor-pointer).
+    // Only runs on a tap.
+    const view = element.ownerDocument?.defaultView;
+    return view?.getComputedStyle?.(element).cursor !== 'pointer';
 }
 
 function isTouchLike(event) {
