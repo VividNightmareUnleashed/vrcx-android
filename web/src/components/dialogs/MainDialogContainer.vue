@@ -62,8 +62,9 @@
 
     // Android back button: reka hands the back press's Escape to this dialog only when it is the top layer; with more
     // than one crumb it steps back instead of closing (docs/DESIGN.md §6, platform/android/shell/backHandler.js).
+    // The build-time define lets desktop builds drop the Android module.
     function handleEscapeKeyDown(event) {
-        if (isAndroid) {
+        if (ANDROID) {
             handleMainDialogEscape(event, uiStore);
         }
     }

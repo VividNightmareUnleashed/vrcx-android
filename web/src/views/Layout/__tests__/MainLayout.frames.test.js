@@ -1,6 +1,6 @@
 // Android: switching between the phone frame and the PC frame (a small tablet rotating across the compact threshold,
 // split screen, foldables) must not remount the routed view or the Sidebar (docs/DESIGN.md §2.2).
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick, ref } from 'vue';
 
@@ -141,6 +141,11 @@ async function settle() {
 function parentSlotId(testId) {
     return document.querySelector(`[data-testid="${testId}"]`)?.parentElement?.id ?? null;
 }
+
+// Undo the ANDROID define override for whatever runs next in this worker.
+afterAll(() => {
+    globalThis.ANDROID = false;
+});
 
 describe('MainLayout frames on Android', () => {
     let wrapper;

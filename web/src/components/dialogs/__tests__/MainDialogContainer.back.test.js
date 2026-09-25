@@ -1,10 +1,14 @@
 // The Android back button against the real entity dialog host and real reka layers (docs/DESIGN.md §6 step 1):
 // the main dialog steps back a crumb only when reka considers it the top layer, whatever the DOM order.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
-const state = vi.hoisted(() => ({ ui: null, user: null }));
+const state = vi.hoisted(() => {
+    // The escape hook is behind the ANDROID build define.
+    globalThis.ANDROID = true;
+    return { ui: null, user: null };
+});
 
 vi.mock('@/shared/utils/platform', async (importOriginal) => ({ ...(await importOriginal()), isAndroid: true }));
 vi.mock('@/composables/useCompactLayout', async () => {
@@ -68,6 +72,11 @@ function createHandler() {
         getHistoryState: () => null
     });
 }
+
+// Undo the ANDROID define override for whatever runs next in this worker.
+afterAll(() => {
+    globalThis.ANDROID = false;
+});
 
 describe('MainDialogContainer and the Android back button', () => {
     let wrapper;
