@@ -381,6 +381,114 @@ public sealed class SyncEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task UnreadableFileKeepsLaterFramesBehindItsBytesAndIsRetried()
+    {
+        var content = new byte[256 * 1024];
+        new Random(3).NextBytes(content);
+        Write(A, content);
+        var (session, sink) = Connect(maxInFlight: 64 * 1024, maxChunk: 16 * 1024);
+        _engine.Subscribe(session, 0, Array.Empty<HaveEntry>());
+        await sink.WaitQuietAsync(200);
+        Assert.DoesNotContain(sink.Messages, m => m.Type == "syncComplete");
+
+        // Another process opens the log without sharing while the writer waits for credit.
+        using (new FileStream(Path(A), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+            _probe.SteamVr = true;
+            _engine.Tick();
+            _engine.Tick();
+            await sink.WaitQuietAsync(200);
+            Assert.DoesNotContain(sink.Messages, m => m.Type == "process" && m.Json.GetProperty("steamVrRunning").GetBoolean());
+            Assert.DoesNotContain(sink.Messages, m => m.Type == "syncComplete");
+            Assert.True(LogFiles.Contiguous(sink.Messages, A).Length < content.Length);
+        }
+
+        // Readable again: the next poll resumes the missing bytes, then syncComplete, then the process change.
+        var deadline = Environment.TickCount64 + 10000;
+        while (!sink.Messages.Any(m => m.Type == "process" && m.Json.GetProperty("steamVrRunning").GetBoolean()))
+        {
+            Assert.True(Environment.TickCount64 < deadline, "process never arrived");
+            _engine.Tick();
+            session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+            await Task.Delay(10);
+        }
+        var all = sink.Messages.ToList();
+        Assert.Equal(content, LogFiles.Contiguous(all, A));
+        var lastData = all.FindLastIndex(m => m.Type == "data");
+        var syncComplete = all.FindIndex(m => m.Type == "syncComplete");
+        var process = all.FindIndex(m => m.Type == "process" && m.Json.GetProperty("steamVrRunning").GetBoolean());
+        Assert.True(lastData < syncComplete, "syncComplete before the data it completes");
+        Assert.True(syncComplete < process, "process before the bytes written before it");
+    }
+
+    [Fact]
+    public async Task FileThatStaysUnreadableIsSetAsideAndSentOnceReadable()
+    {
+        var content = new byte[256 * 1024];
+        new Random(4).NextBytes(content);
+        Write(A, content);
+        var (session, sink) = Connect(maxInFlight: 64 * 1024, maxChunk: 16 * 1024);
+        _engine.Subscribe(session, 0, Array.Empty<HaveEntry>());
+        await sink.WaitQuietAsync(200);
+
+        using (new FileStream(Path(A), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+            _probe.SteamVr = true;
+            // After MaxReadRetries polls the file no longer holds back the queue.
+            var deadline = Environment.TickCount64 + 10000;
+            var polls = 0;
+            while (!sink.Messages.Any(m => m.Type == "process" && m.Json.GetProperty("steamVrRunning").GetBoolean()))
+            {
+                Assert.True(Environment.TickCount64 < deadline, "the queue stayed blocked");
+                _engine.Tick();
+                polls++;
+                await Task.Delay(20);
+            }
+            Assert.True(polls >= StreamSession.MaxReadRetries, $"set aside after {polls} polls");
+            Assert.Contains(sink.Messages, m => m.Type == "syncComplete");
+            Assert.True(LogFiles.Contiguous(sink.Messages, A).Length < content.Length);
+        }
+
+        // The file has not grown, yet its unsent bytes follow as soon as it can be read.
+        var until = Environment.TickCount64 + 10000;
+        while (LogFiles.Contiguous(sink.Messages, A).Length < content.Length)
+        {
+            Assert.True(Environment.TickCount64 < until, "the missing bytes never arrived");
+            _engine.Tick();
+            session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+            await Task.Delay(10);
+        }
+        Assert.Equal(content, LogFiles.Contiguous(sink.Messages, A));
+
+        // Afterwards, appends are live again.
+        var more = LogFiles.Line("after");
+        LogFiles.Append(Path(A), more);
+        var from = sink.Count;
+        _engine.Tick();
+        var live = (await sink.WaitForAsync("data", from)).Last();
+        Assert.Equal(content.Length, live.Header!.Offset);
+        Assert.Equal(more, live.Data);
+    }
+
+    [Fact]
+    public async Task DeletedFileIsDroppedWithoutHoldingTheQueue()
+    {
+        var content = new byte[256 * 1024];
+        new Random(6).NextBytes(content);
+        Write(A, content);
+        var (session, sink) = Connect(maxInFlight: 64 * 1024, maxChunk: 16 * 1024);
+        _engine.Subscribe(session, 0, Array.Empty<HaveEntry>());
+        await sink.WaitQuietAsync(200);
+
+        File.Delete(Path(A));
+        session.OnAck(Interlocked.Read(ref sink.DataWireBytes));
+        // No poll is needed: a deleted file is final, and the snapshot of the next poll tells the phone.
+        await sink.WaitForAsync("syncComplete");
+    }
+
+    [Fact]
     public void SessionThatStopsDrainingIsClosed()
     {
         var session = new StreamSession("dev", "Phone", "127.0.0.1", NullLog.Instance);

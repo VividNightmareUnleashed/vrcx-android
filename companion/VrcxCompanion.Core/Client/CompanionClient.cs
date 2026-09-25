@@ -60,6 +60,14 @@ public sealed class CompanionClient : IAsyncDisposable
 
     public long DataWireBytesReceived => Interlocked.Read(ref _dataWireBytes);
 
+    /// <summary>
+    /// A received <c>heartbeat</c> is answered with <c>ping</c> when nothing was sent for this long, as the phone does,
+    /// to stay inside the companion's 20 s receive timeout (PROTOCOL.md §5.9). Null: never answer (a silent peer).
+    /// </summary>
+    public TimeSpan? HeartbeatReplyAfter { get; set; } = TimeSpan.FromSeconds(10);
+
+    private long _lastSentAt = Environment.TickCount64;
+
     public static async Task<CompanionClient> ConnectAsync(IPAddress address, int port, string expectedFingerprint,
         CancellationToken cancellationToken)
     {
@@ -101,6 +109,7 @@ public sealed class CompanionClient : IAsyncDisposable
         try
         {
             await _ssl.WriteAsync(FrameCodec.EncodeControl(json), cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _lastSentAt, Environment.TickCount64);
         }
         finally
         {
@@ -130,9 +139,13 @@ public sealed class CompanionClient : IAsyncDisposable
         }
         var text = Encoding.UTF8.GetString(frame.Value.Payload);
         using var doc = JsonDocument.Parse(text);
+        var type = doc.RootElement.GetProperty("t").GetString() ?? "";
+        if (type == "heartbeat" && HeartbeatReplyAfter is { } after &&
+            Environment.TickCount64 - Volatile.Read(ref _lastSentAt) >= (long)after.TotalMilliseconds)
+            await SendAsync("{\"t\":\"ping\"}", cancellationToken).ConfigureAwait(false);
         return new ReceivedMessage
         {
-            Type = doc.RootElement.GetProperty("t").GetString() ?? "",
+            Type = type,
             JsonText = text,
             WireBytes = wire,
         };

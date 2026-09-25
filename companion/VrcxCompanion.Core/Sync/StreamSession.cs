@@ -40,6 +40,23 @@ internal sealed class FileSendState
     /// writer after creation.
     /// </summary>
     public long SentEnd { get; set; }
+
+    /// <summary>Consecutive attempts to read this file that failed while the file was still there. Owned by the writer.</summary>
+    public int ReadFailures { get; set; }
+
+    /// <summary>
+    /// The file stayed unreadable for <see cref="StreamSession.MaxReadRetries"/> polls: its data no longer holds back
+    /// the queue, and each later poll retries it until a read succeeds. Owned by the writer.
+    /// </summary>
+    public bool SetAside { get; set; }
+
+    private int _retryRequested;
+
+    /// <summary>Asks the engine to queue this file's unsent bytes again on its next poll (set by the writer).</summary>
+    public void RequestRetry() => Volatile.Write(ref _retryRequested, 1);
+
+    /// <summary>Consumes a pending <see cref="RequestRetry"/> (called by the engine under its lock).</summary>
+    public bool TakeRetryRequest() => Interlocked.Exchange(ref _retryRequested, 0) == 1;
 }
 
 internal abstract class OutItem
@@ -112,6 +129,7 @@ public sealed class StreamSession
     private readonly LinkedList<OutItem> _queue = new();
     private readonly AsyncSignal _queueSignal = new();
     private readonly AsyncSignal _ackSignal = new();
+    private readonly AsyncSignal _pollSignal = new();
     private readonly CancellationTokenSource _closed = new();
     private readonly ICompanionLog _log;
     private readonly long _maxInFlight;
@@ -121,6 +139,7 @@ public sealed class StreamSession
     private long _ackedBytes;
     private long _bytesSent;
     private long _rawBytesSent;
+    private long _polls;
 
     public StreamSession(string deviceId, string deviceName, string remoteAddress, ICompanionLog log,
         long maxInFlight = ProtocolConstants.MaxBytesInFlight, int maxChunk = ProtocolConstants.MaxChunkBytes)
@@ -158,6 +177,25 @@ public sealed class StreamSession
 
     public string? CloseReason { get; private set; }
 
+    private int _reportedDirExists = -1;
+
+    /// <summary>The <c>dirExists</c> value of the last <c>info</c> sent or queued to this session (null: none yet).</summary>
+    public bool? ReportedDirExists
+    {
+        get => Volatile.Read(ref _reportedDirExists) switch
+        {
+            0 => false,
+            1 => true,
+            _ => null,
+        };
+        set => Volatile.Write(ref _reportedDirExists, value switch
+        {
+            false => 0,
+            true => 1,
+            null => -1,
+        });
+    }
+
     // ---- subscription state, owned by SyncEngine under its lock ----
     internal bool Subscribed { get; set; }
     internal (long since, IReadOnlyList<HaveEntry> have)? PendingSubscribe { get; set; }
@@ -170,7 +208,16 @@ public sealed class StreamSession
     internal int NextEpoch()
     {
         Syncing = true;
-        return Interlocked.Increment(ref _epoch);
+        var epoch = Interlocked.Increment(ref _epoch);
+        _pollSignal.Set(); // a writer holding a stale item for a retry drops it now
+        return epoch;
+    }
+
+    /// <summary>Called by the engine after each poll: a data item waiting for a retry is attempted again.</summary>
+    internal void OnPoll()
+    {
+        Interlocked.Increment(ref _polls);
+        _pollSignal.Set();
     }
 
     public void RequestClose(string reason)
@@ -186,6 +233,14 @@ public sealed class StreamSession
     }
 
     // ---- queue ----
+
+    /// <summary>
+    /// Polls for which a data item whose file exists but cannot be opened or read (another process holds it without
+    /// sharing, for example) stays at the head of the queue, so the <c>process</c> and <c>syncComplete</c> messages
+    /// queued after it keep waiting behind its bytes (§5.5, §5.8). After that the file is set aside: the rest of the
+    /// queue flows, and the engine queues the file's unsent bytes again on every poll until a read succeeds.
+    /// </summary>
+    public const int MaxReadRetries = 5;
 
     /// <summary>
     /// Upper bound on queued items. A phone that stops acknowledging while the log keeps changing would otherwise grow
@@ -305,10 +360,40 @@ public sealed class StreamSession
                     r.File.SentEnd = r.Offset;
                     break;
                 case DataItem d:
-                    await SendDataAsync(sink, d, cancellationToken).ConfigureAwait(false);
+                    var result = await SendDataAsync(sink, d, cancellationToken).ConfigureAwait(false);
+                    if (result == SendResult.Failed && d.Epoch == Epoch)
+                        await OnReadFailedAsync(d, cancellationToken).ConfigureAwait(false);
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// A data item could not be opened or read, but its file is still there. The item goes back to the head of the
+    /// queue and is retried after the next poll, for up to <see cref="MaxReadRetries"/> polls. After that the file is
+    /// set aside and the engine queues its unsent bytes again on each poll.
+    /// </summary>
+    private async Task OnReadFailedAsync(DataItem item, CancellationToken cancellationToken)
+    {
+        var file = item.File;
+        file.ReadFailures++;
+        if (!file.SetAside && file.ReadFailures <= MaxReadRetries)
+        {
+            if (file.ReadFailures == 1)
+                _log.Info($"{file.Name} cannot be read right now; retrying after the next poll");
+            var seen = Interlocked.Read(ref _polls);
+            lock (_queueGate)
+                _queue.AddFirst(item);
+            while (Interlocked.Read(ref _polls) == seen && item.Epoch == Epoch)
+                await _pollSignal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (!file.SetAside)
+        {
+            file.SetAside = true;
+            _log.Warn($"{file.Name} stayed unreadable for {MaxReadRetries} polls; other updates are sent meanwhile and it is retried on every poll");
+        }
+        file.RequestRetry();
     }
 
     private async ValueTask WriteAsync(IFrameSink sink, byte[] frame, CancellationToken cancellationToken)
@@ -316,7 +401,19 @@ public sealed class StreamSession
         await sink.WriteFrameAsync(frame, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task SendDataAsync(IFrameSink sink, DataItem item, CancellationToken cancellationToken)
+    private enum SendResult
+    {
+        /// <summary>Sent up to the item's end, or nothing left to send (stale epoch, the file shrank).</summary>
+        Done,
+
+        /// <summary>The file was deleted or replaced; the next snapshot tells the phone.</summary>
+        Gone,
+
+        /// <summary>The file is still there but could not be opened or read right now.</summary>
+        Failed,
+    }
+
+    private async Task<SendResult> SendDataAsync(IFrameSink sink, DataItem item, CancellationToken cancellationToken)
     {
         var file = item.File;
         SafeFileHandle? handle = null;
@@ -334,34 +431,43 @@ public sealed class StreamSession
                     await WaitForCreditAsync(want + 512, cancellationToken).ConfigureAwait(false);
                 }
                 if (item.Epoch != Epoch)
-                    return;
+                    return SendResult.Done;
 
                 if (handle == null)
                 {
-                    handle = OpenVerified(file);
-                    if (handle == null)
-                        return; // deleted or replaced; the next snapshot tells the phone
+                    var opened = OpenVerified(file, out handle);
+                    if (opened != SendResult.Done)
+                        return opened;
                 }
 
                 int read;
                 try
                 {
-                    read = RandomAccess.Read(handle, buffer.AsSpan(0, want), file.SentEnd);
+                    read = RandomAccess.Read(handle!, buffer.AsSpan(0, want), file.SentEnd);
                 }
                 catch (IOException e)
                 {
-                    _log.Warn($"reading {file.Name} failed", e);
-                    return;
+                    if (file.ReadFailures == 0)
+                        _log.Warn($"reading {file.Name} failed", e);
+                    return SendResult.Failed;
                 }
                 if (read <= 0)
-                    return; // the file shrank; the next poll sends truncate
+                    return SendResult.Done; // the file shrank; the next poll sends truncate
 
                 using var frame = FrameCodec.EncodeData(file.Name, file.FileId, file.SentEnd, buffer.AsSpan(0, read));
                 await sink.WriteFrameAsync(frame.Memory, cancellationToken).ConfigureAwait(false);
                 Interlocked.Add(ref _dataWireBytesSent, frame.Length);
                 Interlocked.Add(ref _rawBytesSent, read);
                 file.SentEnd += read;
+                if (file.ReadFailures > 0)
+                {
+                    if (file.SetAside)
+                        _log.Info($"{file.Name} can be read again");
+                    file.ReadFailures = 0;
+                    file.SetAside = false;
+                }
             }
+            return SendResult.Done;
         }
         finally
         {
@@ -378,20 +484,43 @@ public sealed class StreamSession
             await _ackSignal.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private SafeFileHandle? OpenVerified(FileSendState file)
+    /// <summary>
+    /// Opens the file and checks that it is still the file this state belongs to. Returns <see cref="SendResult.Done"/>
+    /// with an open handle, <see cref="SendResult.Gone"/> when the file was deleted or replaced, and
+    /// <see cref="SendResult.Failed"/> when it cannot be opened right now (sharing violation, access denied while a
+    /// delete is pending, I/O error).
+    /// </summary>
+    private static SendResult OpenVerified(FileSendState file, out SafeFileHandle? handle)
     {
+        handle = null;
+        SafeFileHandle opened;
         try
         {
-            var handle = LogFileAccess.OpenShared(file.Path);
-            if (LogFileAccess.GetFileId(handle, file.Path) == file.FileId)
-                return handle;
-            handle.Dispose();
-            return null;
+            opened = LogFileAccess.OpenShared(file.Path);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return SendResult.Gone;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return null;
+            return SendResult.Failed;
         }
+        try
+        {
+            if (LogFileAccess.GetFileId(opened, file.Path) != file.FileId)
+            {
+                opened.Dispose();
+                return SendResult.Gone;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            opened.Dispose();
+            return SendResult.Failed;
+        }
+        handle = opened;
+        return SendResult.Done;
     }
 }
 

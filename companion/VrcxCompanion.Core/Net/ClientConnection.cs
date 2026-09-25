@@ -110,7 +110,11 @@ internal sealed class ClientConnection
 
             _ctx.Engine.AddSession(session);
             log.Info($"session started ({_remote})");
-            await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Info(_ctx.Info(), _ctx.Time.GetUtcNow())), cts.Token)
+            // Built after the session is registered: a directory change observed from here on is either in this
+            // info or makes the host queue another one (sent after this frame, as the writer starts below).
+            var info = _ctx.Info();
+            session.ReportedDirExists = info.DirExists;
+            await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Info(info, _ctx.Time.GetUtcNow())), cts.Token)
                 .ConfigureAwait(false);
 
             using var closeRegistration = session.Closed.Register(() => SafeCancel(cts));

@@ -36,7 +36,10 @@ public sealed class SyncEngine : IDisposable
 
     public TimeSpan PollInterval { get; init; } = ProtocolConstants.PollInterval;
 
-    /// <summary>Raised (outside the engine lock) when the log directory appears or disappears.</summary>
+    /// <summary>
+    /// Raised (outside the engine lock) when the log directory appears or disappears, and with the first observation
+    /// after an idle period (when nothing was watched).
+    /// </summary>
     public event Action<bool>? DirectoryExistsChanged;
 
     /// <summary>Raised (outside the engine lock) when the observed process state changes.</summary>
@@ -203,12 +206,8 @@ public sealed class SyncEngine : IDisposable
             lock (_gate)
             {
                 active = _observers > 0 || _sessions.Any(s => s.Subscribed || s.PendingSubscribe != null);
-                if (!active && _tailerActive)
-                {
-                    _tailer.Suspend();
-                    _tailerActive = false;
-                    _lastProcess = null;
-                }
+                if (!active)
+                    GoIdleLocked();
             }
             try
             {
@@ -233,6 +232,21 @@ public sealed class SyncEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops the tailer and forgets the observed process and directory state: nothing is watched while idle, so the
+    /// first poll after becoming active again reports both afresh (<see cref="DirectoryExistsChanged"/> included).
+    /// </summary>
+    private void GoIdleLocked()
+    {
+        if (_tailerActive)
+        {
+            _tailer.Suspend();
+            _tailerActive = false;
+        }
+        _lastProcess = null;
+        _lastDirExists = null;
+    }
+
     private void TickLocked(List<Action> events)
     {
         var subscribed = _sessions.Where(s => s.Subscribed).ToList();
@@ -255,7 +269,12 @@ public sealed class SyncEngine : IDisposable
         var scan = _tailer.Scan((name, lastWrite) => subscribed.Any(s => lastWrite >= s.SinceTicks ||
                                                                         (s.Files.TryGetValue(name, out var st) && st.Eligible)));
         if (scan == null)
-            return; // listing failed; try again next poll (the process change waits for its data)
+        {
+            // Listing failed; try again next poll (the process change waits for its data).
+            foreach (var s in subscribed)
+                s.OnPoll();
+            return;
+        }
         ObserveDirectory(scan.DirectoryExists, events);
 
         foreach (var s in subscribed)
@@ -266,6 +285,7 @@ public sealed class SyncEngine : IDisposable
                 s.EnqueueControl("process", ControlMessages.Process(process.VrchatRunning, process.SteamVrRunning, _time.GetUtcNow()));
                 s.LastProcess = process;
             }
+            s.OnPoll();
         }
 
         foreach (var s in pending)
@@ -304,9 +324,11 @@ public sealed class SyncEngine : IDisposable
             return;
         var first = _lastDirExists == null;
         _lastDirExists = exists;
-        _log.Info(exists ? "log directory found" : "log directory missing");
-        if (!first)
-            events.Add(() => DirectoryExistsChanged?.Invoke(exists));
+        if (!first || !exists)
+            _log.Info(exists ? "log directory found" : "log directory missing");
+        // Raised for the first observation after an idle period too: the value the sessions were last told may be
+        // older than that period (the host compares it per session and only then sends info).
+        events.Add(() => DirectoryExistsChanged?.Invoke(exists));
     }
 
     /// <summary>Runs a pending subscribe. Returns an action to run outside the lock, or null.</summary>
@@ -395,6 +417,9 @@ public sealed class SyncEngine : IDisposable
             st.Eligible = true;
         if (!st.Eligible || f.HandleLength < 0)
             return;
+        // The writer set this file aside after reads kept failing: queue its unsent bytes again. A data item sends
+        // from the writer's position, so this covers everything up to QueuedEnd.
+        var retry = st.TakeRetryRequest();
         if (f.HandleLength < st.QueuedEnd)
         {
             s.Enqueue(new TruncateItem(s.Epoch, st, f.HandleLength));
@@ -405,6 +430,10 @@ public sealed class SyncEngine : IDisposable
         {
             st.QueuedEnd = f.HandleLength;
             s.EnqueueData(st, f.HandleLength);
+        }
+        else if (retry)
+        {
+            s.EnqueueData(st, st.QueuedEnd);
         }
     }
 

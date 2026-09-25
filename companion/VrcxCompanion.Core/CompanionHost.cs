@@ -101,6 +101,7 @@ public sealed class CompanionHost : IAsyncDisposable
     private DiscoveryResponder? _discovery;
     private TimeZoneSnapshot _tz;
     private long _bytesSent;
+    private int _disposed;
 
     private CompanionHost(CompanionHostOptions options)
     {
@@ -127,7 +128,7 @@ public sealed class CompanionHost : IAsyncDisposable
         {
             PollInterval = options.PollInterval,
         };
-        Engine.DirectoryExistsChanged += _ => BroadcastInfo();
+        Engine.DirectoryExistsChanged += OnDirectoryExistsObserved;
         _certContext = SslStreamCertificateContext.Create(Identity.Certificate, additionalCertificates: null, offline: true);
         _tz = TimeZoneReader.Capture(TimeZoneInfo.Local, options.Time.GetUtcNow());
     }
@@ -214,12 +215,16 @@ public sealed class CompanionHost : IAsyncDisposable
     public byte[] BuildDiscoveryReply() =>
         ControlMessages.DiscoveryReply(Identity.CompanionId, _options.MachineName, TcpPort, Identity.Fingerprint, Pairing.IsOpen);
 
+    /// <summary>
+    /// The values of an <c>info</c> message. <c>dirExists</c> is checked now rather than taken from the engine, whose
+    /// last observation can be older than an idle period.
+    /// </summary>
     public InfoSnapshot CurrentInfo()
     {
         TimeZoneSnapshot tz;
         lock (_tzGate)
             tz = _tz;
-        var exists = Engine.LastDirectoryExists ?? SafeDirectoryExists(Engine.LogDirectory);
+        var exists = SafeDirectoryExists(Engine.LogDirectory);
         return new InfoSnapshot(_options.CompanionVersion, _options.MachineName, tz, Engine.LogDirectory, exists);
     }
 
@@ -282,8 +287,26 @@ public sealed class CompanionHost : IAsyncDisposable
         }
     }
 
-    private void BroadcastInfo() =>
-        Engine.Broadcast("info", () => ControlMessages.Info(CurrentInfo(), _options.Time.GetUtcNow()));
+    /// <summary>Queues <c>info</c> on every session, or on those matching <paramref name="where"/>.</summary>
+    private void BroadcastInfo(Func<StreamSession, bool>? where = null)
+    {
+        var targets = Engine.Sessions.Where(s => where == null || where(s)).ToArray();
+        if (targets.Length == 0)
+            return;
+        var info = CurrentInfo();
+        var json = ControlMessages.Info(info, _options.Time.GetUtcNow());
+        foreach (var s in targets)
+        {
+            s.EnqueueControl("info", json, independentOfSubscription: true);
+            s.ReportedDirExists = info.DirExists;
+        }
+    }
+
+    /// <summary>
+    /// The engine saw the log directory appear or disappear, or looked at it for the first time after being idle:
+    /// send <c>info</c> to every session that was told something else (§5.4).
+    /// </summary>
+    private void OnDirectoryExistsObserved(bool exists) => BroadcastInfo(s => s.ReportedDirExists != exists);
 
     private async Task TimeZoneLoopAsync(CancellationToken ct)
     {
@@ -301,8 +324,11 @@ public sealed class CompanionHost : IAsyncDisposable
         }
     }
 
+    /// <summary>Stops everything. Safe to call more than once and from any thread; later calls return at once.</summary>
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         var cts = _cts;
         if (cts != null)
         {

@@ -25,14 +25,17 @@ public static class ProtocolConstants
     public const int PairingMaxFailedAttempts = 5;
 
     /// <summary>
-    /// Receive timeout on the companion side. PROTOCOL.md 5.9 says "either side closes after 20 s without receiving
-    /// anything", but the phone only pings every 30 s when idle, so a 20 s limit on the companion would drop idle
-    /// connections. The companion waits for two missed pings instead.
+    /// PROTOCOL.md 5.9: "Either side closes after 20 s without receiving anything". The phone keeps an idle connection
+    /// inside this limit by answering the 5 s heartbeat (ping, or a pending ack) whenever it has sent nothing for
+    /// 10 s, so a phone that vanished without closing (Wi-Fi drop, sleep) is dropped after 20 s.
     /// </summary>
-    public static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(65);
+    public static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(20);
 
-    /// <summary>Time allowed between the TCP accept and a valid pair/auth message.</summary>
-    public static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// Time allowed between the TCP accept and a valid pair/auth message. The phone sends pair or auth right after
+    /// <c>hello</c>, so the handshake gets the same 20 s as any other silence.
+    /// </summary>
+    public static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(20);
 
     public const string DiscoverRequestType = "vrcx-discover";
     public const string DiscoverReplyType = "vrcx-companion";
