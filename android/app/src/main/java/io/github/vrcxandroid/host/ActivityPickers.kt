@@ -178,13 +178,16 @@ object FileChooser {
     }
 
     // `accept` values (image/ wildcard, `.json`, `image/png,image/jpeg`) → MIME types; an empty list means anything.
-    fun mimeTypesFor(acceptTypes: List<String>): List<String> = acceptTypes
+    fun mimeTypesFor(
+        acceptTypes: List<String>,
+        mimeForExtension: (String) -> String? = { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) },
+    ): List<String> = acceptTypes
         .flatMap { it.split(',') }
         .map { it.trim().lowercase(Locale.ROOT) }
         .filter { it.isNotEmpty() }
         .map { accept ->
             if (accept.startsWith(".")) {
-                MimeTypeMap.getSingleton().getMimeTypeFromExtension(accept.substring(1)) ?: "*/*"
+                mimeForExtension(accept.substring(1)) ?: "*/*"
             } else {
                 accept
             }

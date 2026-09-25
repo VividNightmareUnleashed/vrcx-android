@@ -57,6 +57,12 @@ class HostWebViewClient : WebViewClient() {
         }
     }
 
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+        if (!request.isForMainFrame) return
+        val hint = if (request.url?.toString() == HostUrls.START_URL) " (web bundle missing? run `npm run build:android` in web/)" else ""
+        Log.e(TAG, "main frame HTTP ${errorResponse.statusCode} for ${request.url}$hint")
+    }
+
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
         WebViewHolder.onRenderProcessGone(view, detail.didCrash())
         return true

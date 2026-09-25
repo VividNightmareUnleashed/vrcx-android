@@ -101,7 +101,7 @@ object VrcxHost {
         }
         if (wasPaused || firstStart) runCatching { AppGraph.companion.setRunning(true) }
         firstStart = false
-        if (backgroundMode) VrcxForegroundService.start(app)
+        if (backgroundMode && hasPage) VrcxForegroundService.start(app)
         HostNotifications.cancelAttention(app)
         applyKeepScreenOn()
         emit("visibility", buildJsonObject {
@@ -123,6 +123,9 @@ object VrcxHost {
             if (activity.isFinishing) ActivityPickers.cancelPending()
         }
     }
+
+    /** False behind the WebView gate screen: then there is no page for the service to keep alive. */
+    private val hasPage: Boolean get() = WebViewHolder.current != null
 
     private fun schedulePause() {
         main.removeCallbacks(pauseRunnable)
@@ -146,7 +149,7 @@ object VrcxHost {
             main.post {
                 if (value) {
                     main.removeCallbacks(pauseRunnable)
-                    if (started) VrcxForegroundService.start(app)
+                    if (started && hasPage) VrcxForegroundService.start(app)
                 } else {
                     VrcxForegroundService.stop(app)
                     if (!started) schedulePause()
@@ -169,18 +172,16 @@ object VrcxHost {
 
     // ---- Launch commands (ARCHITECTURE.md §6.9) ----
 
-    private val pendingLaunch = AtomicReference<String?>(null)
+    private val launchInbox = LaunchCommandInbox()
 
-    fun setPendingLaunchCommand(command: String) {
-        pendingLaunch.set(command)
-    }
+    fun setPendingLaunchCommand(command: String) = launchInbox.setPending(command)
 
     /** Returns the pending command once, then "" (AppApi.GetLaunchCommand). */
-    fun takeLaunchCommand(): String = pendingLaunch.getAndSet(null) ?: ""
+    fun takeLaunchCommand(): String = launchInbox.take()
 
     /** Running page: `launch-command` event. Page not loaded yet: pending for GetLaunchCommand after login. */
     fun deliverLaunchCommand(command: String) {
-        if (events.isPageConnected) emit("launch-command", JsonPrimitive(command)) else setPendingLaunchCommand(command)
+        launchInbox.deliver(command, events.isPageConnected) { emit("launch-command", JsonPrimitive(it)) }
     }
 
     // ---- Keep screen on ----

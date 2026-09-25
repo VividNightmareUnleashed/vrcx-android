@@ -65,4 +65,31 @@ class LaunchCommandsTest {
         assertEquals("crash/Browser crashed.", LaunchCommands.crash(didCrash = true))
         assertEquals("crash/Browser was killed.", LaunchCommands.crash(didCrash = false))
     }
+
+    @Test
+    fun aColdStartCommandIsReturnedOnceByGetLaunchCommand() {
+        val inbox = LaunchCommandInbox()
+        val emitted = ArrayList<String>()
+        inbox.deliver("world/wrld_1", pageConnected = false) { emitted += it }
+        assertEquals(emptyList<String>(), emitted)
+        assertEquals("world/wrld_1", inbox.take())
+        assertEquals("", inbox.take())
+    }
+
+    @Test
+    fun aRunningPageGetsTheEventAndNothingStaysPending() {
+        val inbox = LaunchCommandInbox()
+        val emitted = ArrayList<String>()
+        inbox.deliver("user/usr_1", pageConnected = true) { emitted += it }
+        assertEquals(listOf("user/usr_1"), emitted)
+        assertEquals("", inbox.take())
+    }
+
+    @Test
+    fun theLastPendingCommandWins() {
+        val inbox = LaunchCommandInbox()
+        inbox.setPending(LaunchCommands.crash(didCrash = true))
+        inbox.deliver("group/grp_1", pageConnected = false) {}
+        assertEquals("group/grp_1", inbox.take())
+    }
 }

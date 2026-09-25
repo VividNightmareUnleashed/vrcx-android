@@ -100,6 +100,11 @@ class VrcxForegroundService : Service() {
             context.stopService(Intent(context, VrcxForegroundService::class.java))
         }
 
+        /** Posts the notification again (for example after POST_NOTIFICATIONS was granted). Any thread. */
+        fun refreshIfRunning() {
+            VrcxHost.main.post { instance?.refresh() }
+        }
+
         /** electron.setTrayIconNotification. */
         fun setTrayNotify(notify: Boolean) {
             if (trayNotify == notify) return

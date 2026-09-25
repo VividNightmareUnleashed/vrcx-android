@@ -604,13 +604,15 @@
 
     function setInsets(insets) {
         var next = insets && typeof insets === 'object' ? insets : {};
-        var imeGrew = Number(next.imeBottom) > Number(lastInsets.imeBottom || 0);
+        // Native sends the keyboard height as `imeBottom` (and `ime`); accept either.
+        var ime = Number(next.imeBottom !== undefined ? next.imeBottom : next.ime) || 0;
+        var imeGrew = ime > Number(lastInsets.imeBottom || 0);
         lastInsets = {
             top: Number(next.top) || 0,
             right: Number(next.right) || 0,
             bottom: Number(next.bottom) || 0,
             left: Number(next.left) || 0,
-            imeBottom: Number(next.imeBottom) || 0
+            imeBottom: ime
         };
         withRoot(function (root) {
             var style = root.style;

@@ -15,7 +15,6 @@
     <string name="service_companion_connecting">Connecting to the PC companion…</string>
     <string name="service_companion_searching">Looking for the PC companion…</string>
     <string name="service_companion_error">PC companion: connection problem</string>
-    <string name="service_new_activity">New activity</string>
     <string name="service_new_activity_with_status">New activity · %1$s</string>
     <string name="action_open">Open</string>
     <string name="action_quit">Quit</string>

@@ -85,8 +85,10 @@ object HostNotifications {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return permissionState(context)
         if (permissionState(context) == "granted") return "granted"
         if (VrcxHost.activity == null) return permissionState(context)
-        ActivityPickers.requestPermission(Manifest.permission.POST_NOTIFICATIONS)
+        val granted = ActivityPickers.requestPermission(Manifest.permission.POST_NOTIFICATIONS)
         VrcxHost.prefs.edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
+        // The service notification posted before the grant stays hidden until it is posted again.
+        if (granted) VrcxForegroundService.refreshIfRunning()
         return permissionState(context)
     }
 

@@ -85,6 +85,7 @@ class HostModelTest {
         val json = p.toJson()
         assertEquals(48f, json["bottom"]!!.jsonPrimitive.content.toFloat())
         assertEquals(336f, json["imeBottom"]!!.jsonPrimitive.content.toFloat())
+        assertEquals(336f, json["ime"]!!.jsonPrimitive.content.toFloat())
         assertEquals(0f, InsetsPayload.fromPixels(-3, 0, 0, 0, 0, 0f).top)
     }
 

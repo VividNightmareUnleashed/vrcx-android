@@ -79,7 +79,10 @@ data class ThemeColors(val frame: Int, val light: Boolean) {
     }
 }
 
-/** The `insets` event payload, in CSS px (ARCHITECTURE.md §4.4 item 7). */
+/**
+ * The `insets` event payload, in CSS px (ARCHITECTURE.md §4.4 item 7). The keyboard height is sent as `imeBottom` and,
+ * for the phone shell's preview bridge (web/src/platform/android/dev/mockBridge.js), also as `ime`.
+ */
 data class InsetsPayload(val top: Float, val right: Float, val bottom: Float, val left: Float, val imeBottom: Float) {
     fun toJson(): JsonObject = buildJsonObject {
         put("top", top)
@@ -87,6 +90,7 @@ data class InsetsPayload(val top: Float, val right: Float, val bottom: Float, va
         put("bottom", bottom)
         put("left", left)
         put("imeBottom", imeBottom)
+        put("ime", imeBottom)
     }
 
     companion object {

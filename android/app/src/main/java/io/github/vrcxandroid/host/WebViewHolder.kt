@@ -182,6 +182,9 @@ object WebViewHolder {
         installBridge(wv)
     }
 
+    // WebViewGate.check (MainActivity.onCreate) guarantees DOCUMENT_START_SCRIPT and WEB_MESSAGE_LISTENER before any
+    // WebView is created, so the feature checks lint asks for are already done.
+    @SuppressLint("RequiresFeature")
     private fun installBridge(wv: WebView) {
         val ctx = wv.context
         val config = BridgeConfig.json(
@@ -205,6 +208,7 @@ object WebViewHolder {
         return text
     }
 
+    @SuppressLint("RequiresFeature")
     private fun onMessage(view: WebView, message: WebMessageCompat, isMainFrame: Boolean, proxy: JavaScriptReplyProxy) {
         if (!isMainFrame || view !== webView) return
         val data = message.data ?: return
@@ -221,6 +225,7 @@ object WebViewHolder {
     }
 
     /** The shim of a freshly loaded page announced itself: route events to it and replay the state events. */
+    @SuppressLint("RequiresFeature")
     private fun onPageHello(proxy: JavaScriptReplyProxy) {
         Log.i(TAG, "page connected")
         VrcxHost.events.connect { text -> VrcxHost.main.post { runCatching { proxy.postMessage(text) } } }

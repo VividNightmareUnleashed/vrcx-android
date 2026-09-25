@@ -67,4 +67,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // host
+    // play-services-code-scanner pulls in Fragment 1.0.0, which breaks Activity Result permission requests
+    // (lint InvalidFragmentVersionForActivityResult, fatal for release builds).
+    implementation("androidx.fragment:fragment:1.8.5")
 }

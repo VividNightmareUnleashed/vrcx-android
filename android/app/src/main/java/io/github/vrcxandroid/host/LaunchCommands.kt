@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.host
 
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Launch commands (docs/ARCHITECTURE.md §6.9). The page receives them without the
@@ -54,4 +55,25 @@ object LaunchCommands {
     }
 
     private const val ACTION_SEND = "android.intent.action.SEND"
+}
+
+/**
+ * Where a launch command goes (docs/ARCHITECTURE.md §6.9): to the running page as a `launch-command` event, or, while no
+ * page is connected (cold start, renderer recovery), into a slot that `AppApi.GetLaunchCommand` empties once. Thread-safe.
+ */
+class LaunchCommandInbox {
+    private val pending = AtomicReference<String?>(null)
+
+    /** Replaces the pending command (the last one wins, like a second cold-start deep link would). */
+    fun setPending(command: String) {
+        pending.set(command)
+    }
+
+    /** The pending command once, then "". */
+    fun take(): String = pending.getAndSet(null) ?: ""
+
+    /** Sends [command] through [emit] when a page is connected, otherwise keeps it for [take]. */
+    fun deliver(command: String, pageConnected: Boolean, emit: (String) -> Unit) {
+        if (pageConnected) emit(command) else pending.set(command)
+    }
 }

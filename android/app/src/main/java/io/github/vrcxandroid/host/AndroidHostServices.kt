@@ -1,5 +1,6 @@
 package io.github.vrcxandroid.host
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -63,6 +64,8 @@ class AndroidHostServices(private val app: Application) : HostServices {
             VrcxHost.backgroundMode = value
         }
 
+    // Only reached from the Settings action the user opts into (docs/ARCHITECTURE.md §7); the system dialog explains it.
+    @SuppressLint("BatteryLife")
     override fun requestIgnoreBatteryOptimizations() {
         if (isIgnoringBatteryOptimizations()) return
         val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${app.packageName}"))

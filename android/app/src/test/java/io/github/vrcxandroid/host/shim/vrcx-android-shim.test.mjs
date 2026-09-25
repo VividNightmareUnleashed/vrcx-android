@@ -419,6 +419,11 @@ test('insets become CSS variables', () => {
     env.event('insets', { top: 24, right: 0, bottom: 48, left: 0, imeBottom: 300 });
     assert.equal(env.styleProps.get('--ime-bottom'), '300px');
     assert.equal(env.win.__vrcxAndroid.insets.imeBottom, 300);
+    // The `ime` spelling (phone-shell preview bridge) is accepted too.
+    env.event('insets', { top: 24, right: 0, bottom: 48, left: 0, ime: 120 });
+    assert.equal(env.styleProps.get('--ime-bottom'), '120px');
+    env.event('insets', { top: 24, right: 0, bottom: 48, left: 0 });
+    assert.equal(env.styleProps.get('--ime-bottom'), '0px');
 });
 
 test('speechSynthesis polyfill: voices, ordering, speak and progress events', async () => {
