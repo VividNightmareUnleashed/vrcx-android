@@ -35,6 +35,36 @@ function remixiconWoff2Only() {
 }
 
 /**
+ * Android build: drops the preconnect and dns-prefetch hints from index.html. The WebView would open TLS connections
+ * to the VRChat hosts on every start, although the app's API calls go through the native HTTP client.
+ *
+ * @returns {import('vite').Plugin}
+ */
+function androidIndexHtml() {
+    return {
+        name: 'android-index-html',
+        transformIndexHtml(html) {
+            return html.replace(/^[ \t]*<link rel="(?:preconnect|dns-prefetch)"[^>]*>[ \t]*\r?\n/gm, '');
+        }
+    };
+}
+
+/**
+ * Android build: the Noto Sans CJK webfonts are replaced by Android's own Noto Sans CJK system fonts
+ * (platform/android/styles/system-cjk-fonts.css). Only Inter ships as a webfont.
+ *
+ * @returns {import('vite').AliasOptions}
+ */
+function androidFontAliases() {
+    return [
+        {
+            find: /^@fontsource-variable\/noto-sans-(?:jp|kr|sc|tc)$/,
+            replacement: resolve(import.meta.dirname, './platform/android/styles/system-cjk-fonts.css')
+        }
+    ];
+}
+
+/**
  * @param assetId
  */
 function getAssetLanguage(assetId) {
@@ -118,6 +148,7 @@ export default defineConfig(({ mode }) => {
         base: '',
         plugins: [
             remixiconWoff2Only(),
+            android && androidIndexHtml(),
             vue(),
             vueJsx({
                 tsTransform: 'built-in'
@@ -140,9 +171,10 @@ export default defineConfig(({ mode }) => {
                 )
         ],
         resolve: {
-            alias: {
-                '@': resolve(import.meta.dirname, '.')
-            }
+            alias: [
+                ...(android ? androidFontAliases() : []),
+                { find: '@', replacement: resolve(import.meta.dirname, '.') }
+            ]
         },
         css: {
             transformer: 'lightningcss',

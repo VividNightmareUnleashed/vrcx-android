@@ -1,0 +1,7 @@
+/*
+ * Android build only (vite.config.js aliases the four @fontsource-variable/noto-sans-{jp,kr,sc,tc} imports of
+ * styles/fonts.css to this file). Android ships Noto Sans CJK as system fonts, so the app bundles no CJK webfont
+ * (about 16 MB of woff2 and 460 @font-face rules). Inter stays a webfont. CJK text falls through the font stack of
+ * styles/fonts.css to `sans-serif`, and Android picks the Japanese, Korean, Simplified or Traditional Chinese glyphs
+ * from the page language (the lang attribute the app sets on <html>) and the device locale.
+ */
