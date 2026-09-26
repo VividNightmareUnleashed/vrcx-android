@@ -93,7 +93,12 @@ one device pairs, and closes after 5 failed attempts. The window shows:
 - a **pairing code**: 10 characters of Crockford base32 (50 random bits), displayed as `XXXXX-XXXXX`. The phone
   normalizes input (uppercase, drops `-` and spaces, maps `O→0` and `I/L→1`);
 - a **QR code** containing
-  `vrcxc://pair?v=1&id=<companionId>&n=<url-encoded name>&h=<comma-separated local IPv4/IPv6 addresses>&p=<port>&fp=<fp>&c=<code>`.
+  `vrcxc://pair?v=1&id=<companionId>&n=<url-encoded name>&h=<comma-separated local addresses>&p=<port>&fp=<fp>&c=<code>`.
+  `h` lists IPv4 addresses first, then unique-local IPv6; link-local IPv6 is left out because its zone id means
+  nothing on the phone. `c` is the normalized code without the dash.
+
+`VrcxCompanion.exe --pair` opens this window (in the running instance if there is one); starting the companion a second
+time without arguments opens its Status window.
 
 `codeKey` = the 10 normalized ASCII characters as bytes. `fp` is the fingerprint the phone pinned for this connection.
 In the HMAC messages below, `fp`, `helloNonce` (from `hello.nonce`) and `clientNonce` (from `pair.nonce`) are the
@@ -150,7 +155,7 @@ After that come live updates. A second `subscribe` on the same connection restar
 ### 5.6 `snapshot`
 
 ```
-{"t":"snapshot","files":[{"name":"…","fileId":"<NTFS volume serial + file index, hex>","creationTimeUtcTicks":<int64>,
+{"t":"snapshot","files":[{"name":"…","fileId":"<24 lowercase hex digits: 8 of the volume serial, 16 of the NTFS file index>","creationTimeUtcTicks":<int64>,
   "lastWriteTimeUtcTicks":<int64>,"length":<int64>}, …]}
 ```
 Values are exactly what `FileInfo.Refresh()` reports (`CreationTimeUtc.Ticks`, `LastWriteTimeUtc.Ticks`, `Length`),
@@ -176,10 +181,14 @@ bytes that were written before the change was observed.
 ### 5.9 Liveness and flow control
 
 - `{"t":"heartbeat","pcUtcNowMs":<int64>}` every 5 s. The phone estimates clock skew from it
-  (`skew = pcUtcNowMs − phone receive time`, smoothed). The phone sends `{"t":"ping"}` every 30 s if nothing else was
-  sent. Either side closes after 20 s without receiving anything.
-- `{"t":"ack","bytes":<int64 total data-frame bytes consumed so far on this connection>}` from the phone at least
-  every 1 MiB received. The companion keeps at most 4 MiB of unacknowledged data in flight.
+  (`skew = pcUtcNowMs − phone receive time`, smoothed).
+- The phone sends `{"t":"ping"}` when it receives a frame and has sent nothing for 10 s, so an idle but healthy phone
+  talks at least every ~15 s. The phone closes after 20 s without receiving anything (heartbeats arrive every 5 s);
+  the companion closes after 65 s without receiving anything.
+- `{"t":"ack","bytes":<int64>}` from the phone at least every 512 KiB received and at `syncComplete`. `bytes` is the
+  running total of the **wire size** of every data frame (`0x02`) received on this connection: 4-byte length prefix
+  + type byte + payload. The companion keeps at most 4 MiB of unacknowledged data frames in flight and clamps acks to
+  what it has sent.
 - `{"t":"fetch","name":"…","fileId":"…","fromOffset":<int64>}` asks the companion to resend a file from an offset
   (for example after the phone lost its mirror).
 

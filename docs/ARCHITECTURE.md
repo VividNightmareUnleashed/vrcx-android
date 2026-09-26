@@ -162,7 +162,7 @@ The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host
 | `CompanionGetState()` | state object (below) |
 | `CompanionDiscover(timeoutMs)` | `[{id, name, host, port, fp, pairing}]` |
 | `CompanionScanQr()` | state object after pairing; rejects `OperationCanceledException: ...` when the scan is cancelled |
-| `CompanionPair({host, port, fp?, id?, name?}, code)` | state object; rejects `PairingException: <code|expired|closed|unreachable|not-local|fingerprint>` |
+| `CompanionPair({host, port, fp?, id?, name?}, code)` | state object; rejects `PairingException: <code|expired|closed|unreachable|not-local|fingerprint|version|invalid-qr|protocol|storage>` |
 | `CompanionForget(id)` / `CompanionSetActive(id)` | state object |
 | `ImportDatabase()` | `{ok, message}`. Opens SAF pickers for `VRCX.sqlite3`, then optionally `VRCX.json`, and restarts the app on success |
 | `ExportDatabase()` | `true` when saved |
@@ -173,6 +173,9 @@ The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host
 | `CanLaunchVRChat()` | bool: whether an installed app handles `vrchat://launch` |
 | `RestartApp()` | never resolves (the process restarts) |
 | `GetDeviceInfo()` | `{model, sdkInt, webViewVersion, appVersion, vrcxVersion}` |
+| `SetKeepScreenOn(bool)` | `undefined` (also held natively during a database import) |
+| `ShowKeyboard()` | `undefined`. Called by the shim when a dialog focuses its own text field (Android only raises the keyboard for focus from a tap) |
+| `Electron*` (`GetClipboardText`, `OpenFileDialog`, `OpenDirectoryDialog`, `DesktopNotification`, `SetTrayIconNotification`, `RestartApp`) | back the shim's `window.electron` object |
 
 Companion state object (also the `companion-state` event payload):
 ```
@@ -180,8 +183,10 @@ Companion state object (also the `companion-state` event payload):
   activeId: string|null,
   paired: [{id, name, hosts:[string], port, fp, pairedAt, lastSeen}],
   machineName: string|null, tz: {windowsId, ianaId, supportsDst, baseUtcOffsetMin, currentUtcOffsetMin}|null,
-  vrchatRunning: bool, steamVrRunning: bool, syncing: bool, lastError: string|null }
+  vrchatRunning: bool, steamVrRunning: bool, syncing: bool,
+  lastError: null|'unreachable'|'fingerprint'|'not-local'|'version'|'protocol'|'revoked'|'storage' }
 ```
+`pairedAt` and `lastSeen` are epoch milliseconds.
 Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` (no payload).
 
 ### 5.2 Frontend Android modules
@@ -284,6 +289,8 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 - The Gradle module adds `../../web/build/android` as an extra assets directory, so the page ends up at APK asset path
   `web/index.html`. `GetVersion` is generated from `web/Version` into `BuildConfig.VRCX_VERSION`.
 - `gradlew assembleDebug` (or `assembleRelease`) in `android/` then builds the APK.
-- The companion: `dotnet publish companion/VrcxCompanion -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`.
+- The companion: `dotnet publish companion/VrcxCompanion -c Release -r win-x64 --no-self-contained
+  -p:SelfContained=false -p:PublishSingleFile=true -o dist/companion` (the .NET 10 SDK treats
+  `--self-contained false` as self-contained). The result is a ~0.9 MB exe that needs the .NET 8 Desktop Runtime.
 - Tests: `npm test` (vitest) in `web/`; `gradlew testDebugUnitTest` (LogWatcher golden tests, SQL binder, librsync
   signature, colour hash); `dotnet test companion/` (protocol, LAN filter, tailer).
