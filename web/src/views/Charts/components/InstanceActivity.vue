@@ -156,10 +156,12 @@
                 <DataTableEmpty type="nodata" />
             </div>
 
+            <!-- Android (phones and the narrow tablet page card): the divider's 400px side padding would make the page
+                 scroll sideways, so it is capped at a tenth of the width. -->
             <transition name="el-fade-in-linear">
                 <div
                     v-show="isDetailVisible && !isLoading && activityData.length !== 0"
-                    class="px-[400px] transition-[top] duration-300 ease-in-out compact:px-6">
+                    class="px-[400px] transition-[top] duration-300 ease-in-out [.is-android_&]:px-[min(400px,10%)]">
                     <div class="flex items-center">
                         <Separator class="flex-1" />
                         <span class="px-2 text-muted-foreground">·</span>
