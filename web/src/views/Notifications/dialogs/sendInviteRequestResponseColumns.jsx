@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { i18n } from '@/plugins';
 import { SquarePen } from 'lucide-vue-next';
 
+import { useCompactLayout } from '@/composables/useCompactLayout';
+
 const { t } = i18n.global;
 
 export const createColumns = ({ onEdit }) => [
@@ -11,7 +13,15 @@ export const createColumns = ({ onEdit }) => [
         header: () => t('table.profile.invite_messages.slot'),
         size: 70,
         // Phone cards (docs/DESIGN.md §3.1): slot number, message, cool-down footer, edit button.
-        meta: { mobile: { slot: 'leading', class: 'min-w-4 tabular-nums text-muted-foreground' } }
+        meta: { mobile: { slot: 'leading' } },
+        // The card's leading slot takes no classes, so the phone number styles itself; PC keeps TanStack's default
+        // cell.
+        cell: (props) =>
+            useCompactLayout().isCompact.value ? (
+                <span class="inline-block min-w-4 text-muted-foreground tabular-nums">{props.getValue()}</span>
+            ) : (
+                (props.renderValue()?.toString?.() ?? null)
+            )
     },
     {
         accessorKey: 'message',

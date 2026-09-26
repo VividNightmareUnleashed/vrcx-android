@@ -197,31 +197,38 @@ export const createColumns = ({
         if (!items.length) {
             return null;
         }
-        // Decline and Delete log sit apart from the answers (right-aligned, or on their own line when they wrap).
-        const firstDismiss = items.findIndex((item) => item.dismiss);
+        // Decline and Delete log sit apart from the answers: together at the end of the row, or on their own
+        // right-aligned line when they do not fit beside them.
+        const renderButton = (item) => {
+            const Icon = item.icon;
+            return (
+                <Button
+                    key={item.key}
+                    variant="outline"
+                    size="sm"
+                    // 40px touch targets (docs/DESIGN.md §1, --touch-min).
+                    class={['h-10 max-w-full gap-1.5 px-3 text-xs', item.destructive ? 'text-destructive' : '']}
+                    data-action={item.key}
+                    onClick={item.onClick}
+                >
+                    <Icon class="size-3.5 shrink-0" />
+                    <span class="truncate">{item.label}</span>
+                </Button>
+            );
+        };
+        const answers = items.filter((item) => !item.dismiss);
+        const dismissals = items.filter((item) => item.dismiss);
         return (
             <div class="flex flex-wrap items-center gap-2 pt-1" data-testid="notification-compact-actions">
-                {items.map((item, index) => {
-                    const Icon = item.icon;
-                    return (
-                        <Button
-                            key={item.key}
-                            variant="outline"
-                            size="sm"
-                            // 40px touch targets (docs/DESIGN.md §1, --touch-min).
-                            class={[
-                                'h-10 max-w-full gap-1.5 px-3 text-xs',
-                                index === firstDismiss && index > 0 ? 'ml-auto' : '',
-                                item.destructive ? 'text-destructive' : ''
-                            ]}
-                            data-action={item.key}
-                            onClick={item.onClick}
-                        >
-                            <Icon class="size-3.5 shrink-0" />
-                            <span class="truncate">{item.label}</span>
-                        </Button>
-                    );
-                })}
+                {answers.map(renderButton)}
+                {dismissals.length ? (
+                    <div
+                        class="ml-auto flex max-w-full flex-wrap justify-end gap-2"
+                        data-testid="notification-compact-dismiss"
+                    >
+                        {dismissals.map(renderButton)}
+                    </div>
+                ) : null}
             </div>
         );
     };

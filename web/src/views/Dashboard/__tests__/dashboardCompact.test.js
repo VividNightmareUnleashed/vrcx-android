@@ -15,4 +15,11 @@ describe('dashboard phone layout', () => {
         expect(getCompactPanelHeightClass('friends-locations')).toContain('h-[75dvh]');
         expect(getCompactPanelHeightClass(null)).toBe('h-24');
     });
+
+    test('in landscape a page panel fits the scroll area instead of reaching past the screen', () => {
+        const classes = getCompactPanelHeightClass('friends-locations');
+        expect(classes).toContain('compact-landscape:h-[calc(100dvh-var(--app-chrome-h)-2rem)]');
+        expect(classes).toContain('compact-landscape:min-h-0');
+        expect(getCompactPanelHeightClass({ key: 'widget:feed' })).not.toContain('compact-landscape:');
+    });
 });

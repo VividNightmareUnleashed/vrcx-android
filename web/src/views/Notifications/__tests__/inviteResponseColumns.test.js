@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({ isCompact: { value: false } }));
+
 vi.mock('@/plugins', () => ({ i18n: { global: { t: (key) => key } } }));
+vi.mock('@/composables/useCompactLayout', () => ({ useCompactLayout: () => ({ isCompact: mocks.isCompact }) }));
 vi.mock('@/components/CountdownTimer.vue', () => ({ default: 'CountdownTimer' }));
 vi.mock('@/components/ui/button', () => ({ Button: 'Button' }));
 
@@ -49,5 +52,20 @@ describe.each([
             action: 'actions'
         });
         expect(getMobileHint(columns.find((column) => column.id === 'updatedAt')).label).toBe(true);
+    });
+
+    test('slot number: styled on phones, the TanStack default text on PC', () => {
+        const slot = columns.find((column) => column.id === 'slot').columnDef;
+        const props = { getValue: () => 3, renderValue: () => 3 };
+
+        mocks.isCompact.value = false;
+        expect(slot.cell(props)).toBe('3');
+
+        mocks.isCompact.value = true;
+        const phone = slot.cell(props);
+        expect(phone.type).toBe('span');
+        expect(String(phone.props.class)).toContain('tabular-nums');
+        expect(String(phone.props.class)).toContain('text-muted-foreground');
+        mocks.isCompact.value = false;
     });
 });

@@ -31,8 +31,8 @@ const isCompactLayout = () => useCompactLayout().isCompact.value;
  */
 const compactStat = (label, content) =>
     content === null || content === undefined || content === '' ? null : (
-        <span class="whitespace-nowrap">
-            {label()}: {content}
+        <span>
+            <span class="whitespace-nowrap">{label()}:</span> <span class="whitespace-nowrap">{content}</span>
         </span>
     );
 
@@ -49,6 +49,8 @@ const compactDate = (value) => {
 
 /** Card footer entries whose cell rendered nothing take no room (no stray gaps before the next entry). */
 const FOOTER_HIDE_EMPTY = 'has-[>div:empty]:hidden';
+/** Footer stats may wrap between label and value instead of being cut off (narrow cards, bulk selection). */
+const FOOTER_STAT = 'has-[>div:empty]:hidden [&>div]:whitespace-normal';
 
 const sortButton = ({ column, label, descFirst = false }) => {
     const resolvedLabel = typeof label === 'function' ? label() : label;
@@ -339,7 +341,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.joinCount'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             // PC: TanStack's default cell. Phones: "Joins: 3", or nothing without game log data.
             cell: ({ row, renderValue }) =>
@@ -360,7 +362,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.timeTogether'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             cell: ({ row }) => {
                 const time = row.original?.$timeSpent;
@@ -379,7 +381,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastSeen')
                 }),
             size: 170,
-            meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
+            meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer', class: FOOTER_STAT } },
             sortingFn: sortByString((row) => row?.$lastSeen ?? ''),
             cell: ({ row }) => {
                 const text = formatDateFilter(row.original?.$lastSeen, 'long');
@@ -402,7 +404,7 @@ export const createColumns = ({
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.mutualFriends'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             cell: ({ row }) => {
                 const count = row.original?.$mutualCount;
@@ -439,7 +441,7 @@ export const createColumns = ({
             // Phones: a labelled footer stat like the game log ones (cards never expand: a tap opens the user).
             meta: {
                 label: () => t('table.friendList.lastActivity'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             sortingFn: sortByString((row) => row?.last_activity ?? ''),
             cell: ({ row }) =>
@@ -460,7 +462,7 @@ export const createColumns = ({
             size: 200,
             meta: {
                 label: () => t('table.friendList.lastLogin'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             sortingFn: sortByString((row) => row?.last_login ?? ''),
             cell: ({ row }) =>
@@ -481,7 +483,7 @@ export const createColumns = ({
             size: 120,
             meta: {
                 label: () => t('table.friendList.dateJoined'),
-                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+                mobile: { slot: 'footer', class: FOOTER_STAT }
             },
             sortingFn: sortByString((row) => row?.date_joined ?? ''),
             cell: ({ row }) =>

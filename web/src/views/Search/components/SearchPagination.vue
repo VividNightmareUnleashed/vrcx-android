@@ -1,12 +1,22 @@
 <template>
     <div v-if="show" class="shrink-0 flex items-center justify-center h-[60px]">
         <ButtonGroup class="shadow-lg rounded-lg">
-            <Button variant="outline" size="sm" :disabled="prevDisabled" @click="$emit('prev')">
+            <Button
+                variant="outline"
+                size="sm"
+                class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                :disabled="prevDisabled"
+                @click="$emit('prev')">
                 <ArrowLeft />
                 <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
                 <Kbd v-if="!isAndroid">←</Kbd>
             </Button>
-            <Button variant="outline" size="sm" :disabled="nextDisabled" @click="$emit('next')">
+            <Button
+                variant="outline"
+                size="sm"
+                class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                :disabled="nextDisabled"
+                @click="$emit('next')">
                 <Kbd v-if="!isAndroid" class="ml-1">{{ isMac ? '⌥' : 'Alt' }}</Kbd>
                 <Kbd v-if="!isAndroid">→</Kbd>
                 <ArrowRight />

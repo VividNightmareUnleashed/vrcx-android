@@ -131,9 +131,10 @@ describe('notification cards in the phone layout', () => {
             expect(button.classes).toContain('h-10');
             expect(button.classes).not.toContain('h-8');
         }
-        // Decline follows the answers, pushed to the end of the row.
-        expect(buttons[1].classes).toContain('ml-auto');
-        expect(buttons[0].classes).not.toContain('ml-auto');
+        // Decline follows the answers in its own group at the end of the row.
+        const dismiss = wrapper.find('[data-testid="notification-compact-dismiss"]');
+        expect(dismiss.classes()).toContain('ml-auto');
+        expect(dismiss.findAll('button').map((button) => button.attributes('data-action'))).toEqual(['decline']);
 
         await wrapper.find('[data-action="accept"]').trigger('click');
         expect(handlers.acceptFriendRequestNotification).toHaveBeenCalledWith(original);
@@ -148,6 +149,12 @@ describe('notification cards in the phone layout', () => {
             'view.notification.actions.decline',
             'view.notification.actions.delete_log'
         ]);
+        // Decline and Delete log wrap together (never Decline on one line and Delete log alone on the next).
+        expect(
+            wrapper
+                .findAll('[data-testid="notification-compact-dismiss"] button')
+                .map((button) => button.attributes('data-action'))
+        ).toEqual(['decline', 'delete-log']);
 
         await wrapper.find('[data-action="decline-with-message"]').trigger('click');
         expect(handlers.showSendInviteResponseDialog).toHaveBeenCalledWith(original);

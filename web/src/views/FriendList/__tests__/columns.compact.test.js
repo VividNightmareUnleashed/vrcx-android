@@ -147,7 +147,10 @@ describe('friend list cards in the phone layout', () => {
             expect(wrapper.find(`[data-cell="${id}"] span`).exists()).toBe(false);
         }
         for (const id of ['lastActivity', 'lastLogin', 'dateJoined', 'joinCount', 'timeTogether', 'lastSeen']) {
-            expect(columns.find((col) => col.id === id).meta.mobile.class).toBe('has-[>div:empty]:hidden');
+            const footerClass = columns.find((col) => col.id === id).meta.mobile.class;
+            expect(footerClass).toContain('has-[>div:empty]:hidden');
+            // Long stats wrap between label and value instead of being cut off.
+            expect(footerClass).toContain('[&>div]:whitespace-normal');
         }
     });
 
