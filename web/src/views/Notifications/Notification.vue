@@ -40,7 +40,9 @@
                                 : []
                         "
                         @update:modelValue="handleNotificationFilterChange">
-                        <SelectTrigger size="sm" class="w-full min-w-0">
+                        <SelectTrigger
+                            size="sm"
+                            class="w-full min-w-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                             <SelectValue :placeholder="t('view.notification.filter_placeholder')" />
                         </SelectTrigger>
                         <SelectContent>

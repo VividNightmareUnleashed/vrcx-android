@@ -22,7 +22,7 @@
                             :title="t('view.charts.instance_activity.settings.header')">
                             <template #trigger>
                                 <Button
-                                    class="rounded-full mr-2 compact:mr-0"
+                                    class="rounded-full mr-2 compact:mr-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                     size="icon"
                                     variant="ghost"
                                     :ariaLabel="t('view.charts.instance_activity.settings.header')">

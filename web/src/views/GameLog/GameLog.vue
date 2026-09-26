@@ -56,7 +56,8 @@
                             enterkeyhint="search"
                             @keyup.enter="gameLogTableLookup"
                             @change="gameLogTableLookup" />
-                        <div class="flex min-w-0 items-center gap-2 compact-landscape:flex-1">
+                        <div
+                            class="flex min-w-0 items-center gap-2 compact-landscape:flex-1 pointer-coarse:[&_button]:relative pointer-coarse:[&_button]:after:absolute pointer-coarse:[&_button]:after:-inset-1">
                             <ToggleGroup
                                 type="single"
                                 variant="outline"

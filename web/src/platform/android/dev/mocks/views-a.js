@@ -241,9 +241,10 @@ function buildGameLog() {
     });
     leave(library.at + 50 * MINUTE, STRANGER.lumen, library.location, 44 * MINUTE);
 
-    // Three hours ago: a busy public-ish instance with a crowd arriving at once.
+    // Three hours ago: a busy public-ish instance. The crowd was already there, so it is logged right after the
+    // arrival, and leaves at once at the end: the sessions view folds both into "N players joined/left" groups.
     const crowd = [STRANGER.kestrel, STRANGER.lumen, STRANGER.maple, STRANGER.nimbus, STRANGER.orchid, STRANGER.pixel];
-    crowd.forEach((userId, index) => join(rooftops.at + 10 * MINUTE + index * 600, userId, rooftops.location));
+    crowd.forEach((userId, index) => join(rooftops.at + 5000 + index * 400, userId, rooftops.location));
     join(rooftops.at + 12 * MINUTE, FRIEND.dune, rooftops.location);
     add({
         table: 'video_play',
@@ -277,7 +278,7 @@ function buildGameLog() {
     crowd
         .slice(0, 5)
         .forEach((userId, index) =>
-            leave(rooftops.at + 70 * MINUTE + index * 500, userId, rooftops.location, 60 * MINUTE)
+            leave(rooftops.at + rooftops.duration - 4000 + index * 500, userId, rooftops.location, 129 * MINUTE)
         );
     leave(rooftops.at + 120 * MINUTE, FRIEND.dune, rooftops.location, 108 * MINUTE);
 
@@ -769,6 +770,41 @@ function playerModerations() {
     ];
 }
 
+// The invite response slots behind "Decline with message" (invites) and the request-invite answer dialog. Two slots
+// were edited recently, so their cool-down is still running.
+const INVITE_RESPONSE_TEXTS = {
+    response: [
+        'Sorry, I am busy right now!',
+        'Maybe later, finishing a build first.',
+        'Heading to bed, catch you tomorrow.',
+        'Already in a world with friends, join me instead?',
+        'On Quest right now, that world is PC only.',
+        'Recording a video, will ping you when I am done.'
+    ],
+    requestResponse: [
+        'Instance is full, try again in a bit.',
+        'Private meetup today, sorry!',
+        'Ask Aurora, she is hosting.',
+        'Sure, sending an invite in a minute.'
+    ]
+};
+
+function inviteResponseMessages(type) {
+    const texts = INVITE_RESPONSE_TEXTS[type];
+    return texts.map((message, slot) => {
+        const minutesAgo = slot === 1 ? 12 : slot === 3 ? 41 : (3 * DAY) / MINUTE + slot * 60;
+        return {
+            id: `invm_00000000-0000-4000-8000-${String((type === 'response' ? 100 : 200) + slot).padStart(12, '0')}`,
+            slot,
+            message,
+            messageType: type,
+            updatedAt: iso(NOW - minutesAgo * MINUTE),
+            remainingCooldownMinutes: minutesAgo < 60 ? 60 - minutesAgo : 0,
+            canBeUpdated: minutesAgo >= 60
+        };
+    });
+}
+
 /**
  * @param {string} path
  * @param {URLSearchParams} query
@@ -791,6 +827,8 @@ export function webApi(path, query, method, options, data) {
     if (path === 'notifications') {
         return Number(query.get('offset') ?? 0) > 0 ? [] : notificationsV2();
     }
+    const inviteMessages = path.match(/^message\/([^/]+)\/(response|requestResponse)$/);
+    if (inviteMessages && inviteMessages[1] === ME) return inviteResponseMessages(inviteMessages[2]);
     if (path === 'auth/user/playermoderations') return playerModerations();
     if (path === 'auth/user/avatarmoderations') return [];
     if (path === 'users') {

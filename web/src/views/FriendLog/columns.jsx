@@ -1,10 +1,12 @@
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipWrapper } from '../../components/ui/tooltip';
 import { ArrowRight, ArrowUpDown, Trash2, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 
 import { formatDateFilter } from '../../shared/utils';
+import { isAndroid } from '../../shared/utils/platform';
+import { useCompactLayout } from '../../composables/useCompactLayout';
 import { i18n } from '../../plugins';
 import { useUiStore } from '../../stores';
 import { showUserDialog } from '../../coordinators/userCoordinator';
@@ -40,6 +42,18 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
                 const shortText = formatDateFilter(createdAt, 'short');
                 const longText = formatDateFilter(createdAt, 'long');
 
+                // Phones show the exact date inline (docs/DESIGN.md §3.3); Android tablets get it on long-press
+                // (TooltipWrapper); desktop keeps the upstream hover tooltip.
+                if (useCompactLayout().isCompact.value) {
+                    return <span data-testid="compact-long-date">{longText}</span>;
+                }
+                if (isAndroid) {
+                    return (
+                        <TooltipWrapper side="right" content={longText}>
+                            <span>{shortText}</span>
+                        </TooltipWrapper>
+                    );
+                }
                 return (
                     <Tooltip>
                         <TooltipTrigger asChild>

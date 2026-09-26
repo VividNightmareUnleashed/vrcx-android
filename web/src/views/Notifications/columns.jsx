@@ -23,6 +23,7 @@ import { showGroupDialog } from '../../coordinators/groupCoordinator';
 
 import Emoji from '../../components/Emoji.vue';
 import { useCompactLayout } from '../../composables/useCompactLayout';
+import { isAndroid } from '../../shared/utils/platform';
 import {
     getNotificationActionFlags,
     getNotificationMessageLines,
@@ -116,7 +117,8 @@ export const createColumns = ({
         const { showDecline, showDeleteLog } = getNotificationActionFlags(original);
         const quick = shiftHeld.value;
         const items = [];
-        if (original.senderUserId !== currentUser.value?.id && !isNotificationExpired(original)) {
+        const canAct = original.senderUserId !== currentUser.value?.id && !isNotificationExpired(original);
+        if (canAct) {
             if (original.type === 'friendRequest') {
                 items.push({
                     key: 'accept',
@@ -162,6 +164,7 @@ export const createColumns = ({
             if (showDecline) {
                 items.push({
                     key: 'decline',
+                    dismiss: true,
                     icon: X,
                     label: t('view.notification.actions.decline'),
                     destructive: quick,
@@ -171,6 +174,7 @@ export const createColumns = ({
             if (original.type === 'group.queueReady') {
                 items.push({
                     key: 'queue-delete-log',
+                    dismiss: true,
                     icon: quick ? X : Trash2,
                     label: t('view.notification.actions.delete_log'),
                     destructive: quick,
@@ -178,9 +182,12 @@ export const createColumns = ({
                 });
             }
         }
-        if (showDeleteLog && original.type !== 'group.queueReady') {
+        // PC shows the queue button and the general one side by side; phones keep one of them, and still offer
+        // the general one when the queue button is absent (expired or own notifications).
+        if (showDeleteLog && !(original.type === 'group.queueReady' && canAct)) {
             items.push({
                 key: 'delete-log',
+                dismiss: true,
                 icon: quick ? X : Trash2,
                 label: t('view.notification.actions.delete_log'),
                 destructive: quick,
@@ -190,19 +197,24 @@ export const createColumns = ({
         if (!items.length) {
             return null;
         }
+        // Decline and Delete log sit apart from the answers (right-aligned, or on their own line when they wrap).
+        const firstDismiss = items.findIndex((item) => item.dismiss);
         return (
-            <div class="flex flex-wrap items-center gap-1.5 pt-0.5" data-testid="notification-compact-actions">
-                {items.map((item) => {
+            <div class="flex flex-wrap items-center gap-2 pt-1" data-testid="notification-compact-actions">
+                {items.map((item, index) => {
                     const Icon = item.icon;
                     return (
                         <Button
                             key={item.key}
                             variant="outline"
                             size="sm"
+                            // 40px touch targets (docs/DESIGN.md §1, --touch-min).
                             class={[
-                                'h-8 max-w-full gap-1.5 px-2.5 text-xs',
+                                'h-10 max-w-full gap-1.5 px-3 text-xs',
+                                index === firstDismiss && index > 0 ? 'ml-auto' : '',
                                 item.destructive ? 'text-destructive' : ''
                             ]}
+                            data-action={item.key}
                             onClick={item.onClick}
                         >
                             <Icon class="size-3.5 shrink-0" />
@@ -380,11 +392,27 @@ export const createColumns = ({
                 const shortText = formatDateFilter(createdAt, 'short');
                 const longText = formatDateFilter(createdAt, 'long');
 
-                // TooltipWrapper: on phones a tap or long-press shows the full date (docs/DESIGN.md §3.3).
+                // Phones show the exact date inline (docs/DESIGN.md §3.3); Android tablets get it on long-press
+                // (TooltipWrapper); desktop keeps the upstream hover tooltip.
+                if (isCompactLayout()) {
+                    return <span data-testid="compact-long-date">{longText}</span>;
+                }
+                if (isAndroid) {
+                    return (
+                        <TooltipWrapper side="right" content={longText}>
+                            <span>{shortText}</span>
+                        </TooltipWrapper>
+                    );
+                }
                 return (
-                    <TooltipWrapper side="right" content={longText}>
-                        <span>{shortText}</span>
-                    </TooltipWrapper>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span>{shortText}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                            <span>{longText}</span>
+                        </TooltipContent>
+                    </Tooltip>
                 );
             }
         },

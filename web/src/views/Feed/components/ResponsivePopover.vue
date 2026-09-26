@@ -31,7 +31,7 @@
 <script setup>
     // A popover on PC, a bottom sheet in the phone layout. Shared by the views of this area (Feed and Game Log date
     // filters, Friends Locations settings).
-    import { computed } from 'vue';
+    import { computed, onDeactivated, ref } from 'vue';
 
     import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
     import {
@@ -59,8 +59,23 @@
 
     const { isCompact } = useCompactLayout();
 
+    // Uncontrolled use (no v-model:open) keeps the state here, so the sheet can still be closed below.
+    const localOpen = ref(false);
+
     const openModel = computed({
-        get: () => props.open,
-        set: (value) => emit('update:open', value)
+        get: () => (props.open === undefined ? localOpen.value : props.open),
+        set: (value) => {
+            localOpen.value = value;
+            emit('update:open', value);
+        }
+    });
+
+    // The sheet is teleported to <body> and the view is kept alive, so a programmatic route change (a notification,
+    // a dialog link) would leave it open over the next page. Phones close it when the view is deactivated; the PC
+    // popover keeps its upstream behaviour.
+    onDeactivated(() => {
+        if (isCompact.value && openModel.value) {
+            openModel.value = false;
+        }
     });
 </script>

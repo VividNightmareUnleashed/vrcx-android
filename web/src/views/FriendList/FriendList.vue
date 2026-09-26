@@ -32,7 +32,7 @@
                                     <Button
                                         variant="ghost"
                                         size="icon-sm"
-                                        class="shrink-0"
+                                        class="shrink-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                         data-testid="friend-list-more"
                                         :aria-label="t('android.views_a.more_actions')">
                                         <Loader2 v-if="isMutualFetching" class="animate-spin" />
@@ -63,7 +63,8 @@
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         </div>
-                        <div class="flex min-w-0 items-center gap-2 compact-landscape:flex-1">
+                        <div
+                            class="flex min-w-0 items-center gap-2 compact-landscape:flex-1 pointer-coarse:[&_button]:relative pointer-coarse:[&_button]:after:absolute pointer-coarse:[&_button]:after:-inset-1">
                             <Toggle
                                 variant="outline"
                                 size="sm"
@@ -99,7 +100,7 @@
                             v-if="friendsListBulkUnfriendMode"
                             variant="outline"
                             size="sm"
-                            class="self-start"
+                            class="self-start pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                             :disabled="!selectedFriends.size"
                             @click="showBulkUnfriendSelectionConfirm">
                             {{ t('view.friend_list.bulk_unfriend_selection') }}
@@ -267,6 +268,7 @@
     import { Toggle } from '../../components/ui/toggle';
     import { TooltipWrapper } from '../../components/ui/tooltip';
     import { createColumns } from './columns.jsx';
+    import { isRowTapSelection } from './friendListCompact';
     import { localeIncludes } from '../../shared/utils';
     import removeConfusables, { removeWhitespace } from '../../services/confusables';
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
@@ -362,7 +364,18 @@
     };
 
     const handleRowClick = (row) => {
-        selectFriendsListRow(row?.original ?? null);
+        const original = row?.original ?? null;
+        if (
+            isRowTapSelection({
+                isCompact: isCompact.value,
+                bulkMode: friendsListBulkUnfriendMode.value,
+                friendId: original?.id
+            })
+        ) {
+            toggleFriendSelection(original.id);
+            return;
+        }
+        selectFriendsListRow(original);
     };
 
     watch(

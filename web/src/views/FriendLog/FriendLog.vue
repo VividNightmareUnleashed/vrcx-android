@@ -26,7 +26,9 @@
                             Array.isArray(friendLogTable.filters?.[0]?.value) ? friendLogTable.filters[0].value : []
                         "
                         @update:modelValue="handleFriendLogFilterChange">
-                        <SelectTrigger size="sm" class="w-full min-w-0">
+                        <SelectTrigger
+                            size="sm"
+                            class="w-full min-w-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                             <SelectValue :placeholder="t('view.friend_log.filter_placeholder')" />
                         </SelectTrigger>
                         <SelectContent>

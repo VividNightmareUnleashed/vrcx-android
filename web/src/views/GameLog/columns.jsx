@@ -65,6 +65,10 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                 const shortText = formatDateFilter(createdAt, 'short');
                 const longText = formatDateFilter(createdAt, 'long');
 
+                // Phones show the exact date inline instead of in the tooltip (docs/DESIGN.md §3.3).
+                if (useCompactLayout().isCompact.value) {
+                    return <span data-testid="compact-long-date">{longText}</span>;
+                }
                 return (
                     <TooltipWrapper content={longText} side="right">
                         <span>{shortText}</span>
@@ -284,8 +288,10 @@ export const createColumns = ({ getCreatedAt, onDelete, onDeletePrompt }) => {
                 const original = row.original;
                 const canDelete = !UNACTIONABLE_TYPES.has(original.type);
                 const canShowPrevious = original.type === 'Location';
-                // Phones: the right-click menus of the row's cells as an explicit "more" button.
-                const showMenu = useCompactLayout().isCompact.value && hasGameLogMenu(original);
+                // Phones and touch tablets: the right-click menus of the row's cells as an explicit "more" button
+                // (docs/DESIGN.md §3.3, §5).
+                const { isCompact, isCoarsePointer } = useCompactLayout();
+                const showMenu = (isCompact.value || isCoarsePointer.value) && hasGameLogMenu(original);
 
                 if (!canDelete && !canShowPrevious && !showMenu) {
                     return null;

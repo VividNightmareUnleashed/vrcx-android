@@ -141,7 +141,7 @@
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.capacity')
                             }}</span>
-                            <span class="block truncate text-xs"
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words"
                                 >{{ commaNumber(currentInstanceWorld.ref.recommendedCapacity) }} ({{
                                     commaNumber(currentInstanceWorld.ref.capacity)
                                 }})</span
@@ -153,7 +153,7 @@
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.last_updated')
                             }}</span>
-                            <span class="block truncate text-xs">{{
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words">{{
                                 formatDateFilter(
                                     currentInstanceWorld.fileAnalysis.standalonewindows?.created_at,
                                     'long'
@@ -166,7 +166,7 @@
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.created')
                             }}</span>
-                            <span class="block truncate text-xs">{{
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words">{{
                                 formatDateFilter(currentInstanceWorld.ref.created_at, 'long')
                             }}</span>
                         </div>
@@ -178,8 +178,11 @@
                 <PhotonEventTable @show-chatbox-blacklist="showChatboxBlacklistDialog" />
             </div>
 
-            <!-- Phones: the header scrolls away with the list instead of squeezing it. -->
-            <div class="current-instance-table flex min-h-0 min-w-0 flex-1 compact:flex-none">
+            <!-- Phones: the header scrolls away with the list instead of squeezing it, and the cards take the full
+                 width (without auto-height the table would shrink to its content inside this flex row). -->
+            <div
+                class="current-instance-table flex min-h-0 min-w-0 flex-1 compact:block compact:flex-none"
+                data-testid="player-list-table">
                 <DataTableLayout
                     class="[&_th]:px-2.5! [&_th]:py-0.75! [&_td]:px-2.5! [&_td]:py-0.75! [&_tr]:h-7!"
                     :table="playerListTable"

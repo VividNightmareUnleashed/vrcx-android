@@ -2,8 +2,12 @@
     <div class="flex h-full min-h-0 flex-col">
         <WidgetHeader :title="t('dashboard.widget.feed')" icon="ri-rss-line" route-name="feed">
             <DropdownMenu v-if="configUpdater">
+                <!-- as-child replaces the button's data-slot, so the platform's 40px touch hit area is added here. -->
                 <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon-sm">
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                         <Settings class="size-3.5" />
                     </Button>
                 </DropdownMenuTrigger>

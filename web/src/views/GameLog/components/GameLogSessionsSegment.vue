@@ -57,12 +57,15 @@
             </button>
             <GameLogRowMenu :entry="{ type: 'Location', location: segment.location }" />
         </div>
-        <!-- Session header: sticky + clickable to collapse -->
-        <button
+        <!-- Session header: sticky + clickable to collapse. Touch tablets (PC layout, coarse pointer) get the explicit
+             world menu at its end, so the header becomes a div with button semantics (a button cannot hold one). -->
+        <component
+            :is="isCoarsePointer ? 'div' : 'button'"
             v-else
-            type="button"
+            v-bind="headerAttrs"
             class="sticky top-0 z-[5] flex items-center gap-2 px-3 py-2 bg-muted/80 backdrop-blur-sm w-full text-left border-none cursor-pointer hover:bg-muted transition-colors border-b border-border"
-            @click="collapsed = !collapsed">
+            @click="collapsed = !collapsed"
+            @keydown="onHeaderKeydown">
             <ChevronRight
                 class="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150"
                 :class="{ 'rotate-90': !collapsed }" />
@@ -101,7 +104,13 @@
                     <Play class="size-3" /> {{ videoCount }}
                 </span>
             </div>
-        </button>
+            <div
+                v-if="isCoarsePointer"
+                class="-my-1 flex shrink-0"
+                :class="{ 'ml-auto': !(segment.events && segment.events.length > 0) }">
+                <GameLogRowMenu :entry="{ type: 'Location', location: segment.location }" />
+            </div>
+        </component>
 
         <!-- Session events list -->
         <div v-if="!collapsed && segment.events && segment.events.length > 0" class="py-1 px-1">
@@ -124,7 +133,7 @@
     import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { t } = useI18n();
-    const { isCompact } = useCompactLayout();
+    const { isCompact, isCoarsePointer } = useCompactLayout();
     const gameStore = useGameStore();
 
     const props = defineProps({
@@ -143,6 +152,22 @@
     });
 
     const collapsed = ref(false);
+
+    // The PC header is a <button>; on touch tablets a div with the same role, so the world menu can sit inside it.
+    const headerAttrs = computed(() =>
+        isCoarsePointer.value
+            ? { role: 'button', tabindex: 0, 'aria-expanded': String(!collapsed.value) }
+            : { type: 'button' }
+    );
+
+    // Keyboard activation for the div header (a <button> gets it natively, so desktop keys are left alone).
+    function onHeaderKeydown(event) {
+        if (!isCoarsePointer.value || event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            collapsed.value = !collapsed.value;
+        }
+    }
 
     const durationText = computed(() => {
         if (!props.segment.duration || props.segment.duration <= 0) {

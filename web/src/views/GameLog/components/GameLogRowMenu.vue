@@ -4,7 +4,7 @@
             <Button
                 variant="ghost"
                 size="icon-sm"
-                class="shrink-0 text-muted-foreground"
+                class="shrink-0 text-muted-foreground pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                 data-testid="game-log-row-menu"
                 :aria-label="t('android.views_a.more_actions')"
                 @click.stop>

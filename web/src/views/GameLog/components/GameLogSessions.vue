@@ -15,8 +15,9 @@
                 @update:modelValue="handleSessionsSearchInput"
                 @keyup.enter="gameLogStore.setSessionsSearch(sessionsSearch)"
                 @change="gameLogStore.setSessionsSearch(sessionsSearch)" />
+            <!-- 40px touch hit areas around the 32px controls; the 4px padding keeps them inside the scroller. -->
             <div
-                class="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hidden compact-landscape:flex-1">
+                class="-m-1 flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap p-1 scrollbar-hidden compact-landscape:flex-1 pointer-coarse:[&_button]:relative pointer-coarse:[&_button]:after:absolute pointer-coarse:[&_button]:after:-inset-1">
                 <slot name="leading" />
                 <Toggle
                     variant="outline"

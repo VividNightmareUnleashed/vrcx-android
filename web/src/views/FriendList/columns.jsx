@@ -36,6 +36,17 @@ const compactStat = (label, content) =>
         </span>
     );
 
+/**
+ * Exact date for a phone footer stat, or null when there is none (formatDateFilter returns '-').
+ *
+ * @param {string | undefined} value
+ * @returns {string | null}
+ */
+const compactDate = (value) => {
+    const text = formatDateFilter(value, 'long');
+    return text === '-' ? null : text;
+};
+
 /** Card footer entries whose cell rendered nothing take no room (no stray gaps before the next entry). */
 const FOOTER_HIDE_EMPTY = 'has-[>div:empty]:hidden';
 
@@ -135,6 +146,23 @@ export const createColumns = ({
             cell: ({ row }) => {
                 const id = row.original?.id;
                 const checked = selectedFriends?.value?.has?.(id);
+                if (isCompactLayout()) {
+                    // Phones: a 40px target around the 16px box; a tap beside the box toggles it too.
+                    return (
+                        <div
+                            class="-my-2 -ml-1 flex size-10 items-center justify-center"
+                            data-testid="friend-bulk-select"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                if (!event.target?.closest?.('[role="checkbox"]')) {
+                                    onToggleFriendSelection?.(id);
+                                }
+                            }}
+                        >
+                            <Checkbox modelValue={checked} onUpdate:modelValue={() => onToggleFriendSelection?.(id)} />
+                        </div>
+                    );
+                }
                 return (
                     <div class="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
                         <Checkbox modelValue={checked} onUpdate:modelValue={() => onToggleFriendSelection?.(id)} />
@@ -408,10 +436,18 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastActivity')
                 }),
             size: 200,
-            // Phones: in the user dialog (a card tap opens it); the card keeps to the common fields.
-            meta: { label: () => t('table.friendList.lastActivity'), mobile: { slot: 'detail' } },
+            // Phones: a labelled footer stat like the game log ones (cards never expand: a tap opens the user).
+            meta: {
+                label: () => t('table.friendList.lastActivity'),
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+            },
             sortingFn: sortByString((row) => row?.last_activity ?? ''),
-            cell: ({ row }) => <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    compactStat(() => t('table.friendList.lastActivity'), compactDate(row.original?.last_activity))
+                ) : (
+                    <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
+                )
         },
         {
             id: 'lastLogin',
@@ -422,10 +458,17 @@ export const createColumns = ({
                     label: () => t('table.friendList.lastLogin')
                 }),
             size: 200,
-            // Phones: in the user dialog (a card tap opens it); the card keeps to the common fields.
-            meta: { label: () => t('table.friendList.lastLogin'), mobile: { slot: 'detail' } },
+            meta: {
+                label: () => t('table.friendList.lastLogin'),
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+            },
             sortingFn: sortByString((row) => row?.last_login ?? ''),
-            cell: ({ row }) => <span>{formatDateFilter(row.original?.last_login, 'long')}</span>
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    compactStat(() => t('table.friendList.lastLogin'), compactDate(row.original?.last_login))
+                ) : (
+                    <span>{formatDateFilter(row.original?.last_login, 'long')}</span>
+                )
         },
         {
             id: 'dateJoined',
@@ -436,9 +479,17 @@ export const createColumns = ({
                     label: () => t('table.friendList.dateJoined')
                 }),
             size: 120,
-            meta: { label: () => t('table.friendList.dateJoined'), mobile: { slot: 'detail' } },
+            meta: {
+                label: () => t('table.friendList.dateJoined'),
+                mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY }
+            },
             sortingFn: sortByString((row) => row?.date_joined ?? ''),
-            cell: ({ row }) => <span>{row.original?.date_joined ?? ''}</span>
+            cell: ({ row }) =>
+                isCompactLayout() ? (
+                    compactStat(() => t('table.friendList.dateJoined'), row.original?.date_joined || null)
+                ) : (
+                    <span>{row.original?.date_joined ?? ''}</span>
+                )
         },
         {
             id: 'unfriend',

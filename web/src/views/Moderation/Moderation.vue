@@ -27,7 +27,7 @@
             <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                     <Button
-                        class="rounded-full mr-2.5"
+                        class="rounded-full mr-2.5 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                         variant="ghost"
                         size="icon-sm"
                         :disabled="playerModerationTable.loading">
@@ -84,7 +84,7 @@
                         <DropdownMenu>
                             <DropdownMenuTrigger as-child>
                                 <Button
-                                    class="shrink-0 rounded-full"
+                                    class="shrink-0 rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                     variant="ghost"
                                     size="icon-sm"
                                     :aria-label="t('view.moderation.clear_type_placeholder')"
@@ -124,7 +124,9 @@
                                 : []
                         "
                         @update:modelValue="handleModerationFilterChange">
-                        <SelectTrigger size="sm" class="w-full min-w-0">
+                        <SelectTrigger
+                            size="sm"
+                            class="w-full min-w-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                             <SelectValue :placeholder="t('view.moderation.filter_placeholder')" />
                         </SelectTrigger>
                         <SelectContent>

@@ -6,7 +6,7 @@
                 <CollapsibleTrigger as-child>
                     <button
                         type="button"
-                        class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
+                        class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 compact:min-h-10 pointer-coarse:min-h-10 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
                         <span
                             class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
@@ -30,7 +30,8 @@
                         <div
                             v-for="(member, idx) in event.members"
                             :key="idx"
-                            class="px-2 py-px text-[0.8125rem] rounded hover:bg-muted/30 flex items-center gap-1">
+                            class="px-2 py-px text-[0.8125rem] rounded hover:bg-muted/30 flex items-center gap-1 compact:min-h-10 pointer-coarse:min-h-10"
+                            @click.self="isTouchLayout && lookupUser(member)">
                             <span class="cursor-pointer" @click="lookupUser(member)">
                                 {{ member.displayName }}
                             </span>
@@ -47,7 +48,7 @@
                 <CollapsibleTrigger as-child>
                     <button
                         type="button"
-                        class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
+                        class="flex items-center gap-1.5 px-2 py-0.5 rounded w-full text-left text-[0.8125rem] min-h-7 compact:min-h-10 pointer-coarse:min-h-10 hover:bg-muted/50 border-none bg-transparent text-muted-foreground cursor-pointer">
                         <span
                             class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
@@ -71,7 +72,8 @@
                         <div
                             v-for="(member, idx) in event.members"
                             :key="idx"
-                            class="px-2 py-px text-[0.8125rem] text-muted-foreground rounded hover:bg-muted/30 flex items-center gap-1">
+                            class="px-2 py-px text-[0.8125rem] text-muted-foreground rounded hover:bg-muted/30 flex items-center gap-1 compact:min-h-10 pointer-coarse:min-h-10"
+                            @click.self="isTouchLayout && lookupUser(member)">
                             <span class="cursor-pointer" @click="lookupUser(member)">
                                 {{ member.displayName }}
                             </span>
@@ -84,7 +86,8 @@
 
         <!-- Single session join -->
         <template v-else-if="event.type === 'OnPlayerJoined'">
-            <div class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50">
+            <div
+                class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 compact:min-h-10 pointer-coarse:min-h-10 hover:bg-muted/50">
                 <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                     {{ formatTime(event.created_at) }}
                 </span>
@@ -93,7 +96,9 @@
                         {{ t('view.game_log.filters.OnPlayerJoined') }}
                     </Badge>
                 </div>
-                <span class="flex-1 min-w-0 flex items-center gap-1 truncate cursor-pointer" @click="lookupUser(event)">
+                <span
+                    class="flex-1 min-w-0 flex items-center gap-1 truncate cursor-pointer compact:self-stretch pointer-coarse:self-stretch"
+                    @click="lookupUser(event)">
                     <LogIn class="shrink-0 text-xs" />
                     {{ event.displayName
                     }}<span v-if="event.isFriend" class="ml-1"> {{ event.isFavorite ? '⭐' : '💚' }}</span>
@@ -104,7 +109,7 @@
         <!-- Single session leave -->
         <template v-else-if="event.type === 'OnPlayerLeft'">
             <div
-                class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50 text-muted-foreground">
+                class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 compact:min-h-10 pointer-coarse:min-h-10 hover:bg-muted/50 text-muted-foreground">
                 <span class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                     {{ formatTime(event.created_at) }}
                 </span>
@@ -113,7 +118,9 @@
                         {{ t('view.game_log.filters.OnPlayerLeft') }}
                     </Badge>
                 </div>
-                <span class="flex-1 min-w-0 flex items-center gap-1 truncate cursor-pointer" @click="lookupUser(event)">
+                <span
+                    class="flex-1 min-w-0 flex items-center gap-1 truncate cursor-pointer compact:self-stretch pointer-coarse:self-stretch"
+                    @click="lookupUser(event)">
                     <LogOut class="shrink-0 text-xs" />
                     {{ event.displayName
                     }}<span v-if="event.isFriend" class="ml-1"> {{ event.isFavorite ? '⭐' : '💚' }}</span>
@@ -126,7 +133,7 @@
             <ContextMenu>
                 <ContextMenuTrigger as-child>
                     <div
-                        class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 hover:bg-muted/50 cursor-default">
+                        class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.8125rem] min-h-7 compact:min-h-10 pointer-coarse:min-h-10 hover:bg-muted/50 cursor-default">
                         <span
                             class="shrink-0 min-w-22 compact:min-w-11 text-muted-foreground text-[0.75rem] tabular-nums">
                             {{ formatTime(event.created_at) }}
@@ -157,7 +164,7 @@
                             class="shrink-0 text-muted-foreground text-[0.75rem] compact:max-w-24 compact:truncate">
                             {{ event.displayName }}
                         </span>
-                        <GameLogRowMenu v-if="isCompact" :entry="event" />
+                        <GameLogRowMenu v-if="isTouchLayout" :entry="event" />
                     </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
@@ -195,7 +202,10 @@
     import { useCompactLayout } from '../../../composables/useCompactLayout';
     import GameLogRowMenu from './GameLogRowMenu.vue';
 
-    const { isCompact } = useCompactLayout();
+    const { isCompact, isCoarsePointer } = useCompactLayout();
+    // Phones and touch tablets: bigger rows and an explicit menu instead of the right-click one (docs/DESIGN.md §3.3,
+    // §5). Desktop builds never set either flag.
+    const isTouchLayout = computed(() => isCompact.value || isCoarsePointer.value);
 
     const { t } = useI18n();
 

@@ -28,7 +28,7 @@
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    class="h-8 shrink-0 gap-1 px-2"
+                                    class="h-8 shrink-0 gap-1 px-2 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                     :aria-label="t('view.my_avatars.filter')">
                                     <ListFilter class="size-4" />
                                     <Badge
@@ -59,8 +59,9 @@
                             </div>
                         </ResponsivePopover>
                     </div>
+                    <!-- 40px touch hit areas around the 32px controls; the 4px padding keeps them inside the scroller. -->
                     <div
-                        class="flex min-w-0 items-center gap-2 overflow-x-auto scrollbar-hidden compact-landscape:flex-1">
+                        class="-m-1 flex min-w-0 items-center gap-2 overflow-x-auto p-1 scrollbar-hidden compact-landscape:flex-1 pointer-coarse:[&_button]:relative pointer-coarse:[&_button]:after:absolute pointer-coarse:[&_button]:after:-inset-1">
                         <Toggle
                             variant="outline"
                             size="sm"
