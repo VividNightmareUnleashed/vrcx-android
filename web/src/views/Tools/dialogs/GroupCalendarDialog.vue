@@ -1,7 +1,9 @@
 <template>
     <Dialog :open="visible" @update:open="(open) => (open ? null : closeDialog())">
-        <!-- Phones: a full-screen page (mobile.css) that scrolls as one column, the month above the day's events. -->
-        <DialogContent class="x-dialog sm:max-w-[50vw] h-[70vh] overflow-hidden compact:overflow-y-auto">
+        <!-- Phones: a full-screen page (mobile.css) that scrolls as one column, the month above the day's events.
+             Touch tablets: 50vw of a portrait tablet is narrower than the month grid beside the timeline. -->
+        <DialogContent
+            class="x-dialog sm:max-w-[50vw] pointer-coarse:sm:max-w-[min(90vw,64rem)] h-[70vh] overflow-hidden compact:overflow-y-auto">
             <DialogHeader>
                 <div class="dialog-title-container">
                     <DialogTitle>{{ t('dialog.group_calendar.header') }}</DialogTitle>
