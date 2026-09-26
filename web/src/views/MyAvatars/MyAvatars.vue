@@ -1,182 +1,196 @@
 <template>
-    <div class="x-container grid h-full min-h-0 grid-rows-[auto_1fr] gap-4 overflow-hidden" ref="containerRef">
-        <!-- Phones: the toolbar wraps and the search takes its own row (docs/DESIGN.md §3.4). -->
-        <div class="flex items-center gap-2 px-0.5 pt-1.5 compact:flex-wrap">
-            <ToggleGroup
-                type="single"
-                :model-value="viewMode"
-                variant="outline"
-                @update:model-value="handleViewModeChange">
-                <TooltipWrapper :content="t('view.my_avatars.grid_view')" side="bottom" :delay-duration="300">
-                    <ToggleGroupItem
-                        value="grid"
-                        class="px-2"
-                        :class="viewMode === 'grid' && 'bg-accent text-accent-foreground'"
-                        :ariaLabel="t('view.my_avatars.grid_view')">
-                        <LayoutGrid class="size-4" />
-                    </ToggleGroupItem>
-                </TooltipWrapper>
-                <TooltipWrapper :content="t('view.my_avatars.table_view')" side="bottom" :delay-duration="300">
-                    <ToggleGroupItem
-                        value="table"
-                        class="px-2"
-                        :class="viewMode === 'table' && 'bg-accent text-accent-foreground'"
-                        :ariaLabel="t('view.my_avatars.table_view')">
-                        <List class="size-4" />
-                    </ToggleGroupItem>
-                </TooltipWrapper>
-            </ToggleGroup>
+    <div
+        class="x-container grid h-full min-h-0 gap-4 overflow-hidden"
+        :class="toolbarInTable ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[auto_1fr]'"
+        ref="containerRef">
+        <!-- Phones: the toolbar wraps and the search takes its own row (docs/DESIGN.md §3.4); in landscape it stays one
+             row. The phone table view shows it in the table's toolbar, next to View options (and the pagination in
+             landscape), so the list keeps the height of a row that would only hold View options. -->
+        <DefineToolbar v-slot="{ inTable }">
+            <div
+                class="flex items-center gap-2 px-0.5 compact:flex-wrap compact-landscape:flex-nowrap"
+                :class="!inTable && 'pt-1.5'">
+                <ToggleGroup
+                    type="single"
+                    :model-value="viewMode"
+                    variant="outline"
+                    @update:model-value="handleViewModeChange">
+                    <TooltipWrapper :content="t('view.my_avatars.grid_view')" side="bottom" :delay-duration="300">
+                        <ToggleGroupItem
+                            value="grid"
+                            class="px-2"
+                            :class="viewMode === 'grid' && 'bg-accent text-accent-foreground'"
+                            :ariaLabel="t('view.my_avatars.grid_view')">
+                            <LayoutGrid class="size-4" />
+                        </ToggleGroupItem>
+                    </TooltipWrapper>
+                    <TooltipWrapper :content="t('view.my_avatars.table_view')" side="bottom" :delay-duration="300">
+                        <ToggleGroupItem
+                            value="table"
+                            class="px-2"
+                            :class="viewMode === 'table' && 'bg-accent text-accent-foreground'"
+                            :ariaLabel="t('view.my_avatars.table_view')">
+                            <List class="size-4" />
+                        </ToggleGroupItem>
+                    </TooltipWrapper>
+                </ToggleGroup>
 
-            <Popover>
-                <PopoverTrigger as-child>
-                    <Button variant="outline" size="sm" class="h-8 gap-1.5">
-                        <ListFilter class="size-4" />
-                        {{ t('view.my_avatars.filter') }}
-                        <Badge
-                            v-if="activeFilterCount"
-                            variant="secondary"
-                            class="ml-0.5 h-4.5 min-w-4.5 rounded-full px-1 text-xs">
-                            {{ activeFilterCount }}
-                        </Badge>
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent class="w-80 p-3" align="start">
-                    <div class="flex flex-col gap-3">
-                        <Field>
-                            <FieldLabel>{{ t('dialog.avatar.info.visibility') }}</FieldLabel>
-                            <FieldContent>
-                                <ToggleGroup
-                                    type="single"
-                                    :model-value="releaseStatusFilter"
-                                    variant="outline"
-                                    @update:model-value="releaseStatusFilter = $event">
-                                    <ToggleGroupItem
-                                        v-for="opt in releaseStatusOptions"
-                                        :key="opt.value"
-                                        :value="opt.value"
-                                        class="px-2.5">
-                                        {{ opt.label }}
-                                    </ToggleGroupItem>
-                                </ToggleGroup>
-                            </FieldContent>
-                        </Field>
-
-                        <Field>
-                            <FieldLabel>{{ t('dialog.avatar.info.platform') }}</FieldLabel>
-                            <FieldContent>
-                                <ToggleGroup
-                                    type="single"
-                                    :model-value="platformFilter"
-                                    variant="outline"
-                                    @update:model-value="platformFilter = $event">
-                                    <ToggleGroupItem value="all" class="px-2.5">
-                                        {{ t('view.search.avatar.all') }}
-                                    </ToggleGroupItem>
-                                    <ToggleGroupItem
-                                        v-for="plat in platformOptions"
-                                        :key="plat.value"
-                                        :value="plat.value"
-                                        class="px-2.5">
-                                        {{ plat.label }}
-                                    </ToggleGroupItem>
-                                </ToggleGroup>
-                            </FieldContent>
-                        </Field>
-
-                        <Field v-if="allTags.length">
-                            <FieldLabel>{{ t('dialog.avatar.info.tags') }}</FieldLabel>
-                            <FieldContent>
-                                <div class="flex flex-wrap gap-1">
-                                    <Badge
-                                        v-for="tag in allTags"
-                                        :key="tag"
-                                        :variant="tagFilters.has(tag) ? 'default' : 'outline'"
-                                        class="cursor-pointer select-none"
-                                        :style="
-                                            tagFilters.has(tag)
-                                                ? {
-                                                      backgroundColor: getTagColor(tag).bg,
-                                                      color: getTagColor(tag).text
-                                                  }
-                                                : {
-                                                      borderColor: getTagColor(tag).bg,
-                                                      color: getTagColor(tag).text
-                                                  }
-                                        "
-                                        @click="toggleTagFilter(tag)">
-                                        {{ tag }}
-                                    </Badge>
-                                </div>
-                            </FieldContent>
-                        </Field>
-
-                        <Button
-                            v-if="activeFilterCount"
-                            variant="outline"
-                            size="sm"
-                            class="w-full"
-                            @click="clearFilters">
-                            {{ t('view.my_avatars.clear_filters') }}
+                <Popover>
+                    <PopoverTrigger as-child>
+                        <Button variant="outline" size="sm" class="h-8 gap-1.5">
+                            <ListFilter class="size-4" />
+                            {{ t('view.my_avatars.filter') }}
+                            <Badge
+                                v-if="activeFilterCount"
+                                variant="secondary"
+                                class="ml-0.5 h-4.5 min-w-4.5 rounded-full px-1 text-xs">
+                                {{ activeFilterCount }}
+                            </Badge>
                         </Button>
-                    </div>
-                </PopoverContent>
-            </Popover>
+                    </PopoverTrigger>
+                    <PopoverContent class="w-80 p-3" align="start">
+                        <div class="flex flex-col gap-3">
+                            <Field>
+                                <FieldLabel>{{ t('dialog.avatar.info.visibility') }}</FieldLabel>
+                                <FieldContent>
+                                    <ToggleGroup
+                                        type="single"
+                                        :model-value="releaseStatusFilter"
+                                        variant="outline"
+                                        @update:model-value="releaseStatusFilter = $event">
+                                        <ToggleGroupItem
+                                            v-for="opt in releaseStatusOptions"
+                                            :key="opt.value"
+                                            :value="opt.value"
+                                            class="px-2.5">
+                                            {{ opt.label }}
+                                        </ToggleGroupItem>
+                                    </ToggleGroup>
+                                </FieldContent>
+                            </Field>
 
-            <div class="flex-1" />
+                            <Field>
+                                <FieldLabel>{{ t('dialog.avatar.info.platform') }}</FieldLabel>
+                                <FieldContent>
+                                    <ToggleGroup
+                                        type="single"
+                                        :model-value="platformFilter"
+                                        variant="outline"
+                                        @update:model-value="platformFilter = $event">
+                                        <ToggleGroupItem value="all" class="px-2.5">
+                                            {{ t('view.search.avatar.all') }}
+                                        </ToggleGroupItem>
+                                        <ToggleGroupItem
+                                            v-for="plat in platformOptions"
+                                            :key="plat.value"
+                                            :value="plat.value"
+                                            class="px-2.5">
+                                            {{ plat.label }}
+                                        </ToggleGroupItem>
+                                    </ToggleGroup>
+                                </FieldContent>
+                            </Field>
 
-            <span v-if="isLoading" class="text-muted-foreground text-sm">
-                {{ t('view.friends_locations.loading_more') }}
-            </span>
-            <Input
-                v-model="searchText"
-                :placeholder="t('view.search.search_placeholder')"
-                class="h-8 w-80 compact:order-last compact:w-full" />
+                            <Field v-if="allTags.length">
+                                <FieldLabel>{{ t('dialog.avatar.info.tags') }}</FieldLabel>
+                                <FieldContent>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Badge
+                                            v-for="tag in allTags"
+                                            :key="tag"
+                                            :variant="tagFilters.has(tag) ? 'default' : 'outline'"
+                                            class="cursor-pointer select-none"
+                                            :style="
+                                                tagFilters.has(tag)
+                                                    ? {
+                                                          backgroundColor: getTagColor(tag).bg,
+                                                          color: getTagColor(tag).text
+                                                      }
+                                                    : {
+                                                          borderColor: getTagColor(tag).bg,
+                                                          color: getTagColor(tag).text
+                                                      }
+                                            "
+                                            @click="toggleTagFilter(tag)">
+                                            {{ tag }}
+                                        </Badge>
+                                    </div>
+                                </FieldContent>
+                            </Field>
 
-            <DropdownMenu v-if="viewMode === 'grid'">
-                <DropdownMenuTrigger as-child>
-                    <Button
-                        class="rounded-full"
-                        size="icon-sm"
-                        variant="ghost"
-                        :ariaLabel="t('view.settings.appearance.appearance.header')">
-                        <SettingsIcon class="size-4" />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent class="w-60 p-3" align="end">
-                    <div class="grid gap-3">
-                        <div class="flex items-center justify-between" @click.stop>
-                            <span class="text-[13px] font-medium">{{ t('view.friends_locations.scale') }}</span>
-                            <span class="text-xs font-semibold min-w-[42px] text-right">{{ cardScalePercent }}%</span>
+                            <Button
+                                v-if="activeFilterCount"
+                                variant="outline"
+                                size="sm"
+                                class="w-full"
+                                @click="clearFilters">
+                                {{ t('view.my_avatars.clear_filters') }}
+                            </Button>
                         </div>
-                        <Slider
-                            v-model="cardScaleValue"
-                            :min="scaleSlider.min"
-                            :max="scaleSlider.max"
-                            :step="scaleSlider.step"
-                            @click.stop />
-                        <div class="flex items-center justify-between" @click.stop>
-                            <span class="text-[13px] font-medium">{{ t('view.friends_locations.spacing') }}</span>
-                            <span class="text-xs font-semibold min-w-[42px] text-right">{{ cardSpacingPercent }}%</span>
-                        </div>
-                        <Slider
-                            v-model="cardSpacingValue"
-                            :min="spacingSlider.min"
-                            :max="spacingSlider.max"
-                            :step="spacingSlider.step"
-                            @click.stop />
-                    </div>
-                </DropdownMenuContent>
-            </DropdownMenu>
+                    </PopoverContent>
+                </Popover>
 
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                :disabled="isLoading"
-                @click="refreshAvatars"
-                :ariaLabel="t('view.charts.instance_activity.refresh')">
-                <RefreshCw :class="{ 'animate-spin': isLoading }" />
-            </Button>
-        </div>
+                <div class="flex-1 compact-landscape:hidden" />
+
+                <span v-if="isLoading" class="text-muted-foreground text-sm">
+                    {{ t('view.friends_locations.loading_more') }}
+                </span>
+                <Input
+                    v-model="searchText"
+                    :placeholder="t('view.search.search_placeholder')"
+                    class="h-8 w-80 compact:order-last compact:w-full compact-landscape:order-none compact-landscape:w-auto compact-landscape:min-w-24 compact-landscape:flex-1" />
+
+                <DropdownMenu v-if="viewMode === 'grid'">
+                    <DropdownMenuTrigger as-child>
+                        <Button
+                            class="rounded-full"
+                            size="icon-sm"
+                            variant="ghost"
+                            :ariaLabel="t('view.settings.appearance.appearance.header')">
+                            <SettingsIcon class="size-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent class="w-60 p-3" align="end">
+                        <div class="grid gap-3">
+                            <div class="flex items-center justify-between" @click.stop>
+                                <span class="text-[13px] font-medium">{{ t('view.friends_locations.scale') }}</span>
+                                <span class="text-xs font-semibold min-w-[42px] text-right"
+                                    >{{ cardScalePercent }}%</span
+                                >
+                            </div>
+                            <Slider
+                                v-model="cardScaleValue"
+                                :min="scaleSlider.min"
+                                :max="scaleSlider.max"
+                                :step="scaleSlider.step"
+                                @click.stop />
+                            <div class="flex items-center justify-between" @click.stop>
+                                <span class="text-[13px] font-medium">{{ t('view.friends_locations.spacing') }}</span>
+                                <span class="text-xs font-semibold min-w-[42px] text-right"
+                                    >{{ cardSpacingPercent }}%</span
+                                >
+                            </div>
+                            <Slider
+                                v-model="cardSpacingValue"
+                                :min="spacingSlider.min"
+                                :max="spacingSlider.max"
+                                :step="spacingSlider.step"
+                                @click.stop />
+                        </div>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    :disabled="isLoading"
+                    @click="refreshAvatars"
+                    :ariaLabel="t('view.charts.instance_activity.refresh')">
+                    <RefreshCw :class="{ 'animate-spin': isLoading }" />
+                </Button>
+            </div>
+        </DefineToolbar>
+        <ReuseToolbar v-if="!toolbarInTable" />
 
         <!-- Table View -->
         <DataTableLayout
@@ -190,6 +204,9 @@
             :on-row-click="handleRowClick"
             :row-class="getRowClass"
             class="cursor-pointer min-h-0">
+            <template v-if="toolbarInTable" #toolbar>
+                <ReuseToolbar :in-table="true" />
+            </template>
             <template #row-context-menu="{ row }">
                 <ContextMenuContent>
                     <ContextMenuItem @click="handleContextMenuAction('details', row.original)">
@@ -323,6 +340,7 @@
         User
     } from 'lucide-vue-next';
     import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from 'vue';
+    import { createReusableTemplate } from '@vueuse/core';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
@@ -798,6 +816,10 @@
 
     // Phones: the table renders as cards with a shorter default column set (docs/DESIGN.md §3.1).
     const { isCompact } = useCompactLayout();
+
+    // Phone table view: the toolbar joins the table's toolbar row (always false in desktop builds).
+    const [DefineToolbar, ReuseToolbar] = createReusableTemplate({ inheritAttrs: false });
+    const toolbarInTable = computed(() => isCompact.value && viewMode.value === 'table');
 
     const { table, pagination } = useVrcxVueTable({
         get data() {

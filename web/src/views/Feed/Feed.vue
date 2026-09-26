@@ -194,7 +194,7 @@
     import { columns as baseColumns } from './columns.jsx';
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
     import { useCompactLayout } from '../../composables/useCompactLayout';
-    import ResponsivePopover from './components/ResponsivePopover.vue';
+    import ResponsivePopover from '../../components/ui/responsive-popover/ResponsivePopover.vue';
 
     const { isCompact } = useCompactLayout();
 

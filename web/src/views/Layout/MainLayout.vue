@@ -62,7 +62,7 @@
                             <ResizablePanel
                                 ref="asidePanelRef"
                                 :default-size="asideDefaultSize"
-                                :min-size="asideMinSize"
+                                :min-size="tabletAsideMinSize"
                                 :collapsed-size="0"
                                 collapsible
                                 :order="2"
@@ -130,6 +130,7 @@
     import { useAppearanceSettingsStore } from '../../stores';
     import { useMainLayoutResizable } from '../../composables/useMainLayoutResizable';
     import { useCompactLayout } from '../../composables/useCompactLayout';
+    import { useTouchTabletFrame } from '../../composables/useTouchTabletFrame';
     import { watchState } from '../../services/watchState';
     import { isAndroid } from '../../shared/utils/platform';
     import { COMPACT_KEEP_ALIVE_MAX } from './keepAlive';
@@ -253,6 +254,10 @@
         isAsideCollapsedStatic,
         isSideBarTabShow
     } = useMainLayoutResizable();
+
+    // Android portrait touch tablets: icon nav on first run, and a friends panel of at least 280px while the page keeps
+    // 420px (docs/DESIGN.md §5). The PC minimum everywhere else.
+    const { asideMinSize: tabletAsideMinSize } = useTouchTabletFrame({ baseMinSize: asideMinSize });
 
     const asidePanelRef = ref(null);
     let restoreAsideAfterHiddenRoute = false;

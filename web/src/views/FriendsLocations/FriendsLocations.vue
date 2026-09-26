@@ -165,7 +165,7 @@
     import { useI18n } from 'vue-i18n';
     import { useVirtualizer } from '@tanstack/vue-virtual';
 
-    import ResponsivePopover from '../Feed/components/ResponsivePopover.vue';
+    import ResponsivePopover from '../../components/ui/responsive-popover/ResponsivePopover.vue';
     import { useCompactLayout } from '../../composables/useCompactLayout';
     import { useAppearanceSettingsStore, useFavoriteStore, useFriendStore, useLocationStore } from '../../stores';
     import { Slider } from '../../components/ui/slider';
@@ -1167,6 +1167,22 @@
         flex: 1;
         width: auto;
         margin-right: 0;
+    }
+
+    /* Touch tablets (the PC frame beside the friends panel, docs/DESIGN.md §5): a narrow page keeps the toolbar on one
+     * row, with a shorter search, and the cards inside the page instead of widening it past its edge. */
+    :global(html.vrcx-coarse:not(.vrcx-compact) .friend-view) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    :global(html.vrcx-coarse:not(.vrcx-compact) .friend-view__actions) {
+        flex-wrap: nowrap;
+        min-width: 0;
+    }
+
+    :global(html.vrcx-coarse:not(.vrcx-compact) .friend-view__search) {
+        width: auto;
+        min-width: 0;
     }
 
     .friend-view__loading-icon {

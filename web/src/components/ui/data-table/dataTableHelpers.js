@@ -185,3 +185,51 @@ export function isInteractiveTarget(target, row) {
     const hit = target.closest(INTERACTIVE_TARGET_SELECTOR);
     return Boolean(hit && hit !== row && (!row || row.contains(hit)));
 }
+
+/** Size of the compact pagination's items (DataTableLayout: 32px buttons, 4px apart) and of the touch tools. */
+const COMPACT_CONTROL_PX = 32;
+const COMPACT_CONTROL_GAP_PX = 4;
+/** Gap between the view's toolbar, the touch tools and an inline pagination. */
+const TOOLBAR_GAP_PX = 8;
+
+/** Room the view's toolbar keeps next to an inline pagination; narrower toolbars scroll sideways. */
+export const INLINE_PAGINATION_TOOLBAR_MIN_PX = 240;
+
+/**
+ * Width of the compact pagination (sibling count 0, first and last page shown): up to five page and ellipsis items
+ * plus Previous and Next.
+ *
+ * @param {number} pageCount
+ * @returns {number}
+ */
+export function estimateCompactPaginationWidth(pageCount) {
+    const pages = Math.min(Math.max(Math.floor(Number(pageCount)) || 1, 1), 5);
+    const items = pages + 2;
+    return items * COMPACT_CONTROL_PX + (items - 1) * COMPACT_CONTROL_GAP_PX;
+}
+
+/**
+ * Whether phone landscape moves the pagination up into the toolbar row: only when the view's toolbar keeps at least
+ * `toolbarMinPx` next to the touch tools and the pagination (a table beside the open friends panel with many pages
+ * keeps its pagination below the list).
+ *
+ * @param {object} state
+ * @param {number} state.tableWidth Width of the table (DataTableLayout root) in CSS px
+ * @param {number} state.pageCount
+ * @param {number} state.toolCount Touch tools in the toolbar row (View options, Quick actions)
+ * @param {boolean} state.hasToolbar Whether the view passes a toolbar
+ * @param {number} [state.toolbarMinPx]
+ * @returns {boolean}
+ */
+export function shouldInlinePagination({
+    tableWidth,
+    pageCount,
+    toolCount,
+    hasToolbar,
+    toolbarMinPx = INLINE_PAGINATION_TOOLBAR_MIN_PX
+}) {
+    if (!Number.isFinite(tableWidth) || tableWidth <= 0) return false;
+    const tools = toolCount > 0 ? toolCount * COMPACT_CONTROL_PX + (toolCount - 1) * COMPACT_CONTROL_GAP_PX : 0;
+    const used = estimateCompactPaginationWidth(pageCount) + TOOLBAR_GAP_PX + tools + (hasToolbar ? TOOLBAR_GAP_PX : 0);
+    return tableWidth - used >= (hasToolbar ? toolbarMinPx : 0);
+}

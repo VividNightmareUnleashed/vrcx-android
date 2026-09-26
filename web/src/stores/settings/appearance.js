@@ -632,6 +632,15 @@ export const useAppearanceSettingsStore = defineStore(
             setNavCollapsed(!isNavCollapsed.value);
         }
         /**
+         * Sets the nav state without saving it as the user's choice (Android touch tablets start with the icon nav,
+         * composables/useTouchTabletFrame.js).
+         *
+         * @param {boolean} collapsed
+         */
+        function applyNavCollapsedDefault(collapsed) {
+            isNavCollapsed.value = collapsed;
+        }
+        /**
          * @param widthOrArray
          */
         function setNavWidth(widthOrArray) {
@@ -987,6 +996,7 @@ export const useAppearanceSettingsStore = defineStore(
             applyTableDensity,
             setNavCollapsed,
             toggleNavCollapsed,
+            applyNavCollapsedDefault,
             setAppFontFamily,
             customFontFamily,
             setCustomFontFamily,
