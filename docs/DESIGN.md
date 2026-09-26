@@ -11,7 +11,7 @@ maps onto a phone, and how PC-only input idioms (hover, right-click, Shift, drag
 | Themes | `system`/`light`/`dark`/`midnight` × default, blue, green, orange, red, rose, violet, yellow (`styles/globals.css`, `styles/themes/*`) |
 | Surfaces | Frame `--sidebar` (#fafafa light, #171717 dark, #0a0a0a midnight); page card `--background` (light) or `--sidebar` (dark) with `1px var(--border)` and `--radius` 6px |
 | Status colours | `--status-online #2ed319`, `--status-joinme #00b8ff`, `--status-askme #e97c03`, `--status-busy #c80928`, `--status-offline #737f8d`; platform and visibility colours as upstream |
-| Type | Inter Variable plus bundled Noto Sans JP/SC/KR/TC, the upstream size scale (10/11/12/13/14 px), `--font-mono-cjk` for the status bar |
+| Type | Inter Variable (bundled); CJK text uses Android's system Noto CJK fonts instead of upstream's bundled webfonts (the Android build drops ~17 MB of woff2); the upstream size scale (10/11/12/13/14 px), `--font-mono-cjk` for the status bar |
 | Icons | Remix Icon for navigation (the same classes as the PC nav, including user-chosen folder and dashboard icons), lucide everywhere else |
 | Motion | Upstream durations; sheets open in 250 ms on phones (upstream 500 ms); `prefers-reduced-motion` respected |
 
@@ -243,7 +243,7 @@ page and the friends panel side by side:
 ## 7. Performance rules for UI work
 
 - No `backdrop-filter` on overlays in compact layout. No new shadows or animations beyond the table in §1.
-- `KeepAlive` in the phone layout gets `max=6` (upstream keeps every view alive).
+- `KeepAlive` gets `max=6` in the phone layout and `max=8` in the tablet frame on Android (upstream keeps every view alive).
 - Keep upstream virtualization. Card mode must render only the current page of rows.
 - Hidden panels use `transform` and `visibility:hidden`, so they are not painted but stay mounted.
 - No layout reads in scroll handlers. The compact-mode media query is a single shared `useMediaQuery` instance.

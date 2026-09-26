@@ -307,7 +307,7 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 | Screenshot helper (writes metadata into PC screenshots) | Hidden |
 | Screenshot Metadata tool | Ported over SAF: works on PNGs on the phone. Search and "last screenshot" read only the photos folder the user chose (`ChoosePhotosFolder` / `OpenVrcPhotosFolder`); no MediaStore fallback and no media permission |
 | Prints/stickers/emoji auto-save | Saved to MediaStore `Pictures/VRCX/<type>/<YYYY-MM>/` by default; an SAF folder can be chosen |
-| Desktop notifications, TTS | Android notifications and TextToSpeech. On the first Android run, `desktopToast` is seeded to `Always` if unset. Conditions needing VR/HMD state ("Inside VR", "Outside VR", "while AFK") are hidden |
+| Desktop notifications, TTS | Android notifications and TextToSpeech. On the first Android run, `desktopToast` is seeded to `Always` if unset. "Inside VR" / "Outside VR" use the SteamVR state the companion reports and are shown while a companion is paired; "while AFK" (HMD proximity) stays hidden |
 | Tray, start with OS, start minimized, GPU acceleration, updater, zoom | Hidden. Updates come from the APK distribution; `electron.getNoUpdater()` → `true` |
 | Proxy | Implemented (OkHttp + `ProxyController`); restart to apply |
 | Custom CSS/JS | `filesDir/custom/custom.css` and `custom.js`, imported with `AndroidHost.ImportCustomFile` (a custom.css in the old `getExternalFilesDir(null)` location is copied over once); a Settings action reloads them |
