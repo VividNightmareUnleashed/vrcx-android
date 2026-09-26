@@ -13,7 +13,7 @@
                         <TooltipWrapper side="bottom" :content="t('view.game_log.sessions.switch_to_sessions')">
                             <ToggleGroupItem
                                 value="sessions"
-                                class="px-2"
+                                class="px-2 pointer-coarse:min-w-8"
                                 :class="sessionsViewMode === 'sessions' && 'bg-accent text-accent-foreground'"
                                 :ariaLabel="t('view.game_log.sessions.switch_to_sessions')">
                                 <Logs class="size-4" />
@@ -22,7 +22,7 @@
                         <TooltipWrapper side="bottom" :content="t('view.game_log.sessions.switch_to_table')">
                             <ToggleGroupItem
                                 value="table"
-                                class="px-2"
+                                class="px-2 pointer-coarse:min-w-8"
                                 :class="sessionsViewMode === 'table' && 'bg-accent text-accent-foreground'"
                                 :ariaLabel="t('view.game_log.sessions.switch_to_table')">
                                 <Table2 class="size-4" />
@@ -67,14 +67,14 @@
                                 @update:model-value="handleViewModeChange">
                                 <ToggleGroupItem
                                     value="sessions"
-                                    class="px-2"
+                                    class="min-w-8 px-2"
                                     :class="sessionsViewMode === 'sessions' && 'bg-accent text-accent-foreground'"
                                     :ariaLabel="t('view.game_log.sessions.switch_to_sessions')">
                                     <Logs class="size-4" />
                                 </ToggleGroupItem>
                                 <ToggleGroupItem
                                     value="table"
-                                    class="px-2"
+                                    class="min-w-8 px-2"
                                     :class="sessionsViewMode === 'table' && 'bg-accent text-accent-foreground'"
                                     :ariaLabel="t('view.game_log.sessions.switch_to_table')">
                                     <Table2 class="size-4" />
