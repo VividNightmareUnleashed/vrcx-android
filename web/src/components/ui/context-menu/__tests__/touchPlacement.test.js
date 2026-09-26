@@ -47,8 +47,20 @@ describe('getTouchMenuCollisionPadding', () => {
         expect(getTouchMenuCollisionPadding().bottom).toBe(m + 300);
     });
 
-    it('prioritises the position (flip first, then shift on both axes)', () => {
+    it("uses a caller's padding in place of the edge margin and still adds the insets", () => {
+        setInsets({ top: 24, right: 12, bottom: 16, ime: 300 });
+        expect(getTouchMenuCollisionPadding(undefined, 2)).toEqual({ top: 26, right: 14, bottom: 302, left: 2 });
+        expect(getTouchMenuCollisionPadding(undefined, { top: 4, left: 6 })).toEqual({
+            top: 28,
+            right: 12,
+            bottom: 300,
+            left: 6
+        });
+    });
+
+    it('prioritises the position (flip first, then shift on both axes) unless the caller says otherwise', () => {
         expect(getTouchMenuPositioning().prioritizePosition).toBe(true);
+        expect(getTouchMenuPositioning(undefined, { prioritizePosition: false }).prioritizePosition).toBe(false);
     });
 });
 
@@ -104,11 +116,20 @@ describe('ContextMenuContent placement', () => {
         wrapper.unmount();
     });
 
-    it('lets a caller override the placement', async () => {
+    it('lets a caller choose the placement and its margin, but keeps the menu clear of the system bars', async () => {
         const wrapper = mountMenu({ prioritizePosition: false, collisionPadding: 2 });
         const popper = await openMenu(wrapper);
         expect(popper.props('prioritizePosition')).toBe(false);
-        expect(popper.props('collisionPadding')).toBe(2);
+        expect(popper.props('collisionPadding')).toEqual({ top: 26, right: 2, bottom: 18, left: 2 });
+        wrapper.unmount();
+    });
+
+    it("merges a view's own touch placement (MyAvatarCard, MutualFriends) with the insets", async () => {
+        setInsets({ top: 24, bottom: 16, ime: 280 });
+        const wrapper = mountMenu({ prioritizePosition: true, collisionPadding: 8 });
+        const popper = await openMenu(wrapper);
+        expect(popper.props('prioritizePosition')).toBe(true);
+        expect(popper.props('collisionPadding')).toEqual({ top: 32, right: 8, bottom: 288, left: 8 });
         wrapper.unmount();
     });
 
@@ -118,6 +139,14 @@ describe('ContextMenuContent placement', () => {
         const popper = await openMenu(wrapper);
         expect(popper.props('prioritizePosition')).toBe(false);
         expect(popper.props('collisionPadding')).toBe(0);
+        wrapper.unmount();
+    });
+
+    it("desktop builds pass a caller's props through unchanged", async () => {
+        platform.isAndroid = false;
+        const wrapper = mountMenu({ collisionPadding: 8 });
+        const popper = await openMenu(wrapper);
+        expect(popper.props('collisionPadding')).toBe(8);
         wrapper.unmount();
     });
 });
