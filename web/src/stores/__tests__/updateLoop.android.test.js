@@ -1,5 +1,5 @@
-// Android: the updateLoop applies a game start reported by the PC companion before the tick's log lines, and runs the
-// game-running check through runAndroidGameRunningCheckFlow (player list rebuild after a late start).
+// Android: the updateLoop's game log step goes through runAndroidGameLogFlow, which reads the game state once per tick
+// together with the log lines (see coordinators/__tests__/gameLogCoordinator.android.test.js); desktop is unchanged.
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
@@ -23,9 +23,7 @@ vi.mock('../../coordinators/gameCoordinator', () => ({
 }));
 vi.mock('../../coordinators/gameLogCoordinator', () => ({
     addGameLogEvent: vi.fn((line) => mocks.calls.push(['addGameLogEvent', line])),
-    runAndroidGameRunningCheckFlow: vi.fn(async (...args) =>
-        mocks.calls.push(['runAndroidGameRunningCheckFlow', ...args])
-    )
+    runAndroidGameLogFlow: vi.fn(async () => mocks.calls.push(['runAndroidGameLogFlow']))
 }));
 vi.mock('../../coordinators/moderationCoordinator', () => ({ runRefreshPlayerModerationsFlow: vi.fn() }));
 vi.mock('../../coordinators/vrcxCoordinator', () => ({ clearVRCXCache: vi.fn() }));
@@ -59,19 +57,19 @@ describe('updateLoop on Android', () => {
         };
         globalThis.AppApi = {
             CheckGameRunning: vi.fn(),
-            IsGameRunning: vi.fn().mockResolvedValue(true),
+            IsGameRunning: vi.fn(async () => {
+                mocks.calls.push(['IsGameRunning']);
+                return true;
+            }),
             IsSteamVRRunning: vi.fn().mockResolvedValue(false)
         };
     });
 
-    test('applies a start before the log lines, and checks the game through the Android flow', async () => {
-        await useUpdateLoopStore().updateLoop();
-        expect(mocks.calls).toEqual([
-            ['runAndroidGameRunningCheckFlow', true],
-            ['GetLogLines'],
-            ['addGameLogEvent', 'line'],
-            ['runAndroidGameRunningCheckFlow']
-        ]);
+    test('runs the Android game log step once per tick, with no separate game check', async () => {
+        const store = useUpdateLoopStore();
+        await store.updateLoop();
+        await store.updateLoop();
+        expect(mocks.calls).toEqual([['runAndroidGameLogFlow'], ['runAndroidGameLogFlow']]);
     });
 
     test('desktop keeps the upstream order and flow', async () => {
@@ -80,6 +78,7 @@ describe('updateLoop on Android', () => {
         expect(mocks.calls).toEqual([
             ['GetLogLines'],
             ['addGameLogEvent', 'line'],
+            ['IsGameRunning'],
             ['runUpdateIsGameRunningFlow', true, false]
         ]);
     });

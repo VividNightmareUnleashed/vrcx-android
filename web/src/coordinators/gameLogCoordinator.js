@@ -60,14 +60,14 @@ export async function tryLoadPlayerList() {
     console.log('Loading player list from game log...');
     let ctx;
     let i;
-    // Android: log lines can arrive while the rows are read (see isPlayerListReloadCurrent).
+    // Android: the rows must be the current instance, and log lines can arrive while they are read.
     const liveLocation = locationStore.lastLocation;
     const data = await database.getGamelogDatabase();
     if (data.length === 0) {
         return;
     }
     if (isAndroid && !isPlayerListReloadCurrent(liveLocation, data)) {
-        console.log('Player list reload skipped: the game log moved on while it was read');
+        console.log('Player list reload skipped: the game log rows are not the current instance');
         return;
     }
     let length = 0;
@@ -138,11 +138,17 @@ export async function tryLoadPlayerList() {
 }
 
 /**
- * Android: whether the rows tryLoadPlayerList read still describe the current instance. There the reload can run
- * while log lines are processed (the PC companion reports VRChat running whenever it connects, see
- * runAndroidGameRunningCheckFlow), and the live state wins when it is newer than the rows: when the game stopped or
- * lastLocation was replaced (a `location` line or a reset) during the read, and when lastLocation names an instance
- * the rows do not end with (its row is still being written, after the group name lookup).
+ * Android: whether the rows tryLoadPlayerList read describe the instance VRChat is in now. There the reload also runs
+ * when the PC companion reports VRChat running long after start-up (runAndroidGameLogFlow), and a start alone does not
+ * tell a VRChat that was already running from one that was just launched: the last Location row may then belong to a
+ * previous session (the rows reach back to yesterday). Restoring it would show that instance as the current one, and
+ * the next `location` line would write the whole gap into its time (runLastLocationResetFlow). So the rows count only
+ * when their last Location is the instance the VRChat API reports the current user in; a game that is still loading,
+ * travelling or elsewhere fills the list from its own log lines instead.
+ *
+ * The live state also wins when it is newer than the rows: when the game stopped or lastLocation was replaced (a
+ * `location` line or a reset) during the read, and when lastLocation names an instance the rows do not end with (its
+ * row is still being written, after the group name lookup).
  *
  * @param {object} liveLocation The lastLocation object when the read started
  * @param {object[]} rows Rows from getGamelogDatabase(), oldest first
@@ -151,14 +157,16 @@ export async function tryLoadPlayerList() {
 function isPlayerListReloadCurrent(liveLocation, rows) {
     const gameStore = useGameStore();
     const locationStore = useLocationStore();
+    const userStore = useUserStore();
 
     if (!gameStore.isGameRunning || locationStore.lastLocation !== liveLocation) {
         return false;
     }
-    if (!liveLocation.location) {
-        return true;
+    const lastRow = rows.findLast((row) => row.type === 'Location');
+    if (!lastRow || lastRow.location !== userStore.currentUser.$locationTag) {
+        return false;
     }
-    return rows.findLast((row) => row.type === 'Location')?.location === liveLocation.location;
+    return !liveLocation.location || liveLocation.location === lastRow.location;
 }
 
 /**
@@ -184,45 +192,69 @@ function keepLivePlayers(liveLocation, rebuilt, friends) {
 }
 
 /**
- * Android: the updateLoop's game-running check (pull mode).
+ * Android: the updateLoop's game log step (pull mode). Upstream reads the log
+ * lines, then checks the game; here the game state is read once per tick, before the lines, because native orders
+ * the two differently from a PC:
  *
- * The PC companion can connect, and report VRChat running, long after start-up, when the friends list (whose arrival
- * runs tryLoadPlayerList) has already loaded. Upstream would then show an empty player list until the next join or
- * world change, so after a start this rebuilds it from the game log database.
+ * - It publishes a start before the log lines of that game session, which may include a backlog the phone missed while it
+ *   was not connected, so a start applies before the tick's lines and they see a running game as on the PC;
+ * - It publishes a stop after the lines that precede it, so a stop read before the lines applies after them;
+ * - A companion disconnect changes nothing: native keeps the last state for 120 s (docs/ARCHITECTURE.md §8), then reports
+ *   a stop, whose reset writes the leave rows as upstream's does.
  *
- * Native publishes a start before the log lines of that game session, which may include a backlog the phone missed
- * while it was not connected. `beforeLogLines` therefore applies a start ahead of the tick's lines, so they see a
- * running game as they would on the PC (a `location` line then moves the rebuilt list on, and the reset writes the
- * leave rows, as upstream). A stop still applies after the lines, which precede it. A companion disconnect changes
- * nothing here: native keeps the last state for 120 s (docs/ARCHITECTURE.md §8), so the list stays until then.
+ * The shim answers IsGameRunning and IsSteamVRRunning from its cache until a `game-state` event arrives, so a tick
+ * costs no bridge call for them. The state and the lines still come from two calls: a change that native publishes in
+ * the few milliseconds between them is applied one tick late.
  *
- * @param {boolean} [beforeLogLines] Only apply a start (the call before the tick's log lines)
+ * After a start, the player list may be rebuilt from the game log database (applyAndroidGameStart).
  */
-export async function runAndroidGameRunningCheckFlow(beforeLogLines = false) {
+export async function runAndroidGameLogFlow() {
     const gameStore = useGameStore();
 
-    const wasGameRunning = gameStore.isGameRunning;
     const isGameRunning = await AppApi.IsGameRunning();
-    if (beforeLogLines && (wasGameRunning || !isGameRunning)) {
-        return;
+    const isSteamVRRunning = await AppApi.IsSteamVRRunning();
+    const started = isGameRunning && !gameStore.isGameRunning;
+    if (started) {
+        await applyAndroidGameStart(isSteamVRRunning);
     }
-    await runUpdateIsGameRunningFlow(isGameRunning, await AppApi.IsSteamVRRunning());
-    if (!wasGameRunning && gameStore.isGameRunning) {
-        await reloadPlayerListAfterGameStart();
+    const logLines = await LogWatcher.GetLogLines();
+    if (logLines) {
+        logLines.forEach((logLine) => {
+            addGameLogEvent(logLine);
+        });
+    }
+    if (!started) {
+        await runUpdateIsGameRunningFlow(isGameRunning, isSteamVRRunning);
     }
 }
 
 /**
- * Android: rebuilds the player list after VRChat was reported running. Nothing to do before the friends list loaded
- * (its watcher in stores/gameLog runs tryLoadPlayerList then) or when log lines already filled the list.
+ * Android: applies a start reported by the PC companion, then rebuilds the player list from the game log database.
+ *
+ * The companion can connect, and report VRChat running, long after start-up, when the friends list (whose arrival
+ * runs tryLoadPlayerList) has already loaded; it also reports a start when it reconnects after the grace period.
+ * Upstream would then show an empty player list until the next join or world change. tryLoadPlayerList only uses rows
+ * of the instance the VRChat API reports (isPlayerListReloadCurrent). A game that was just launched is not there yet
+ * (the API reports it offline, travelling or in its new instance), so its own log lines fill the list. The one launch
+ * this cannot tell apart goes straight back into the last logged instance after the phone missed the game closing:
+ * the players of the earlier visit are then listed until the `location` line resets them, as upstream does when
+ * VRCX starts during such a launch. After a reconnect past the grace period the instance comes back, but the players
+ * who stayed in it through the stop do not: the stop wrote their leave rows, so only later joins are listed.
+ *
+ * No rebuild before the friends list loaded (its watcher in stores/gameLog runs tryLoadPlayerList then), and none when
+ * the phone had a current instance that the start's reset just closed: that one came from the VRChat API while the
+ * game was not running (Quest, or the PC while the companion was away), and the game that started logs its own.
+ *
+ * @param {boolean} isSteamVRRunning
  */
-async function reloadPlayerListAfterGameStart() {
-    const { lastLocation } = useLocationStore();
+async function applyAndroidGameStart(isSteamVRRunning) {
+    const locationStore = useLocationStore();
 
-    if (!watchState.isFriendsLoaded || lastLocation.location || lastLocation.playerList.size > 0) {
-        return;
+    const hadLocation = Boolean(locationStore.lastLocation.location);
+    await runUpdateIsGameRunningFlow(true, isSteamVRRunning);
+    if (!hadLocation && watchState.isFriendsLoaded) {
+        await tryLoadPlayerList();
     }
-    await tryLoadPlayerList();
 }
 
 /**
