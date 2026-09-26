@@ -217,7 +217,7 @@
     import { useCompactLayout } from '../../../composables/useCompactLayout';
     import InstanceActivityTooltip from './InstanceActivityTooltip.jsx';
 
-    import * as echarts from 'echarts';
+    import { echarts, loadEcharts } from '../../../shared/utils/chart';
     import { renderToHtml } from '@/lib/utils';
 
     const appearanceSettingsStore = useAppearanceSettingsStore();
@@ -522,6 +522,11 @@
     }
 
     function initEcharts() {
+        if (!echarts) {
+            // Loaded with the first chart on Android (shared/utils/chart.js).
+            loadEcharts().then(initEcharts, console.error);
+            return;
+        }
         const chartsHeight = activityData.value.length * (barWidth.value + 10) + 200;
         const chartDom = activityChartRef.value;
 
