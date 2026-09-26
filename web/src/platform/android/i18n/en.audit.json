@@ -60,6 +60,15 @@
             "js_confirm_title": "Import a custom script?",
             "js_confirm_description": "custom.js runs inside VRCX with the same access as the app, including your saved logins and your VRChat session. Only import a script you wrote yourself or fully trust.",
             "js_confirm": "Choose file"
+        },
+        "photos_folder": {
+            "tool_title": "Photos folder",
+            "tool_description": "Choose or open the folder that holds your VRChat photos",
+            "hint_title": "Choose your VRChat photos folder",
+            "hint_description": "Search and Last screenshot look for photos in a folder you choose, for example Pictures/VRChat if your photos are synced to this device.",
+            "choose": "Choose photos folder",
+            "picker_opened": "Pick the folder that holds your VRChat photos",
+            "open_failed": "Couldn't open the photos folder"
         }
     }
 }

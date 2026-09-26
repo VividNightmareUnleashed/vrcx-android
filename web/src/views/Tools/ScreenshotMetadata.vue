@@ -53,6 +53,9 @@
             }}</span>
         </div>
 
+        <!-- Android: Search and Last screenshot need a chosen VRChat photos folder. -->
+        <PhotosFolderHint v-if="PhotosFolderHint" />
+
         <!-- Search Results Table View -->
         <div v-if="searchViewMode === 'table'" class="flex-1 min-h-0 overflow-auto">
             <!-- Phones: narrower cells that wrap, so the remaining columns fit without sideways scrolling. -->
@@ -331,7 +334,7 @@
 <script setup>
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
     import { useMagicKeys, whenever } from '@vueuse/core';
-    import { onMounted, onUnmounted, reactive, ref, computed } from 'vue';
+    import { defineAsyncComponent, onMounted, onUnmounted, reactive, ref, computed } from 'vue';
     import { useGalleryStore, useUserStore, useVrcxStore } from '@/stores';
     import {
         ArrowLeft,
@@ -361,6 +364,10 @@
     import { vrcPlusImageRequest } from '@/api';
     import { lookupUser } from '@/coordinators/userCoordinator';
     import { hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
+
+    const PhotosFolderHint = isAndroid
+        ? defineAsyncComponent(() => import('@/platform/android/components/PhotosFolderHint.vue'))
+        : null;
 
     const router = useRouter();
     const { t } = useI18n();

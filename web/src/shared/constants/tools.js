@@ -44,6 +44,14 @@ const allToolDefinitions = [
             method: 'OpenVrcPhotosFolder',
             successMessageKey: 'message.file.folder_opened',
             errorMessageKey: 'message.file.folder_missing'
+        },
+        // Android: the folder the Screenshot Manager searches, chosen with the system folder picker. It is the only
+        // folder shortcut there, so it sits with the other picture tools.
+        android: {
+            category: 'image',
+            titleKey: 'android.photos_folder.tool_title',
+            descriptionKey: 'android.photos_folder.tool_description',
+            action: { type: 'android', handler: 'photos-folder' }
         }
     },
     {
@@ -229,14 +237,20 @@ const allToolDefinitions = [
 
 /**
  * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) on Android
- * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav.
+ * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav. A PC tool with an
+ * `android` entry is kept on Android with those fields instead (the VRChat photos folder).
  *
- * @param {{ pcOnly?: boolean }[]} tools
+ * @param {{ pcOnly?: boolean; android?: object }[]} tools
  * @param {boolean} [android]
  * @returns {object[]}
  */
 function filterToolsForPlatform(tools, android = isAndroid) {
-    return android ? tools.filter((tool) => !tool.pcOnly) : tools;
+    if (!android) {
+        return tools;
+    }
+    return tools
+        .filter((tool) => !tool.pcOnly || tool.android)
+        .map((tool) => (tool.android ? { ...tool, ...tool.android } : tool));
 }
 
 const toolDefinitions = filterToolsForPlatform(allToolDefinitions);

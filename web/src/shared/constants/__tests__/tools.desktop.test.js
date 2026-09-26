@@ -16,6 +16,15 @@ describe('tools on desktop', () => {
         expect(toolNavDefinitions.map((item) => item.key)).toContain('tool-vrc-photos');
     });
 
+    test('keeps the upstream VRChat Photos shortcut', () => {
+        const tool = toolDefinitions.find((item) => item.key === 'vrc-photos');
+        expect(tool).toMatchObject({
+            category: 'shortcuts',
+            titleKey: 'view.tools.pictures.pictures.vrc_photos',
+            action: { type: 'app-api', method: 'OpenVrcPhotosFolder' }
+        });
+    });
+
     test('shows every category', () => {
         expect(getVisibleToolCategories()).toEqual(toolCategories);
         expect(getToolsByCategory('shortcuts')).toHaveLength(5);
