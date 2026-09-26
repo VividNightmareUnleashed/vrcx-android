@@ -349,8 +349,13 @@
         eventPopoverOpen.value = !eventPopoverOpen.value;
     };
 
-    const handleInfoTap = () => {
+    /**
+     * @param {MouseEvent} [event]
+     */
+    const handleInfoTap = (event) => {
         if (isCoarsePointer.value) {
+            // The tap would bubble on to PopoverTrigger (the card), whose own toggle would close the popover again.
+            event?.stopPropagation();
             toggleEventPopover();
         }
     };
