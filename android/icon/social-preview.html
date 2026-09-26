@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  Source of social-preview.png (1280 x 640), the GitHub social preview. Render it from the repository root with
+  headless Chrome. Google Sans Flex comes from Google Fonts, so this needs a network connection. In PowerShell:
+
+    & 'C:\Program Files\Google\Chrome\Application\chrome.exe' --headless=new --hide-scrollbars `
+        --force-device-scale-factor=1 --window-size=1280,640 --virtual-time-budget=10000 `
+        --screenshot="$PWD\android\icon\social-preview.png" "file:///$PWD/android/icon/social-preview.html"
+
+  The icon is head.svg and bubble.svg unchanged, cropped to its ink (the antenna tips to the bubble's tail) and drawn at
+  0.63 of its 1024 px size. The icon and the text are centred together, so a longer or shorter title stays balanced.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VRCX Android social preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght,ROND@6..144,1..1000,0..100&display=block">
+<style>
+    html,
+    body {
+        margin: 0;
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        background: #17191e;
+    }
+
+    /* Google Sans Flex fully rounded, whose stroke ends match the robot's antennae and the bubble's corners. */
+    body {
+        font-family: 'Google Sans Flex', sans-serif;
+        font-variation-settings: 'ROND' 100;
+    }
+
+    .card {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 81px;
+        height: 100%;
+        isolation: isolate;
+    }
+
+    .icon {
+        position: relative;
+        flex: none;
+    }
+
+    /* The green glow sits behind the icon, centred on it. */
+    .icon::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 880px;
+        height: 880px;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(closest-side, rgb(61 220 132 / 0.34), rgb(61 220 132 / 0.16) 45%,
+            rgb(61 220 132 / 0.05) 75%, rgb(61 220 132 / 0));
+        z-index: -1;
+    }
+
+    .icon svg {
+        display: block;
+    }
+
+    h1,
+    p {
+        margin: 0;
+    }
+
+    h1 {
+        color: #fff;
+        font-size: 92px;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .tagline {
+        margin-top: 18px;
+        color: #aeb5c1;
+        font-size: 34px;
+        line-height: 46px;
+    }
+
+    .platforms {
+        display: flex;
+        align-items: center;
+        gap: 40px;
+        margin-top: 26px;
+        color: #e3e6ea;
+        font-size: 26px;
+        font-weight: 600;
+    }
+
+    .platforms span {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .platforms svg {
+        display: block;
+    }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">
+        <svg width="222.4" height="299.4" viewBox="335.46 307.4 353.08 475.2" aria-label="VRCX Android icon">
+            <g transform="translate(512 540) scale(0.97) translate(-512 -540)">
+                <line x1="419.0" y1="371.0" x2="386.1" y2="309.2" stroke="#3DDC84" stroke-width="18" stroke-linecap="round"/>
+                <line x1="605.0" y1="371.0" x2="637.9" y2="309.2" stroke="#3DDC84" stroke-width="18" stroke-linecap="round"/>
+                <path d="M 362,488 A 150 150 0 0 1 662,488 Z" fill="#3DDC84"/>
+                <circle cx="450" cy="426" r="17" fill="#17191e"/>
+                <circle cx="574" cy="426" r="17" fill="#17191e"/>
+            </g>
+            <g transform="translate(512 540) scale(0.97) translate(-512 -540)">
+                <path d="M 392,452 H 632 A 62 62 0 0 1 694,514 V 652 L 676,774 Q 671,800 652,784 L 566,700 H 392 A 62 62 0 0 1 330,638 V 514 A 62 62 0 0 1 392,452 Z" fill="#ffffff"/>
+                <path d="M 424,506 H 486 L 600,660 H 538 Z M 538,506 H 600 L 486,660 H 424 Z" fill="#17191e"/>
+            </g>
+        </svg>
+    </div>
+    <div>
+        <h1>VRCX Android</h1>
+        <p class="tagline">The friendship management tool<br>for VRChat, on your phone.</p>
+        <p class="platforms">
+            <span>Android 8.0+</span>
+            <span>
+                <!-- The Windows logo. -->
+                <svg width="24" height="24" viewBox="0 0 88 88" aria-hidden="true">
+                    <path fill="#0078d4" d="M0 0h42v42H0zM46 0h42v42H46zM0 46h42v42H0zM46 46h42v42H46z"/>
+                </svg>
+                Windows companion
+            </span>
+        </p>
+    </div>
+</div>
+</body>
+</html>
