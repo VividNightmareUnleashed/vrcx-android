@@ -6,6 +6,8 @@
 //                  connects after start-up (AppApiElectron.IsGameRunning answers false until then). The player list is
 //                  then rebuilt when the start arrives. Use more than 60 s to see it without the views-a mock's own
 //                  reload, which gives up after a minute.
+//   freshlaunch=1  The VRChat API reports the preview user offline, as right after VRChat was launched: with
+//                  gamestart, the start must not restore the last logged instance (the Player List stays empty).
 //
 // Always on: Previous Instances rows for the current instance (the info dialog's table and chart), with long display
 // names. Open it with $pinia.instance.showPreviousInstancesInfoDialog(PREVIOUS_INSTANCE_LOCATION).
@@ -15,6 +17,7 @@ const NOW = Date.now();
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const gameStartDelayMs = Number(params.get('gamestart') ?? 0) * 1000;
+const freshLaunch = params.get('freshlaunch') === '1';
 
 /** The fixture user's current instance (fixtures.json). */
 export const PREVIOUS_INSTANCE_LOCATION = 'wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)';
@@ -38,6 +41,33 @@ export function lateGameStart(method, elapsedMs, delayMs) {
  */
 export function appApi(method) {
     return lateGameStart(method, Date.now() - NOW, gameStartDelayMs);
+}
+
+/**
+ * @param {object} currentUser The fixture's `auth/user` body
+ * @returns {object} The same user as the VRChat API reports it while VRChat is still starting: offline
+ */
+export function offlineCurrentUser(currentUser) {
+    return {
+        ...currentUser,
+        location: 'offline',
+        presence: { ...currentUser.presence, world: 'offline', instance: '' }
+    };
+}
+
+/**
+ * @param {string} path
+ * @param {URLSearchParams} query
+ * @param {string} method
+ * @param {object} options
+ * @param {object} data
+ * @returns {unknown} Response body, or undefined to fall through
+ */
+export function webApi(path, query, method, options, data) {
+    if (!freshLaunch || method !== 'GET' || (path !== 'auth/user' && path !== 'auth/user/')) {
+        return undefined;
+    }
+    return offlineCurrentUser(data.currentUser);
 }
 
 // Stays in the instance: [display name, user id suffix, joined minutes ago, left minutes ago (null: still there)].

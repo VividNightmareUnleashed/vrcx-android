@@ -1,6 +1,13 @@
 import { afterAll, describe, expect, test, vi } from 'vitest';
 
-import { PREVIOUS_INSTANCE_LOCATION, lateGameStart, previousInstanceRows, sqlite } from '../fixes.js';
+import {
+    PREVIOUS_INSTANCE_LOCATION,
+    lateGameStart,
+    offlineCurrentUser,
+    previousInstanceRows,
+    sqlite,
+    webApi
+} from '../fixes.js';
 
 // mockBridge.js loads every mock; fake timers keep their start-up timers (views-a.js) from running here.
 vi.useFakeTimers();
@@ -38,6 +45,25 @@ describe('gamestart (late companion start)', () => {
         expect(lateGameStart('GetZoom', 1000, 65000)).toBeUndefined();
         expect(lateGameStart('IsGameRunning', 65000, 65000)).toBeUndefined();
         expect(lateGameStart('IsGameRunning', 0, 0)).toBeUndefined();
+    });
+});
+
+describe('freshlaunch (VRChat still starting)', () => {
+    test('the current user is offline in the VRChat API', () => {
+        const user = {
+            id: 'usr_x',
+            location: 'wrld_a:1',
+            presence: { world: 'wrld_a', instance: '1', status: 'active' }
+        };
+        expect(offlineCurrentUser(user)).toEqual({
+            id: 'usr_x',
+            location: 'offline',
+            presence: { world: 'offline', instance: '', status: 'active' }
+        });
+    });
+
+    test('is off unless the query asks for it', () => {
+        expect(webApi('auth/user', new URLSearchParams(), 'GET', {}, { currentUser: {} })).toBeUndefined();
     });
 });
 
