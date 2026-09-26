@@ -130,6 +130,7 @@ public sealed class StreamSession
     private readonly AsyncSignal _queueSignal = new();
     private readonly AsyncSignal _ackSignal = new();
     private readonly AsyncSignal _pollSignal = new();
+    private readonly AsyncSignal _modeSignal = new();
     private readonly CancellationTokenSource _closed = new();
     private readonly ICompanionLog _log;
     private readonly long _maxInFlight;
@@ -140,6 +141,7 @@ public sealed class StreamSession
     private long _bytesSent;
     private long _rawBytesSent;
     private long _polls;
+    private int _idle;
 
     public StreamSession(string deviceId, string deviceName, string remoteAddress, ICompanionLog log,
         long maxInFlight = ProtocolConstants.MaxBytesInFlight, int maxChunk = ProtocolConstants.MaxChunkBytes)
@@ -177,6 +179,25 @@ public sealed class StreamSession
 
     public string? CloseReason { get; private set; }
 
+    /// <summary>
+    /// The phone said its app is in the background (<c>{"t":"idle","on":true}</c>, PROTOCOL.md §5.11): heartbeats
+    /// stretch, the receive timeout grows and log growth is sent in batches.
+    /// </summary>
+    public bool Idle => Volatile.Read(ref _idle) == 1;
+
+    /// <summary>Sets <see cref="Idle"/>; returns whether it changed. Use <see cref="SyncEngine.SetIdle"/>.</summary>
+    internal bool SetIdle(bool idle)
+    {
+        var value = idle ? 1 : 0;
+        if (Interlocked.Exchange(ref _idle, value) == value)
+            return false;
+        _modeSignal.Set();
+        return true;
+    }
+
+    /// <summary>Completes when <see cref="Idle"/> changes (one waiter: the connection's heartbeat loop).</summary>
+    internal Task WaitForModeChangeAsync(CancellationToken cancellationToken) => _modeSignal.WaitAsync(cancellationToken);
+
     private int _reportedDirExists = -1;
 
     /// <summary>The <c>dirExists</c> value of the last <c>info</c> sent or queued to this session (null: none yet).</summary>
@@ -203,6 +224,10 @@ public sealed class StreamSession
     internal Dictionary<string, FileSendState> Files { get; } = new(StringComparer.Ordinal);
     internal IReadOnlyList<LogFileMeta>? LastSnapshot { get; set; }
     internal ProcessState? LastProcess { get; set; }
+
+    /// <summary>While <see cref="Idle"/>: the poll from which log growth is queued again.</summary>
+    internal DateTimeOffset NextIdleFlush { get; set; }
+
     internal int Epoch => Volatile.Read(ref _epoch);
 
     internal int NextEpoch()
@@ -297,7 +322,7 @@ public sealed class StreamSession
     /// <summary>
     /// Handles <c>ack.bytes</c>. The companion counts data-frame wire bytes (length prefix included). A phone that counts
     /// fewer bytes per frame (without the prefix) or more (inflated bytes) cannot deadlock: acks are clamped, and the
-    /// 4 MiB window is well above the phone's 1 MiB ack interval.
+    /// 4 MiB window is well above the phone's 512 KiB ack interval.
     /// </summary>
     public void OnAck(long bytes)
     {

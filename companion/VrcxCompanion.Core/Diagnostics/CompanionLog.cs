@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace VrcxCompanion.Core.Diagnostics;
 
@@ -28,6 +29,22 @@ public static class CompanionLogExtensions
     public static void Error(this ICompanionLog log, string message, Exception? e = null) => log.Write(LogLevel.Error, message, e);
 }
 
+/// <summary>How exceptions appear in a log line.</summary>
+public static class LogText
+{
+    /// <summary>
+    /// The exception's type and message, except for parser exceptions, whose messages can quote the text being parsed
+    /// (devices.bin, settings.json, a phone's message): those are logged by type only.
+    /// </summary>
+    public static string Describe(Exception exception, bool fullTypeName = false)
+    {
+        var type = fullTypeName ? exception.GetType().FullName : exception.GetType().Name;
+        return exception is JsonException or FormatException or DecoderFallbackException or InvalidDataException
+            ? type ?? "Exception"
+            : type + ": " + exception.Message;
+    }
+}
+
 public sealed class NullLog : ICompanionLog
 {
     public static readonly NullLog Instance = new();
@@ -52,7 +69,7 @@ public sealed class MemoryLog : ICompanionLog
     {
         lock (_entries)
         {
-            _entries.Add($"{level} {message}{(exception is null ? "" : " " + exception.GetType().Name + ": " + exception.Message)}");
+            _entries.Add($"{level} {message}{(exception is null ? "" : " " + LogText.Describe(exception))}");
             if (_entries.Count > 2000)
                 _entries.RemoveRange(0, 1000);
         }
@@ -91,7 +108,7 @@ public sealed class FileLog : ICompanionLog, IDisposable
         sb.Append(' ').Append(level.ToString().ToUpperInvariant().PadRight(5)).Append(' ').Append(message);
         if (exception != null)
         {
-            sb.Append(" | ").Append(exception.GetType().FullName).Append(": ").Append(exception.Message);
+            sb.Append(" | ").Append(LogText.Describe(exception, fullTypeName: true));
             if (level >= LogLevel.Error && exception.StackTrace != null)
                 sb.Append(Environment.NewLine).Append(exception.StackTrace);
         }

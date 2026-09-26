@@ -103,7 +103,7 @@ public static class LocalAddress
         return ranked.OrderBy(r => r.rank).ThenBy(r => r.order).Select(r => r.address).Distinct().ToArray();
     }
 
-    private static bool LooksVirtual(NetworkInterface ni)
+    internal static bool LooksVirtual(NetworkInterface ni)
     {
         var text = (ni.Description + " " + ni.Name).ToLowerInvariant();
         return text.Contains("virtual") || text.Contains("hyper-v") || text.Contains("vethernet") || text.Contains("vmware") ||

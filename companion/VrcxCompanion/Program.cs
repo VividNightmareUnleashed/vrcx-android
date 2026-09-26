@@ -53,8 +53,11 @@ internal static class Program
                 Paths = paths,
                 TcpPort = settings.TcpPort,
                 DiscoveryPort = settings.DiscoveryPort,
+                AllowedPublicNetworks = settings.AllowedPublicNetworkIds(),
                 Log = log,
             });
+            // "Allow on this network" in the Status window is remembered in settings.json.
+            host.NetworkGate.AllowedNetworksChanged += ids => settings.SetAllowedPublicNetworks(ids, paths.SettingsFile, log);
         }
         catch (Exception e)
         {

@@ -24,23 +24,32 @@ internal sealed class ServerContext
     public required TimeProvider Time { get; init; }
     public required Action<long> CountBytesSent { get; init; }
     public TimeSpan HeartbeatInterval { get; init; } = ProtocolConstants.HeartbeatInterval;
+    public TimeSpan IdleHeartbeatInterval { get; init; } = ProtocolConstants.IdleHeartbeatInterval;
     public TimeSpan ReceiveTimeout { get; init; } = ProtocolConstants.ReceiveTimeout;
+    public TimeSpan IdleReceiveTimeout { get; init; } = ProtocolConstants.IdleReceiveTimeout;
     public TimeSpan HandshakeTimeout { get; init; } = ProtocolConstants.HandshakeTimeout;
     public int MaxHaveEntries { get; init; } = 100_000;
 }
 
-/// <summary>Serializes frame writes to the TLS stream and counts bytes.</summary>
+/// <summary>Serializes frame writes to the TLS stream, counts bytes and remembers when the last frame went out.</summary>
 internal sealed class StreamFrameSink : IFrameSink
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly Stream _stream;
     private readonly Action<int> _onWrite;
+    private readonly TimeProvider _time;
+    private long _lastWrite;
 
-    public StreamFrameSink(Stream stream, Action<int> onWrite)
+    public StreamFrameSink(Stream stream, Action<int> onWrite, TimeProvider time)
     {
         _stream = stream;
         _onWrite = onWrite;
+        _time = time;
+        _lastWrite = time.GetTimestamp();
     }
+
+    /// <summary>Time since the last frame was written (or since the sink was created).</summary>
+    public TimeSpan SinceLastWrite => _time.GetElapsedTime(Interlocked.Read(ref _lastWrite));
 
     public async ValueTask WriteFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
     {
@@ -48,6 +57,7 @@ internal sealed class StreamFrameSink : IFrameSink
         try
         {
             await _stream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref _lastWrite, _time.GetTimestamp());
             _onWrite(frame.Length);
         }
         finally
@@ -62,13 +72,16 @@ internal sealed class ClientConnection
 {
     private readonly Socket _socket;
     private readonly ServerContext _ctx;
+    private readonly IConnectionSlot? _slot;
     private readonly string _remote;
     private StreamSession? _session;
 
-    public ClientConnection(Socket socket, ServerContext context)
+    /// <param name="slot">The connection's place in the server's budgets; null when there is no session budget.</param>
+    public ClientConnection(Socket socket, ServerContext context, IConnectionSlot? slot = null)
     {
         _socket = socket;
         _ctx = context;
+        _slot = slot;
         _remote = (socket.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "?";
     }
 
@@ -97,7 +110,7 @@ internal sealed class ClientConnection
             {
                 _session?.RecordWrite(n);
                 _ctx.CountBytesSent(n);
-            });
+            }, _ctx.Time);
             var helloNonce = Base64Url.RandomBytes(32);
             await sink.WriteFrameAsync(FrameCodec.EncodeControl(
                 ControlMessages.Hello(_ctx.Identity.CompanionId, _ctx.MachineName, helloNonce, _ctx.Pairing.IsOpen)), cts.Token).ConfigureAwait(false);
@@ -108,7 +121,12 @@ internal sealed class ClientConnection
             _session = session;
             cts.CancelAfter(Timeout.InfiniteTimeSpan);
 
-            _ctx.Engine.AddSession(session);
+            if (!_ctx.Engine.AddSession(session))
+            {
+                // The device was forgotten while this connection was between its check and here (§5.3).
+                log.Info($"session from {_remote} refused: the device is no longer paired");
+                return;
+            }
             log.Info($"session started ({_remote})");
             // Built after the session is registered: a directory change observed from here on is either in this
             // info or makes the host queue another one (sent after this frame, as the writer starts below).
@@ -119,8 +137,8 @@ internal sealed class ClientConnection
 
             using var closeRegistration = session.Closed.Register(() => SafeCancel(cts));
             writer = RunGuardedAsync(() => session.RunWriterAsync(sink, cts.Token), cts);
-            heartbeat = RunGuardedAsync(() => HeartbeatLoopAsync(sink, cts.Token), cts);
-            await ReadLoopAsync(ssl, session, cts).ConfigureAwait(false);
+            heartbeat = RunGuardedAsync(() => HeartbeatLoopAsync(sink, session, cts.Token), cts);
+            await ReadLoopAsync(ssl, sink, session, cts).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -161,7 +179,10 @@ internal sealed class ClientConnection
         }
     }
 
-    /// <summary>Waits for <c>pair</c> or <c>auth</c>. Returns the authenticated session, or null after a failure reply.</summary>
+    /// <summary>
+    /// Waits for <c>pair</c> or <c>auth</c>. Returns the authenticated session, or null after a failure reply (or when
+    /// every session slot is taken).
+    /// </summary>
     private async Task<StreamSession?> HandshakeAsync(SslStream ssl, IFrameSink sink, string helloNonce, CancellationToken ct)
     {
         while (true)
@@ -185,10 +206,12 @@ internal sealed class ClientConnection
                             await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.PairFail(result.FailReason!)), ct).ConfigureAwait(false);
                             return null;
                         }
+                        // The token goes out even without a session slot: the phone stores the pairing and comes back.
+                        var promoted = TryPromote();
                         await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Paired(result.Token!, result.ServerProof!)), ct)
                             .ConfigureAwait(false);
                         _ctx.Log.Info($"device paired from {_remote}");
-                        return NewSession(result.DeviceId!, result.DeviceName!);
+                        return promoted ? NewSession(result.DeviceId!, result.DeviceName!) : null;
                     }
                     case "auth":
                     {
@@ -200,6 +223,10 @@ internal sealed class ClientConnection
                             await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.AuthFail()), ct).ConfigureAwait(false);
                             return null;
                         }
+                        // No authOk without a session slot: the phone retries later instead of taking the close as a
+                        // revocation.
+                        if (!TryPromote())
+                            return null;
                         await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.AuthOk()), ct).ConfigureAwait(false);
                         var device = _ctx.Devices.Find(deviceId!);
                         return NewSession(deviceId!, device?.DeviceName ?? "");
@@ -213,21 +240,42 @@ internal sealed class ClientConnection
         }
     }
 
+    private bool TryPromote()
+    {
+        if (_slot == null || _slot.TryPromote())
+            return true;
+        _ctx.Log.Warn($"every session slot is taken; closing an authenticated connection from {_remote}");
+        return false;
+    }
+
     private StreamSession NewSession(string deviceId, string deviceName) =>
         new(deviceId, deviceName, _remote, _ctx.Log);
 
-    private async Task ReadLoopAsync(SslStream ssl, StreamSession session, CancellationTokenSource cts)
+    private async Task ReadLoopAsync(SslStream ssl, IFrameSink sink, StreamSession session, CancellationTokenSource cts)
     {
         while (!cts.IsCancellationRequested)
         {
-            cts.CancelAfter(_ctx.ReceiveTimeout);
+            // Set before every read: the idle mode (§5.11) may have changed with the previous frame.
+            cts.CancelAfter(session.Idle ? _ctx.IdleReceiveTimeout : _ctx.ReceiveTimeout);
             var frame = await FrameCodec.ReadFrameAsync(ssl, cts.Token).ConfigureAwait(false);
             if (frame == null)
                 return;
             if (!frame.Value.IsControl || !ControlMessages.TryParse(frame.Value.Payload, out var doc, out var type))
                 continue;
+            bool? idle = null;
             using (doc)
-                Handle(session, type!, doc!.RootElement);
+            {
+                if (type == "idle")
+                    idle = doc!.RootElement.GetBoolOrNull("on");
+                else
+                    Handle(session, type!, doc!.RootElement);
+            }
+            if (idle is { } on)
+            {
+                _ctx.Engine.SetIdle(session, on);
+                // Confirmed at once, outside the ordered queue: the phone switches its own timings when it reads this.
+                await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Idle(on)), cts.Token).ConfigureAwait(false);
+            }
         }
     }
 
@@ -276,11 +324,28 @@ internal sealed class ClientConnection
         }
     }
 
-    private async Task HeartbeatLoopAsync(IFrameSink sink, CancellationToken ct)
+    /// <summary>
+    /// §5.9: a heartbeat goes out only after the connection was silent for the heartbeat interval (5 s, or 30 s while
+    /// the phone is idle), so the phone hears something at least that often without an extra packet next to data.
+    /// </summary>
+    private async Task HeartbeatLoopAsync(StreamFrameSink sink, StreamSession session, CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(_ctx.HeartbeatInterval, _ctx.Time);
-        while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
-            await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Heartbeat(_ctx.Time.GetUtcNow())), ct).ConfigureAwait(false);
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var interval = session.Idle ? _ctx.IdleHeartbeatInterval : _ctx.HeartbeatInterval;
+            var silent = sink.SinceLastWrite;
+            if (silent >= interval)
+            {
+                await sink.WriteFrameAsync(FrameCodec.EncodeControl(ControlMessages.Heartbeat(_ctx.Time.GetUtcNow())), ct).ConfigureAwait(false);
+                continue;
+            }
+            var wait = interval - silent;
+            if (wait < TimeSpan.FromMilliseconds(1))
+                wait = TimeSpan.FromMilliseconds(1);
+            // A change of the idle mode shortens (or lengthens) the current wait.
+            await Task.WhenAny(Task.Delay(wait, _ctx.Time, ct), session.WaitForModeChangeAsync(ct)).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Runs a background loop; any failure closes the connection. Never throws.</summary>

@@ -15,6 +15,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private StatusForm? _status;
     private PairingForm? _pairing;
     private DevicesForm? _devices;
+    private readonly HashSet<Guid> _blockedNotified = new();
+    private bool _balloonOpensStatus;
 
     public TrayApplicationContext(CompanionHost host, ICompanionLog log)
     {
@@ -40,6 +42,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
 
         _host.Engine.SessionsChanged += () => Post(UpdateTooltip);
+        _host.NetworkGate.Blocked += blocked => Post(() => OnBlocked(blocked));
+        _icon.BalloonTipClicked += (_, _) =>
+        {
+            if (_balloonOpensStatus)
+                ShowStatus();
+        };
         UpdateTooltip();
 
         if (!_host.Listening)
@@ -111,8 +119,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _icon.Text = text.Length > 63 ? text[..63] : text;
     }
 
-    private void Balloon(string title, string text, ToolTipIcon icon)
+    /// <summary>
+    /// A phone was ignored because of the network's category (PROTOCOL.md §1). Told once per network and run; the
+    /// Status window explains the fix and offers "Allow on this network".
+    /// </summary>
+    private void OnBlocked(Core.Net.BlockedPeer blocked)
     {
+        var key = blocked.Network?.NetworkId ?? Guid.Empty;
+        if (!_blockedNotified.Add(key))
+            return;
+        var name = blocked.Network?.Name is { Length: > 0 } n ? n : "this network";
+        var text = blocked.Network?.Category == Core.Net.NetworkCategory.Public
+            ? $"Windows treats \"{name}\" as a Public network, so VRCX Companion ignored a phone on it. Click to see how to fix this."
+            : "VRCX Companion ignored a phone on a network Windows has not identified. Click for details.";
+        if (text.Length > 250)
+            text = text[..250];
+        Balloon("A phone could not connect", text, ToolTipIcon.Warning, opensStatus: true);
+    }
+
+    private void Balloon(string title, string text, ToolTipIcon icon, bool opensStatus = false)
+    {
+        _balloonOpensStatus = opensStatus;
         _icon.BalloonTipTitle = title;
         _icon.BalloonTipText = text;
         _icon.BalloonTipIcon = icon;

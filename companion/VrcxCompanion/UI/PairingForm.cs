@@ -163,6 +163,15 @@ internal sealed class PairingForm : Form
         _addresses.Text = addresses.Count == 0
             ? "No local network address found. Connect this PC to your home network."
             : "This PC: " + string.Join(", ", addresses.Select(PairingPayload.FormatHost)) + $"\nPort {_host.TcpPort}";
+        // A Public network makes pairing fail without any hint on the phone (PROTOCOL.md §1): say so here.
+        var ignored = _host.NetworkGate.Describe().Where(n => !n.Allowed && n.Network.IsMain).Select(n => n.Network).ToList();
+        if (ignored.Count > 0)
+        {
+            var name = ignored[0].Name is { Length: > 0 } n ? $"\"{n}\"" : "this network";
+            _addresses.Text += $"\nPhones on {name} are ignored because Windows marks it as " +
+                               (ignored[0].Category == NetworkCategory.Public ? "Public" : "unidentified") +
+                               ". Open Status to fix this.";
+        }
         UpdateState(window);
     }
 

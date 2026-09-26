@@ -10,7 +10,7 @@ namespace VrcxCompanion.Tests;
 
 /// <summary>
 /// Host behaviour on loopback that the main end-to-end test does not cover: <c>info.dirExists</c> across idle
-/// periods (§5.4) and the 20 s receive timeout (§5.9).
+/// periods (§5.4) and the receive timeout (§5.9).
 /// </summary>
 public sealed class HostBehaviourTests : IAsyncLifetime
 {
@@ -151,13 +151,21 @@ public sealed class HostBehaviourTests : IAsyncLifetime
     }
 
     [Fact]
-    public void ReceiveTimeoutIsTheProtocolsTwentySeconds()
+    public void TimingsAreTheProtocols()
     {
+        // PROTOCOL.md §5.9 and §5.11.
         Assert.Equal(TimeSpan.FromSeconds(20), ProtocolConstants.ReceiveTimeout);
-        Assert.Equal(TimeSpan.FromSeconds(20), ProtocolConstants.HandshakeTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(90), ProtocolConstants.IdleReceiveTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(5), ProtocolConstants.HeartbeatInterval);
+        Assert.Equal(TimeSpan.FromSeconds(30), ProtocolConstants.IdleHeartbeatInterval);
+        Assert.Equal(TimeSpan.FromSeconds(10), ProtocolConstants.IdleFlushInterval);
+        Assert.Equal(TimeSpan.FromSeconds(10), ProtocolConstants.HandshakeTimeout);
         var options = new CompanionHostOptions { Paths = new AppPaths(_data.Path) };
         Assert.Equal(ProtocolConstants.ReceiveTimeout, options.ReceiveTimeout);
+        Assert.Equal(ProtocolConstants.IdleReceiveTimeout, options.IdleReceiveTimeout);
         Assert.Equal(ProtocolConstants.HandshakeTimeout, options.HandshakeTimeout);
+        Assert.Equal(ProtocolConstants.MaxHandshakesPerPeer, options.ConnectionLimits.HandshakesPerPeer);
+        Assert.Equal(ProtocolConstants.MaxSessions, options.ConnectionLimits.Sessions);
     }
 
     [Fact]

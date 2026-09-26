@@ -11,6 +11,12 @@ namespace VrcxCompanion.Core.Sync;
 /// lists the log directory, then queues, per session and in this order: snapshots (only on change), truncates, data
 /// up to the observed end of each file, and the process state if it changed. Because data is queued before the
 /// process message, the phone applies a process change after every byte written before it was observed.
+/// <para>
+/// For a session whose phone is idle (§5.11) the snapshot, truncate and data part is queued only every
+/// <see cref="IdleFlushInterval"/>, or at once when the process state changed (the change still travels behind the
+/// bytes written before it). Each such queueing covers everything since the previous one, so batching changes when
+/// bytes travel, never which bytes or in which order.
+/// </para>
 /// </summary>
 public sealed class SyncEngine : IDisposable
 {
@@ -35,6 +41,15 @@ public sealed class SyncEngine : IDisposable
     }
 
     public TimeSpan PollInterval { get; init; } = ProtocolConstants.PollInterval;
+
+    /// <summary>How often log growth is queued for an idle phone (PROTOCOL.md §5.11).</summary>
+    public TimeSpan IdleFlushInterval { get; init; } = ProtocolConstants.IdleFlushInterval;
+
+    /// <summary>
+    /// Whether a device is still paired. <see cref="AddSession"/> refuses a session whose device was removed while
+    /// its connection was still in the handshake (the revocation closed the sessions registered at that moment only).
+    /// </summary>
+    public Func<string, bool> IsDevicePaired { get; init; } = _ => true;
 
     /// <summary>
     /// Raised (outside the engine lock) when the log directory appears or disappears, and with the first observation
@@ -77,12 +92,22 @@ public sealed class SyncEngine : IDisposable
         }
     }
 
-    /// <summary>Registers an authenticated session. An older session of the same device is closed.</summary>
-    public void AddSession(StreamSession session)
+    /// <summary>
+    /// Registers an authenticated session. An older session of the same device is closed. Returns false, and closes
+    /// the session with reason "revoked", when the device is no longer paired: a revocation removes the device before
+    /// it closes the registered sessions, and this check runs under the same lock as that close, so a session is
+    /// either refused here or closed there.
+    /// </summary>
+    public bool AddSession(StreamSession session)
     {
         List<StreamSession> replaced;
         lock (_gate)
         {
+            if (!IsDevicePaired(session.DeviceId))
+            {
+                session.RequestClose("revoked");
+                return false;
+            }
             replaced = _sessions.Where(s => s.DeviceId == session.DeviceId).ToList();
             foreach (var old in replaced)
                 _sessions.Remove(old);
@@ -94,6 +119,22 @@ public sealed class SyncEngine : IDisposable
             old.RequestClose("replaced");
         }
         SessionsChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// Handles the phone's <c>idle</c> message (PROTOCOL.md §5.11). Going idle holds log growth back until
+    /// <see cref="IdleFlushInterval"/> has passed; leaving it queues the growth at the next poll.
+    /// </summary>
+    public void SetIdle(StreamSession session, bool idle)
+    {
+        lock (_gate)
+        {
+            if (!session.SetIdle(idle))
+                return;
+            session.NextIdleFlush = idle ? _time.GetUtcNow() + IdleFlushInterval : DateTimeOffset.MinValue;
+        }
+        _log.Debug(idle ? "phone went idle" : "phone is active again");
     }
 
     public void RemoveSession(StreamSession session)
@@ -277,14 +318,25 @@ public sealed class SyncEngine : IDisposable
         }
         ObserveDirectory(scan.DirectoryExists, events);
 
+        var now = _time.GetUtcNow();
         foreach (var s in subscribed)
         {
-            ApplyScan(s, scan);
-            if (s.LastProcess != process)
+            var processChanged = s.LastProcess != process;
+            // An idle phone gets log growth in batches; a process change flushes the batch so that it still travels
+            // behind every byte written before it was observed.
+            if (s.Idle && !processChanged && now < s.NextIdleFlush)
             {
-                s.EnqueueControl("process", ControlMessages.Process(process.VrchatRunning, process.SteamVrRunning, _time.GetUtcNow()));
+                s.OnPoll();
+                continue;
+            }
+            ApplyScan(s, scan);
+            if (processChanged)
+            {
+                s.EnqueueControl("process", ControlMessages.Process(process.VrchatRunning, process.SteamVrRunning, now));
                 s.LastProcess = process;
             }
+            if (s.Idle)
+                s.NextIdleFlush = now + IdleFlushInterval;
             s.OnPoll();
         }
 
@@ -372,6 +424,8 @@ public sealed class SyncEngine : IDisposable
 
         // 4. syncComplete
         session.EnqueueControl("syncComplete", ControlMessages.SyncComplete());
+        if (session.Idle)
+            session.NextIdleFlush = _time.GetUtcNow() + IdleFlushInterval;
         _log.Info($"subscription started ({scan.Files.Count} files, {session.Files.Values.Count(f => f.Eligible)} streamed)");
         return events.Count == 0 ? null : () => events.ForEach(e => e());
     }

@@ -12,9 +12,9 @@ namespace VrcxCompanion;
 
 /// <summary>
 /// <c>--selftest [--out file]</c>: starts the server headless on loopback with ephemeral ports and a temporary data
-/// and log directory, runs a protocol client against it (discovery, pairing, subscribe, live data, reconnect with auth
-/// and have offsets) and exits with 0 on success. It never touches the real VRChat folder, %APPDATA%, the registry or
-/// the firewall.
+/// and log directory, runs a protocol client against it (discovery, pairing, subscribe, live data, idle mode, reconnect
+/// with auth and have offsets) and exits with 0 on success. It also checks that Windows' network categories can be
+/// read. It never touches the real VRChat folder, %APPDATA%, the registry, the firewall or network settings.
 /// </summary>
 internal static class SelfTest
 {
@@ -95,6 +95,10 @@ internal static class SelfTest
             host.Start();
             Check(host.Listening, $"server listening on 127.0.0.1:{host.TcpPort}");
             Check(host.DiscoveryActive, $"discovery on 127.0.0.1:{host.DiscoveryPort}");
+            // Read only; the categories themselves are whatever Windows Settings say.
+            var networks = host.NetworkGate.Describe();
+            Check(host.NetworkGate.CategoriesAvailable,
+                $"Windows network categories readable ({networks.Count} network(s), {networks.Count(n => n.Allowed)} accepting phones)");
 
             var found = await CompanionClient.DiscoverAsync(new IPEndPoint(IPAddress.Loopback, host.DiscoveryPort), TimeSpan.FromSeconds(3), ct);
             Check(found.Count == 1 && found[0].Fingerprint == host.Identity.Fingerprint && found[0].Port == host.TcpPort,
@@ -126,6 +130,13 @@ internal static class SelfTest
                 var liveData = live.Last();
                 Check(liveData.Header?.Offset == first.Length && liveData.Data != null && liveData.Data.AsSpan().SequenceEqual(more),
                     "live append");
+
+                await c1.SendIdleAsync(true, ct);
+                var idle = (await c1.ReceiveUntilAsync("idle", ct)).Last();
+                Check(idle.Json.GetProperty("on").GetBoolean() && host.Engine.Sessions.Any(s => s.Idle), "idle mode confirmed");
+                await c1.SendIdleAsync(false, ct);
+                var active = (await c1.ReceiveUntilAsync("idle", ct)).Last();
+                Check(!active.Json.GetProperty("on").GetBoolean(), "back to the foreground confirmed");
             }
 
             var length = new FileInfo(logPath).Length;

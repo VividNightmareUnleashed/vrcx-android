@@ -29,6 +29,41 @@ public sealed class CompanionSettings
     public int TcpPort { get; set; } = ProtocolConstants.DefaultTcpPort;
     public int DiscoveryPort { get; set; } = ProtocolConstants.DefaultDiscoveryPort;
 
+    /// <summary>
+    /// Ids of Windows network profiles categorized as Public on which the user chose "Allow on this network"
+    /// (PROTOCOL.md §1). Entries that are not GUIDs are ignored.
+    /// </summary>
+    public List<string> AllowedPublicNetworks { get; set; } = new();
+
+    /// <summary>The valid entries of <see cref="AllowedPublicNetworks"/>.</summary>
+    public IReadOnlyCollection<Guid> AllowedPublicNetworkIds() =>
+        (AllowedPublicNetworks ?? new List<string>())
+        .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
+        .Where(g => g != Guid.Empty)
+        .Distinct()
+        .ToArray();
+
+    /// <summary>Replaces <see cref="AllowedPublicNetworks"/> and writes the file.</summary>
+    public void SetAllowedPublicNetworks(IEnumerable<Guid> ids, string path, ICompanionLog log)
+    {
+        AllowedPublicNetworks = ids.Select(g => g.ToString("D")).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        Save(path, log);
+    }
+
+    /// <summary>Writes the settings; failures are logged, not thrown.</summary>
+    public void Save(string path, ICompanionLog log)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            File.WriteAllText(path, JsonSerializer.Serialize(this, Options));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.Warn("settings.json could not be written", e);
+        }
+    }
+
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -56,15 +91,7 @@ public sealed class CompanionSettings
         else
         {
             settings = new CompanionSettings();
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                File.WriteAllText(path, JsonSerializer.Serialize(settings, Options));
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                log.Warn("settings.json could not be written", e);
-            }
+            settings.Save(path, log);
         }
         settings.Validate(log);
         return settings;
@@ -82,5 +109,6 @@ public sealed class CompanionSettings
             log.Warn($"invalid discoveryPort {DiscoveryPort}, using {ProtocolConstants.DefaultDiscoveryPort}");
             DiscoveryPort = ProtocolConstants.DefaultDiscoveryPort;
         }
+        AllowedPublicNetworks ??= new List<string>();
     }
 }

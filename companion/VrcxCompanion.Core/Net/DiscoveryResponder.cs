@@ -38,6 +38,12 @@ public sealed class DiscoveryResponder : IDisposable
     /// <summary>Which senders get a reply. PROTOCOL.md §1: local addresses only (replaceable in tests).</summary>
     internal Func<IPAddress?, bool> IsAllowedPeer { get; init; } = LocalAddress.IsLocal;
 
+    /// <summary>
+    /// The network-category gate (PROTOCOL.md §1), checked with the interface a request arrived on. Null: no gate
+    /// (tests of other parts).
+    /// </summary>
+    public NetworkGate? Gate { get; init; }
+
     public long RepliesSent { get; private set; }
 
     public void Start()
@@ -52,6 +58,11 @@ public sealed class DiscoveryResponder : IDisposable
                 socket.IOControl(SioUdpConnReset, new byte[] { 0, 0, 0, 0 }, null);
             }
             socket.Bind(new IPEndPoint(_bindAddress, _requestedPort));
+            // The interface a request arrived on decides whether it is answered (a broadcast names no local address).
+            if (_bindAddress.AddressFamily == AddressFamily.InterNetwork)
+                socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.PacketInformation, true);
+            else
+                socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.PacketInformation, true);
         }
         catch
         {
@@ -69,10 +80,10 @@ public sealed class DiscoveryResponder : IDisposable
         EndPoint any = new IPEndPoint(_bindAddress.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
         while (!cancellationToken.IsCancellationRequested)
         {
-            SocketReceiveFromResult result;
+            SocketReceiveMessageFromResult result;
             try
             {
-                result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, any, cancellationToken).ConfigureAwait(false);
+                result = await socket.ReceiveMessageFromAsync(buffer, SocketFlags.None, any, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -103,6 +114,8 @@ public sealed class DiscoveryResponder : IDisposable
             if (result.RemoteEndPoint is not IPEndPoint remote || !IsAllowedPeer(remote.Address))
                 continue;
             if (result.ReceivedBytes is 0 or > MaxRequestBytes || !IsDiscoverRequest(buffer.AsSpan(0, result.ReceivedBytes)))
+                continue;
+            if (Gate != null && !Gate.CheckDiscovery(result.PacketInformation.Address, result.PacketInformation.Interface))
                 continue;
             if (!TakeReplySlot())
                 continue;

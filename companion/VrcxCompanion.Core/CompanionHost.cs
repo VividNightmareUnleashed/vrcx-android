@@ -48,8 +48,21 @@ public sealed class CompanionHostOptions
     public bool UseFileSystemWatcher { get; init; } = true;
     public TimeSpan PollInterval { get; init; } = ProtocolConstants.PollInterval;
     public TimeSpan HeartbeatInterval { get; init; } = ProtocolConstants.HeartbeatInterval;
+    public TimeSpan IdleHeartbeatInterval { get; init; } = ProtocolConstants.IdleHeartbeatInterval;
+    public TimeSpan IdleFlushInterval { get; init; } = ProtocolConstants.IdleFlushInterval;
     public TimeSpan ReceiveTimeout { get; init; } = ProtocolConstants.ReceiveTimeout;
+    public TimeSpan IdleReceiveTimeout { get; init; } = ProtocolConstants.IdleReceiveTimeout;
     public TimeSpan HandshakeTimeout { get; init; } = ProtocolConstants.HandshakeTimeout;
+    public ConnectionLimits ConnectionLimits { get; init; } = ConnectionLimits.Default;
+
+    /// <summary>
+    /// Where network categories come from (PROTOCOL.md §1). Default: Windows' Network List Manager. Tests inject a
+    /// fake one.
+    /// </summary>
+    public INetworkCategorySource? NetworkCategories { get; init; }
+
+    /// <summary>Public networks the user allowed ("Allow on this network"), from settings.json.</summary>
+    public IReadOnlyCollection<Guid> AllowedPublicNetworks { get; init; } = Array.Empty<Guid>();
     public TimeSpan TimeZoneCheckInterval { get; init; } = TimeSpan.FromSeconds(60);
     public TimeSpan PairingWindowDuration { get; init; } = ProtocolConstants.PairingWindowDuration;
 
@@ -94,6 +107,7 @@ public sealed class CompanionHost : IAsyncDisposable
     private readonly ICompanionLog _log;
     private readonly bool _ownsIdentity;
     private readonly SslStreamCertificateContext _certContext;
+    private readonly INetworkCategorySource _networkSource;
     private readonly List<Task> _tasks = new();
     private readonly object _tzGate = new();
     private CancellationTokenSource? _cts;
@@ -124,10 +138,15 @@ public sealed class CompanionHost : IAsyncDisposable
         Pairing = new PairingManager(Devices, _log, options.Time, options.PairingWindowDuration);
         var tailer = new LogDirectoryTailer(options.LogDirectory ?? LogDirectoryLocator.DefaultPath, _log, options.Time,
             options.UseFileSystemWatcher);
+        var devices = Devices;
         Engine = new SyncEngine(tailer, options.ProcessProbe ?? new SystemProcessProbe(), _log, options.Time)
         {
             PollInterval = options.PollInterval,
+            IdleFlushInterval = options.IdleFlushInterval,
+            IsDevicePaired = id => devices.Find(id) != null,
         };
+        _networkSource = options.NetworkCategories ?? NetworkCategorySources.CreateDefault(_log);
+        NetworkGate = new NetworkGate(_networkSource, options.AllowedPublicNetworks, _log, options.Time);
         Engine.DirectoryExistsChanged += OnDirectoryExistsObserved;
         _certContext = SslStreamCertificateContext.Create(Identity.Certificate, additionalCertificates: null, offline: true);
         _tz = TimeZoneReader.Capture(TimeZoneInfo.Local, options.Time.GetUtcNow());
@@ -139,6 +158,9 @@ public sealed class CompanionHost : IAsyncDisposable
     public DeviceStore Devices { get; }
     public PairingManager Pairing { get; }
     public SyncEngine Engine { get; }
+
+    /// <summary>Accepts connections and answers discovery only on Private, Domain or allowed Public networks.</summary>
+    public NetworkGate NetworkGate { get; }
     public string MachineName => _options.MachineName;
     public int TcpPort => _server?.Port ?? _options.TcpPort;
     public int DiscoveryPort => _discovery?.Port ?? _options.DiscoveryPort;
@@ -168,12 +190,17 @@ public sealed class CompanionHost : IAsyncDisposable
             Time = _options.Time,
             CountBytesSent = n => Interlocked.Add(ref _bytesSent, n),
             HeartbeatInterval = _options.HeartbeatInterval,
+            IdleHeartbeatInterval = _options.IdleHeartbeatInterval,
             ReceiveTimeout = _options.ReceiveTimeout,
+            IdleReceiveTimeout = _options.IdleReceiveTimeout,
             HandshakeTimeout = _options.HandshakeTimeout,
         };
 
         _server = new CompanionServer(_options.BindAddress, _options.TcpPort,
-            (socket, token) => new ClientConnection(socket, context).RunAsync(token), _log);
+            (socket, slot, token) => new ClientConnection(socket, context, slot).RunAsync(token), _log, _options.ConnectionLimits)
+        {
+            Gate = NetworkGate,
+        };
         try
         {
             _server.Start();
@@ -193,7 +220,7 @@ public sealed class CompanionHost : IAsyncDisposable
                        (_options.BindAddress.Equals(IPAddress.IPv6Any) || _options.BindAddress.Equals(IPAddress.Any)
                            ? IPAddress.Any
                            : _options.BindAddress);
-            _discovery = new DiscoveryResponder(bind, _options.DiscoveryPort, BuildDiscoveryReply, _log);
+            _discovery = new DiscoveryResponder(bind, _options.DiscoveryPort, BuildDiscoveryReply, _log) { Gate = NetworkGate };
             try
             {
                 _discovery.Start();
@@ -243,7 +270,11 @@ public sealed class CompanionHost : IAsyncDisposable
         PairingPayload.Build(Identity.CompanionId, _options.MachineName, addresses ?? LocalAddress.GetAdvertisedAddresses(), TcpPort,
             Identity.Fingerprint, window.Code);
 
-    /// <summary>Forgets a device and closes its sessions; its next connection gets <c>authFail</c>.</summary>
+    /// <summary>
+    /// Forgets a device and closes its sessions; its next connection gets <c>authFail</c>. The device is removed
+    /// first: a connection that authenticated just before is refused when it registers its session
+    /// (<see cref="SyncEngine.AddSession"/>), so no session of the device survives.
+    /// </summary>
     public void RevokeDevice(string deviceId)
     {
         if (Devices.Remove(deviceId))
@@ -350,6 +381,7 @@ public sealed class CompanionHost : IAsyncDisposable
             cts.Dispose();
         }
         Engine.Dispose();
+        (_networkSource as IDisposable)?.Dispose();
         if (_ownsIdentity)
             Identity.Dispose();
         _log.Info("stopped");

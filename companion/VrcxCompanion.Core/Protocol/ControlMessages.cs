@@ -49,6 +49,13 @@ public static class ControlMessages
         w.WriteNumber("pcUtcNowMs", UnixMs(now));
     });
 
+    /// <summary>Confirms the phone's <c>idle</c> message (PROTOCOL.md §5.11).</summary>
+    public static byte[] Idle(bool on) => Json.Build(w =>
+    {
+        w.WriteString("t", "idle");
+        w.WriteBoolean("on", on);
+    });
+
     public static byte[] Info(InfoSnapshot info, DateTimeOffset now) => Json.Build(w =>
     {
         w.WriteString("t", "info");
