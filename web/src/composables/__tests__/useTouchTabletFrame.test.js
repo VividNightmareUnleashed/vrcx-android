@@ -1,5 +1,5 @@
-// Touch tablets in the PC frame (docs/DESIGN.md §5): icon nav on first run in portrait, and a friends panel no
-// narrower than TABLET_ASIDE_MIN_PX.
+// Portrait touch tablets in the PC frame (docs/DESIGN.md §5): icon nav on first run, and a friends panel of at least
+// TABLET_ASIDE_MIN_PX while the page keeps TABLET_PAGE_MIN_PX.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
@@ -35,14 +35,17 @@ vi.mock('../../services/config', () => ({
 }));
 
 import {
+    isPortraitTouchTablet,
     resolveAsideMinSize,
     shouldStartWithIconNav,
-    TABLET_ASIDE_MAX_MIN_PERCENT,
     TABLET_ASIDE_MIN_PX,
+    TABLET_PAGE_MIN_PX,
     useTouchTabletFrame
 } from '../useTouchTabletFrame';
 
-describe('shouldStartWithIconNav', () => {
+const BASE = 12;
+
+describe('isPortraitTouchTablet / shouldStartWithIconNav', () => {
     const portraitTablet = { width: 800, height: 1280, coarse: true, compact: false, storedChoice: null };
 
     it('starts a portrait touch tablet from 768 to 1023px wide with the icon nav', () => {
@@ -54,45 +57,94 @@ describe('shouldStartWithIconNav', () => {
     it('respects a choice the user already made, whichever it was', () => {
         expect(shouldStartWithIconNav({ ...portraitTablet, storedChoice: 'false' })).toBe(false);
         expect(shouldStartWithIconNav({ ...portraitTablet, storedChoice: 'true' })).toBe(false);
+        expect(isPortraitTouchTablet(portraitTablet)).toBe(true);
     });
 
     it('leaves mouse devices, landscape, wider tablets and the phone layout alone', () => {
-        expect(shouldStartWithIconNav({ ...portraitTablet, coarse: false })).toBe(false);
-        expect(shouldStartWithIconNav({ ...portraitTablet, width: 1280, height: 800 })).toBe(false);
-        expect(shouldStartWithIconNav({ ...portraitTablet, width: 1024, height: 1366 })).toBe(false);
-        expect(shouldStartWithIconNav({ ...portraitTablet, width: 767, height: 1024 })).toBe(false);
-        expect(shouldStartWithIconNav({ ...portraitTablet, compact: true })).toBe(false);
+        for (const frame of [
+            { ...portraitTablet, coarse: false },
+            { ...portraitTablet, width: 1280, height: 800 },
+            { ...portraitTablet, width: 1024, height: 768 },
+            { ...portraitTablet, width: 1024, height: 1366 },
+            { ...portraitTablet, width: 767, height: 1024 },
+            { ...portraitTablet, compact: true }
+        ]) {
+            expect(isPortraitTouchTablet(frame)).toBe(false);
+            expect(shouldStartWithIconNav(frame)).toBe(false);
+        }
     });
 });
 
 describe('resolveAsideMinSize', () => {
-    it('keeps the PC minimum until the panel group is known or wide enough', () => {
-        expect(resolveAsideMinSize(0, 12)).toBe(12);
-        expect(resolveAsideMinSize(Number.NaN, 12)).toBe(12);
-        expect(resolveAsideMinSize(3000, 12)).toBe(12);
+    it('keeps the PC minimum until the panel group is known, or when it already gives the panel enough', () => {
+        expect(resolveAsideMinSize(0, BASE)).toBe(BASE);
+        expect(resolveAsideMinSize(Number.NaN, BASE)).toBe(BASE);
+        expect(resolveAsideMinSize(3000, BASE)).toBe(BASE);
     });
 
-    it('raises the minimum to TABLET_ASIDE_MIN_PX on narrower groups', () => {
-        const percent = resolveAsideMinSize(752, 12);
-        expect((percent / 100) * 752).toBeCloseTo(TABLET_ASIDE_MIN_PX, 0);
+    it('gives the friends panel at least TABLET_ASIDE_MIN_PX next to the icon nav, in whole percent', () => {
+        // 800px and 768px portrait tablets with the 48px icon nav.
+        for (const groupWidth of [752, 720]) {
+            const percent = resolveAsideMinSize(groupWidth, BASE);
+            expect(Number.isInteger(percent)).toBe(true);
+            expect((percent / 100) * groupWidth).toBeGreaterThanOrEqual(TABLET_ASIDE_MIN_PX);
+            expect((percent / 100) * groupWidth).toBeLessThan(TABLET_ASIDE_MIN_PX + groupWidth / 100);
+            expect(groupWidth * (1 - percent / 100)).toBeGreaterThanOrEqual(TABLET_PAGE_MIN_PX);
+        }
+        expect(resolveAsideMinSize(752, BASE)).toBe(38);
+        expect(resolveAsideMinSize(720, BASE)).toBe(39);
     });
 
-    it('never lets the friends panel minimum take more than half of the space', () => {
-        expect(resolveAsideMinSize(400, 12)).toBe(TABLET_ASIDE_MAX_MIN_PERCENT);
+    it('keeps the PC minimum when the page could not keep TABLET_PAGE_MIN_PX (the expanded nav)', () => {
+        // 800px and 768px portrait tablets with the 240px nav.
+        expect(resolveAsideMinSize(560, BASE)).toBe(BASE);
+        expect(resolveAsideMinSize(528, BASE)).toBe(BASE);
+        // A 1023px tablet with the expanded nav has room for both.
+        const percent = resolveAsideMinSize(783, BASE);
+        expect(percent).toBe(36);
+        expect(783 * (1 - percent / 100)).toBeGreaterThanOrEqual(TABLET_PAGE_MIN_PX);
+    });
+
+    it('rounds to whole percent, so nearby group widths share one splitter constraint (and one saved layout)', () => {
+        const values = new Set();
+        for (let width = 741; width <= 756; width += 0.25) {
+            values.add(resolveAsideMinSize(width, BASE));
+        }
+        expect([...values]).toEqual([38]);
+        for (let width = 700; width <= 1000; width += 7) {
+            expect(Number.isInteger(resolveAsideMinSize(width, BASE))).toBe(true);
+        }
     });
 });
 
-function mountFrame({ groupWidth = 752 } = {}) {
+function createStore({ collapsed = false, navWidth = 240 } = {}) {
+    const store = reactive({
+        isNavCollapsed: ref(collapsed),
+        navWidth: ref(navWidth),
+        setNavCollapsed: vi.fn(),
+        applyNavCollapsedDefault: vi.fn((value) => {
+            store.isNavCollapsed = value;
+        })
+    });
+    return store;
+}
+
+function mountFrame() {
     let result;
     const Host = defineComponent({
         setup() {
-            const groupRef = ref(null);
-            result = useTouchTabletFrame({ groupRef, baseMinSize: 12 });
-            return () => h('div', { ref: groupRef, style: `width:${groupWidth}px` });
+            result = useTouchTabletFrame({ baseMinSize: BASE });
+            return () => h('div');
         }
     });
     const wrapper = mount(Host, { attachTo: document.body });
     return { wrapper, get: () => result };
+}
+
+function setWindowSize(width, height) {
+    window.innerWidth = width;
+    window.innerHeight = height;
+    window.dispatchEvent(new Event('resize'));
 }
 
 describe('useTouchTabletFrame', () => {
@@ -104,21 +156,21 @@ describe('useTouchTabletFrame', () => {
         mocks.coarse.value = true;
         mocks.stored = null;
         mocks.configError = false;
-        mocks.store = reactive({ isNavCollapsed: false });
-        window.innerWidth = 800;
-        window.innerHeight = 1280;
+        mocks.store = createStore();
+        setWindowSize(800, 1280);
     });
 
     afterEach(() => {
-        window.innerWidth = size.width;
-        window.innerHeight = size.height;
+        setWindowSize(size.width, size.height);
         document.body.innerHTML = '';
     });
 
-    it('starts a portrait touch tablet with the icon nav, without saving it as the user choice', async () => {
+    it('starts a portrait touch tablet with the icon nav through the non-saving store action', async () => {
         const { wrapper } = mountFrame();
         await flushPromises();
         expect(mocks.store.isNavCollapsed).toBe(true);
+        expect(mocks.store.applyNavCollapsedDefault).toHaveBeenCalledWith(true);
+        expect(mocks.store.setNavCollapsed).not.toHaveBeenCalled();
         wrapper.unmount();
     });
 
@@ -157,6 +209,7 @@ describe('useTouchTabletFrame', () => {
         const { wrapper } = mountFrame();
         await flushPromises();
         expect(mocks.store.isNavCollapsed).toBe(false);
+        expect(mocks.store.applyNavCollapsedDefault).not.toHaveBeenCalled();
         wrapper.unmount();
     });
 
@@ -176,24 +229,59 @@ describe('useTouchTabletFrame', () => {
         mouse.wrapper.unmount();
 
         mocks.coarse.value = true;
-        window.innerWidth = 1280;
-        window.innerHeight = 800;
+        setWindowSize(1280, 800);
         const landscape = mountFrame();
         await flushPromises();
         expect(mocks.store.isNavCollapsed).toBe(false);
         landscape.wrapper.unmount();
     });
 
-    it('uses the PC minimum for the friends panel on mouse devices and in the phone layout', async () => {
+    it('raises the friends panel minimum next to the icon nav, and keeps the PC minimum next to the expanded nav', async () => {
+        mocks.stored = 'true';
+        mocks.store = createStore({ collapsed: true });
         const { wrapper, get } = mountFrame();
+        await flushPromises();
+        expect(get().asideMinSize.value).toBe(38);
+
+        // The user expands the nav: 560px left for the page and the panel, too little for both floors.
+        mocks.store.isNavCollapsed = false;
         await nextTick();
+        expect(get().asideMinSize.value).toBe(BASE);
+
+        // 768 x 1024: 528px next to the expanded nav, 720px next to the icon nav.
+        setWindowSize(768, 1024);
+        await nextTick();
+        expect(get().asideMinSize.value).toBe(BASE);
+        mocks.store.isNavCollapsed = true;
+        await nextTick();
+        expect(get().asideMinSize.value).toBe(39);
+        wrapper.unmount();
+    });
+
+    it('keeps the PC minimum in landscape (1024 x 768 and 1280 x 800), on mouse devices and in the phone layout', async () => {
+        mocks.store = createStore({ collapsed: true });
+        const { wrapper, get } = mountFrame();
+        await flushPromises();
+        expect(get().asideMinSize.value).toBe(38);
+
+        for (const [width, height] of [
+            [1024, 768],
+            [1280, 800]
+        ]) {
+            setWindowSize(width, height);
+            await nextTick();
+            expect(get().asideMinSize.value).toBe(BASE);
+        }
+
+        setWindowSize(800, 1280);
         mocks.coarse.value = false;
         await nextTick();
-        expect(get().asideMinSize.value).toBe(12);
+        expect(get().asideMinSize.value).toBe(BASE);
+
         mocks.coarse.value = true;
         mocks.compact.value = true;
         await nextTick();
-        expect(get().asideMinSize.value).toBe(12);
+        expect(get().asideMinSize.value).toBe(BASE);
         wrapper.unmount();
     });
 
@@ -201,8 +289,9 @@ describe('useTouchTabletFrame', () => {
         mocks.isAndroid = false;
         const { wrapper, get } = mountFrame();
         await flushPromises();
-        expect(get().asideMinSize.value).toBe(12);
+        expect(get().asideMinSize.value).toBe(BASE);
         expect(mocks.store.isNavCollapsed).toBe(false);
+        expect(mocks.store.applyNavCollapsedDefault).not.toHaveBeenCalled();
         wrapper.unmount();
     });
 });

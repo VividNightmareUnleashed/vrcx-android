@@ -37,7 +37,6 @@
 
                 <SidebarInset class="min-w-0 bg-sidebar">
                     <ResizablePanelGroup
-                        ref="panelGroupRef"
                         direction="horizontal"
                         auto-save-id="vrcx-main-layout-right-sidebar"
                         :class="[
@@ -256,13 +255,9 @@
         isSideBarTabShow
     } = useMainLayoutResizable();
 
-    // Android touch tablets: icon nav on first run in portrait, and a friends panel no narrower than 280px. The PC
-    // minimum everywhere else.
-    const panelGroupRef = ref(null);
-    const { asideMinSize: tabletAsideMinSize } = useTouchTabletFrame({
-        groupRef: panelGroupRef,
-        baseMinSize: asideMinSize
-    });
+    // Android portrait touch tablets: icon nav on first run, and a friends panel of at least 280px while the page keeps
+    // 420px (docs/DESIGN.md §5). The PC minimum everywhere else.
+    const { asideMinSize: tabletAsideMinSize } = useTouchTabletFrame({ baseMinSize: asideMinSize });
 
     const asidePanelRef = ref(null);
     let restoreAsideAfterHiddenRoute = false;
