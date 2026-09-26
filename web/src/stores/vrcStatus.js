@@ -2,6 +2,7 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 
 import { openExternalLink } from '../shared/utils';
+import { isAndroid } from '../shared/utils/platform';
 
 import webApiService from '../services/webapi';
 
@@ -109,8 +110,16 @@ export const useVrcStatusStore = defineStore('VrcStatus', () => {
      * @returns {void}
      */
     function init() {
-        getVrcStatus();
+        // Android: nothing is polled while VRCX runs in the background; the check below and onBrowserFocus catch up
+        // once it is open again (docs/ARCHITECTURE.md §7).
+        const isBackground = () => isAndroid && document.hidden;
+        if (!isBackground()) {
+            getVrcStatus();
+        }
         workerTimers.setInterval(() => {
+            if (isBackground()) {
+                return;
+            }
             if (Date.now() - lastTimeFetched.value > pollingInterval.value) {
                 getVrcStatus();
             }
