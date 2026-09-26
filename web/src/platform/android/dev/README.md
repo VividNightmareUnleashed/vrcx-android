@@ -70,8 +70,13 @@ Example: `index.html?theme=dark&companion=none&insets=32,0,24,0`.
 
 Mocks for a group of views or dialogs go in `mocks/<name>.js` instead of editing `mockBridge.js` or `fixtures.json`: each module may export
 `fixtures` (merged into `fixtures.json`, arrays concatenated), `webApi(path, query, method, options, data)`,
-`sqlite(sql, args, data)` and `sqliteNonQuery(sql, args, data)`. Return `undefined` from a hook to fall through to
-the defaults.
+`sqlite(sql, args, data)`, `sqliteNonQuery(sql, args, data)` and `appApi(method, args, data)`. Return `undefined`
+from a hook to fall through to the defaults (the next module's hook, then `mockBridge.js`).
+
+`appApi` answers `AppApiElectron` calls: `method` is the method name (for example `IsGameRunning`), `args` the
+argument array, and the return value is what the call resolves to (a Promise is fine). The mocks document their own
+query parameters in their file header; for example `mocks/fixes.js` has `gamestart=<seconds>`, which reports VRChat
+running only after that delay, as when the PC companion connects after start-up.
 
 `fixtures.json` holds the made-up current user, friends, worlds and feed entries. Add to it when a view needs more
 data to preview; keep the ids in the `usr_00000000-...` / `wrld_00000000-...` ranges so they can never match a real

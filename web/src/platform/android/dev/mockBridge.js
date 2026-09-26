@@ -11,7 +11,8 @@ import baseFixtures from './fixtures.json';
 //   fixtures: object merged into fixtures.json (arrays are concatenated, objects shallow-merged),
 //   webApi(path, query, method, options, data): response body for /api/1/<path>, or undefined to fall through,
 //   sqlite(sql, args, data): row arrays for SQLite.Execute/ExecuteJson, or undefined to fall through,
-//   sqliteNonQuery(sql, args, data): number for SQLite.ExecuteNonQuery, or undefined to fall through.
+//   sqliteNonQuery(sql, args, data): number for SQLite.ExecuteNonQuery, or undefined to fall through,
+//   appApi(method, args, data): result of AppApiElectron.<method>(...args), or undefined to fall through.
 const mockPlugins = Object.values(import.meta.glob('./mocks/*.js', { eager: true }));
 
 function mergeFixtures(base, extras) {
@@ -481,7 +482,13 @@ function createAndroidHost(companionMode) {
     };
 }
 
-function createAppApi(companionMode) {
+/**
+ * @param {string} companionMode
+ * @param {object} data Fixture data (passed on to the `appApi` hooks of the mocks)
+ * @param {(method: string, args: unknown[]) => unknown} [hook] Asked first; `undefined` falls through (tests)
+ * @returns {object} Fake AppApiElectron: the mocks first, then the Android safe values, anything else `null`
+ */
+export function createAppApi(companionMode, data, hook = (method, args) => fromPlugins('appApi', method, args, data)) {
     // On Android the game flags come from the PC companion (docs/ARCHITECTURE.md §8).
     const companion = mockCompanionState(companionMode);
     const values = {
@@ -513,7 +520,11 @@ function createAppApi(companionMode) {
     };
     return new Proxy(values, {
         get(target, prop) {
-            return target[prop] ?? (() => null);
+            const fallback = target[prop] ?? (() => null);
+            return (...args) => {
+                const hookValue = hook(prop, args);
+                return hookValue !== undefined ? hookValue : fallback(...args);
+            };
         }
     });
 }
@@ -633,7 +644,7 @@ export function installMockBridge({ params }) {
     }
 
     const classes = {
-        AppApiElectron: createAppApi(companionMode),
+        AppApiElectron: createAppApi(companionMode, data),
         WebApi: createWebApi(data),
         SQLite: createSqlite(configs, data),
         VRCXStorage: createStorage(),
