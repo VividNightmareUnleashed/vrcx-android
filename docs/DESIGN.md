@@ -115,8 +115,9 @@ The sheet closes on navigation and on back.
 
 ### 2.4 Phone, landscape (height ≤ 500px)
 
-The dock turns into a 48px icon rail on the left, the PC's collapsed nav. The app bar shrinks to 40px, and the friends
-panel opens as a right-hand panel `min(360px, 45vw)` wide instead of full width.
+The dock turns into a 48px icon rail on the left, the PC's collapsed nav. The app bar shrinks to 36px (its 40px buttons
+draw at 36px and keep a 40px hit area), and the friends panel opens as a right-hand panel `min(360px, 45vw)` wide
+instead of full width.
 
 ```
 ┌────┬──────────────────────────────────────────┬──────────────┐
@@ -149,7 +150,18 @@ avatars, links and colours look exactly like the PC cells. Slots:
   row's context menu rather than text selection.
 - The PC header context menu (sort, columns, page size) becomes a **View options** button in the toolbar, opening a
   sheet. Column drag-reorder and resize handles are disabled on coarse pointers.
-- Pagination in compact layout: no page-size selector (it moves into View options), sibling count 0, 32px items.
+- Pagination in compact layout: no page-size selector (it moves into View options), sibling count 0, 32px items,
+  icon-only Previous and Next.
+- Toolbar in portrait: View options and Quick actions share the first row of the view's stacked toolbar (search); the
+  rows below (filter strips, selects) get the full card width. A strip that scrolls sideways ends at the list's border.
+- Toolbar in landscape: one row. A page-filling table moves its pagination up into that row, right of View options,
+  while the view's toolbar keeps at least 240px next to the tools and the pagination (`shouldInlinePagination`);
+  otherwise (many pages beside the open friends panel) the pagination stays below the list. A view whose toolbar sits
+  outside the table (My Avatars) moves it into the table's toolbar row in landscape. Target: at least 220px of card
+  list at 844x390 (measured 240px; 210px on 360px-tall phones).
+- Table chrome hit areas: View options, Quick actions and the pagination items keep their 32px look with a 40px hit
+  area on coarse pointers. A table whose touch toolbar sits in its top right corner lets those hit areas reach 4px
+  past its edge (`overflow: clip` with `overflow-clip-margin`); nothing else paints there.
 - Tables inside dialogs without `meta.mobile` stay tables with horizontal scroll.
 
 ### 3.2 Dialogs
@@ -169,7 +181,7 @@ avatars, links and colours look exactly like the PC cells. Slots:
 
 | PC idiom | Phone equivalent |
 |---|---|
-| Right-click context menu | Long-press (reka's 700 ms timer), plus an explicit kebab/dropdown wherever the menu holds primary actions (user rows, game-log rows, instance rows, share/moderation submenus flattened) |
+| Right-click context menu | Long-press (reka's 700 ms timer), plus an explicit kebab/dropdown wherever the menu holds primary actions (user rows, game-log rows, instance rows, share/moderation submenus flattened). Placement (all context menus, in the shared `ContextMenuContent`/`ContextMenuSubContent`): flip first, then shift on both axes (`prioritizePosition`), 8px from the screen edge plus the system bar and keyboard insets. A caller's own padding replaces the 8px; the insets always apply |
 | Hover-revealed buttons (`opacity-0 group-hover:opacity-100`) | Always visible on coarse pointers (`pointer-coarse:opacity-100`) |
 | Tooltip-only information | Long-press shows the tooltip (TooltipWrapper). Information users need (exact dates, full log text, notification details, action labels) is shown inline in compact layout |
 | Hover cards | Open on tap (`enableTouch`) |
@@ -200,8 +212,20 @@ The phone rules:
 
 ## 5. Tablets (desktop frame)
 
-On tablets the upstream `MainLayout` frame is used unchanged. The touch rules from §3.3 apply there too through
+On tablets the upstream `MainLayout` frame is used. The touch rules from §3.3 apply there too through
 `pointer-coarse:` variants. The nav resize strip and the table column resize handles are disabled on coarse pointers.
+
+Portrait touch tablets, 768 to 1023px wide (`composables/useTouchTabletFrame.js`), are too narrow for the 240px nav, the
+page and the friends panel side by side:
+- On first run (no saved `VRCX_navIsCollapsed`) the nav starts as the PC's collapsed icon nav (48px). This default is
+  not saved; the state the user picks later is, and it is kept.
+- The friends panel is at least 280px wide while the page keeps at least 420px; when both cannot be met (the expanded
+  nav on an 800px tablet) the PC minimum applies, so the page is as wide as on PC. The minimum is a whole percent
+  computed from the window width and the nav state, so the splitter keeps one saved layout per frame state (icon nav,
+  expanded nav, landscape) instead of one per measured width.
+- Landscape tablets (1024x768, 1280x800) and mouse devices keep the PC frame unchanged.
+- PC toolbars wider than the page scroll sideways inside their table on touch screens; the Friends Locations toolbar
+  stays on one row with a shorter search, and its cards stay inside the page.
 
 ## 6. Back button
 
