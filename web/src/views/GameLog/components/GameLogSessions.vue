@@ -232,7 +232,7 @@
     import { TooltipWrapper } from '../../../components/ui/tooltip';
     import { useAppearanceSettingsStore, useGameLogStore } from '../../../stores';
     import GameLogSessionsSegment from './GameLogSessionsSegment.vue';
-    import ResponsivePopover from '../../Feed/components/ResponsivePopover.vue';
+    import ResponsivePopover from '../../../components/ui/responsive-popover/ResponsivePopover.vue';
     import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { isCompact } = useCompactLayout();

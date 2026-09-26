@@ -29,19 +29,12 @@
 </template>
 
 <script setup>
-    // A popover on PC, a bottom sheet in the phone layout. Shared by the views of this area (Feed and Game Log date
-    // filters, Friends Locations settings).
+    // A popover on PC, a bottom sheet in the phone layout (Feed and Game Log date filters, Friends Locations
+    // settings).
     import { computed, onDeactivated, ref } from 'vue';
 
-    import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
-    import {
-        Sheet,
-        SheetContent,
-        SheetDescription,
-        SheetHeader,
-        SheetTitle,
-        SheetTrigger
-    } from '../../../components/ui/sheet';
+    import { Popover, PopoverContent, PopoverTrigger } from '../popover';
+    import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '../sheet';
     import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const props = defineProps({

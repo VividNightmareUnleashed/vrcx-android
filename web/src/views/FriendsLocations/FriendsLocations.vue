@@ -165,7 +165,7 @@
     import { useI18n } from 'vue-i18n';
     import { useVirtualizer } from '@tanstack/vue-virtual';
 
-    import ResponsivePopover from '../Feed/components/ResponsivePopover.vue';
+    import ResponsivePopover from '../../components/ui/responsive-popover/ResponsivePopover.vue';
     import { useCompactLayout } from '../../composables/useCompactLayout';
     import { useAppearanceSettingsStore, useFavoriteStore, useFriendStore, useLocationStore } from '../../stores';
     import { Slider } from '../../components/ui/slider';

@@ -4,8 +4,10 @@ import { mount } from '@vue/test-utils';
 
 const mocks = vi.hoisted(() => ({ isCompact: require('vue').ref(true) }));
 
-vi.mock('../../../composables/useCompactLayout', () => ({ useCompactLayout: () => ({ isCompact: mocks.isCompact }) }));
-vi.mock('../../../components/ui/sheet', () => {
+vi.mock('../../../../composables/useCompactLayout', () => ({
+    useCompactLayout: () => ({ isCompact: mocks.isCompact })
+}));
+vi.mock('../../sheet', () => {
     const { h } = require('vue');
     const passthrough = (name) => ({
         name,
@@ -29,7 +31,7 @@ vi.mock('../../../components/ui/sheet', () => {
         SheetTrigger: passthrough('SheetTrigger')
     };
 });
-vi.mock('../../../components/ui/popover', () => {
+vi.mock('../../popover', () => {
     const { h } = require('vue');
     const passthrough = (name) => ({
         name,
@@ -51,7 +53,7 @@ vi.mock('../../../components/ui/popover', () => {
     };
 });
 
-import ResponsivePopover from '../components/ResponsivePopover.vue';
+import ResponsivePopover from '../ResponsivePopover.vue';
 
 /** A kept-alive view holding the popover, and a second view to switch to (a route change). */
 function mountInKeptAliveView({ controlled }) {
