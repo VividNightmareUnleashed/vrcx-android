@@ -12,7 +12,7 @@
             </template>
             <Item
                 variant="outline"
-                class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
+                class="favorites-item cursor-pointer hover:bg-muted x-hover-list pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                 :style="itemStyle"
                 @click="handleOpenProfile">
                 <ItemMedia class="relative size-10">
@@ -28,7 +28,7 @@
                     <ItemTitle class="truncate max-w-full compact:block" :style="displayNameStyle">{{
                         displayName
                     }}</ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs! compact:max-w-[calc(100%-2rem)]">
+                    <ItemDescription class="truncate line-clamp-1 text-xs!">
                         <template v-if="favorite.ref.location !== 'offline'">
                             <Location
                                 :location="favorite.ref.location"
@@ -48,7 +48,7 @@
                         <Button
                             size="icon-sm"
                             variant="ghost"
-                            class="rounded-full compact:absolute compact:bottom-1 compact:right-1 pointer-coarse:[html:not(.vrcx-compact)_&]:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                            class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                             @click.stop
                             :ariaLabel="t('nav_tooltip.manage')">
                             <MoreHorizontal class="h-4 w-4" />

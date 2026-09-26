@@ -3,7 +3,7 @@
         <ContextMenuTrigger as-child>
             <Item
                 variant="outline"
-                class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
+                class="favorites-item cursor-pointer hover:bg-muted x-hover-list pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                 :style="itemStyle"
                 @click="handleViewDetails">
                 <ItemMedia variant="image">
@@ -22,11 +22,11 @@
                 </ItemMedia>
                 <ItemContent class="min-w-0">
                     <ItemTitle class="truncate max-w-full compact:block">{{ favorite.name }}</ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-2rem)]">
+                    <ItemDescription class="truncate line-clamp-1 text-xs">
                         {{ favorite.authorName }}
                     </ItemDescription>
                 </ItemContent>
-                <ItemActions class="compact:absolute compact:bottom-1 compact:right-1">
+                <ItemActions>
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>
                             <Button

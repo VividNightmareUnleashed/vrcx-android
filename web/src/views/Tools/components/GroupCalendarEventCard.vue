@@ -72,10 +72,13 @@
                 </div>
             </Card>
         </PopoverTrigger>
+        <!-- Touch (phones and tablets): below the card, at most min(500px, 100vw - 2rem) wide and as tall as the
+             room left on screen, scrolling inside; the PC keeps the 500px hover card on the right. -->
         <PopoverContent
-            :side="isCompact ? 'bottom' : 'right'"
+            :side="isTouchLayout ? 'bottom' : 'right'"
+            :collision-padding="isTouchLayout ? 16 : undefined"
             align="start"
-            class="w-125 p-3 compact:w-[calc(100vw-2rem)]"
+            class="w-125 p-3 compact:max-w-[calc(100vw-2rem)] pointer-coarse:max-w-[calc(100vw-2rem)] compact:max-h-(--reka-popover-content-available-height) pointer-coarse:max-h-(--reka-popover-content-available-height) compact:overflow-y-auto pointer-coarse:overflow-y-auto"
             @mouseenter="handleHoverEnter"
             @mouseleave="handleHoverLeave">
             <div class="flex items-baseline justify-between gap-3 text-xs">
@@ -85,13 +88,14 @@
                 </div>
             </div>
             <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div class="flex min-w-0 flex-col gap-1">
+                <!-- Phones: the two buttons take a row each, so their labels fit. -->
+                <div class="flex min-w-0 flex-col gap-1 compact:col-span-2">
                     <Button variant="outline" size="sm" @click="openCalendarEvent(event)">
                         <Calendar />
                         {{ t('dialog.group_calendar.event_card.export_to_calendar') }}
                     </Button>
                 </div>
-                <div class="flex min-w-0 flex-col gap-1">
+                <div class="flex min-w-0 flex-col gap-1 compact:col-span-2">
                     <Button variant="outline" size="sm" @click="downloadEventIcs(event)">
                         <Download />
                         {{ t('dialog.group_calendar.event_card.download_ics') }}
@@ -332,6 +336,8 @@
     // Touch screens (Android only; both flags are false in desktop builds): the hover popover becomes a tap toggle,
     // and the compatibility mouse events a tap produces are ignored (docs/DESIGN.md §3.3).
     const { isCompact, isCoarsePointer } = useCompactLayout();
+    // Phones and touch tablets place the details below the card and keep them on screen.
+    const isTouchLayout = computed(() => isCompact.value || isCoarsePointer.value);
 
     const handleHoverEnter = () => {
         if (!isCoarsePointer.value) {

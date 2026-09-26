@@ -5,10 +5,10 @@ import { database } from '../services/database';
 import { groupRequest } from '../api';
 import { runRefreshFriendsListFlow } from '../coordinators/friendSyncCoordinator';
 import { runUpdateIsGameRunningFlow } from '../coordinators/gameCoordinator';
-import { addGameLogEvent } from '../coordinators/gameLogCoordinator';
+import { addGameLogEvent, runAndroidGameLogFlow } from '../coordinators/gameLogCoordinator';
 import { runRefreshPlayerModerationsFlow } from '../coordinators/moderationCoordinator';
 import { clearVRCXCache } from '../coordinators/vrcxCoordinator';
-import { hasVrOverlay } from '../shared/utils/platform';
+import { hasVrOverlay, isAndroid } from '../shared/utils/platform';
 import { useAuthStore } from './auth';
 import { useDiscordPresenceSettingsStore } from './settings/discordPresence';
 import { useFriendStore } from './friend';
@@ -114,16 +114,23 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
                 }
                 if (LINUX && --state.nextGetLogCheck <= 0) {
                     state.nextGetLogCheck = 0.5;
-                    const logLines = await LogWatcher.GetLogLines();
-                    if (logLines) {
-                        logLines.forEach((logLine) => {
-                            addGameLogEvent(logLine);
-                        });
+                    if (isAndroid) {
+                        // Reads the game state with the lines: the PC companion orders them differently.
+                        await runAndroidGameLogFlow();
+                    } else {
+                        const logLines = await LogWatcher.GetLogLines();
+                        if (logLines) {
+                            logLines.forEach((logLine) => {
+                                addGameLogEvent(logLine);
+                            });
+                        }
                     }
                 }
                 if (LINUX && --state.nextGameRunningCheck <= 0) {
                     state.nextGameRunningCheck = 1;
-                    await runUpdateIsGameRunningFlow(await AppApi.IsGameRunning(), await AppApi.IsSteamVRRunning());
+                    if (!isAndroid) {
+                        await runUpdateIsGameRunningFlow(await AppApi.IsGameRunning(), await AppApi.IsSteamVRRunning());
+                    }
                     if (hasVrOverlay) {
                         vrStore.vrInit(); // TODO: make this event based
                     }

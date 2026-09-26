@@ -16,7 +16,8 @@ import { AppDebug, logWebRequest } from '../services/appConfig';
 import { database } from '../services/database';
 import { runLastLocationResetFlow, runUpdateCurrentUserLocationFlow } from './locationCoordinator';
 import { getGroupName } from '../shared/utils';
-import { hasLocalGame } from '../shared/utils/platform';
+import { hasLocalGame, isAndroid } from '../shared/utils/platform';
+import { runUpdateIsGameRunningFlow } from './gameCoordinator';
 import { userRequest } from '../api';
 import { watchState } from '../services/watchState';
 import { toast } from 'vue-sonner';
@@ -59,8 +60,14 @@ export async function tryLoadPlayerList() {
     console.log('Loading player list from game log...');
     let ctx;
     let i;
+    // Android: the rows must be the current instance, and log lines can arrive while they are read.
+    const liveLocation = locationStore.lastLocation;
     const data = await database.getGamelogDatabase();
     if (data.length === 0) {
+        return;
+    }
+    if (isAndroid && !isPlayerListReloadCurrent(liveLocation, data)) {
+        console.log('Player list reload skipped: the game log rows are not the current instance');
         return;
     }
     let length = 0;
@@ -106,6 +113,9 @@ export async function tryLoadPlayerList() {
                 locationStore.lastLocation.friendList.delete(ctx.userId);
             }
         }
+        if (isAndroid) {
+            keepLivePlayers(liveLocation, locationStore.lastLocation, friendStore.friends);
+        }
         locationStore.lastLocation.playerList.forEach((ref1) => {
             if (ref1.userId && typeof ref1.userId === 'string') {
                 if (!userStore.cachedUsers.has(ref1.userId)) {
@@ -124,6 +134,126 @@ export async function tryLoadPlayerList() {
         userStore.applyUserDialogLocation();
         instanceStore.applyWorldDialogInstances();
         instanceStore.applyGroupDialogInstances();
+    }
+}
+
+/**
+ * Android: whether the rows tryLoadPlayerList read describe the instance VRChat is in now. There the reload also runs
+ * when the PC companion reports VRChat running long after start-up (runAndroidGameLogFlow), and a start alone does not
+ * tell a VRChat that was already running from one that was just launched: the last Location row may then belong to a
+ * previous session (the rows reach back to yesterday). Restoring it would show that instance as the current one, and
+ * the next `location` line would write the whole gap into its time (runLastLocationResetFlow). So the rows count only
+ * when their last Location is the instance the VRChat API reports the current user in; a game that is still loading,
+ * travelling or elsewhere fills the list from its own log lines instead.
+ *
+ * The live state also wins when it is newer than the rows: when the game stopped or lastLocation was replaced (a
+ * `location` line or a reset) during the read, and when lastLocation names an instance the rows do not end with (its
+ * row is still being written, after the group name lookup).
+ *
+ * @param {object} liveLocation The lastLocation object when the read started
+ * @param {object[]} rows Rows from getGamelogDatabase(), oldest first
+ * @returns {boolean}
+ */
+function isPlayerListReloadCurrent(liveLocation, rows) {
+    const gameStore = useGameStore();
+    const locationStore = useLocationStore();
+    const userStore = useUserStore();
+
+    if (!gameStore.isGameRunning || locationStore.lastLocation !== liveLocation) {
+        return false;
+    }
+    const lastRow = rows.findLast((row) => row.type === 'Location');
+    if (!lastRow || lastRow.location !== userStore.currentUser.$locationTag) {
+        return false;
+    }
+    return !liveLocation.location || liveLocation.location === lastRow.location;
+}
+
+/**
+ * Android: carries the players that log lines added to lastLocation while tryLoadPlayerList read the rows (their
+ * rows were written after the read) into the rebuilt list, so a reload never drops a live join. Players already in
+ * the rebuilt list keep its entry, so nobody is counted twice. Only called when isPlayerListReloadCurrent held: the
+ * live players belong to the rebuilt instance.
+ *
+ * @param {object} liveLocation The lastLocation object when the read started
+ * @param {object} rebuilt The lastLocation rebuilt from the rows
+ * @param {Map<string, object>} friends The friend store's friends
+ */
+function keepLivePlayers(liveLocation, rebuilt, friends) {
+    for (const [userId, userMap] of liveLocation.playerList) {
+        if (rebuilt.playerList.has(userId)) {
+            continue;
+        }
+        rebuilt.playerList.set(userId, userMap);
+        if (friends.has(userId)) {
+            rebuilt.friendList.set(userId, userMap);
+        }
+    }
+}
+
+/**
+ * Android: the updateLoop's game log step (pull mode). Upstream reads the log
+ * lines, then checks the game; here the game state is read once per tick, before the lines, because native orders
+ * the two differently from a PC:
+ *
+ * - It publishes a start before the log lines of that game session, which may include a backlog the phone missed while it
+ *   was not connected, so a start applies before the tick's lines and they see a running game as on the PC;
+ * - It publishes a stop after the lines that precede it, so a stop read before the lines applies after them;
+ * - A companion disconnect changes nothing: native keeps the last state for 120 s (docs/ARCHITECTURE.md §8), then reports
+ *   a stop, whose reset writes the leave rows as upstream's does.
+ *
+ * The shim answers IsGameRunning and IsSteamVRRunning from its cache until a `game-state` event arrives, so a tick
+ * costs no bridge call for them. The state and the lines still come from two calls: a change that native publishes in
+ * the few milliseconds between them is applied one tick late.
+ *
+ * After a start, the player list may be rebuilt from the game log database (applyAndroidGameStart).
+ */
+export async function runAndroidGameLogFlow() {
+    const gameStore = useGameStore();
+
+    const isGameRunning = await AppApi.IsGameRunning();
+    const isSteamVRRunning = await AppApi.IsSteamVRRunning();
+    const started = isGameRunning && !gameStore.isGameRunning;
+    if (started) {
+        await applyAndroidGameStart(isSteamVRRunning);
+    }
+    const logLines = await LogWatcher.GetLogLines();
+    if (logLines) {
+        logLines.forEach((logLine) => {
+            addGameLogEvent(logLine);
+        });
+    }
+    if (!started) {
+        await runUpdateIsGameRunningFlow(isGameRunning, isSteamVRRunning);
+    }
+}
+
+/**
+ * Android: applies a start reported by the PC companion, then rebuilds the player list from the game log database.
+ *
+ * The companion can connect, and report VRChat running, long after start-up, when the friends list (whose arrival
+ * runs tryLoadPlayerList) has already loaded; it also reports a start when it reconnects after the grace period.
+ * Upstream would then show an empty player list until the next join or world change. tryLoadPlayerList only uses rows
+ * of the instance the VRChat API reports (isPlayerListReloadCurrent). A game that was just launched is not there yet
+ * (the API reports it offline, travelling or in its new instance), so its own log lines fill the list. The one launch
+ * this cannot tell apart goes straight back into the last logged instance after the phone missed the game closing:
+ * the players of the earlier visit are then listed until the `location` line resets them, as upstream does when
+ * VRCX starts during such a launch. After a reconnect past the grace period the instance comes back, but the players
+ * who stayed in it through the stop do not: the stop wrote their leave rows, so only later joins are listed.
+ *
+ * No rebuild before the friends list loaded (its watcher in stores/gameLog runs tryLoadPlayerList then), and none when
+ * the phone had a current instance that the start's reset just closed: that one came from the VRChat API while the
+ * game was not running (Quest, or the PC while the companion was away), and the game that started logs its own.
+ *
+ * @param {boolean} isSteamVRRunning
+ */
+async function applyAndroidGameStart(isSteamVRRunning) {
+    const locationStore = useLocationStore();
+
+    const hadLocation = Boolean(locationStore.lastLocation.location);
+    await runUpdateIsGameRunningFlow(true, isSteamVRRunning);
+    if (!hadLocation && watchState.isFriendsLoaded) {
+        await tryLoadPlayerList();
     }
 }
 

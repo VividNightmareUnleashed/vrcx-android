@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 
-const mocks = vi.hoisted(() => ({ triggerClicks: 0, coarse: null }));
+const mocks = vi.hoisted(() => ({ triggerClicks: 0, coarse: null, compact: null }));
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k }) }));
 vi.mock('../../../../stores', () => ({
@@ -19,9 +19,10 @@ vi.mock('vue-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/composables/useCompactLayout', async () => {
     const { ref: vueRef } = await import('vue');
     mocks.coarse = vueRef(true);
+    mocks.compact = vueRef(true);
     return {
         useCompactLayout: () => ({
-            isCompact: vueRef(true),
+            isCompact: mocks.compact,
             isCompactLandscape: vueRef(false),
             isCoarsePointer: mocks.coarse
         })
@@ -84,6 +85,7 @@ describe('GroupCalendarEventCard on touch screens', () => {
         mocks.triggerClicks = 0;
         if (mocks.coarse) {
             mocks.coarse.value = true;
+            mocks.compact.value = true;
         }
     });
 
@@ -116,6 +118,31 @@ describe('GroupCalendarEventCard on touch screens', () => {
         wrapper.getComponent('[data-testid="popover"]').vm.$emit('update:open', false);
         await wrapper.vm.$nextTick();
         expect(isOpen(wrapper)).toBe(false);
+    });
+
+    it('places the details below the card and keeps them on screen on phones and touch tablets', () => {
+        for (const compact of [true, false]) {
+            mocks.compact.value = compact;
+            const content = mountCard().get('[data-testid="content"]');
+            expect(content.attributes('side')).toBe('bottom');
+            expect(content.attributes('collision-padding')).toBe('16');
+            expect(content.classes()).toEqual(
+                expect.arrayContaining([
+                    'w-125',
+                    'pointer-coarse:max-w-[calc(100vw-2rem)]',
+                    'pointer-coarse:max-h-(--reka-popover-content-available-height)',
+                    'pointer-coarse:overflow-y-auto'
+                ])
+            );
+        }
+    });
+
+    it('keeps the PC hover card on the right for a mouse', () => {
+        mocks.coarse.value = false;
+        mocks.compact.value = false;
+        const content = mountCard().get('[data-testid="content"]');
+        expect(content.attributes('side')).toBe('right');
+        expect(content.attributes('collision-padding')).toBeUndefined();
     });
 
     it('keeps the PC hover popover for a mouse', async () => {
