@@ -2,6 +2,9 @@
     "onboarding": {
         "welcome": {
             "features": {
+                "user_profiles": {
+                    "description": "Koppints bármelyik felhasználóra a közös barátok, aktivitási hőtérképek és belépési/kilépési naplók megtekintéséhez"
+                },
                 "right_click": {
                     "description": "Tartsd lenyomva a kulcsfontosságú elemeket a gyors műveletek és további beállítások eléréséhez"
                 },

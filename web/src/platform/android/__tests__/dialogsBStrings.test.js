@@ -6,6 +6,8 @@ import sendInviteConfirmDialog from '../../../components/dialogs/InviteDialog/Se
 import spotlightDialog from '../../../components/onboarding/SpotlightDialog.vue?raw';
 import whatsNewDialog from '../../../components/onboarding/WhatsNewDialog.vue?raw';
 
+import { getAndroidMessages } from '../i18n';
+
 // Android strings for the dialogs, onboarding, Login and the phone shell: new android.* keys plus overrides of
 // upstream wording that assumes a mouse or a keyboard (docs/DESIGN.md §3.3).
 const files = import.meta.glob('../i18n/*.dialogs-b.json', { eager: true, import: 'default' });
@@ -47,6 +49,25 @@ describe('dialogs-b Android strings', () => {
                 expect(text, `${localeOf(file)}: ${path}`).not.toMatch(/ctrl|⌘|right[- ]click|右クリック|右键|右鍵|klikk/i);
             }
         }
+    });
+
+    // Every locale, as the Android build shows it (upstream strings with the Android overrides merged over them): a
+    // locale that translated a mouse or keyboard phrase needs its own override, or the phone shows the PC wording.
+    // Chinese 点击/點擊 is the usual word for a tap on phones as well, so it is not PC wording.
+    test("no locale shows mouse or keyboard wording in onboarding or What's New", () => {
+        const pcWording =
+            /ctrl\s*\+|⌘|right[- ]click|click|clique|botão direito|クリック|右键|右鍵|klikk|kattint|คลิก/i;
+        const leftovers = [];
+        for (const [file, messages] of Object.entries(upstream)) {
+            if (!messages.onboarding) continue;
+            const locale = file.split('/').pop().replace('.json', '');
+            const android = getAndroidMessages(locale);
+            for (const path of leafPaths(messages.onboarding, 'onboarding')) {
+                const text = lookup(android, path) ?? lookup(messages, path);
+                if (typeof text === 'string' && pcWording.test(text)) leftovers.push(`${locale}: ${path}: ${text}`);
+            }
+        }
+        expect(leftovers).toEqual([]);
     });
 
     test('the English file has every android.* key the dialogs use', () => {

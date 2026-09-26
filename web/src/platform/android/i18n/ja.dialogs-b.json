@@ -2,7 +2,11 @@
     "onboarding": {
         "welcome": {
             "features": {
+                "user_profiles": {
+                    "description": "任意のユーザーをタップして、共通のフレンド、活動のヒートマップおよび、参加/退出等を含む詳細なセッションログを表示します。"
+                },
                 "right_click": {
+                    "title": "コンテキストメニュー",
                     "description": "項目を長押しして、クイックアクションと追加オプションを表示します。"
                 },
                 "quick_search": {
