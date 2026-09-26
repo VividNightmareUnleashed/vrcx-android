@@ -203,7 +203,7 @@
 <script setup>
     defineOptions({ name: 'ChartsHotWorlds' });
 
-    import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+    import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
     import { Info, MapPin, RefreshCcw, TrendingDown, TrendingUp, Users } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
@@ -219,6 +219,7 @@
     import { showUserDialog } from '@/coordinators/userCoordinator';
     import { showWorldDialog } from '@/coordinators/worldCoordinator';
     import { database } from '@/services/database';
+    import { isAndroid } from '@/shared/utils/platform';
     import { useAppearanceSettingsStore } from '@/stores';
 
     const { t } = useI18n();
@@ -321,6 +322,14 @@
             friendDetail.value = [];
         }
     }
+
+    // Android: the sheet is teleported to <body> and full width on phones, so it would cover the next page when the
+    // route changes while it is open (the page itself stays alive in KeepAlive). Close it when the page is left.
+    onDeactivated(() => {
+        if (isAndroid) {
+            handleSheetClose(false);
+        }
+    });
 
     function handleWorldClick() {
         if (selectedWorld.value?.worldId) {
