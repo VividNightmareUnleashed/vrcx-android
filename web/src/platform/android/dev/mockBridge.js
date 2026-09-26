@@ -450,8 +450,8 @@ export function mockCompanionState(mode) {
         hosts: ['192.168.1.20'],
         port: 47631,
         fp: 'AA:BB',
-        pairedAt: 0,
-        lastSeen: 0
+        pairedAt: Date.now() - 3 * 24 * 60 * 60 * 1000,
+        lastSeen: Date.now() - 2 * 60 * 1000
     };
     return {
         activeId: base.status === 'unpaired' ? null : pc.id,
