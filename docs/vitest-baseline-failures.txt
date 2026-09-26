@@ -11,7 +11,6 @@ web/src/components/dialogs/UserDialog/__tests__/UserDialogWorldsTab.test.js
 web/src/components/dialogs/UserDialog/__tests__/groupOrderUtils.test.js
 web/src/components/dialogs/UserDialog/__tests__/useUserDialogCommands.test.js
 web/src/components/dialogs/WorldDialog/__tests__/useWorldDialogInfo.test.js
-web/src/components/dialogs/__tests__/CustomNavDialog.test.js
 web/src/components/dialogs/__tests__/MainDialogContainer.test.js
 web/src/components/nav-menu/__tests__/NavMenu.test.js
 web/src/components/nav-menu/__tests__/NavMenuFooter.test.js
