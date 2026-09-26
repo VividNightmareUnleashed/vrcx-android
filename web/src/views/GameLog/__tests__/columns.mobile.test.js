@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     isCompact: { value: false },
+    isCoarsePointer: { value: false },
     shiftHeld: { value: false, __v_isRef: true }
 }));
 
@@ -12,7 +13,7 @@ vi.mock('../../../stores', () => ({
     useUiStore: () => ({ shiftHeld: mocks.shiftHeld })
 }));
 vi.mock('../../../composables/useCompactLayout', () => ({
-    useCompactLayout: () => ({ isCompact: mocks.isCompact })
+    useCompactLayout: () => ({ isCompact: mocks.isCompact, isCoarsePointer: mocks.isCoarsePointer })
 }));
 vi.mock('../../../coordinators/userCoordinator', () => ({ lookupUser: vi.fn() }));
 vi.mock('../../../coordinators/worldCoordinator', () => ({ showWorldDialog: vi.fn() }));
@@ -64,6 +65,7 @@ describe('game log columns in the phone layout', () => {
 
     beforeEach(() => {
         mocks.isCompact.value = false;
+        mocks.isCoarsePointer.value = false;
         columns = createColumns({ getCreatedAt: (row) => row.created_at, onDelete: vi.fn(), onDeletePrompt: vi.fn() });
     });
 
@@ -87,6 +89,25 @@ describe('game log columns in the phone layout', () => {
         mocks.isCompact.value = true;
         const phone = flatten(cellOf(columns, 'action', event));
         expect(phone.some((node) => node.type === 'GameLogRowMenu')).toBe(true);
+    });
+
+    test('touch tablets (PC layout, coarse pointer) get the row menu too', () => {
+        mocks.isCoarsePointer.value = true;
+        const tablet = flatten(cellOf(columns, 'action', { type: 'Event', data: 'Udon: door opened' }));
+        expect(tablet.some((node) => node.type === 'GameLogRowMenu')).toBe(true);
+    });
+
+    test('phones show the exact date inline; PC keeps the short date in a tooltip', () => {
+        const entry = { created_at: '2026-09-26T10:00:00Z' };
+        const desktop = cellOf(columns, 'created_at', entry);
+        expect(desktop.type).toBe('TooltipWrapper');
+        expect(desktop.props.content).toBe('long:2026-09-26T10:00:00Z');
+
+        mocks.isCompact.value = true;
+        const phone = cellOf(columns, 'created_at', entry);
+        expect(phone.type).toBe('span');
+        expect(phone.props['data-testid']).toBe('compact-long-date');
+        expect(phone.children).toEqual(['long:2026-09-26T10:00:00Z']);
     });
 
     test('joins and leaves keep an empty action cell on phones', () => {
