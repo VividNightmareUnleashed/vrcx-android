@@ -17,34 +17,21 @@ function clamp(value, min, max) {
 }
 
 /**
- * Width a card may shrink to so that at least `minColumns` cards share one row. Returns `minWidth` unchanged when one
- * column is enough, the container is not measured yet, or the forced columns would be narrower than `floorWidth`.
+ * Card width for a grid limited to `maxColumns` cards per row. A one-column list never needs cards wider than its
+ * container, so the slider width is capped at the width the list can use; otherwise it is returned unchanged.
  *
  * @param {number} minWidth Card width from the scale slider
- * @param {number} containerWidth Measured width of the grid's container
- * @param {number} gap Gap between cards
- * @param {number} minColumns Columns wanted per row
+ * @param {number} containerWidth Measured width of the grid's container (0 while not measured)
+ * @param {number} maxColumns Cards per row at most
  * @param {object} [options]
- * @param {number} [options.floorWidth] Narrowest card worth forcing (px)
  * @param {number} [options.reserve] Container width the grid cannot use (scroller padding, list padding; px)
  * @returns {number}
  */
-export function resolveCardMinWidth(
-    minWidth,
-    containerWidth,
-    gap,
-    minColumns,
-    { floorWidth = 120, reserve = 16 } = {}
-) {
-    const columns = Math.floor(Number(minColumns) || 1);
-    if (columns <= 1 || !(containerWidth > 0)) {
+export function resolveCardMinWidth(minWidth, containerWidth, maxColumns, { reserve = 16 } = {}) {
+    if (maxColumns !== 1 || !(containerWidth > reserve)) {
         return minWidth;
     }
-    const forcedWidth = (containerWidth - reserve - gap * (columns - 1)) / columns;
-    if (!Number.isFinite(forcedWidth) || forcedWidth < floorWidth) {
-        return minWidth;
-    }
-    return Math.min(minWidth, Math.floor(forcedWidth));
+    return Math.min(minWidth, Math.floor(containerWidth - reserve));
 }
 
 export function useFavoritesCardScaling(options = {}) {
@@ -73,10 +60,13 @@ export function useFavoritesCardScaling(options = {}) {
     const minGap = options.minGap ?? 4;
     const minPadding = options.minPadding ?? 4;
     const defaultSpacing = clamp(options.defaultSpacing ?? 1, spacingSlider.min, spacingSlider.max);
-    // Cards per row the grid must at least offer (a number, ref or getter). Phones ask for 2 (docs/DESIGN.md §3.4).
-    const minColumnsOption = options.minColumns ?? 1;
-    const resolveMinColumns = () =>
-        typeof minColumnsOption === 'function' ? minColumnsOption() : (unref(minColumnsOption) ?? 1);
+    // Cards per row the grid may offer at most (a number, ref or getter). Phones in portrait use 1: full-width rows
+    // show the whole name, which two columns cut to a few characters.
+    const maxColumnsOption = options.maxColumns ?? Infinity;
+    const resolveMaxColumns = () => {
+        const value = typeof maxColumnsOption === 'function' ? maxColumnsOption() : unref(maxColumnsOption);
+        return value >= 1 ? Math.floor(value) : Infinity;
+    };
 
     const cardScaleBase = ref(1);
     const cardSpacingBase = ref(defaultSpacing);
@@ -118,12 +108,8 @@ export function useFavoritesCardScaling(options = {}) {
         const spacing = cardSpacing.value;
         const adjustedGapBase = baseGap + (cardScale.value - 1) * gapStep;
         const gap = Math.max(minGap, adjustedGapBase * spacing);
-        const minWidth = resolveCardMinWidth(
-            baseWidth * cardScale.value,
-            containerWidth.value ?? 0,
-            gap,
-            resolveMinColumns()
-        );
+        const columnLimit = resolveMaxColumns();
+        const minWidth = resolveCardMinWidth(baseWidth * cardScale.value, containerWidth.value ?? 0, columnLimit);
         const paddingY = Math.max(minPadding, basePaddingY * cardScale.value * spacing);
         const paddingX = Math.max(minPadding, basePaddingX * cardScale.value * spacing);
         const contentGap = Math.max(minPadding, baseContentGap * cardScale.value * spacing);
@@ -136,7 +122,8 @@ export function useFavoritesCardScaling(options = {}) {
             const width = Math.max(containerWidth.value ?? 0, 0);
             const itemCount = Math.max(Number(count) || 0, 0);
             const safeCount = itemCount > 0 ? itemCount : 1;
-            const maxColumns = width > 0 ? Math.max(1, Math.floor((width + gap) / (minWidth + gap)) || 1) : 1;
+            const maxColumns =
+                width > 0 ? Math.max(1, Math.min(columnLimit, Math.floor((width + gap) / (minWidth + gap)) || 1)) : 1;
             const preferredColumns = options?.preferredColumns;
             const requestedColumns = preferredColumns
                 ? Math.max(1, Math.min(Math.round(preferredColumns), maxColumns))

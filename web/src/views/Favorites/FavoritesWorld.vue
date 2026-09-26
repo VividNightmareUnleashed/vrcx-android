@@ -423,7 +423,7 @@
     // (docs/DESIGN.md §3.4). The panels are defined once in the template and placed by layout.
     const [DefineGroupPanel, ReuseGroupPanel] = createReusableTemplate();
     const [DefineContentPanel, ReuseContentPanel] = createReusableTemplate();
-    const { isCompact } = useCompactLayout();
+    const { isCompact, isCompactLandscape } = useCompactLayout();
     const groupSheetOpen = ref(false);
     // The sheet is teleported to <body>: close it when the page is left, so it never covers another page.
     onDeactivated(() => {
@@ -458,7 +458,8 @@
         containerRef: worldFavoritesContainerRef,
         gridStyle: worldFavoritesGridStyle
     } = useFavoritesCardScaling({
-        minColumns: () => (isCompact.value ? 2 : 1),
+        // Phones in portrait: one full-width row per favourite, so the whole name shows (landscape keeps the PC grid).
+        maxColumns: () => (isCompact.value && !isCompactLandscape.value ? 1 : Infinity),
         configKey: 'VRCX_FavoritesWorldCardScale',
         spacingConfigKey: 'VRCX_FavoritesWorldCardSpacing',
         min: 0.6,

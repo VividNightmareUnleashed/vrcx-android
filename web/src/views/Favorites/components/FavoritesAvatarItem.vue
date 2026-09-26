@@ -4,7 +4,7 @@
             <ContextMenuTrigger as-child>
                 <Item
                     variant="outline"
-                    class="favorites-item cursor-pointer hover:bg-muted x-hover-list compact:relative pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
+                    class="favorites-item cursor-pointer hover:bg-muted x-hover-list pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
                     :style="itemStyle"
                     @click="handleViewDetails">
                     <ItemMedia variant="image">
@@ -31,14 +31,14 @@
                                 class="h-4 w-4" />
                             <Lock v-if="isPrivateAvatar" :title="t('view.favorite.private')" class="h-4 w-4" />
                         </ItemTitle>
-                        <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-2rem)]">
+                        <ItemDescription class="truncate line-clamp-1 text-xs">
                             {{ localFavFakeRef.authorName }}
                         </ItemDescription>
                     </ItemContent>
                     <ItemActions v-if="editMode && !isLocalFavorite" @click.stop>
                         <Checkbox v-model="isSelected" />
                     </ItemActions>
-                    <ItemActions v-else-if="!editMode" class="compact:absolute compact:bottom-1 compact:right-1">
+                    <ItemActions v-else-if="!editMode">
                         <DropdownMenu>
                             <DropdownMenuTrigger as-child>
                                 <Button

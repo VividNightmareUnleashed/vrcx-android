@@ -53,49 +53,74 @@ describe('useFavoritesCardScaling', () => {
 });
 
 describe('resolveCardMinWidth', () => {
-    it('keeps the slider width when one column is enough or nothing is measured', () => {
-        expect(resolveCardMinWidth(260, 330, 12, 1)).toBe(260);
-        expect(resolveCardMinWidth(260, 0, 12, 2)).toBe(260);
+    it('keeps the slider width unless the grid is a single column', () => {
+        expect(resolveCardMinWidth(260, 330, Infinity)).toBe(260);
+        expect(resolveCardMinWidth(260, 330, 2)).toBe(260);
+        expect(resolveCardMinWidth(260, 330, 1)).toBe(260);
     });
 
-    it('shrinks cards so the wanted columns share a row', () => {
-        // (330 - 16 reserve - 12 gap) / 2 = 151
-        expect(resolveCardMinWidth(260, 330, 12, 2)).toBe(151);
-        // Already narrow enough: unchanged.
-        expect(resolveCardMinWidth(140, 700, 12, 2)).toBe(140);
+    it('caps a single column at the width the list can use', () => {
+        // 250 - 16 reserve
+        expect(resolveCardMinWidth(260, 250, 1)).toBe(234);
+        expect(resolveCardMinWidth(260, 250, 1, { reserve: 10 })).toBe(240);
     });
 
-    it('does not force columns narrower than the floor', () => {
-        expect(resolveCardMinWidth(260, 200, 12, 2)).toBe(260);
-        expect(resolveCardMinWidth(260, 200, 12, 2, { floorWidth: 80 })).toBe(86);
+    it('waits for the container to be measured', () => {
+        expect(resolveCardMinWidth(260, 0, 1)).toBe(260);
     });
 });
 
-describe('useFavoritesCardScaling minColumns', () => {
-    it('lays out two cards per row on a phone-width container, one column otherwise', async () => {
-        const compact = ref(true);
+describe('useFavoritesCardScaling maxColumns', () => {
+    async function mountMeasured(width, options) {
         let api;
         const Comp = defineComponent({
             setup() {
-                api = useFavoritesCardScaling({ minColumns: () => (compact.value ? 2 : 1) });
+                api = useFavoritesCardScaling(options);
                 return () => h('div', { ref: api.containerRef });
             }
         });
         mount(Comp);
-        Object.defineProperty(api.containerRef.value, 'clientWidth', { configurable: true, value: 330 });
         // The composable measures the container on the tick after it is attached.
         api.containerRef.value = api.containerRef.value.cloneNode();
-        Object.defineProperty(api.containerRef.value, 'clientWidth', { configurable: true, value: 330 });
+        Object.defineProperty(api.containerRef.value, 'clientWidth', { configurable: true, value: width });
         await nextTick();
         await nextTick();
+        return api;
+    }
+
+    it('lays out full-width rows on a phone, the PC grid otherwise', async () => {
+        const portrait = ref(true);
+        const api = await mountMeasured(700, { maxColumns: () => (portrait.value ? 1 : Infinity) });
 
         const phone = api.gridStyle.value(5);
-        expect(phone['--favorites-grid-columns']).toBe('2');
-        expect(phone['--favorites-card-min-width']).toBe('151px');
+        expect(phone['--favorites-grid-columns']).toBe('1');
+        expect(phone['--favorites-card-min-width']).toBe('260px');
+        expect(phone['--favorites-card-target-width']).toBe('700px');
 
-        compact.value = false;
+        portrait.value = false;
         const pc = api.gridStyle.value(5);
-        expect(pc['--favorites-grid-columns']).toBe('1');
+        expect(pc['--favorites-grid-columns']).toBe('2');
         expect(pc['--favorites-card-min-width']).toBe('260px');
+    });
+
+    it('keeps the smallest card scale on one column', async () => {
+        const api = await mountMeasured(330, { maxColumns: 1 });
+        api.cardScale.value = 0.6;
+        expect(api.gridStyle.value(5)['--favorites-grid-columns']).toBe('1');
+    });
+
+    it('never makes a single column wider than a narrow container', async () => {
+        const api = await mountMeasured(250, { maxColumns: ref(1) });
+        const style = api.gridStyle.value(3);
+        expect(style['--favorites-grid-columns']).toBe('1');
+        expect(style['--favorites-card-min-width']).toBe('234px');
+    });
+
+    it('keeps the upstream grid without the option', async () => {
+        const api = await mountMeasured(330, {});
+        api.cardScale.value = 0.6;
+        // 156 px cards: two per row, as on PC.
+        expect(api.gridStyle.value(5)['--favorites-grid-columns']).toBe('2');
+        expect(api.gridStyle.value(5)['--favorites-card-min-width']).toBe('156px');
     });
 });
