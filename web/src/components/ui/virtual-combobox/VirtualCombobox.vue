@@ -9,10 +9,11 @@
                 </slot>
 
                 <div class="flex items-center gap-1">
+                    <!-- Touch: a taller hit area around the 14px clear X, kept clear of the ▾ that opens the list. -->
                     <button
                         v-if="clearable && selectedValueSet.size > 0"
                         type="button"
-                        class="flex items-center justify-center rounded-sm opacity-50 hover:opacity-100 cursor-pointer"
+                        class="flex items-center justify-center rounded-sm opacity-50 hover:opacity-100 cursor-pointer pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-[13px] pointer-coarse:after:content-['']"
                         @click.stop.prevent="clearSelection">
                         <X class="size-3.5" />
                     </button>
