@@ -8,8 +8,8 @@
 
 [![Latest release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=stable&sort=semver&display_name=release)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
 [![Latest alpha](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?include_prereleases&label=alpha&sort=semver&display_name=release&color=orange)](https://github.com/VividNightmareUnleashed/vrcx-android/releases)
-[![VirusTotal scan of the APK](https://img.shields.io/badge/VirusTotal-APK%202.0.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/88003ef46b7c2f7f39a412340e397bf73d0ddf43376538cebb7cef25147203b7)
-[![VirusTotal scan of the companion](https://img.shields.io/badge/VirusTotal-companion%202.0.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/64b4a18ce57639cd4a89987d2b61d86bd4cf64ff516effe4d95bb196c705d693)
+[![VirusTotal scan of the APK](https://img.shields.io/badge/VirusTotal-APK%202.0.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/35bd9bcbae4b589a7c1c2dfb66a1f10d1d64512d01ee0b896340e603655bceef)
+[![VirusTotal scan of the companion](https://img.shields.io/badge/VirusTotal-companion%202.0.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/79c00abe9d74de242ae573516edc441ee07f73aebd7de8a2f58dfc91bd6da7bf)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-1b2838?logo=android&logoColor=3DDC84)](https://developer.android.com/about/versions/oreo)
 [![Kotlin and Vue 3](https://img.shields.io/badge/Kotlin-Vue%203-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Companion](https://img.shields.io/badge/Companion-.NET%208%20%C2%B7%20Windows%20x64-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
