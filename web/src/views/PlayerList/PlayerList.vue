@@ -4,23 +4,32 @@
             <div
                 v-if="currentInstanceWorld.ref.id"
                 ref="playerListHeaderRef"
-                style="display: flex; min-height: 120px"
-                class="mb-7">
+                :style="isCompact ? null : { display: 'flex', minHeight: '120px' }"
+                class="mb-7 compact:mb-3 compact:grid compact:grid-cols-[auto_minmax(0,1fr)] compact:gap-x-3"
+                :data-layout="isCompact ? 'compact' : undefined">
                 <img
                     v-if="!worldImageError"
                     :src="currentInstanceWorld.ref.thumbnailImageUrl"
-                    class="cursor-pointer"
-                    style="flex: none; width: 160px; height: 120px; border-radius: var(--radius-md)"
+                    class="cursor-pointer compact:row-span-3 compact:object-cover"
+                    :style="worldImageStyle"
                     @click="showFullscreenImageDialog(currentInstanceWorld.ref.imageUrl)"
                     @error="worldImageError = true"
                     loading="lazy" />
                 <div
                     v-else
-                    class="flex items-center justify-center bg-muted"
-                    style="flex: none; width: 160px; height: 120px; border-radius: var(--radius-md)">
+                    class="flex items-center justify-center bg-muted compact:row-span-3"
+                    :style="worldImageStyle">
                     <Image class="size-8 text-muted-foreground" />
                 </div>
-                <div class="ml-2" style="display: flex; flex-direction: column; min-width: 320px; width: 100%">
+                <!-- Phones: display: contents, so the rows below join the header grid (location, description and the
+                     stats run full width under the image). -->
+                <div
+                    class="ml-2 compact:contents"
+                    :style="
+                        isCompact
+                            ? null
+                            : { display: 'flex', flexDirection: 'column', minWidth: '320px', width: '100%' }
+                    ">
                     <div class="flex items-center">
                         <span
                             class="cursor-pointer"
@@ -104,7 +113,7 @@
                             <span>{{ currentInstanceWorld.cacheSize }} {{ t('dialog.world.tags.cache') }}</span>
                         </Badge>
                     </div>
-                    <div class="mt-1.5">
+                    <div class="mt-1.5 compact:col-span-2 compact:mt-2">
                         <LocationWorld
                             :locationobject="currentInstanceLocation"
                             :currentuserid="currentUser.id"
@@ -117,20 +126,22 @@
                             &nbsp;&horbar; <Timer v-if="lastLocation.date" :epoch="lastLocation.date" />
                         </span>
                     </div>
-                    <div class="mt-1.5">
+                    <div class="mt-1.5 compact:col-span-2">
                         <span
                             v-show="currentInstanceWorld.ref.name !== currentInstanceWorld.ref.description"
-                            class="inline-block max-w-full align-middle text-xs break-words"
+                            class="inline-block max-w-full align-middle text-xs break-words compact:line-clamp-3"
                             v-text="currentInstanceWorld.ref.description"></span>
                     </div>
                 </div>
-                <div class="ml-5" style="display: flex; flex-direction: column">
+                <div
+                    class="ml-5 compact:col-span-2 compact:ml-0 compact:mt-1.5 compact:grid compact:grid-cols-3 compact:rounded-md compact:border"
+                    :style="isCompact ? null : { display: 'flex', flexDirection: 'column' }">
                     <div class="box-border flex items-center p-1.5 text-[13px] cursor-default">
                         <div class="flex-1 overflow-hidden">
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.capacity')
                             }}</span>
-                            <span class="block truncate text-xs"
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words"
                                 >{{ commaNumber(currentInstanceWorld.ref.recommendedCapacity) }} ({{
                                     commaNumber(currentInstanceWorld.ref.capacity)
                                 }})</span
@@ -142,7 +153,7 @@
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.last_updated')
                             }}</span>
-                            <span class="block truncate text-xs">{{
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words">{{
                                 formatDateFilter(
                                     currentInstanceWorld.fileAnalysis.standalonewindows?.created_at,
                                     'long'
@@ -155,7 +166,7 @@
                             <span class="block truncate font-medium leading-[18px]">{{
                                 t('dialog.world.info.created')
                             }}</span>
-                            <span class="block truncate text-xs">{{
+                            <span class="block truncate text-xs compact:whitespace-normal compact:break-words">{{
                                 formatDateFilter(currentInstanceWorld.ref.created_at, 'long')
                             }}</span>
                         </div>
@@ -167,14 +178,30 @@
                 <PhotonEventTable @show-chatbox-blacklist="showChatboxBlacklistDialog" />
             </div>
 
-            <div class="current-instance-table flex min-h-0 min-w-0 flex-1">
+            <!-- Phones: the header scrolls away with the list instead of squeezing it, and the cards take the full
+                 width (without auto-height the table would shrink to its content inside this flex row). -->
+            <div
+                class="current-instance-table flex min-h-0 min-w-0 flex-1 compact:block compact:flex-none"
+                data-testid="player-list-table">
                 <DataTableLayout
                     class="[&_th]:px-2.5! [&_th]:py-0.75! [&_td]:px-2.5! [&_td]:py-0.75! [&_tr]:h-7!"
                     :table="playerListTable"
-                    auto-height
+                    :auto-height="!isCompact"
                     :loading="false"
                     :show-pagination="false"
                     :on-row-click="handlePlayerListRowClick">
+                    <!-- Phones: what the icons mean (PC explains them in hover tooltips). -->
+                    <template v-if="isCompact && iconLegend.length" #toolbar>
+                        <div
+                            class="flex min-h-8 w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                            data-testid="player-icon-legend">
+                            <span v-for="entry in iconLegend" :key="entry.key" class="inline-flex items-center gap-1">
+                                <IdCard v-if="entry.key === 'ageVerified'" class="size-3.5 x-tag-age-verification" />
+                                <span v-else>{{ entry.icon }}</span>
+                                {{ t(entry.labelKey) }}
+                            </span>
+                        </div>
+                    </template>
                     <template v-if="isAndroid" #empty>
                         <CompanionEmptyState kind="playerList" />
                     </template>
@@ -189,7 +216,7 @@
 
 <script setup>
     import { computed, defineAsyncComponent, onActivated, onMounted, ref, watch } from 'vue';
-    import { Apple, Home, Image, Monitor, Smartphone } from 'lucide-vue-next';
+    import { Apple, Home, IdCard, Image, Monitor, Smartphone } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
 
@@ -215,6 +242,8 @@
     import PhotonEventTable from './components/PhotonEventTable.vue';
     import { useUserDisplay } from '../../composables/useUserDisplay';
     import { isAndroid } from '../../shared/utils/platform';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
+    import { getPlayerIconLegend } from './playerIconLegend';
 
     const CompanionEmptyState = isAndroid
         ? defineAsyncComponent(() => import('../../platform/android/components/CompanionEmptyState.vue'))
@@ -230,6 +259,15 @@
     const { currentInstanceLocation, currentInstanceWorld, currentInstanceUsersData } = storeToRefs(useInstanceStore());
 
     const worldImageError = ref(false);
+
+    const { isCompact } = useCompactLayout();
+    // Phones: a smaller thumbnail beside the name; PC keeps upstream's 160x120.
+    const worldImageStyle = computed(() =>
+        isCompact.value
+            ? { width: '120px', height: '90px', borderRadius: 'var(--radius-md)' }
+            : { flex: 'none', width: '160px', height: '120px', borderRadius: 'var(--radius-md)' }
+    );
+    const iconLegend = computed(() => (isCompact.value ? getPlayerIconLegend(currentInstanceUsersData.value) : []));
 
     watch(
         () => currentInstanceWorld.value?.ref?.id,

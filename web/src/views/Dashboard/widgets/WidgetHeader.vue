@@ -5,9 +5,10 @@
             @click="navigateToPage">
             <i :class="icon" class="text-sm"></i>
             <span>{{ title }}</span>
-            <ExternalLink class="size-3 opacity-0 transition-opacity group-hover/header:opacity-100" />
+            <ExternalLink
+                class="size-3 opacity-0 transition-opacity group-hover/header:opacity-100 pointer-coarse:opacity-100" />
         </div>
-        <div class="opacity-0 transition-opacity group-hover/header:opacity-100">
+        <div class="opacity-0 transition-opacity group-hover/header:opacity-100 pointer-coarse:opacity-100">
             <slot />
         </div>
     </div>

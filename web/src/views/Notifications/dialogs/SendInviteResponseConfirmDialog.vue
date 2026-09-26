@@ -2,7 +2,8 @@
     <Dialog
         :open="sendInviteResponseConfirmDialog.visible"
         @update:open="(open) => (open ? null : cancelInviteResponseConfirm())">
-        <DialogContent>
+        <!-- Phones: a small confirmation stays a centred card (docs/DESIGN.md §3.2); inert on PC. -->
+        <DialogContent data-mobile="card">
             <DialogHeader>
                 <DialogTitle>{{ t('dialog.invite_response_message.header') }}</DialogTitle>
             </DialogHeader>
@@ -11,10 +12,12 @@
             </div>
 
             <DialogFooter>
-                <Button variant="secondary" class="mr-2" @click="cancelInviteResponseConfirm">{{
+                <component :is="FooterButton" variant="secondary" class="mr-2" @click="cancelInviteResponseConfirm">{{
                     t('dialog.invite_response_message.cancel')
-                }}</Button>
-                <Button @click="sendInviteResponseConfirm">{{ t('dialog.invite_response_message.confirm') }}</Button>
+                }}</component>
+                <component :is="FooterButton" @click="sendInviteResponseConfirm">{{
+                    t('dialog.invite_response_message.confirm')
+                }}</component>
             </DialogFooter>
         </DialogContent>
     </Dialog>
@@ -22,6 +25,8 @@
 
 <script setup>
     import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+    import { Button } from '@/components/ui/button';
+    import { isAndroid } from '../../../shared/utils/platform';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
@@ -30,6 +35,10 @@
     import { notificationRequest } from '../../../api';
 
     const { t } = useI18n();
+
+    // Upstream never imports Button here, so PC renders plain <button> elements; Android uses the real Button (VRCX
+    // styling and a proper touch target) and PC keeps its plain buttons.
+    const FooterButton = isAndroid ? Button : 'button';
 
     const galleryStore = useGalleryStore();
     const { uploadImage } = storeToRefs(galleryStore);

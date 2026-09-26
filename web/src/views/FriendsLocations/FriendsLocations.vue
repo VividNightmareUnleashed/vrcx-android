@@ -2,7 +2,7 @@
     <div class="friend-view x-container">
         <div v-if="settingsReady" class="friend-view__toolbar">
             <Tabs v-model="activeSegment" class="friend-view__tabs">
-                <TabsList>
+                <TabsList class="compact:min-w-full">
                     <TabsTrigger v-for="option in segmentedOptions" :key="option.value" :value="option.value">
                         {{ option.label }}
                     </TabsTrigger>
@@ -15,73 +15,75 @@
                     :placeholder="t('view.friends_locations.search_placeholder')" />
                 <TooltipWrapper :content="t('view.charts.instance_activity.settings.header')" side="top">
                     <div>
-                        <Popover>
-                            <PopoverTrigger asChild>
+                        <!-- Phones: the settings open in a bottom sheet (ResponsivePopover). -->
+                        <ResponsivePopover
+                            side="bottom"
+                            content-class="w-87.5"
+                            :title="t('view.charts.instance_activity.settings.header')">
+                            <template #trigger>
                                 <Button
-                                    class="rounded-full mr-2"
+                                    class="rounded-full mr-2 compact:mr-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                     size="icon"
                                     variant="ghost"
                                     :ariaLabel="t('view.charts.instance_activity.settings.header')">
                                     <Settings />
                                 </Button>
-                            </PopoverTrigger>
-                            <PopoverContent side="bottom" class="w-87.5">
-                                <div class="friend-view__settings">
-                                    <Field orientation="horizontal" class="friend-view__settings-row">
-                                        <FieldLabel class="friend-view__settings-label">{{
-                                            t('view.friends_locations.separate_same_instance_friends')
-                                        }}</FieldLabel>
-                                        <FieldContent class="items-end">
-                                            <Switch v-model="showSameInstance" />
-                                        </FieldContent>
-                                    </Field>
-                                    <Field orientation="horizontal" class="friend-view__settings-row">
-                                        <FieldLabel class="friend-view__settings-label">{{
-                                            t('view.settings.appearance.appearance.show_cosmetics')
-                                        }}</FieldLabel>
-                                        <FieldContent class="items-end">
-                                            <Switch v-model="showCosmetics" />
-                                        </FieldContent>
-                                    </Field>
-                                    <Field orientation="horizontal" class="friend-view__settings-row">
-                                        <FieldLabel class="friend-view__settings-label">
-                                            {{ t('view.friends_locations.scale') }}
-                                        </FieldLabel>
-                                        <FieldContent>
-                                            <div class="friend-view__scale-control">
-                                                <span class="friend-view__scale-value"
-                                                    >{{ cardScalePercentLabel }}&nbsp;</span
-                                                >
-                                                <Slider
-                                                    v-model="cardScaleValue"
-                                                    class="friend-view__slider"
-                                                    :min="0.5"
-                                                    :max="1.0"
-                                                    :step="0.01" />
-                                            </div>
-                                        </FieldContent>
-                                    </Field>
-                                    <Field orientation="horizontal" class="friend-view__settings-row">
-                                        <FieldLabel class="friend-view__settings-label">
-                                            {{ t('view.friends_locations.spacing') }}
-                                        </FieldLabel>
-                                        <FieldContent>
-                                            <div class="friend-view__scale-control">
-                                                <span class="friend-view__scale-value"
-                                                    >{{ cardSpacingPercentLabel }}&nbsp;</span
-                                                >
-                                                <Slider
-                                                    v-model="cardSpacingValue"
-                                                    class="friend-view__slider"
-                                                    :min="0.25"
-                                                    :max="1.0"
-                                                    :step="0.05" />
-                                            </div>
-                                        </FieldContent>
-                                    </Field>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
+                            </template>
+                            <div class="friend-view__settings">
+                                <Field orientation="horizontal" class="friend-view__settings-row">
+                                    <FieldLabel class="friend-view__settings-label">{{
+                                        t('view.friends_locations.separate_same_instance_friends')
+                                    }}</FieldLabel>
+                                    <FieldContent class="items-end">
+                                        <Switch v-model="showSameInstance" />
+                                    </FieldContent>
+                                </Field>
+                                <Field orientation="horizontal" class="friend-view__settings-row">
+                                    <FieldLabel class="friend-view__settings-label">{{
+                                        t('view.settings.appearance.appearance.show_cosmetics')
+                                    }}</FieldLabel>
+                                    <FieldContent class="items-end">
+                                        <Switch v-model="showCosmetics" />
+                                    </FieldContent>
+                                </Field>
+                                <Field orientation="horizontal" class="friend-view__settings-row">
+                                    <FieldLabel class="friend-view__settings-label">
+                                        {{ t('view.friends_locations.scale') }}
+                                    </FieldLabel>
+                                    <FieldContent>
+                                        <div class="friend-view__scale-control">
+                                            <span class="friend-view__scale-value"
+                                                >{{ cardScalePercentLabel }}&nbsp;</span
+                                            >
+                                            <Slider
+                                                v-model="cardScaleValue"
+                                                class="friend-view__slider"
+                                                :min="0.5"
+                                                :max="1.0"
+                                                :step="0.01" />
+                                        </div>
+                                    </FieldContent>
+                                </Field>
+                                <Field orientation="horizontal" class="friend-view__settings-row">
+                                    <FieldLabel class="friend-view__settings-label">
+                                        {{ t('view.friends_locations.spacing') }}
+                                    </FieldLabel>
+                                    <FieldContent>
+                                        <div class="friend-view__scale-control">
+                                            <span class="friend-view__scale-value"
+                                                >{{ cardSpacingPercentLabel }}&nbsp;</span
+                                            >
+                                            <Slider
+                                                v-model="cardSpacingValue"
+                                                class="friend-view__slider"
+                                                :min="0.25"
+                                                :max="1.0"
+                                                :step="0.05" />
+                                        </div>
+                                    </FieldContent>
+                                </Field>
+                            </div>
+                        </ResponsivePopover>
                     </div>
                 </TooltipWrapper>
             </div>
@@ -163,7 +165,8 @@
     import { useI18n } from 'vue-i18n';
     import { useVirtualizer } from '@tanstack/vue-virtual';
 
-    import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+    import ResponsivePopover from '../Feed/components/ResponsivePopover.vue';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { useAppearanceSettingsStore, useFavoriteStore, useFriendStore, useLocationStore } from '../../stores';
     import { Slider } from '../../components/ui/slider';
     import { Switch } from '../../components/ui/switch';
@@ -174,6 +177,7 @@
     import configRepository from '../../services/config.js';
 
     const { t } = useI18n();
+    const { isCompact } = useCompactLayout();
 
     const friendStore = useFriendStore();
     const {
@@ -904,7 +908,8 @@
     async function loadInitialSettings() {
         try {
             const [storedScale, storedSpacing, storedShowSameInstance, storedShowCosmetics] = await Promise.all([
-                configRepository.getString('VRCX_FriendLocationCardScale', '1'),
+                // Phones default to 70 %, which fits two cards per row in a 360px wide page card.
+                configRepository.getString('VRCX_FriendLocationCardScale', isCompact.value ? '0.7' : '1'),
                 configRepository.getString('VRCX_FriendLocationCardSpacing', '1'),
                 configRepository.getBool('VRCX_FriendLocationShowSameInstance', null),
                 configRepository.getBool('VRCX_FriendLocationShowCosmetics', true)
@@ -1123,6 +1128,45 @@
         min-height: 240px;
         font-size: 15px;
         letter-spacing: 0.5px;
+    }
+
+    /* Phones (docs/DESIGN.md §3.4): search and settings first, the segments as a scrollable strip below. */
+    :global(html.vrcx-compact .friend-view) {
+        gap: 8px;
+    }
+
+    :global(html.vrcx-compact .friend-view__toolbar) {
+        flex-direction: column-reverse;
+        align-items: stretch;
+        gap: 8px;
+        padding-top: 0;
+    }
+
+    :global(html.vrcx-compact .friend-view__tabs) {
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    :global(html.vrcx-compact .friend-view__actions) {
+        flex-wrap: nowrap;
+        gap: 4px;
+    }
+
+    :global(html.vrcx-compact .friend-view__search) {
+        width: auto;
+        min-width: 0;
+    }
+
+    :global(html.vrcx-compact .friend-view__scale-control) {
+        flex: 1;
+        min-width: 0;
+    }
+
+    :global(html.vrcx-compact .friend-view__slider) {
+        flex: 1;
+        width: auto;
+        margin-right: 0;
     }
 
     .friend-view__loading-icon {

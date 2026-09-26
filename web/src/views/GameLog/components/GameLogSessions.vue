@@ -1,6 +1,89 @@
 <template>
     <div class="flex h-full flex-col overflow-hidden">
-        <div class="flex shrink-0 items-center gap-2 border-b border-border px-0 pb-4">
+        <!-- Phones (docs/DESIGN.md §3.4): search on its own row, then the filters as one scrollable strip; the date
+             range opens in a bottom sheet with one month. -->
+        <div
+            v-if="isCompact"
+            class="flex shrink-0 flex-col gap-2 border-b border-border px-0 pb-2 compact-landscape:flex-row compact-landscape:items-center"
+            data-testid="game-log-sessions-compact-toolbar">
+            <InputGroupField
+                :model-value="sessionsSearch"
+                class="min-w-0 compact-landscape:w-2/5 compact-landscape:shrink-0"
+                :placeholder="t('view.game_log.search_placeholder')"
+                clearable
+                enterkeyhint="search"
+                @update:modelValue="handleSessionsSearchInput"
+                @keyup.enter="gameLogStore.setSessionsSearch(sessionsSearch)"
+                @change="gameLogStore.setSessionsSearch(sessionsSearch)" />
+            <!-- 40px touch hit areas around the 32px controls; the 4px padding keeps them inside the scroller. -->
+            <div
+                class="-m-1 flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap p-1 scrollbar-hidden compact-landscape:flex-1 pointer-coarse:[&_button]:relative pointer-coarse:[&_button]:after:absolute pointer-coarse:[&_button]:after:-inset-1">
+                <slot name="leading" />
+                <Toggle
+                    variant="outline"
+                    size="sm"
+                    class="shrink-0"
+                    :model-value="sessionsVipFilter"
+                    :ariaLabel="t('view.feed.favorites_only_tooltip')"
+                    @update:modelValue="gameLogStore.toggleSessionsVipFilter()">
+                    <Star fill="currentColor" v-if="sessionsVipFilter" />
+                    <Star v-else />
+                </Toggle>
+                <ResponsivePopover v-model:open="datePopoverOpen" :title="t('android.views_a.date_range')">
+                    <template #trigger>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="h-8 shrink-0 gap-1 px-2"
+                            :class="hasDateFilter && 'bg-accent text-accent-foreground'"
+                            :ariaLabel="t('android.views_a.date_range')">
+                            <CalendarRange class="size-4" />
+                            <Badge
+                                v-if="hasDateFilter"
+                                variant="secondary"
+                                class="h-4.5 min-w-4.5 rounded-full px-1 text-xs">
+                                1
+                            </Badge>
+                        </Button>
+                    </template>
+                    <div
+                        class="flex flex-col items-center compact-landscape:flex-row compact-landscape:items-start compact-landscape:justify-center compact-landscape:gap-4">
+                        <RangeCalendar
+                            v-model="dateRange"
+                            :locale="locale"
+                            :max-value="todayDate"
+                            :maximum-days="sessionsDateRangeMaxDays"
+                            :number-of-months="1"
+                            :week-starts-on="weekStartsOn"
+                            :is-date-unavailable="isDateUnavailable" />
+                        <div
+                            class="mt-3 flex w-full justify-end gap-2 compact-landscape:mt-0 compact-landscape:w-auto compact-landscape:flex-col-reverse">
+                            <Button variant="outline" @click="handleClearDateRange">
+                                {{ t('common.actions.clear') }}
+                            </Button>
+                            <Button @click="handleApplyDateRange">
+                                {{ t('common.actions.confirm') }}
+                            </Button>
+                        </div>
+                    </div>
+                </ResponsivePopover>
+                <ToggleGroup
+                    type="multiple"
+                    variant="outline"
+                    size="sm"
+                    :model-value="sessionsEventFilterSelection"
+                    @update:model-value="gameLogStore.handleSessionsEventFilterChange"
+                    class="shrink-0 justify-start">
+                    <ToggleGroupItem value="All">
+                        {{ t('view.search.avatar.all') }}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem v-for="type in sessionsEventFilterTypes" :key="type" :value="type">
+                        {{ t(`view.game_log.filters.${type}`) }}
+                    </ToggleGroupItem>
+                </ToggleGroup>
+            </div>
+        </div>
+        <div v-else class="flex shrink-0 items-center gap-2 border-b border-border px-0 pb-4">
             <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap">
                 <slot name="leading" />
 
@@ -149,6 +232,10 @@
     import { TooltipWrapper } from '../../../components/ui/tooltip';
     import { useAppearanceSettingsStore, useGameLogStore } from '../../../stores';
     import GameLogSessionsSegment from './GameLogSessionsSegment.vue';
+    import ResponsivePopover from '../../Feed/components/ResponsivePopover.vue';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+
+    const { isCompact } = useCompactLayout();
 
     const CompanionEmptyState = isAndroid
         ? defineAsyncComponent(() => import('../../../platform/android/components/CompanionEmptyState.vue'))

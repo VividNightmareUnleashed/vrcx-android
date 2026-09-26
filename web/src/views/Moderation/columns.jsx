@@ -1,10 +1,12 @@
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipWrapper } from '../../components/ui/tooltip';
 import { ArrowUpDown, Trash2, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 
 import { formatDateFilter } from '../../shared/utils';
+import { isAndroid } from '../../shared/utils/platform';
+import { useCompactLayout } from '../../composables/useCompactLayout';
 import { i18n } from '../../plugins';
 import { useUiStore, useUserStore } from '../../stores';
 import { showUserDialog } from '../../coordinators/userCoordinator';
@@ -23,12 +25,13 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             size: 20,
             minSize: 0,
             maxSize: 20,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         },
         {
             accessorKey: 'created',
             size: 120,
-            meta: { label: () => t('table.moderation.date') },
+            meta: { label: () => t('table.moderation.date'), mobile: { slot: 'trailing' } },
             header: ({ column }) => (
                 <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}>
                     {t('table.moderation.date')}
@@ -40,6 +43,18 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
                 const shortText = formatDateFilter(createdAt, 'short');
                 const longText = formatDateFilter(createdAt, 'long');
 
+                // Phones show the exact date inline (docs/DESIGN.md §3.3); Android tablets get it on long-press
+                // (TooltipWrapper); desktop keeps the upstream hover tooltip.
+                if (useCompactLayout().isCompact.value) {
+                    return <span data-testid="compact-long-date">{longText}</span>;
+                }
+                if (isAndroid) {
+                    return (
+                        <TooltipWrapper side="right" content={longText}>
+                            <span>{shortText}</span>
+                        </TooltipWrapper>
+                    );
+                }
                 return (
                     <Tooltip>
                         <TooltipTrigger asChild>
@@ -56,7 +71,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             accessorKey: 'type',
             size: 140,
             header: () => t('table.moderation.type'),
-            meta: { label: () => t('table.moderation.type') },
+            // Phones: the moderation type heads the card, the target is its main line, the source a labelled footer.
+            meta: { label: () => t('table.moderation.type'), mobile: { slot: 'title' } },
             cell: ({ row }) => {
                 const type = row.getValue('type');
                 const typeKey = `view.moderation.filters.${type}`;
@@ -73,7 +89,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             accessorKey: 'sourceDisplayName',
             meta: {
                 class: 'overflow-hidden',
-                label: () => t('table.moderation.source')
+                label: () => t('table.moderation.source'),
+                mobile: { slot: 'footer', label: true }
             },
             size: 120,
             header: () => t('table.moderation.source'),
@@ -95,7 +112,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             minSize: 80,
             meta: {
                 stretch: true,
-                label: () => t('table.moderation.target')
+                label: () => t('table.moderation.target'),
+                mobile: { slot: 'body', class: 'font-medium' }
             },
             header: () => t('table.moderation.target'),
             cell: ({ row }) => {
@@ -114,7 +132,8 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             id: 'action',
             meta: {
                 class: 'text-right',
-                label: () => t('table.moderation.action')
+                label: () => t('table.moderation.action'),
+                mobile: { slot: 'actions' }
             },
             size: 80,
             minSize: 80,
@@ -146,6 +165,7 @@ export const createColumns = ({ onDelete, onDeletePrompt }) => {
             enableSorting: false,
             enableResizing: false,
             size: 5,
+            meta: { mobile: { slot: 'hidden' } },
             cell: () => null
         }
     ];

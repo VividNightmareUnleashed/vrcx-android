@@ -1,12 +1,18 @@
 <template>
-    <div class="x-container flex flex-col overflow-hidden">
+    <!-- Phone landscape: too short for a fixed header above a results scroller, so the whole page scrolls (the
+         header, filters, results and pager in one column). -->
+    <div class="x-container flex flex-col overflow-hidden compact-landscape:overflow-y-auto">
         <Tabs
             v-model="activeSearchTab"
             :unmount-on-hide="false"
             aria-label="Search tabs"
-            class="flex flex-col min-h-0 flex-1">
-            <div class="mt-0 mx-0 mb-2 flex items-center gap-5">
-                <TabsList>
+            class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+            <!-- Phones (docs/DESIGN.md §3.4): the tabs across the full width, then the search row with an explicit
+                 search button (a soft keyboard's Enter is easy to miss); one row in landscape. -->
+            <div
+                class="mt-0 mx-0 mb-2 flex items-center gap-5 compact:flex-col compact:items-stretch compact:gap-2 compact-landscape:flex-row compact-landscape:items-center compact-landscape:gap-3">
+                <TabsList
+                    class="compact:grid compact:w-full compact:grid-cols-4 compact-landscape:w-auto compact-landscape:shrink-0">
                     <TabsTrigger value="user">{{ t('view.search.user.header') }}</TabsTrigger>
                     <TabsTrigger value="world">{{ t('view.search.world.header') }}</TabsTrigger>
                     <TabsTrigger value="avatar">{{ t('view.search.avatar.header') }}</TabsTrigger>
@@ -18,11 +24,22 @@
                         :placeholder="searchPlaceholder"
                         style="flex: 1"
                         clearable
+                        :enterkeyhint="isCompact ? 'search' : undefined"
                         @input="updateSearchText"
                         @keyup.enter="search" />
+                    <Button
+                        v-if="isCompact"
+                        class="ml-2 shrink-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                        size="icon"
+                        variant="outline"
+                        data-testid="search-submit"
+                        :aria-label="t('android.views_a.search')"
+                        @click="search">
+                        <SearchIcon />
+                    </Button>
                     <TooltipWrapper side="bottom" :content="t('view.search.clear_results_tooltip')">
                         <Button
-                            class="rounded-full ml-2"
+                            class="rounded-full ml-2 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                             size="icon"
                             variant="ghost"
                             :ariaLabel="t('view.search.clear_results_tooltip')"
@@ -32,15 +49,17 @@
                     </TooltipWrapper>
                 </div>
             </div>
-            <TabsContent value="user" class="flex flex-col min-h-0 flex-1">
-                <div class="flex flex-col min-h-0" style="flex: 9">
+            <TabsContent value="user" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+                <div class="flex flex-col min-h-0 compact-landscape:flex-none!" style="flex: 9">
                     <div class="shrink-0 mb-3 flex justify-end">
-                        <label class="inline-flex items-center gap-2 ml-2">
+                        <label
+                            class="inline-flex items-center gap-2 ml-2 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-top-2 pointer-coarse:after:-bottom-3">
                             <Checkbox v-model="searchUserSortByLastLoggedIn" />
                             <span>{{ t('view.search.user.sort_by_last_logged_in') }}</span>
                         </label>
                     </div>
-                    <div class="flex-1 overflow-y-auto min-h-0">
+                    <div
+                        class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none compact-landscape:overflow-visible">
                         <div v-if="isSearchUserLoading" class="flex items-center justify-center h-full">
                             <Spinner class="text-2xl" />
                         </div>
@@ -97,10 +116,11 @@
                     @prev="paginationConfig.onPrev"
                     @next="paginationConfig.onNext" />
             </TabsContent>
-            <TabsContent value="world" class="flex flex-col min-h-0 flex-1">
-                <div class="flex flex-col min-h-0" style="flex: 9">
+            <TabsContent value="world" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+                <div class="flex flex-col min-h-0 compact-landscape:flex-none!" style="flex: 9">
                     <div class="inline-flex justify-end mb-4 w-full shrink-0 gap-2">
-                        <label class="inline-flex items-center gap-2">
+                        <label
+                            class="inline-flex items-center gap-2 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-top-2 pointer-coarse:after:-bottom-3">
                             <Checkbox v-model="searchWorldLabs" />
                             <span>{{ t('view.search.world.community_lab') }}</span>
                         </label>
@@ -108,7 +128,9 @@
                             :model-value="searchWorldCategoryIndex"
                             @update:modelValue="handleSearchWorldCategorySelect"
                             style="margin-bottom: 16px">
-                            <SelectTrigger size="sm">
+                            <SelectTrigger
+                                size="sm"
+                                class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                                 <SelectValue :placeholder="t('view.search.world.category')" />
                             </SelectTrigger>
                             <SelectContent>
@@ -123,14 +145,15 @@
                             </SelectContent>
                         </Select>
                     </div>
-                    <div class="flex-1 overflow-y-auto min-h-0">
+                    <div
+                        class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none compact-landscape:overflow-visible">
                         <div v-if="isSearchWorldLoading" class="flex items-center justify-center h-full">
                             <Spinner class="text-2xl" />
                         </div>
                         <template v-else-if="searchWorldResults.length > 0">
                             <ItemGroup
-                                class="grid gap-3"
-                                style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+                                class="grid gap-3 compact:gap-2"
+                                :style="{ gridTemplateColumns: resultGridColumns }">
                                 <Item
                                     v-for="world in searchWorldResults"
                                     :key="world.id"
@@ -148,7 +171,10 @@
                                         </ItemHeader>
                                         <ItemContent class="min-w-0">
                                             <TooltipWrapper side="top" :content="world.name">
-                                                <ItemTitle class="truncate w-auto">{{ world.name }}</ItemTitle>
+                                                <ItemTitle
+                                                    class="truncate w-auto compact:line-clamp-2 compact:whitespace-normal"
+                                                    >{{ world.name }}</ItemTitle
+                                                >
                                             </TooltipWrapper>
                                             <ItemDescription v-if="world.occupants" class="line-clamp-1 text-xs">
                                                 {{ world.authorName }} ({{ world.occupants }})
@@ -171,14 +197,16 @@
                     @prev="paginationConfig.onPrev"
                     @next="paginationConfig.onNext" />
             </TabsContent>
-            <TabsContent value="avatar" class="flex flex-col min-h-0 flex-1">
-                <div class="flex flex-col min-h-0" style="flex: 9">
+            <TabsContent value="avatar" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+                <div class="flex flex-col min-h-0 compact-landscape:flex-none!" style="flex: 9">
                     <div class="shrink-0 mb-3 flex items-center justify-end gap-2">
                         <Select
                             v-if="avatarRemoteDatabaseProviderList.length > 0"
                             :model-value="avatarRemoteDatabaseProvider"
                             @update:modelValue="setAvatarProvider">
-                            <SelectTrigger size="sm">
+                            <SelectTrigger
+                                size="sm"
+                                class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1">
                                 <SelectValue :placeholder="t('view.search.avatar.search_provider')" />
                             </SelectTrigger>
                             <SelectContent>
@@ -195,18 +223,23 @@
                         <span v-else class="text-sm text-muted-foreground">
                             {{ t('view.search.avatar.no_provider') }}
                         </span>
-                        <Button size="sm" variant="outline" @click="isAvatarProviderDialogVisible = true">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            class="pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                            @click="isAvatarProviderDialogVisible = true">
                             <Settings class="size-4" />
                         </Button>
                     </div>
-                    <div class="flex-1 overflow-y-auto min-h-0 mt-2">
+                    <div
+                        class="flex-1 overflow-y-auto min-h-0 mt-2 compact-landscape:flex-none compact-landscape:overflow-visible">
                         <div v-if="isSearchAvatarLoading" class="flex items-center justify-center h-full">
                             <Spinner class="text-2xl" />
                         </div>
                         <template v-else-if="searchAvatarPage.length > 0">
                             <ItemGroup
-                                class="grid gap-3"
-                                style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr))">
+                                class="grid gap-3 compact:gap-2"
+                                :style="{ gridTemplateColumns: resultGridColumns }">
                                 <Item
                                     v-for="avatar in searchAvatarPage"
                                     :key="avatar.id"
@@ -231,7 +264,10 @@
                                         </ItemHeader>
                                         <ItemContent class="min-w-0">
                                             <TooltipWrapper side="top" :content="avatar.name">
-                                                <ItemTitle class="truncate w-auto">{{ avatar.name }}</ItemTitle>
+                                                <ItemTitle
+                                                    class="truncate w-auto compact:line-clamp-2 compact:whitespace-normal"
+                                                    >{{ avatar.name }}</ItemTitle
+                                                >
                                             </TooltipWrapper>
                                             <ItemDescription class="line-clamp-1 text-xs">
                                                 {{ avatar.authorName }}
@@ -251,8 +287,10 @@
                     @prev="paginationConfig.onPrev"
                     @next="paginationConfig.onNext" />
             </TabsContent>
-            <TabsContent value="group" class="flex flex-col min-h-0 flex-1">
-                <div class="flex-1 overflow-y-auto min-h-0" style="flex: 9">
+            <TabsContent value="group" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+                <div
+                    class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none! compact-landscape:overflow-visible"
+                    style="flex: 9">
                     <div v-if="isSearchGroupLoading" class="flex items-center justify-center h-full">
                         <Spinner class="text-2xl" />
                     </div>
@@ -300,7 +338,8 @@
 
 <script setup>
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-    import { Settings, Trash2, User, Users } from 'lucide-vue-next';
+    import { Search as SearchIcon, Settings, Trash2, User, Users } from 'lucide-vue-next';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
     import IconFrame from '@/components/IconFrame.vue';
     import { DataTableEmpty } from '@/components/ui/data-table';
@@ -339,6 +378,7 @@
     import { useSearchWorld } from './composables/useSearchWorld';
     import { useSearchUser } from './composables/useSearchUser';
     import { useSearchGroup } from './composables/useSearchGroup';
+    import { getSearchResultGridColumns } from './searchResultGrid';
 
     const { randomUserColours } = storeToRefs(useAppearanceSettingsStore());
     const { avatarRemoteDatabaseProviderList, avatarRemoteDatabaseProvider, isAvatarProviderDialogVisible } =
@@ -350,6 +390,9 @@
     const { cachedConfig } = storeToRefs(useAuthStore());
 
     const { t } = useI18n();
+
+    const { isCompact, isCompactLandscape } = useCompactLayout();
+    const resultGridColumns = computed(() => getSearchResultGridColumns(isCompact.value, isCompactLandscape.value));
     const { userImage } = useUserDisplay();
 
     const activeSearchTab = ref('user');
