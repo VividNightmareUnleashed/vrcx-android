@@ -1,0 +1,80 @@
+VRCX Android - Third-party notices
+================================================================================
+
+VRCX Android is source-available software (see LICENSE). It includes the
+third-party components below, each used under the license shown with it.
+These licenses apply to those components only, and nothing in LICENSE limits
+the rights they give you.
+
+The APK carries the complete notices for everything it bundles, with every
+license text, in assets/web/licenses/THIRD_PARTY_NOTICES.txt. The build
+generates that file (web/build-scripts/generate-third-party-licenses.js) from
+the frontend's npm packages and web/build-scripts/licenses/android-libraries.json.
+
+Android app
+-----------
+  VRCX frontend (pypy and contributors) ........... MIT (see LICENSE, web/LICENSE)
+  Frontend npm packages (Vue, reka-ui, Tailwind CSS,
+    Pinia, vue-i18n, dayjs, lucide, Remix Icon, Inter
+    and others) ................................... their own licenses, listed in
+                                                    the APK notices file above
+  AndroidX Core, Activity, Fragment, WebKit,
+    Browser, Security Crypto, SQLite .............. Apache-2.0
+  SQLite .......................................... Public domain (blessing)
+  OkHttp, OkHttp Brotli, Okio (Square) ............ Apache-2.0
+  Brotli decoder (Google) ......................... MIT
+  Kotlin standard library, kotlinx.coroutines,
+    kotlinx.serialization (JetBrains) ............. Apache-2.0
+  Google code scanner (Google Play services) ...... Android Software Development
+                                                    Kit License
+  Android robot (Google), in the app icon ......... CC BY 3.0 (below)
+
+Windows companion
+-----------------
+  QRCoder ......................................... MIT (below)
+  .NET runtime and Windows Forms (Microsoft) ...... MIT (installed separately as
+                                                    the .NET 8 Desktop Runtime)
+
+License texts
+-------------
+  Apache-2.0 . https://www.apache.org/licenses/LICENSE-2.0
+  CC BY 3.0 .. https://creativecommons.org/licenses/by/3.0/
+  Android Software Development Kit License
+             . https://developer.android.com/studio/terms
+
+
+================================================================================
+Android robot
+================================================================================
+
+The app icon includes the Android robot. The Android robot is reproduced or
+modified from work created and shared by Google and used according to terms
+described in the Creative Commons 3.0 Attribution License.
+
+
+================================================================================
+QRCoder
+================================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2013-2025 Raffael Herrmann
+Copyright (c) 2024-2025 Shane Krueger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
