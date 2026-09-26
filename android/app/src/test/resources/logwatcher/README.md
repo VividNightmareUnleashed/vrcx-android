@@ -26,7 +26,7 @@ record is printed with `JsonSerializer.Serialize`; records whose timestamp is th
 `holdtail` makes the harness write only complete lines to disk and keep an unterminated tail until `final`, or until a
 newer file is created: that is exactly the port's deliberate partial-line rule, so the
 upstream output of such a scenario is what the port must produce. `golden-15-verbatim` shows upstream without it
-(the split location of §5.2); it is only compared with the spec, not with the port.
+(the split location of phase 2); it is only compared with `spec-15.2.txt`, not with the port.
 
 ## Scenario DSL
 

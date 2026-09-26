@@ -6,8 +6,8 @@ import io.github.vrcxandroid.bridge.DotNetException
  * Rejections for SQLite failures: `DotNetException("SQLiteException", <sqlite3_errmsg>)`, so the page sees for example
  * `SQLiteException: database is locked` or `SQLiteException: no such table: nosuch` (ARCHITECTURE.md §4.5). The
  * frontend matches substrings of the sqlite message (`duplicate column name`, `database disk image is malformed`, ...),
- * which is passed through verbatim. When the driver gives no message, the `sqlite3_errstr` text
- * of the result code is used instead.
+ * which is passed through verbatim. When the driver gives no message, the `sqlite3_errstr` text of the result code is
+ * used instead.
  */
 internal object SqliteErrors {
     const val TYPE = "SQLiteException"

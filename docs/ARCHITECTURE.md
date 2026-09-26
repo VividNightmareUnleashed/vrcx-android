@@ -64,8 +64,8 @@ docs/                  this file, PROTOCOL.md, DESIGN.md
 - Runtime globals set by the shim before any page script runs: `window.WINDOWS = false`, `window.LINUX = true`,
   `window.ANDROID = true` (all non-writable). `LINUX=true` routes the frontend through the Electron code paths (JSON-string
   WebApi/SQLite transport, polled LogWatcher and game state, `window.electron.*`), which is what the Kotlin bridge
-  implements. Every `LINUX` branch has been audited; the ones that must not apply on
-  Android are gated with `isAndroid`.
+  implements. Every `LINUX` branch has been audited; the ones that must not apply on Android are gated with
+  `isAndroid`.
 - Build-time define `ANDROID` (`true` in the Android build, `false` in desktop builds and vitest). Frontend code reads it
   through `web/src/shared/utils/platform.js` (`isAndroid`, plus capability helpers such as `hasLocalGame`,
   `hasVrOverlay`, `hasDesktopShell`). Do not test `LINUX` directly in new code.
@@ -149,7 +149,7 @@ The traps to get right:
 | `LogWatcher` | Kotlin port of `LogWatcher.cs` over the log mirror (package `logwatcher`); pull mode (`GetLogLines`) |
 | `AppApiElectron` | Android implementation of the ~86 methods: PORTABLE ones ported byte-exact (colour hash, MD5, `SignFile` librsync, image resize/crop, PNG metadata), ANDROID-EQUIVALENT ones through `HostServices`, PC-only ones return the safe values |
 | `Discord`, `AssetBundleManager` | stubs with the exact safe values |
-| `AndroidHost` | Android-only helpers: `SaveFile`, `CopyText`, `CopyImage`, `ReadClipboardText`, TTS (`TtsSpeak`, `TtsCancel`, `TtsGetVoices`), companion (`CompanionGetState`, `CompanionDiscover`, `CompanionScanQr`, `CompanionPair`, `CompanionConnectManual`, `CompanionForget`, `CompanionSetActive`), `ImportDatabase`, `ExportDatabase`, `GetBackgroundMode`, `SetBackgroundMode`, `RequestIgnoreBatteryOptimizations`, `OpenNotificationSettings`, `RestartApp`, `GetDeviceInfo` |
+| `AndroidHost` | Android-only helpers: `SaveFile`, `CopyText`, `CopyImage`, `ReadClipboardText`, TTS (`TtsSpeak`, `TtsCancel`, `TtsGetVoices`), companion (`CompanionGetState`, `CompanionDiscover`, `CompanionScanQr`, `CompanionPair`, `CompanionConnectManual`, `CompanionForget`, `CompanionSetActive`), `ImportDatabase`, `ExportDatabase`, `GetBackgroundMode`, `SetBackgroundMode`, `RequestIgnoreBatteryOptimizations`, `OpenNotificationSettings`, `RestartApp`, `GetDeviceInfo` (§7, §8) |
 
 The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host/HostServices.kt`, `Contracts.kt` and
 `logwatcher/LogSink.kt`.

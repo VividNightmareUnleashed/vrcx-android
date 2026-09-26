@@ -27,8 +27,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
- * Kotlin port of upstream `Dotnet/LogWatcher.cs` over the companion log mirror (
- * docs/ARCHITECTURE.md §8), plus the game state the companion reports.
+ * Kotlin port of upstream `Dotnet/LogWatcher.cs` over the companion log mirror (docs/ARCHITECTURE.md §8), plus the
+ * game state the companion reports.
  *
  * Threading: all state lives on one dedicated thread ("LogWatcher"). The bridge methods ([setDateTill], [get],
  * [getLogLines], [reset]) hop to it; the [LogSink] calls block their caller until they are applied, in wire order,
@@ -203,7 +203,7 @@ class LogWatcher internal constructor(
             if (date == null) throw DotNetException("ArgumentNullException", "Value cannot be null. (Parameter 's')")
             var ticks = DotNetDateParse.toUtcTicks(date, engine.zone)
             tillAwaitingSkew = false
-            // the frontend's fallback tillDate is "now" on the phone clock; convert it to the PC clock.
+            // The frontend's fallback tillDate is "now" on the phone clock; convert it to the PC clock.
             if (abs(ticks - Ticks.fromEpochMs(env.nowMs())) <= 5 * Ticks.PER_SECOND) {
                 if (skewKnown) {
                     if (skewMs != 0L) {

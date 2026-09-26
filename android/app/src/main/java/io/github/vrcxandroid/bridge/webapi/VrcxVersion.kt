@@ -5,7 +5,7 @@ import io.github.vrcxandroid.BuildConfig
 /**
  * Upstream `Program.GetVersion()`: `"VRCX <Version>"`, or `"VRCX Nightly <Version>"`
  * when the last `-`-separated segment of the Version file is a 7-character git hash. This is also the exact
- * User-Agent of every native HTTP request (§9.3, C14).
+ * User-Agent of every native HTTP request.
  */
 object VrcxVersion {
     fun format(versionFile: String): String {

@@ -13,7 +13,7 @@ import org.junit.rules.TemporaryFolder
  * same report. Records whose timestamp is "now" (lines without a date prefix) are printed as `<NOW>` by both sides.
  *
  * Scenarios whose name ends in `-verbatim` show upstream's timing-dependent behaviour on a partial line;
- * the port deliberately differs there (§17 point 4) and runs the `holdtail` variant instead.
+ * the port deliberately differs there (it parses complete lines only) and runs the `holdtail` variant instead.
  */
 class GoldenScenarioTest {
     @get:Rule

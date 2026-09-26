@@ -13,8 +13,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
 /**
- * Opening, validating, importing and exporting the VRCX database file (ARCHITECTURE.md §9
- * "Import PC data").
+ * Opening, validating, importing and exporting the VRCX database file (ARCHITECTURE.md §9 "Import PC data").
  */
 internal object VrcxDatabase {
     /** Page-cache friendly, crash-safe settings for a single-process app. */

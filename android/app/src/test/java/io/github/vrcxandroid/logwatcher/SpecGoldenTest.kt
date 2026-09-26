@@ -6,10 +6,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * The golden vectors, copied verbatim into test resource
- * logwatcher/spec-15.2.txt, against fixture 1 and phases 1-5 (scenario golden-15).
+ * The golden vectors in test resource logwatcher/spec-15.2.txt: the expected output for fixture 1 and phases 1-5
+ * (scenario golden-15).
  *
- * As §17 point 11 states, two things differ by design: the `<NOW>` timestamp, and phases 2/3, where the port holds
+ * Two things differ by design: the `<NOW>` timestamp, and phases 2/3, where the port holds
  * the unterminated `Joining wrld_split:123~priv` back in phase 2 and emits the whole location in phase 3 (so
  * VrcClosedGracefully is still true after phase 2).
  */

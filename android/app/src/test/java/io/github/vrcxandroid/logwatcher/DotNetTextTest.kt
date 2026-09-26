@@ -49,7 +49,7 @@ class DotNetTextTest {
 
     @Test
     fun jsonNullStaysNull() {
-        // the location record with an unknown world name
+        // The location record with an unknown world name
         assertEquals(
             "[\"f\",\"2024-01-01T09:00:00.000Z\",\"location\",\"wrld_x\",null]",
             DotNetJson.serialize(arrayOf("f", "2024-01-01T09:00:00.000Z", "location", "wrld_x", null)),

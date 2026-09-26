@@ -1,5 +1,5 @@
 # Fixture 1 and phases 1-5, upstream behaviour (the partial line is parsed at EOF).
-# Only used to check the harness against the spec; the Kotlin port runs golden-15 (holdtail) instead.
+# Only used to check the harness against spec-15.2.txt; the Kotlin port runs golden-15 (holdtail) instead.
 tz W. Europe Standard Time|Europe/Berlin
 till 2023-12-31T00:00:00.000Z
 file output_log_2024-01-01_09-59-00.txt 2024-01-01T08:59:00Z

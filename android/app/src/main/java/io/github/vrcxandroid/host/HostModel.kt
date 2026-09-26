@@ -170,8 +170,7 @@ object TtsVoiceOrder {
      * Stable order for `speechSynthesis.getVoices()`. The settings UI stores a voice *index*, so the order must not
      * change between runs: sorted by language, local voices first, then name. Then the first voice of every English
      * language moves to the front, in that order, because on the LINUX path the UI lists only those voices but `speak()`
-     * indexes the full list. The same reordering in the shim is then a
-     * no-op.
+     * indexes the full list. The same reordering in the shim is then a no-op.
      */
     fun order(voices: Collection<VoiceInfo>): List<VoiceInfo> {
         val sorted = voices

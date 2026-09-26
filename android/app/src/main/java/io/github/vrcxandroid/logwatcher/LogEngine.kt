@@ -53,11 +53,10 @@ internal fun interface LwLog {
  *
  * Differences from upstream:
  * - change detection uses the mirrored size (the real end of file) instead of the PC's directory-entry length;
- * - a pass consumes complete lines only and keeps an unterminated tail for the next pass unless the file is final
- *   (§17 point 4);
+ * - a pass consumes complete lines only and keeps an unterminated tail for the next pass unless the file is final;
  * - `m_FirstRun` is cleared at the end of a pass only when [update] is told so (the companion's initial sync or the
- *   first `Get()` has happened, §17 point 10);
- * - once the frontend has drained the startup list, the list keeps only the newest [listCap] records (§17 point 7),
+ *   first `Get()` has happened);
+ * - once the frontend has drained the startup list, the list keeps only the newest [listCap] records,
  *   and the pull queue keeps at most [queueCap] lines.
  */
 internal class LogEngine(
@@ -91,7 +90,7 @@ internal class LogEngine(
 
     fun hasContext(name: String): Boolean = contexts.containsKey(name)
 
-    /** Drops a file's context, as `Update()` does when a pass does not see the file (§4 step 6). */
+    /** Drops a file's context, as `Update()` does when a pass does not see the file. */
     fun forget(name: String) {
         contexts.remove(name)
     }

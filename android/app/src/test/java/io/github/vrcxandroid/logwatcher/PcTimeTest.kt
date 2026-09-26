@@ -143,8 +143,8 @@ class PcTimeTest {
 
     @Test
     fun moroccoWithoutAnIanaIdFollowsItsRamadanSwitches() {
-        // Without the companion's IANA id the Windows id is mapped, so the Ramadan offset switches are converted;
-        // a fixed current offset would be an hour off for a month every year.
+        // Without the companion's IANA id the Windows id is mapped, so the Ramadan offset switches are converted
+        // correctly; a fixed current offset would be an hour off for a month every year.
         val warnings = ArrayList<String>()
         val z = PcZone.of(companionInfo(MOROCCO_WINDOWS_ID, null, supportsDst = true, baseMin = 0, currentMin = 60)) { warnings += it }
         assertTrue(warnings.isEmpty())
