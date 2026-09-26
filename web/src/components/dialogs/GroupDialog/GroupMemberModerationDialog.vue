@@ -85,9 +85,7 @@
             <template v-if="!isCompact">
                 <br />
                 <br />
-                <GroupModerationBulkActions
-                    v-bind="bulkActionsProps"
-                    v-on="bulkActionsListeners" />
+                <GroupModerationBulkActions v-bind="bulkActionsProps" v-on="bulkActionsListeners" />
             </template>
             <div
                 v-else
@@ -118,9 +116,7 @@
                         }}</SheetDescription>
                     </SheetHeader>
                     <div class="overflow-y-auto p-4">
-                        <GroupModerationBulkActions
-                            v-bind="bulkActionsProps"
-                            v-on="bulkActionsListeners" />
+                        <GroupModerationBulkActions v-bind="bulkActionsProps" v-on="bulkActionsListeners" />
                     </div>
                 </SheetContent>
             </Sheet>

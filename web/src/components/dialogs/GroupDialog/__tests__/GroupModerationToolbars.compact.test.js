@@ -48,14 +48,19 @@ describe('GroupModerationBansTab.vue toolbar on phones', () => {
 
     it('only adds phone and touch variants to the PC classes', () => {
         const toolbar = wrapper.find('div > div.justify-between');
-        expect(phoneOnly(toolbar.classes(), ['flex', 'justify-between'])).toEqual(['compact:flex-wrap', 'compact:gap-2']);
+        expect(phoneOnly(toolbar.classes(), ['flex', 'justify-between'])).toEqual([
+            'compact:flex-wrap',
+            'compact:gap-2'
+        ]);
     });
 });
 
 describe('GroupModerationBulkActions.vue on phones', () => {
     const wrapper = mount(GroupModerationBulkActions, {
         props: {
-            selectedUsersArray: [{ id: 'usr_1', userId: 'usr_1', membershipStatus: 'member', user: { displayName: 'A' } }],
+            selectedUsersArray: [
+                { id: 'usr_1', userId: 'usr_1', membershipStatus: 'member', user: { displayName: 'A' } }
+            ],
             groupRef: { roles: [] }
         },
         global: { stubs: { TooltipWrapper: { template: '<span><slot /></span>' } } }
