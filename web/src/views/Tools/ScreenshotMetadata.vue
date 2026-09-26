@@ -55,7 +55,9 @@
 
         <!-- Search Results Table View -->
         <div v-if="searchViewMode === 'table'" class="flex-1 min-h-0 overflow-auto">
-            <table class="w-full border-collapse text-[13px]">
+            <!-- Phones: narrower cells that wrap, so the remaining columns fit without sideways scrolling. -->
+            <table
+                class="w-full border-collapse text-[13px] compact:[&_td]:px-2 compact:[&_td]:whitespace-normal compact:[&_th]:w-auto compact:[&_th]:px-2 compact:[&_th]:whitespace-normal compact:[&_th]:tracking-normal">
                 <thead class="sticky top-0 z-1 bg-background">
                     <tr>
                         <th
@@ -103,7 +105,7 @@
                             class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-left px-3 py-2 border-b whitespace-nowrap select-none w-[100px] compact:hidden">
                             {{ t('dialog.screenshot_metadata.col_resolution') }}
                         </th>
-                        <th class="w-8 border-b"></th>
+                        <th class="w-8 border-b compact:hidden"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -117,7 +119,7 @@
                         @click="selectSearchResult(idx)">
                         <td
                             class="text-sm px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis"
-                            :class="row.filePath === selectedSearchFilePath ? 'pl-[9px]' : ''">
+                            :class="row.filePath === selectedSearchFilePath ? 'pl-[9px] compact:pl-[5px]!' : ''">
                             {{ row.dateFormatted }}
                         </td>
                         <td
@@ -143,7 +145,7 @@
                             class="text-xs text-muted-foreground px-3 py-2 border-b whitespace-nowrap overflow-hidden text-ellipsis compact:hidden">
                             {{ row.resolution }}
                         </td>
-                        <td class="py-2 pr-2 border-b">
+                        <td class="py-2 pr-2 border-b compact:hidden">
                             <ChevronRight
                                 class="size-4 text-muted-foreground opacity-0 group-hover/row:opacity-100 transition-opacity duration-150" />
                         </td>
@@ -159,14 +161,14 @@
             style="grid-template-columns: 1fr 380px">
             <div
                 class="flex flex-col items-center min-h-0"
-                :class="screenshotMetadataDialog.metadata.filePath ? 'compact:h-[45dvh]' : ''"
                 @dragover.prevent
                 @dragenter.prevent
                 @drop="handleDrop">
                 <div class="relative flex-1 w-full min-h-0 flex items-center justify-center">
                     <template v-if="screenshotMetadataDialog.metadata.filePath">
+                        <!-- Phones: the page scrolls, so the image keeps its own height up to 45% of the screen. -->
                         <img
-                            class="cursor-pointer max-w-full max-h-full object-contain"
+                            class="cursor-pointer max-w-full max-h-full object-contain compact:max-h-[45dvh]"
                             :src="screenshotMetadataDialog.metadata.filePath"
                             @click="showFullscreenImageDialog(screenshotMetadataDialog.metadata.filePath)" />
                         <Button
