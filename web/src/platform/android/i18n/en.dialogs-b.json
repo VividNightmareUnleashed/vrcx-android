@@ -1,0 +1,48 @@
+{
+    "android": {
+        "shell": {
+            "dock_short": {
+                "friends_locations": "Locations",
+                "favorite_friends": "Fav. Friends",
+                "favorite_worlds": "Fav. Worlds",
+                "favorite_avatars": "Fav. Avatars",
+                "charts_instance": "Activity",
+                "charts_mutual": "Mutuals"
+            }
+        },
+        "dialogs": {
+            "custom_nav": {
+                "drag_hint": "Long-press an item, then drag it to move it or to put it into a folder."
+            }
+        }
+    },
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "user_profiles": {
+                    "description": "Tap any user to see mutual friends, activity heatmaps, and session logs with join/leave details"
+                },
+                "right_click": {
+                    "description": "Long-press key elements for quick actions and additional options"
+                },
+                "quick_search": {
+                    "description": "Tap the search icon in the top bar to instantly search for users, worlds, and avatars"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "quick_search": {
+                            "description": "Tap the search icon in the top bar to find users, worlds, groups, and avatars."
+                        },
+                        "right_click_menus": {
+                            "description": "Long-press friends, table rows, and headers for quick actions."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

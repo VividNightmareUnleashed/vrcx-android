@@ -1,0 +1,29 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "user_profiles": {
+                    "description": "任意のユーザーをタップして、共通のフレンド、活動のヒートマップおよび、参加/退出等を含む詳細なセッションログを表示します。"
+                },
+                "right_click": {
+                    "title": "コンテキストメニュー",
+                    "description": "項目を長押しして、クイックアクションと追加オプションを表示します。"
+                },
+                "quick_search": {
+                    "description": "上部バーの検索アイコンをタップして、ユーザー、ワールド、およびアバターをすぐに検索できます。"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "right_click_menus": {
+                            "description": "フレンド、テーブルの行、ヘッダーを長押ししてクイックアクションを実行。"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

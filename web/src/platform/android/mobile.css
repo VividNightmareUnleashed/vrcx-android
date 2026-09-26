@@ -88,6 +88,32 @@ html.vrcx-compact-landscape :is(#noty_layout__bottomLeft, #noty_layout__topLeft)
     left: calc(20px + var(--rail-w) + var(--safe-left));
 }
 
+/* Inside the phone frame, toasts sit between the chrome: below the app bar and above the dock, so they never hide the
+ * title, the search button or the navigation. The Login page has no chrome and keeps the rules above. */
+html.vrcx-compact #x-app:has(> .vrcx-phone-shell) [data-sonner-toaster][data-y-position='top'] {
+    top: calc(var(--safe-top) + var(--app-bar-h) + 8px);
+}
+
+html.vrcx-compact #x-app:has(> .vrcx-phone-shell) [data-sonner-toaster][data-y-position='bottom'] {
+    bottom: calc(var(--vrcx-fixed-bottom) + 8px);
+}
+
+html.vrcx-compact :is(#noty_layout__topLeft, #noty_layout__top, #noty_layout__topRight) {
+    top: calc(var(--safe-top) + var(--app-bar-h) + 8px);
+}
+
+html.vrcx-compact :is(#noty_layout__bottomLeft, #noty_layout__bottom, #noty_layout__bottomRight) {
+    bottom: calc(var(--vrcx-fixed-bottom) + 8px);
+}
+
+/* Phone portrait: noty spans the page like the toasts do instead of a fixed 325px column at the left edge. */
+html.vrcx-compact:not(.vrcx-compact-landscape) :is(#noty_layout__bottomLeft, #noty_layout__topLeft) {
+    left: calc(var(--safe-left) + 12px);
+    width: auto;
+    right: calc(var(--safe-right) + 12px);
+    max-width: none;
+}
+
 /* ---------------------------------------------------------------- page card (DESIGN.md §2) */
 
 /* The routed view keeps its PC card, floating in the frame colour at 6px margins. MainLayout teleports it into a
@@ -202,6 +228,19 @@ html.vrcx-compact [data-slot='dialog-content'][data-mobile='card'] [data-slot='d
 
 html.vrcx-compact [data-slot='alert-dialog-footer'] > * {
     margin-top: 0;
+}
+
+/* Cards keep the PC's small close X, with a --touch-min hit area around it (the icon is 16px, 16px from the corner). */
+html.vrcx-compact [data-slot='dialog-content'][data-mobile='card'] > [data-slot='dialog-close']::after {
+    content: '';
+    position: absolute;
+    inset: calc((16px - var(--touch-min)) / 2);
+}
+
+/* Titles stay left-aligned as on PC (shadcn centres them below 640px). */
+html.vrcx-compact [data-slot='alert-dialog-header'] {
+    text-align: left;
+    padding-right: 24px;
 }
 
 /* Inner widgets that assume a desktop-wide dialog. */
@@ -331,12 +370,13 @@ html.vrcx-compact [data-slot$='overlay'] {
         -webkit-touch-callout: none;
     }
 
-    /* 32px icon buttons get a 40px hit area without changing how they look. */
-    [data-slot='button'].size-8:not(.absolute):not(.fixed):not(.sticky) {
+    /* 32px icon buttons get a 40px hit area without changing how they look. A Button wrapped in an as-child trigger
+     * (TooltipWrapper, DialogTrigger, DropdownMenuTrigger, PopoverTrigger) carries the trigger's data-slot instead. */
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8:not(.absolute):not(.fixed):not(.sticky) {
         position: relative;
     }
 
-    [data-slot='button'].size-8::after {
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8::after {
         content: '';
         position: absolute;
         inset: -4px;

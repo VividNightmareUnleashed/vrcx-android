@@ -53,7 +53,7 @@
             </div>
 
             <DialogFooter>
-                <Button size="sm" variant="outline" class="mr-2" @click="showGalleryPage">{{
+                <Button size="sm" variant="outline" class="mr-2" @click="openEmojiManager">{{
                     t('dialog.boop_dialog.emoji_manager')
                 }}</Button>
                 <Button size="sm" variant="secondary" class="mr-2" @click="closeDialog">{{
@@ -76,7 +76,8 @@
     import { useI18n } from 'vue-i18n';
 
     import { miscRequest, notificationRequest, queryRequest } from '../../api';
-    import { useGalleryStore, useNotificationStore, useUserStore } from '../../stores';
+    import { useGalleryStore, useNotificationStore, useUiStore, useUserStore } from '../../stores';
+    import { useCompactLayout } from '../../composables/useCompactLayout';
     import { VirtualCombobox } from '../ui/virtual-combobox';
     import { photonEmojis } from '../../shared/constants/photon.js';
 
@@ -111,6 +112,18 @@
 
     function closeDialog() {
         sendBoopDialog.value.visible = false;
+    }
+
+    const { isCompact } = useCompactLayout();
+
+    function openEmojiManager() {
+        if (isCompact.value) {
+            // Phones: this dialog and the entity dialog it was opened from are full-screen pages, so the Gallery page
+            // would open unseen behind them. Close them first.
+            closeDialog();
+            useUiStore().closeMainDialog();
+        }
+        showGalleryPage();
     }
 
     const emojiModel = computed({

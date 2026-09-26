@@ -19,7 +19,9 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    :spacing="isCompact ? 1 : 0"
+                                    class="compact:grid compact:w-full compact:grid-cols-3 compact-landscape:grid-cols-6"
                                     :model-value="newInstanceDialog.accessType"
                                     @update:model-value="
                                         (value) => {
@@ -55,7 +57,8 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    class="compact:grid compact:w-full compact:grid-cols-3"
                                     :model-value="newInstanceDialog.groupAccessType"
                                     @update:model-value="
                                         (value) => {
@@ -103,7 +106,8 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    class="compact:grid compact:w-full compact:grid-cols-4"
                                     :model-value="newInstanceDialog.region"
                                     @update:model-value="
                                         (value) => {
@@ -274,7 +278,9 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    :spacing="isCompact ? 1 : 0"
+                                    class="compact:grid compact:w-full compact:grid-cols-3 compact-landscape:grid-cols-6"
                                     :model-value="newInstanceDialog.accessType"
                                     @update:model-value="
                                         (value) => {
@@ -310,7 +316,8 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    class="compact:grid compact:w-full compact:grid-cols-3"
                                     :model-value="newInstanceDialog.groupAccessType"
                                     @update:model-value="
                                         (value) => {
@@ -337,7 +344,8 @@
                                     type="single"
                                     required
                                     variant="outline"
-                                    size="sm"
+                                    :size="isCompact ? 'lg' : 'sm'"
+                                    class="compact:grid compact:w-full compact:grid-cols-4"
                                     :model-value="newInstanceDialog.region"
                                     @update:model-value="
                                         (value) => {
@@ -484,7 +492,7 @@
                     </FieldGroup>
                 </template>
             </TabsUnderline>
-            <DialogFooter v-if="newInstanceDialog.selectedTab === 'Normal'">
+            <DialogFooter v-if="newInstanceDialog.selectedTab === 'Normal'" :class="compactFooterClass">
                 <template v-if="newInstanceDialog.instanceCreated">
                     <Button variant="outline" class="mr-2" @click="copyInstanceUrl(newInstanceDialog.location)">{{
                         t('dialog.new_instance.copy_url')
@@ -523,7 +531,7 @@
                     <Button @click="handleCreateNewInstance">{{ t('dialog.new_instance.create_instance') }}</Button>
                 </template>
             </DialogFooter>
-            <DialogFooter v-else-if="newInstanceDialog.selectedTab === 'Legacy'">
+            <DialogFooter v-else-if="newInstanceDialog.selectedTab === 'Legacy'" :class="compactFooterClass">
                 <Button variant="outline" class="mr-2" @click="copyInstanceUrl(newInstanceDialog.location)">{{
                     t('dialog.new_instance.copy_url')
                 }}</Button>
@@ -604,7 +612,15 @@
     import { useNewInstanceBuilder } from './useNewInstanceBuilder';
 
     import InviteDialog from '../InviteDialog/InviteDialog.vue';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
     import { useUserDisplay } from '../../../composables/useUserDisplay';
+
+    // Phones (docs/DESIGN.md §3.2): the six access types wrap into a 3 × 2 grid of separate 40px chips (one row in
+    // landscape), and the footer's four or five actions become a two-column grid (an odd last button, the primary
+    // one, takes the full row); landscape has room for the PC's single right-aligned row.
+    const { isCompact } = useCompactLayout();
+    const compactFooterClass =
+        'compact:grid compact:grid-cols-2 compact:gap-2 compact:[&>*]:mr-0 compact:[&>*:last-child:nth-child(odd)]:col-span-2 compact-landscape:flex';
 
     const { userImage, userStatusClass } = useUserDisplay();
 

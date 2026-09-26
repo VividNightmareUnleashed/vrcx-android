@@ -1,0 +1,31 @@
+{
+    "onboarding": {
+        "welcome": {
+            "features": {
+                "user_profiles": {
+                    "description": "Koppints bármelyik felhasználóra a közös barátok, aktivitási hőtérképek és belépési/kilépési naplók megtekintéséhez"
+                },
+                "right_click": {
+                    "description": "Tartsd lenyomva a kulcsfontosságú elemeket a gyors műveletek és további beállítások eléréséhez"
+                },
+                "quick_search": {
+                    "description": "Koppints a felső sáv keresés ikonjára a felhasználók, világok és avatarok azonnali kereséséhez"
+                }
+            }
+        },
+        "whatsnew": {
+            "releases": {
+                "2026_05_03": {
+                    "items": {
+                        "quick_search": {
+                            "description": "Koppints a felső sáv keresés ikonjára felhasználók, világok, csoportok és avatarok kereséséhez."
+                        },
+                        "right_click_menus": {
+                            "description": "Tartsd lenyomva a barátokat, táblázatsorokat és fejléceket a gyors műveletekért."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -3,26 +3,32 @@ import { mount } from '@vue/test-utils';
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k }) }));
 vi.mock('@/shared/utils/common', () => ({ openExternalLink: vi.fn() }));
-vi.mock('../../../stores', () => ({
-    useDashboardStore: () => ({
-        createDashboard: vi.fn(async () => ({
-            id: 'dashboard-1',
-            name: 'Dashboard',
-            icon: 'ri-dashboard-line'
-        })),
-        getDashboard: vi.fn(() => ({
-            id: 'dashboard-1',
-            name: 'Dashboard',
-            icon: 'ri-dashboard-line'
-        })),
-        updateDashboard: vi.fn(async () => {}),
-        deleteDashboard: vi.fn(async () => {}),
-        setEditingDashboardId: vi.fn()
-    }),
-    useModalStore: () => ({
-        confirm: vi.fn(async () => ({ ok: true }))
-    })
-}));
+vi.mock('../../../stores', async () => {
+    const { ref } = await import('vue');
+    return {
+        useDashboardStore: () => ({
+            createDashboard: vi.fn(async () => ({
+                id: 'dashboard-1',
+                name: 'Dashboard',
+                icon: 'ri-dashboard-line'
+            })),
+            getDashboard: vi.fn(() => ({
+                id: 'dashboard-1',
+                name: 'Dashboard',
+                icon: 'ri-dashboard-line'
+            })),
+            updateDashboard: vi.fn(async () => {}),
+            deleteDashboard: vi.fn(async () => {}),
+            setEditingDashboardId: vi.fn()
+        }),
+        useModalStore: () => ({
+            confirm: vi.fn(async () => ({ ok: true }))
+        }),
+        useNotificationsSettingsStore: () => ({
+            notificationLayout: ref('table')
+        })
+    };
+});
 vi.mock('@/components/ui/dialog', () => ({
     Dialog: { template: '<div><slot /></div>' },
     DialogContent: { template: '<div><slot /></div>' },

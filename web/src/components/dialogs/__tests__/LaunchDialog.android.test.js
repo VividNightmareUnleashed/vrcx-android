@@ -87,7 +87,8 @@ vi.mock('@/components/ui/field', () => ({
     Field: { template: '<div><slot /></div>' },
     FieldGroup: { template: '<div><slot /></div>' },
     FieldLabel: { template: '<div><slot /></div>' },
-    FieldContent: { template: '<div><slot /></div>' }
+    FieldContent: { template: '<div><slot /></div>' },
+    FieldDescription: { template: '<p><slot /></p>' }
 }));
 vi.mock('@/components/ui/button', () => ({
     Button: {
@@ -136,5 +137,21 @@ describe('LaunchDialog.vue on Android', () => {
         expect(wrapper.text()).toContain('dialog.launch.launch');
         expect(wrapper.text()).not.toContain('dialog.launch.start_as_desktop');
         expect(wrapper.find('[data-testid="launch-mode-menu"]').exists()).toBe(false);
+    });
+
+    // Phones (DESIGN.md §3.2): three equal footer columns are too narrow for "Launch VRChat" at 360px, so Invite and
+    // Self invite share a row and the Launch group gets a full-width row, with labels that may wrap.
+    it('gives the Launch group its own footer row on phones', async () => {
+        mocks.canLaunchGame = true;
+        const wrapper = mount(LaunchDialog);
+        await Promise.resolve();
+        const launch = wrapper.findAll('button').find((button) => button.text() === 'dialog.launch.launch');
+        const group = launch.element.parentElement;
+        const footer = group.parentElement;
+        expect(group.className).toContain('compact:col-span-2');
+        expect(footer.className).toContain('compact:grid-cols-2');
+        expect(footer.className).not.toContain('auto-cols-fr');
+        expect(footer.className).toContain('compact:[&_button]:whitespace-normal');
+        expect(footer.className).toContain('compact-landscape:flex');
     });
 });

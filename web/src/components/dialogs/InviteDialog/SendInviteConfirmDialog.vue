@@ -6,7 +6,7 @@
                 if (!open) cancelInviteConfirm();
             }
         ">
-        <DialogContent class="x-dialog sm:max-w-100">
+        <DialogContent class="x-dialog sm:max-w-100" data-mobile="card">
             <DialogHeader>
                 <DialogTitle>{{ t(`dialog.${i18nPrefix}.header`) }}</DialogTitle>
             </DialogHeader>

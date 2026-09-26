@@ -1,7 +1,8 @@
 <template>
     <Dialog v-model:open="whatsNewDialog.visible">
         <DialogContent
-            class="border border-border bg-background/88 p-5 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl"
+            class="border border-border bg-background/88 p-5 shadow-lg backdrop-blur-xl backdrop-saturate-[1.4] sm:max-w-2xl compact:bg-background"
+            data-mobile="card"
             :show-close-button="false"
             @escape-key-down="handleDismiss"
             @pointer-down-outside="handleDismiss"
@@ -22,7 +23,7 @@
             </div>
 
             <!-- Feature Cards -->
-            <div class="my-2 grid auto-rows-fr grid-cols-4 gap-2.5">
+            <div class="my-2 grid auto-rows-fr grid-cols-4 gap-2.5 compact:grid-cols-2 compact-landscape:grid-cols-4">
                 <div
                     v-for="(feature, index) in whatsNewDialog.items"
                     :key="feature.key"
@@ -53,7 +54,7 @@
                     <span>{{ t('onboarding.whatsnew.common.support') }}</span>
                 </div>
 
-                <div class="flex flex-col gap-1 text-left">
+                <div class="flex flex-col gap-1 text-left pointer-coarse:gap-0">
                     <div
                         v-for="supporter in supporters"
                         :key="supporter.name"
@@ -63,8 +64,9 @@
                         </span>
                         <template v-for="link in supporter.links" :key="link.label">
                             <span class="text-[11px] text-muted-foreground/40">·</span>
+                            <!-- Touch: a --touch-min hit area around the text link (the text itself is unchanged). -->
                             <button
-                                class="cursor-pointer border-0 bg-transparent p-0 text-[12px] font-medium text-muted-foreground/80 transition-colors duration-200 hover:text-foreground cursor-pointer"
+                                class="cursor-pointer border-0 bg-transparent p-0 text-[12px] font-medium text-muted-foreground/80 transition-colors duration-200 hover:text-foreground cursor-pointer pointer-coarse:inline-flex pointer-coarse:min-h-10 pointer-coarse:min-w-10 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:px-1"
                                 @click="openExternalLink(link.url)">
                                 {{ link.label }}
                             </button>
@@ -76,7 +78,7 @@
             <!-- View Changelog -->
             <div class="mt-2 flex justify-center">
                 <button
-                    class="cursor-pointer border-0 bg-transparent text-xs text-muted-foreground/70 transition-colors duration-200 hover:text-foreground cursor-pointer"
+                    class="cursor-pointer border-0 bg-transparent text-xs text-muted-foreground/70 transition-colors duration-200 hover:text-foreground cursor-pointer pointer-coarse:min-h-10 pointer-coarse:px-3"
                     @click="handleViewChangelog">
                     {{ t('onboarding.whatsnew.common.view_changelog') }} →
                 </button>
