@@ -4,6 +4,8 @@
 //   login=0      start logged out with no saved accounts (the Login page as on a first start)
 //   login=saved  start logged out with two saved accounts (the Login page's saved-account column)
 // In both modes every `auth/user` request answers 401, so the Login page stays up; the rest of the app is unchanged.
+//   launch=1     a VRChat app on the device can be launched (AndroidHost.CanLaunchVRChat answers true), so the
+//                Launch and New Instance dialogs show their Launch button as on a phone with VRChat installed
 //
 // Always on: the invite message slots (SendInviteDialog and its confirm/edit dialogs) and instance short names
 // (LaunchDialog's short URL field).
@@ -12,6 +14,7 @@ const MINUTE = 60 * 1000;
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const loginMode = params.get('login');
+const launchMode = params.get('launch') === '1';
 
 /** Config keys the login modes answer themselves (the fake SQLite keeps everything else). */
 const LAST_USER_KEY = 'config:lastuserloggedin';
@@ -137,15 +140,38 @@ export function wrapInteropForLogin(api, mode) {
     };
 }
 
+/**
+ * Wraps the fake interop API so AndroidHost.CanLaunchVRChat answers true (?launch=1).
+ *
+ * @param {{ callDotNetMethod: Function }} api
+ * @returns {{ callDotNetMethod: Function }}
+ */
+export function wrapInteropForLaunch(api) {
+    return {
+        ...api,
+        async callDotNetMethod(className, methodName, args) {
+            if (className === 'AndroidHost' && methodName === 'CanLaunchVRChat') {
+                return true;
+            }
+            return api.callDotNetMethod(className, methodName, args);
+        }
+    };
+}
+
+const isLoginMode = loginMode === '0' || loginMode === 'saved';
+
 // mockBridge assigns window.interopApi after this module has been evaluated; wrap it on assignment.
-if ((loginMode === '0' || loginMode === 'saved') && typeof window !== 'undefined') {
+if ((isLoginMode || launchMode) && typeof window !== 'undefined') {
     let current;
     Object.defineProperty(window, 'interopApi', {
         configurable: true,
         enumerable: true,
         get: () => current,
         set(value) {
-            current = value ? wrapInteropForLogin(value, loginMode) : value;
+            let wrapped = value;
+            if (wrapped && isLoginMode) wrapped = wrapInteropForLogin(wrapped, loginMode);
+            if (wrapped && launchMode) wrapped = wrapInteropForLaunch(wrapped);
+            current = wrapped;
         }
     });
 }
@@ -166,7 +192,7 @@ const INVITE_MESSAGES = [
 ];
 
 /**
- * @param {string} messageType message | response | request | requestResponse
+ * @param {string} messageType One of message, response, request, requestResponse
  * @returns {object[]} VRChat invite message slots (GET message/{userId}/{messageType})
  */
 export function inviteMessageSlots(messageType) {

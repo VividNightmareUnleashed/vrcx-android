@@ -78,8 +78,11 @@
                     </FieldContent>
                 </Field>
             </FieldGroup>
+            <!-- Phones: Invite and Self invite (or Open in-game) share a row; the Launch group, when the game can be
+                 started from this device, gets a full-width row of its own. Long labels wrap instead of overflowing.
+                 Landscape keeps the PC's single row. -->
             <DialogFooter
-                class="compact:grid compact:grid-flow-col compact:auto-cols-fr compact:gap-2 compact:[&>*]:mr-0 compact-landscape:flex">
+                class="compact:grid compact:grid-cols-2 compact:gap-2 compact:[&>*]:mr-0 compact:[&_button]:h-auto compact:[&_button]:min-h-9 compact:[&_button]:py-1 compact:[&_button]:whitespace-normal compact-landscape:flex">
                 <Button
                     class="mr-1.5"
                     variant="outline"
@@ -104,7 +107,7 @@
                 </Button>
                 <ButtonGroup
                     v-if="canLaunchGame"
-                    class="compact:w-full compact:[&>*:first-child]:flex-1 compact-landscape:w-auto">
+                    class="compact:col-span-2 compact:w-full compact:[&>*:first-child]:flex-1 compact-landscape:w-auto">
                     <Button
                         :disabled="!launchDialog.secureOrShortName"
                         @click="handleLaunchDefault(launchDialog.location, launchDialog.shortName)">

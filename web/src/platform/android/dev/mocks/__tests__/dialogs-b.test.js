@@ -1,6 +1,12 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { inviteMessageSlots, loginModeConfigs, webApi, wrapInteropForLogin } from '../dialogs-b.js';
+import {
+    inviteMessageSlots,
+    loginModeConfigs,
+    webApi,
+    wrapInteropForLaunch,
+    wrapInteropForLogin
+} from '../dialogs-b.js';
 
 // Preview-harness login modes (?login=0 / ?login=saved) and invite message fixtures.
 function fakeApi() {
@@ -51,6 +57,17 @@ describe('harness login modes', () => {
     });
 });
 
+describe('harness launch mode', () => {
+    test('launch=1 lets the device launch VRChat and leaves every other call alone', async () => {
+        const api = fakeApi();
+        const wrapped = wrapInteropForLaunch(api);
+        expect(await wrapped.callDotNetMethod('AndroidHost', 'CanLaunchVRChat', [])).toBe(true);
+        expect(api.callDotNetMethod).not.toHaveBeenCalled();
+        expect(await wrapped.callDotNetMethod('AndroidHost', 'GetBackgroundMode', [])).toBe('default');
+        expect(api.callDotNetMethod).toHaveBeenCalledWith('AndroidHost', 'GetBackgroundMode', []);
+    });
+});
+
 describe('invite message fixtures', () => {
     test('twelve slots with made-up ids, some still cooling down', () => {
         const slots = inviteMessageSlots('message');
@@ -61,9 +78,9 @@ describe('invite message fixtures', () => {
     });
 
     test('webApi answers the message and short name endpoints only', () => {
-        expect(webApi('message/usr_00000000-0000-4000-8000-000000000001/request', new URLSearchParams(), 'GET')).toHaveLength(
-            12
-        );
+        expect(
+            webApi('message/usr_00000000-0000-4000-8000-000000000001/request', new URLSearchParams(), 'GET')
+        ).toHaveLength(12);
         expect(
             webApi('instances/wrld_00000000-0000-4000-8000-00000000a001:12345~region(eu)/shortName', null, 'GET')
         ).toEqual({ shortName: 'prvw1234', secureName: 'prvwsecure' });
