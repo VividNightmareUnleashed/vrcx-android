@@ -1,0 +1,18 @@
+{
+    "android": {
+        "launch_command": {
+            "title": "Request from another app",
+            "switchavatar": "Another app asked VRCX to change your VRChat avatar to {avatar}.",
+            "addavatardb": "Another app asked VRCX to add {url} as an avatar search provider. Your avatar searches would be sent to that address.",
+            "favorite_world": "Another app asked VRCX to add the world {id} to your local favorites group \"{group}\".",
+            "favorite_avatar": "Another app asked VRCX to add the avatar {id} to your local favorites group \"{group}\".",
+            "import_avatar": "Another app asked VRCX to open the avatar favorites import with a list it provides.",
+            "import_world": "Another app asked VRCX to open the world favorites import with a list it provides.",
+            "import_friend": "Another app asked VRCX to open the friend favorites import with a list it provides.",
+            "warning": "Only allow this if you started it yourself.",
+            "allow": "Allow",
+            "cancel": "Don't allow",
+            "invalid": "VRCX ignored a request from another app that it doesn't understand."
+        }
+    }
+}

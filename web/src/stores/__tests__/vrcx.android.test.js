@@ -7,11 +7,15 @@ const mocks = vi.hoisted(() => ({
     advancedSettingsStore: {
         vrcRegistryAutoBackup: true,
         vrcRegistryAskRestore: true,
+        showConfirmationOnSwitchAvatar: true,
         screenshotHelper: true,
         screenshotHelperCopyToClipboard: true,
         screenshotHelperModifyFilename: false
     },
     modalStore: { alert: vi.fn(), confirm: vi.fn() },
+    searchStore: { directAccessParse: vi.fn(), setSearchText: vi.fn() },
+    router: { push: vi.fn(), currentRoute: { value: { name: 'feed' } } },
+    watchState: { isLoggedIn: false },
     config: {
         getInt: vi.fn(async (_key, fallback) => fallback),
         setInt: vi.fn(),
@@ -72,21 +76,24 @@ vi.mock('../location', () => ({
 vi.mock('../modal', () => ({ useModalStore: () => mocks.modalStore }));
 vi.mock('../notification', () => ({ useNotificationStore: () => ({}) }));
 vi.mock('../photon', () => ({ usePhotonStore: () => ({}) }));
-vi.mock('../search', () => ({ useSearchStore: () => ({}) }));
+vi.mock('../search', () => ({ useSearchStore: () => mocks.searchStore }));
+vi.mock('../../plugins/router.js', () => ({ router: mocks.router }));
 vi.mock('../updateLoop', () => ({ useUpdateLoopStore: () => ({}) }));
 vi.mock('../user', () => ({ useUserStore: () => ({ currentUser: { id: 'usr_me', displayName: 'Me' } }) }));
 vi.mock('../vrcStatus', () => ({ useVrcStatusStore: () => ({}) }));
 vi.mock('../../coordinators/vrcxCoordinator', () => ({ clearVRCXCache: vi.fn() }));
 vi.mock('../../coordinators/searchIndexCoordinator', () => ({ resetSearchIndexOnLogin: vi.fn() }));
-vi.mock('../../services/watchState', () => ({ watchState: { isLoggedIn: false } }));
+vi.mock('../../services/watchState', () => ({ watchState: mocks.watchState }));
 vi.mock('../../services/config', () => ({ default: mocks.config }));
 
 import { useVrcxStore } from '../vrcx';
+import { selectAvatarWithConfirmation, selectAvatarWithoutConfirmation } from '../../coordinators/avatarCoordinator';
 
 describe('useVrcxStore on Android', () => {
     beforeEach(() => {
         setActivePinia(createPinia());
         vi.clearAllMocks();
+        mocks.watchState.isLoggedIn = false;
         globalThis.AppApi = {
             HasVRChatRegistryFolder: vi.fn().mockResolvedValue(false),
             GetVRChatRegistryJson: vi.fn().mockResolvedValue('{}'),
@@ -124,5 +131,68 @@ describe('useVrcxStore on Android', () => {
         await store.processScreenshot('C:\\Users\\me\\Pictures\\VRChat\\shot.png');
         expect(globalThis.AppApi.AddScreenshotMetadata).not.toHaveBeenCalled();
         expect(globalThis.AppApi.CopyImageToClipboard).not.toHaveBeenCalled();
+    });
+
+    describe('Share to VRCX (search/<text>)', () => {
+        const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+        beforeEach(() => {
+            mocks.watchState.isLoggedIn = true;
+            mocks.searchStore.directAccessParse.mockImplementation((input) =>
+                /^https:\/\/vrchat\.com\/|^(usr|wrld|avtr|grp)_/.test(input)
+            );
+        });
+
+        test('opens a shared VRChat URL whole, although it contains slashes', async () => {
+            const url = 'https://vrchat.com/home/user/usr_00000000-0000-4000-8000-000000000101';
+            useVrcxStore().eventLaunchCommand(`search/${url}`);
+            await flush();
+            expect(mocks.searchStore.directAccessParse).toHaveBeenCalledWith(url);
+            expect(mocks.router.push).not.toHaveBeenCalled();
+        });
+
+        test('opens a shared id', async () => {
+            useVrcxStore().eventLaunchCommand('search/wrld_00000000-0000-4000-8000-00000000a001');
+            await flush();
+            expect(mocks.searchStore.directAccessParse).toHaveBeenCalledWith(
+                'wrld_00000000-0000-4000-8000-00000000a001'
+            );
+            expect(mocks.router.push).not.toHaveBeenCalled();
+        });
+
+        test('opens Search filled in with shared free text', async () => {
+            useVrcxStore().eventLaunchCommand('search/Aurora / friends');
+            await flush();
+            expect(mocks.searchStore.setSearchText).toHaveBeenCalledWith('Aurora / friends');
+            expect(mocks.router.push).toHaveBeenCalledWith({ name: 'search' });
+        });
+
+        test('does nothing before login', async () => {
+            mocks.watchState.isLoggedIn = false;
+            useVrcxStore().eventLaunchCommand('search/Aurora');
+            await flush();
+            expect(mocks.searchStore.setSearchText).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('switchavatar', () => {
+        const AVATAR_ID = 'avtr_00000000-0000-4000-8000-00000000b001';
+
+        beforeEach(() => {
+            mocks.watchState.isLoggedIn = true;
+            selectAvatarWithoutConfirmation.mockResolvedValue(undefined);
+        });
+
+        test('asks as upstream when the setting says so', () => {
+            useVrcxStore().eventLaunchCommand(`switchavatar/${AVATAR_ID}`);
+            expect(selectAvatarWithConfirmation).toHaveBeenCalledWith(AVATAR_ID);
+            expect(selectAvatarWithoutConfirmation).not.toHaveBeenCalled();
+        });
+
+        test('does not ask twice for a command the user already allowed', () => {
+            useVrcxStore().eventLaunchCommand(`switchavatar/${AVATAR_ID}`, { confirmed: true });
+            expect(selectAvatarWithConfirmation).not.toHaveBeenCalled();
+            expect(selectAvatarWithoutConfirmation).toHaveBeenCalledWith(AVATAR_ID);
+        });
     });
 });
