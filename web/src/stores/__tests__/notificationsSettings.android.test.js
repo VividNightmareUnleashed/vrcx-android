@@ -30,24 +30,11 @@ vi.mock('../../services/config', () => {
     return { default: config };
 });
 
-import { coerceNotificationCondition, useNotificationsSettingsStore } from '../settings/notifications';
+import { useNotificationsSettingsStore } from '../settings/notifications';
 
 async function flush() {
     for (let i = 0; i < 5; i++) await Promise.resolve();
 }
-
-describe('coerceNotificationCondition', () => {
-    test('moves VR-only conditions to Always when there is no VR overlay', () => {
-        expect(coerceNotificationCondition('Inside VR', false)).toBe('Always');
-        expect(coerceNotificationCondition('Outside VR', false)).toBe('Always');
-        expect(coerceNotificationCondition('Game Running', false)).toBe('Game Running');
-        expect(coerceNotificationCondition('Desktop Mode', false)).toBe('Desktop Mode');
-    });
-
-    test('keeps every condition when VR is available', () => {
-        expect(coerceNotificationCondition('Inside VR', true)).toBe('Inside VR');
-    });
-});
 
 describe('useNotificationsSettingsStore on Android', () => {
     beforeEach(() => {
@@ -61,16 +48,16 @@ describe('useNotificationsSettingsStore on Android', () => {
         vi.useRealTimers();
     });
 
-    test('coerces stored VR-only conditions and persists the new value', async () => {
-        mocks.values.set('VRCX_desktopToast', 'Inside VR');
+    test('keeps the Inside VR and Outside VR conditions (the PC companion reports SteamVR)', async () => {
+        mocks.values.set('VRCX_desktopToast', 'Outside VR');
         mocks.values.set('VRCX_notificationTTS', 'Inside VR');
         const store = useNotificationsSettingsStore();
         await flush();
 
-        expect(store.desktopToast).toBe('Always');
-        expect(store.notificationTTS).toBe('Always');
-        expect(mocks.config.setString).toHaveBeenCalledWith('VRCX_desktopToast', 'Always');
-        expect(mocks.config.setString).toHaveBeenCalledWith('VRCX_notificationTTS', 'Always');
+        expect(store.desktopToast).toBe('Outside VR');
+        expect(store.notificationTTS).toBe('Inside VR');
+        expect(mocks.config.setString).not.toHaveBeenCalledWith('VRCX_desktopToast', expect.anything());
+        expect(mocks.config.setString).not.toHaveBeenCalledWith('VRCX_notificationTTS', expect.anything());
     });
 
     test('keeps conditions that work on Android', async () => {

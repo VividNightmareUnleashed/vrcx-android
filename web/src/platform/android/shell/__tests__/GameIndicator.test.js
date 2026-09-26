@@ -49,6 +49,6 @@ describe('GameIndicator (DESIGN.md §2.1)', () => {
     it('opens Settings → PC companion on tap', async () => {
         const wrapper = mountIndicator({ status: 'connected', paired: PAIRED, vrchatRunning: true });
         await wrapper.find('.vrcx-game-indicator').trigger('click');
-        expect(router.push).toHaveBeenCalledWith({ name: 'settings', query: { section: 'companion' } });
+        expect(router.push).toHaveBeenCalledWith({ name: 'settings', query: { tab: 'companion' } });
     });
 });

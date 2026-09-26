@@ -16,6 +16,22 @@ function fakeApi() {
 const configRead = (key) => ['SQLite', 'ExecuteJson', ['SELECT value FROM configs WHERE key = @key', { '@key': key }]];
 
 describe('harness login modes', () => {
+    test('the Android config cache (one read of the whole table) also sees the login mode', async () => {
+        const api = {
+            callDotNetMethod: vi.fn(async () =>
+                JSON.stringify([
+                    ['config:lastuserloggedin', 'usr_preview'],
+                    ['config:vrcx_thememode', 'dark']
+                ])
+            )
+        };
+        const wrapped = wrapInteropForLogin(api, '0');
+        const rows = JSON.parse(
+            await wrapped.callDotNetMethod('SQLite', 'ExecuteJson', ['SELECT key, value FROM configs'])
+        );
+        expect(new Map(rows)).toEqual(new Map([['config:vrcx_thememode', 'dark']]));
+    });
+
     test('login=0 hides the last user and the saved accounts, so the Login page shows', async () => {
         const api = fakeApi();
         const wrapped = wrapInteropForLogin(api, '0');

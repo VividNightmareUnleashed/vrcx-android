@@ -19,7 +19,7 @@
     import { useAppearanceSettingsStore, useGameLogStore, useUserStore } from '../../../stores';
     import { timeToText } from '../../../shared/utils';
 
-    import * as echarts from 'echarts';
+    import { echarts, loadEcharts } from '../../../shared/utils/chart';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
     import InstanceActivityTooltip from '@/views/Charts/components/InstanceActivityTooltip.jsx';
     import { renderToHtml } from '@/lib/utils';
@@ -159,6 +159,10 @@
     }
 
     async function initEcharts() {
+        if (!echarts) {
+            // Loaded with the first chart on Android (shared/utils/chart.js).
+            await loadEcharts();
+        }
         const data = processedData.value;
         if (!chartRef.value || data.length === 0) {
             return;

@@ -19,7 +19,7 @@
     import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
-    import * as echarts from 'echarts';
+    import { echarts, loadEcharts } from '../../../../shared/utils/chart';
 
     import { useAppearanceSettingsStore } from '@/stores';
     import { formatTimestampKey } from '@/shared/utils/activityEngine';
@@ -143,6 +143,11 @@
     function initChart() {
         const chartDom = chartRef.value;
         if (!chartDom) return;
+        if (!echarts) {
+            // Loaded with the first chart on Android (shared/utils/chart.js).
+            loadEcharts().then(initChart, console.error);
+            return;
+        }
 
         let hasAnimated = false;
 

@@ -61,6 +61,21 @@
         visible.value = getScrollTop() >= props.visibilityHeight;
     }
 
+    // Android: reading scrollTop in the scroll event forces a layout after every list update, several times per
+    // frame on a phone; read it once per frame instead.
+    let scrollFrame = 0;
+    function onScroll() {
+        if (!isAndroid) {
+            handleScroll();
+            return;
+        }
+        if (scrollFrame) return;
+        scrollFrame = requestAnimationFrame(() => {
+            scrollFrame = 0;
+            handleScroll();
+        });
+    }
+
     function scrollToTop() {
         const behavior = props.behavior === 'auto' ? 'auto' : 'smooth';
         const v = getVirtualizer();
@@ -80,13 +95,17 @@
         containerEl = resolveElement(props.target);
 
         const target = containerEl && typeof containerEl.addEventListener === 'function' ? containerEl : window;
-        target.addEventListener('scroll', handleScroll, { passive: true });
+        target.addEventListener('scroll', onScroll, { passive: true });
         handleScroll();
     }
 
     function unbind() {
         const target = containerEl || window;
-        target.removeEventListener('scroll', handleScroll);
+        target.removeEventListener('scroll', onScroll);
+        if (scrollFrame) {
+            cancelAnimationFrame(scrollFrame);
+            scrollFrame = 0;
+        }
     }
 
     onMounted(() => {

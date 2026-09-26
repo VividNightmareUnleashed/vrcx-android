@@ -167,7 +167,8 @@ describe('MainLayout frames on Android', () => {
         await settle();
         expect(parentSlotId('routed')).toBe(FRAME_SLOT_IDS.desktopMain);
         expect(parentSlotId('sidebar')).toBe(FRAME_SLOT_IDS.desktopFriends);
-        expect(document.querySelector('[data-testid="routed"]').dataset.max).toBe('none');
+        // The tablet (PC) frame on Android caps the page cache too.
+        expect(document.querySelector('[data-testid="routed"]').dataset.max).toBe('8');
 
         // Portrait on a small tablet: the phone frame.
         mocks.isCompact.value = true;
@@ -182,6 +183,7 @@ describe('MainLayout frames on Android', () => {
         mocks.isCompact.value = false;
         await settle();
         expect(document.querySelector('[data-testid="compact-frame"]')).toBeNull();
+        expect(document.querySelector('[data-testid="routed"]').dataset.max).toBe('8');
         expect(parentSlotId('routed')).toBe(FRAME_SLOT_IDS.desktopMain);
         expect(parentSlotId('sidebar')).toBe(FRAME_SLOT_IDS.desktopFriends);
 

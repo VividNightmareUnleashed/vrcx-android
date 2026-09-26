@@ -6,7 +6,8 @@ import { useI18n } from 'vue-i18n';
 import { DEFAULT_MAX_TABLE_SIZE, DEFAULT_SEARCH_LIMIT, SEARCH_LIMIT_MAX, SEARCH_LIMIT_MIN } from '../shared/constants';
 import { avatarRequest, queryRequest } from '../api';
 import { debounce, parseLocation } from '../shared/utils';
-import { hasLocalVrchatFiles } from '../shared/utils/platform';
+import { hasLocalVrchatFiles, isAndroid } from '../shared/utils/platform';
+import { handleSearchLaunchCommand, installExternalLaunchCommands } from '../platform/android/launchCommands';
 import { AppDebug } from '../services/appConfig';
 import { database } from '../services/database';
 import { refreshCustomScript } from '../shared/utils/base/ui';
@@ -509,6 +510,15 @@ export const useVrcxStore = defineStore('Vrcx', () => {
         { flush: 'sync' }
     );
 
+    if (isAndroid) {
+        // Launch commands from other apps run only after the user allowed them (docs/ARCHITECTURE.md §6.9).
+        installExternalLaunchCommands({
+            run: eventLaunchCommand,
+            confirm: (options) => modalStore.confirm(options),
+            t
+        });
+    }
+
     async function startupLaunchCommand() {
         const command = await AppApi.GetLaunchCommand();
         if (!command) {
@@ -544,8 +554,10 @@ export const useVrcxStore = defineStore('Vrcx', () => {
     // called from C#
     /**
      * @param input
+     * @param {{ confirmed?: boolean }} [options] Android: `confirmed` when the user already allowed a command that
+     *   came from another app (platform/android/launchCommands.js), so switchavatar does not ask twice
      */
-    function eventLaunchCommand(input) {
+    function eventLaunchCommand(input, { confirmed = false } = {}) {
         if (!watchState.isLoggedIn) {
             return;
         }
@@ -569,6 +581,12 @@ export const useVrcxStore = defineStore('Vrcx', () => {
                 break;
             case 'group':
                 showGroupDialog(commandArg);
+                break;
+            case 'search':
+                // Android: text shared from another app; it may contain slashes (docs/ARCHITECTURE.md §6.9).
+                if (isAndroid) {
+                    handleSearchLaunchCommand(input.slice('search/'.length), { searchStore }).catch(console.error);
+                }
                 break;
             case 'local-favorite-world':
                 console.log('local-favorite-world', commandArg);
@@ -604,7 +622,7 @@ export const useVrcxStore = defineStore('Vrcx', () => {
                     toast.error('Invalid Avatar ID');
                     break;
                 }
-                if (advancedSettingsStore.showConfirmationOnSwitchAvatar) {
+                if (advancedSettingsStore.showConfirmationOnSwitchAvatar && !confirmed) {
                     selectAvatarWithConfirmation(avatarId);
                     // Makes sure the window is focused
                     shouldFocusWindow = true;

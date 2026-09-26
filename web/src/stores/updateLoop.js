@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { watch } from 'vue';
+import { onScopeDispose, watch } from 'vue';
 
 import { database } from '../services/database';
 import { groupRequest } from '../api';
@@ -9,6 +9,7 @@ import { addGameLogEvent, runAndroidGameLogFlow } from '../coordinators/gameLogC
 import { runRefreshPlayerModerationsFlow } from '../coordinators/moderationCoordinator';
 import { clearVRCXCache } from '../coordinators/vrcxCoordinator';
 import { hasVrOverlay, isAndroid } from '../shared/utils/platform';
+import { createHiddenLoopController } from '../platform/android/hiddenLoop';
 import { useAuthStore } from './auth';
 import { useDiscordPresenceSettingsStore } from './settings/discordPresence';
 import { useFriendStore } from './friend';
@@ -44,6 +45,18 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
         nextDatabaseOptimize: 3600
     };
 
+    // Android: slower ticks while the app is in the background, and the game log read on the host's signal
+    // (docs/ARCHITECTURE.md §7).
+    const androidLoop = isAndroid
+        ? createHiddenLoopController({
+              runGameLogFlow: runAndroidGameLogFlow,
+              isLoggedIn: () => watchState.isLoggedIn
+          })
+        : null;
+    if (androidLoop) {
+        onScopeDispose(() => androidLoop.dispose());
+    }
+
     watch(
         () => watchState.isLoggedIn,
         () => {
@@ -63,6 +76,7 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
     const ipcTimeout = state.ipcTimeout;
 
     async function updateLoop() {
+        androidLoop?.catchUp(state, watchState.isLoggedIn);
         try {
             if (watchState.isLoggedIn) {
                 if (--state.nextCurrentUserRefresh <= 0) {
@@ -115,8 +129,11 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
                 if (LINUX && --state.nextGetLogCheck <= 0) {
                     state.nextGetLogCheck = 0.5;
                     if (isAndroid) {
-                        // Reads the game state with the lines: the PC companion orders them differently.
-                        await runAndroidGameLogFlow();
+                        // Reads the game state with the lines: the PC companion orders them differently. While the
+                        // app is hidden, the host's log-available and game-state signals run it instead.
+                        if (!androidLoop.isHidden()) {
+                            await androidLoop.runGameLog();
+                        }
                     } else {
                         const logLines = await LogWatcher.GetLogLines();
                         if (logLines) {
@@ -144,7 +161,11 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
             friendStore.setIsRefreshFriendsLoading(false);
             console.error(err);
         }
-        workerTimers.setTimeout(() => updateLoop(), 1000);
+        if (androidLoop) {
+            androidLoop.schedule(() => updateLoop());
+        } else {
+            workerTimers.setTimeout(() => updateLoop(), 1000);
+        }
     }
 
     /**

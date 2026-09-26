@@ -46,6 +46,13 @@ export async function executeToolAction(
         return;
     }
 
+    // Android-only tool actions (shared/constants/tools.js `android` entries); the build drops this on desktop.
+    if (ANDROID && action.type === 'android') {
+        const { runAndroidToolAction } = await import('../platform/android/photosFolder.js');
+        await runAndroidToolAction(action, { t });
+        return;
+    }
+
     if (action.type === 'app-api') {
         const result = await AppApi[action.method]();
         if (result) {

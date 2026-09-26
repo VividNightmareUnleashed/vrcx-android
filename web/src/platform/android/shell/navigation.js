@@ -1,19 +1,13 @@
 // Small navigation helpers used by the phone shell.
+import { COMPANION_SETTINGS_ROUTE } from '../companionStore.js';
 
 /**
- * Route that shows Settings → PC companion. The Settings view (owned by the settings package) reads
- * `query.section === 'companion'` to select the tab holding the companion group and scroll to it.
- */
-export const COMPANION_SETTINGS_ROUTE = Object.freeze({
-    name: 'settings',
-    query: { section: 'companion' }
-});
-
-/**
+ * Opens Settings on the PC companion tab (Settings.vue selects the tab from `?tab=`).
+ *
  * @param {import('vue-router').Router} router
  */
 export function openCompanionSettings(router) {
-    return router.push(COMPANION_SETTINGS_ROUTE);
+    return router.push({ ...COMPANION_SETTINGS_ROUTE, query: { ...COMPANION_SETTINGS_ROUTE.query } });
 }
 
 const SCROLLER_SELECTOR = '.x-container, [data-slot="scroll-area-viewport"], .overflow-auto, .overflow-y-auto';

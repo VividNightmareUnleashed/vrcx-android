@@ -272,7 +272,7 @@
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
 
-    import * as echarts from 'echarts';
+    import { echarts, loadEcharts } from '../../../shared/utils/chart';
 
     import configRepository from '../../../services/config';
     import { worldRequest } from '../../../api';
@@ -760,6 +760,11 @@
             activityChart?.clear();
             return;
         }
+        if (!echarts) {
+            // Loaded with the first chart on Android (shared/utils/chart.js).
+            loadEcharts().then(renderActivityChart, console.error);
+            return;
+        }
         ensureActivityChart();
         if (!activityChart) return;
 
@@ -798,6 +803,10 @@
             if (!isOverlapLoading.value) {
                 overlapChart?.clear();
             }
+            return;
+        }
+        if (!echarts) {
+            loadEcharts().then(renderOverlapChart, console.error);
             return;
         }
         ensureOverlapChart();

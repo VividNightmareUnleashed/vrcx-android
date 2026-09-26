@@ -91,7 +91,7 @@
                 aria-hidden="true"
                 inert />
             <Teleport defer :to="`#${frameSlots.main}`">
-                <RoutedView :max="isCompact ? COMPACT_KEEP_ALIVE_MAX : undefined" />
+                <RoutedView :max="isCompact ? COMPACT_KEEP_ALIVE_MAX : TABLET_KEEP_ALIVE_MAX" />
             </Teleport>
             <Teleport defer :to="`#${frameSlots.friends}`">
                 <Sidebar></Sidebar>
@@ -133,7 +133,7 @@
     import { useTouchTabletFrame } from '../../composables/useTouchTabletFrame';
     import { watchState } from '../../services/watchState';
     import { isAndroid } from '../../shared/utils/platform';
-    import { COMPACT_KEEP_ALIVE_MAX } from './keepAlive';
+    import { COMPACT_KEEP_ALIVE_MAX, TABLET_KEEP_ALIVE_MAX } from './keepAlive';
     import { FRAME_SLOT_IDS, resolveFrameSlots } from './frameSlots';
 
     import AvatarImportDialog from '../Favorites/dialogs/AvatarImportDialog.vue';

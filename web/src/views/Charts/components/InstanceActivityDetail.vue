@@ -27,7 +27,7 @@
     import { useAppearanceSettingsStore, useUserStore } from '../../../stores';
     import { timeToText } from '../../../shared/utils';
 
-    import * as echarts from 'echarts';
+    import { echarts, loadEcharts } from '../../../shared/utils/chart';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
     import InstanceActivityTooltip from './InstanceActivityTooltip.jsx';
     import { applyCompactChartLayout } from '../composables/compactChartLayout';
@@ -134,6 +134,10 @@
     }
 
     async function initEcharts() {
+        if (!echarts) {
+            // Loaded with the first chart on Android (shared/utils/chart.js).
+            await loadEcharts();
+        }
         if (!activityDetailChartRef.value || !props.activityDetailData || props.activityDetailData.length === 0) {
             isLoading.value = false;
             return;

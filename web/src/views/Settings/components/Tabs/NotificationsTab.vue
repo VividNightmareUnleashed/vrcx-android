@@ -46,10 +46,10 @@
                 <ToggleGroupItem value="Desktop Mode">{{
                     t('view.settings.notifications.notifications.conditions.desktop')
                 }}</ToggleGroupItem>
-                <ToggleGroupItem v-if="hasVrOverlay" value="Inside VR">{{
+                <ToggleGroupItem v-if="showToastVrConditions" value="Inside VR">{{
                     t('view.settings.notifications.notifications.conditions.inside_vr')
                 }}</ToggleGroupItem>
-                <ToggleGroupItem v-if="hasVrOverlay" value="Outside VR">{{
+                <ToggleGroupItem v-if="showToastVrConditions" value="Outside VR">{{
                     t('view.settings.notifications.notifications.conditions.outside_vr')
                 }}</ToggleGroupItem>
                 <ToggleGroupItem value="Game Running">{{
@@ -104,7 +104,7 @@
                     <ToggleGroupItem value="Never">{{
                         t('view.settings.notifications.notifications.conditions.never')
                     }}</ToggleGroupItem>
-                    <ToggleGroupItem v-if="hasVrOverlay" value="Inside VR">{{
+                    <ToggleGroupItem v-if="showTtsVrConditions" value="Inside VR">{{
                         t('view.settings.notifications.notifications.conditions.inside_vr')
                     }}</ToggleGroupItem>
                     <ToggleGroupItem value="Game Running">{{
@@ -181,7 +181,8 @@
     import { useI18n } from 'vue-i18n';
 
     import { useNotificationStore, useNotificationsSettingsStore } from '@/stores';
-    import { hasVrOverlay } from '@/shared/utils/platform';
+    import { hasVrOverlay, isAndroid } from '@/shared/utils/platform';
+    import { useCompanionStore } from '@/platform/android/companionStore';
 
     import FeedFiltersDialog from '../../dialogs/FeedFiltersDialog.vue';
     import SettingsGroup from '../SettingsGroup.vue';
@@ -216,6 +217,17 @@
     } = notificationsSettingsStore;
 
     const { testNotification, markAllAsSeen } = useNotificationStore();
+
+    // Android: "Inside VR" / "Outside VR" use the SteamVR state the paired PC companion reports. A stored VR
+    // condition stays visible without a companion, so it can be seen and changed.
+    const companionStore = isAndroid ? useCompanionStore() : null;
+    const VR_CONDITIONS = ['Inside VR', 'Outside VR'];
+    const showToastVrConditions = computed(
+        () => hasVrOverlay || Boolean(companionStore?.isPaired) || VR_CONDITIONS.includes(desktopToast.value)
+    );
+    const showTtsVrConditions = computed(
+        () => hasVrOverlay || Boolean(companionStore?.isPaired) || VR_CONDITIONS.includes(notificationTTS.value)
+    );
 
     const feedFiltersDialogMode = ref('');
 

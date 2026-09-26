@@ -14,6 +14,8 @@ vi.mock('@/shared/utils/platform', async (importOriginal) => ({
     hasDiscordPresence: false
 }));
 vi.mock('@/stores', async () => (await import('./settingsTabFixtures.js')).createStoresModule({ noUpdater: true }));
+const companion = vi.hoisted(() => ({ isPaired: false }));
+vi.mock('@/platform/android/companionStore', () => ({ useCompanionStore: () => companion }));
 vi.mock('pinia', async (importOriginal) => ({ ...(await importOriginal()), storeToRefs: (store) => store }));
 vi.mock('vue-i18n', async (importOriginal) => ({
     ...(await importOriginal()),
@@ -72,6 +74,7 @@ describe('Settings tabs on Android', () => {
     });
 
     beforeEach(() => {
+        companion.isPaired = false;
         window.AndroidHost = {
             GetBackgroundMode: vi.fn().mockResolvedValue(true),
             SetBackgroundMode: vi.fn(),
@@ -105,6 +108,19 @@ describe('Settings tabs on Android', () => {
         expect(text).toContain('android.system.battery_label');
         expect(text).toContain('android.system.notification_label');
         expect(window.AndroidHost.GetBackgroundMode).toHaveBeenCalled();
+    });
+
+    test('Notifications offers Inside VR and Outside VR once a PC companion is paired, never the AFK row', async () => {
+        companion.isPaired = true;
+        const wrapper = await mountTab(NotificationsTab);
+        const text = wrapper.text();
+
+        // Desktop notifications: both VR conditions; text to speech: Inside VR, as upstream.
+        expect(text.match(/conditions\.inside_vr(?!chat)/g)).toHaveLength(2);
+        expect(text.match(/conditions\.outside_vr(?!chat)/g)).toHaveLength(1);
+        expect(text).not.toContain(
+            'view.settings.notifications.notifications.desktop_notifications.desktop_notification_while_afk'
+        );
     });
 
     test('Notifications hides the VR conditions and the AFK row, and hosts the user-images switch', async () => {
