@@ -459,7 +459,7 @@
                                             v-if="avatarDialog.ref.authorId === currentUser.id"
                                             size="sm"
                                             variant="outline"
-                                            class="h-6 pointer-coarse:h-9"
+                                            class="h-6 pointer-coarse:h-10"
                                             :disabled="avatarDialog.galleryLoading"
                                             @click="displayAvatarGalleryUpload"
                                             :ariaLabel="t('dialog.screenshot_metadata.upload')">

@@ -332,7 +332,7 @@
                 v-if="currentUser.id === userDialog.id"
                 class="border-t border-muted-foreground/20 flex flex-col gap-1.5">
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-9 mt-1.5"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10 mt-1.5"
                     @click="toggleAvatarCopying">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.avatar_cloning') }}</span>
                     <span class="text-muted-foreground">{{
@@ -342,7 +342,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-9"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleAllowBooping">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.booping') }}</span>
                     <span class="text-muted-foreground">{{
@@ -352,7 +352,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-9"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleSharedConnectionsOptOut">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.show_mutual_friends') }}</span>
                     <span class="text-muted-foreground">{{
@@ -362,7 +362,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-9"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleDiscordFriendsOptOut">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.show_discord_connections') }}</span>
                     <span class="text-muted-foreground">{{

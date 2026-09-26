@@ -107,6 +107,23 @@ export function useCompactDialogScrollReset(elementRef) {
 }
 
 /**
+ * Capture-phase `mouseenter` listener for a container: while `isCompact` is true it stops the hover of every element
+ * inside the container (a tap on a phone fires a compat mouseenter). The group event cards open a 500px detail popover
+ * to the right of the card on hover; next to a full-width phone card that popover lands off-screen. Desktop and
+ * tablets keep the hover.
+ *
+ * @param {import('vue').Ref<boolean>} isCompact
+ * @returns {(event: Event) => void}
+ */
+export function createCompactHoverGuard(isCompact) {
+    return (event) => {
+        if (isCompact.value && event.target !== event.currentTarget) {
+            event.stopPropagation();
+        }
+    };
+}
+
+/**
  * Keeps the compact dialog scroller in step with the dialog: the dialog opens at the top of the page, so does a new
  * entity of the same type, and a tab switch while the tab strip is stuck shows the new tab from its start instead of
  * the old tab's scroll depth. Layout is only read on those events, never while scrolling.

@@ -113,15 +113,18 @@
                             :key="group.id"
                             class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-full hover:rounded-[25px_5px_5px_25px] compact:flex-wrap compact:gap-y-1.5"
                             @click="showGroupDialog(group.id)">
-                            <!-- Manual checkbox -->
+                            <!-- Manual checkbox. Touch: a 40px unscaled hit area that toggles the selection too, so a
+                                 near miss never leaves edit mode for the group dialog. -->
                             <div
+                                class="pointer-coarse:mx-0! pointer-coarse:flex pointer-coarse:size-10 pointer-coarse:shrink-0 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:transform-none!"
+                                data-slot="group-select-area"
                                 style="
                                     margin-left: 6px;
                                     margin-right: 6px;
                                     transform: scale(0.8);
                                     transform-origin: left center;
                                 "
-                                @click.stop>
+                                @click.stop="handleGroupSelectAreaClick($event, group.id)">
                                 <Checkbox
                                     :model-value="userDialogGroupEditSelectedGroupIds.includes(group.id)"
                                     @update:modelValue="() => toggleGroupSelection(group.id)" />
@@ -267,7 +270,7 @@
                                         : t('dialog.user.groups.leave_group_tooltip')
                                 ">
                                 <Button
-                                    class="rounded-full h-6 w-6 pointer-coarse:size-9"
+                                    class="rounded-full h-6 w-6 pointer-coarse:size-10"
                                     size="icon-sm"
                                     variant="outline"
                                     v-if="shiftHeld"
@@ -282,7 +285,7 @@
                                     <LogOut v-else />
                                 </Button>
                                 <Button
-                                    class="rounded-full h-6 w-6 text-red-600 pointer-coarse:size-9"
+                                    class="rounded-full h-6 w-6 text-red-600 pointer-coarse:size-10"
                                     size="icon-sm"
                                     variant="outline"
                                     v-else
@@ -428,6 +431,7 @@
     import { userDialogGroupSortingOptions } from '../../../shared/constants';
     import { hasLocalVrchatFiles, isAndroid } from '../../../shared/utils/platform';
     import { moveGroupInOrder, normalizeGroupOrder } from '../../../shared/utils/groupOrder';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { t } = useI18n();
 
@@ -437,6 +441,7 @@
     const { showCreateGroupDialog } = groupStore;
     const { cachedConfig } = storeToRefs(useAuthStore());
     const { shiftHeld } = storeToRefs(useUiStore());
+    const { isCoarsePointer } = useCompactLayout();
 
     const userDialogGroupEditMode = ref(false);
     const userDialogGroupEditGroups = ref([]);
@@ -685,6 +690,20 @@
         for (const groupId of userDialogGroupEditSelectedGroupIds.value) {
             leaveGroup(groupId);
         }
+    }
+
+    /**
+     * Touch: a tap on the enlarged area around a group's checkbox (not on the checkbox itself, which toggles on its
+     * own) selects the group as well.
+     *
+     * @param {MouseEvent} event
+     * @param {string} groupId
+     */
+    function handleGroupSelectAreaClick(event, groupId) {
+        if (!isCoarsePointer.value || event.target?.closest?.('[role="checkbox"]')) {
+            return;
+        }
+        toggleGroupSelection(groupId);
     }
 
     // Toggle individual group selection for bulk actions

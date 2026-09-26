@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
     userDialog: null,
     currentUserGroups: null,
     updateInGameGroupOrder: vi.fn(),
-    getGroups: vi.fn()
+    getGroups: vi.fn(),
+    showGroupDialog: vi.fn(),
+    isCoarsePointer: null
 }));
 
 vi.mock('../../../../shared/utils/platform', async (importOriginal) => ({
@@ -20,6 +22,9 @@ vi.mock('../../../../shared/utils/platform', async (importOriginal) => ({
     isAndroid: true,
     hasLocalGame: false,
     hasLocalVrchatFiles: false
+}));
+vi.mock('../../../../composables/useCompactLayout', () => ({
+    useCompactLayout: () => ({ isCompact: ref(false), isCoarsePointer: mocks.isCoarsePointer })
 }));
 vi.mock('pinia', async (i) => ({ ...(await i()), storeToRefs: (s) => s }));
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k }) }));
@@ -39,7 +44,7 @@ vi.mock('../../../../stores', () => ({
     useUiStore: () => ({ shiftHeld: ref(false) })
 }));
 vi.mock('../../../../coordinators/groupCoordinator', () => ({
-    showGroupDialog: vi.fn(),
+    showGroupDialog: (...args) => mocks.showGroupDialog(...args),
     applyGroup: (group) => group,
     saveCurrentUserGroups: vi.fn(),
     updateInGameGroupOrder: mocks.updateInGameGroupOrder,
@@ -84,6 +89,7 @@ function emptyGroups() {
 describe('UserDialogGroupsTab.vue on Android', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.isCoarsePointer = ref(false);
         mocks.userDialog = ref({
             id: 'usr_me',
             isGroupsLoading: false,
@@ -146,5 +152,53 @@ describe('UserDialogGroupsTab.vue on Android', () => {
         expect(mocks.userDialog.value.groupSorting.value).toBe('alphabetical');
         expect(mocks.userDialog.value.userGroups.remainingGroups.map((g) => g.name)).toEqual(['Alpha', 'Beta']);
         expect(mocks.updateInGameGroupOrder).not.toHaveBeenCalled();
+    });
+
+    describe('edit mode selection on touch', () => {
+        async function openEditMode() {
+            const wrapper = mount(UserDialogGroupsTab, { attachTo: document.body });
+            const editButton = wrapper.findAll('button').find((b) => b.text() === 'dialog.user.groups.edit_mode');
+            await editButton.trigger('click');
+            await flushPromises();
+            return wrapper;
+        }
+
+        function alphaRow(wrapper) {
+            return wrapper.findAll('[data-slot="group-select-area"]')[0];
+        }
+
+        it('selects the group from a tap next to its checkbox instead of opening the group', async () => {
+            mocks.isCoarsePointer = ref(true);
+            const wrapper = await openEditMode();
+            const area = alphaRow(wrapper);
+            const checkbox = area.find('[role="checkbox"]');
+            expect(area.classes()).toContain('pointer-coarse:size-10');
+            expect(checkbox.attributes('aria-checked')).toBe('false');
+
+            await area.trigger('click');
+            await flushPromises();
+
+            expect(checkbox.attributes('aria-checked')).toBe('true');
+            expect(mocks.showGroupDialog).not.toHaveBeenCalled();
+
+            // A tap on the checkbox itself toggles once, not twice.
+            await checkbox.trigger('click');
+            await flushPromises();
+            expect(checkbox.attributes('aria-checked')).toBe('false');
+            expect(mocks.showGroupDialog).not.toHaveBeenCalled();
+            wrapper.unmount();
+        });
+
+        it('keeps the PC behaviour with a mouse: only the checkbox toggles', async () => {
+            const wrapper = await openEditMode();
+            const area = alphaRow(wrapper);
+
+            await area.trigger('click');
+            await flushPromises();
+
+            expect(area.find('[role="checkbox"]').attributes('aria-checked')).toBe('false');
+            expect(mocks.showGroupDialog).not.toHaveBeenCalled();
+            wrapper.unmount();
+        });
     });
 });

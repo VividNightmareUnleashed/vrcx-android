@@ -15,6 +15,7 @@ import {
     ENTITY_ROOT_COMPACT_CLASS,
     ENTITY_TABS_COMPACT_CLASS,
     MENU_CONTENT_TOUCH_CLASS,
+    createCompactHoverGuard,
     findDialogScroller,
     getPaneScrollTarget,
     scrollDialogToTop,
@@ -244,5 +245,43 @@ describe('useCompactDialogScrollReset', () => {
     it('scrollDialogToTop ignores elements outside a dialog scroller', () => {
         expect(() => scrollDialogToTop(document.createElement('div'))).not.toThrow();
         expect(() => scrollDialogToTop(null)).not.toThrow();
+    });
+});
+
+describe('createCompactHoverGuard', () => {
+    function setup(isCompact) {
+        const container = document.createElement('div');
+        const card = document.createElement('div');
+        container.appendChild(card);
+        document.body.appendChild(container);
+        const onCardHover = vi.fn();
+        const onContainerHover = vi.fn();
+        card.addEventListener('mouseenter', onCardHover);
+        container.addEventListener('mouseenter', createCompactHoverGuard(ref(isCompact)), { capture: true });
+        container.addEventListener('mouseenter', onContainerHover);
+        return { container, card, onCardHover, onContainerHover };
+    }
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    it('keeps the event cards from opening their hover popover on phones (a tap fires mouseenter)', () => {
+        const { container, card, onCardHover, onContainerHover } = setup(true);
+
+        card.dispatchEvent(new MouseEvent('mouseenter'));
+        container.dispatchEvent(new MouseEvent('mouseenter'));
+
+        expect(onCardHover).not.toHaveBeenCalled();
+        // The container's own hover is left alone.
+        expect(onContainerHover).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the hover popover on PC and tablets', () => {
+        const { card, onCardHover } = setup(false);
+
+        card.dispatchEvent(new MouseEvent('mouseenter'));
+
+        expect(onCardHover).toHaveBeenCalledTimes(1);
     });
 });
