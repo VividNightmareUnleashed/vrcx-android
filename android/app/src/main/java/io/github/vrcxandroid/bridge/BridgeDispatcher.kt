@@ -46,7 +46,7 @@ class BridgeDispatcher(private val scope: CoroutineScope) {
                     try {
                         job()
                     } catch (t: Throwable) {
-                        Log.e(TAG, "lane ${module.className} job failed", t)
+                        Log.e(TAG, "lane ${module.className} job failed", SafeLog.redacted(t))
                     }
                 }
             }
@@ -60,7 +60,8 @@ class BridgeDispatcher(private val scope: CoroutineScope) {
         val msg = try {
             BridgeJson.parseToJsonElement(raw) as? JsonObject
         } catch (e: Exception) {
-            Log.w(TAG, "unparseable bridge message", e)
+            // The message may hold login arguments: never log it or the parser's excerpt of it.
+            Log.w(TAG, "unparseable bridge message ${SafeLog.kind(e)}")
             null
         } ?: return
         val id = (msg["id"] as? JsonPrimitive)?.longOrNull ?: return
@@ -77,7 +78,8 @@ class BridgeDispatcher(private val scope: CoroutineScope) {
             val out = try {
                 okReply(id, module.invoke(method, args))
             } catch (t: Throwable) {
-                if (t !is DotNetException) Log.w(TAG, "$className.$method failed", t)
+                // Messages may quote the arguments (passwords, cookies): stack frames only.
+                if (t !is DotNetException) Log.w(TAG, "$className.$method failed", SafeLog.redacted(t))
                 errorReply(id, errorText(t))
             }
             reply(out)

@@ -3,7 +3,9 @@ package io.github.vrcxandroid.host
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.UriPermission
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import android.webkit.MimeTypeMap
 import android.webkit.ValueCallback
@@ -121,6 +123,55 @@ object ActivityPickers {
         val result = startForResult(intent) ?: return null
         return if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
     }
+
+    /**
+     * ACTION_OPEN_DOCUMENT for working on the original document (Screenshot Manager): the grant is persisted with
+     * whatever the provider allowed (read, and write where it supports it), so later calls in this session and after a
+     * restart still reach it. Only the newest [keepGrants] such single-document grants are kept (Android caps them per
+     * app); tree grants are never touched.
+     */
+    suspend fun openDocumentPersistable(mimeTypes: List<String>, keepGrants: Int = 32): Uri? {
+        val types = mimeTypes.filter { it.isNotBlank() }.ifEmpty { listOf("*/*") }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        if (types.size == 1) {
+            intent.type = types[0]
+        } else {
+            intent.type = "*/*"
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray())
+        }
+        val result = startForResult(intent) ?: return null
+        if (result.resultCode != Activity.RESULT_OK) return null
+        val data = result.data ?: return null
+        val uri = data.data ?: return null
+        val granted = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if (data.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0 && granted != 0) {
+            val resolver = VrcxHost.app.contentResolver
+            try {
+                resolver.takePersistableUriPermission(uri, granted)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "could not persist the document grant")
+            }
+            try {
+                resolver.persistedUriPermissions
+                    .filter { !DocumentsContract.isTreeUri(it.uri) && it.uri != uri }
+                    .sortedByDescending { it.persistedTime }
+                    .drop((keepGrants - 1).coerceAtLeast(0))
+                    .forEach { resolver.releasePersistableUriPermission(it.uri, grantFlags(it)) }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not trim document grants (${e.javaClass.simpleName})")
+            }
+        }
+        return uri
+    }
+
+    private fun grantFlags(p: UriPermission): Int =
+        (if (p.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+            (if (p.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
 
     /** ACTION_OPEN_DOCUMENT_TREE with a persisted read/write grant. */
     suspend fun openDocumentTree(): Uri? {

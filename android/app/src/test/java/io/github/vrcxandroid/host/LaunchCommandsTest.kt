@@ -86,6 +86,59 @@ class LaunchCommandsTest {
     }
 
     @Test
+    fun externalNavigationCommandsAreDeliveredAsTheyAre() {
+        for (c in listOf("world/wrld_1:123~private(usr_2)", "avatar/avtr_1", "user/usr_1", "group/grp_1", "search/https://vrchat.com/home/user/usr_1")) {
+            assertEquals(c, ExternalRoute.Navigate(c), LaunchCommands.routeExternal(c))
+        }
+        // shared text is a search command and stays a navigation
+        val shared = LaunchCommands.fromIntent("android.intent.action.SEND", null, "vrcx://switchavatar/avtr_1")!!
+        assertEquals(ExternalRoute.Navigate(shared), LaunchCommands.routeExternal(shared))
+    }
+
+    @Test
+    fun externalStateChangingCommandsNeedConfirmation() {
+        for (c in listOf(
+            "switchavatar/avtr_1",
+            "addavatardb/https://evil.example/api",
+            "local-favorite-world/Group/wrld_1",
+            "local-favorite-avatar/Group/avtr_1",
+            "import/avatar/avtr_1,avtr_2",
+        )) {
+            assertEquals(c, ExternalRoute.Confirm(c), LaunchCommands.routeExternal(c))
+        }
+        val fromBrowser = LaunchCommands.fromIntent("android.intent.action.VIEW", "vrcx://switchavatar/avtr_1", null)!!
+        assertEquals(ExternalRoute.Confirm("switchavatar/avtr_1"), LaunchCommands.routeExternal(fromBrowser))
+    }
+
+    @Test
+    fun crashAndUnknownExternalCommandsAreDropped() {
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal(LaunchCommands.crash(didCrash = true)))
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal(LaunchCommands.fromUri("vrcx://crash/Browser crashed.")!!))
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal("somethingelse/x"))
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal("SwitchAvatar/avtr_1"))
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal("worldx/wrld_1"))
+        assertEquals(ExternalRoute.Drop, LaunchCommands.routeExternal(""))
+    }
+
+    @Test
+    fun loggedNamesCarryNoPayload() {
+        assertEquals("crash", LaunchCommands.loggableName("crash/Browser crashed."))
+        assertEquals("a??b", LaunchCommands.loggableName("a:\nb/secret"))
+        assertEquals(32, LaunchCommands.loggableName("x".repeat(100)).length)
+    }
+
+    @Test
+    fun externalCommandsUseTheirOwnSlot() {
+        val launch = LaunchCommandInbox()
+        val external = LaunchCommandInbox()
+        launch.setPending(LaunchCommands.crash(didCrash = false))
+        external.deliver("switchavatar/avtr_1", pageConnected = false) {}
+        assertEquals("crash/Browser was killed.", launch.take())
+        assertEquals("switchavatar/avtr_1", external.take())
+        assertEquals("", external.take())
+    }
+
+    @Test
     fun theLastPendingCommandWins() {
         val inbox = LaunchCommandInbox()
         inbox.setPending(LaunchCommands.crash(didCrash = true))

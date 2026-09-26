@@ -1,6 +1,7 @@
 package io.github.vrcxandroid
 
 import android.app.Application
+import android.util.Log
 import io.github.vrcxandroid.bridge.AndroidHostModule
 import io.github.vrcxandroid.bridge.AssetBundleManagerModule
 import io.github.vrcxandroid.bridge.BridgeDispatcher
@@ -18,6 +19,7 @@ import io.github.vrcxandroid.logwatcher.LogWatcherModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Process-wide singletons. Modules take only a Context in their constructor and reach their collaborators through
@@ -44,10 +46,17 @@ object AppGraph {
         private set
     lateinit var gameState: GameStateProvider
         private set
-    lateinit var companion: CompanionController
-        private set
-    lateinit var tts: TtsController
-        private set
+
+    /**
+     * Built on the IO dispatcher right after [init] (EncryptedSharedPreferences, the Keystore and a network callback
+     * are too slow for Application.onCreate); an earlier caller builds it or waits for it.
+     */
+    val companion: CompanionController get() = companionLazy.value
+    private lateinit var companionLazy: Lazy<CompanionController>
+
+    /** Built off the main thread like [companion] (it reads the cached voice list from disk). */
+    val tts: TtsController get() = ttsLazy.value
+    private lateinit var ttsLazy: Lazy<TtsController>
 
     fun init(app: Application) {
         this.app = app
@@ -63,10 +72,10 @@ object AppGraph {
 
         logWatcher = LogWatcher(app)
         gameState = logWatcher
-        companion = CompanionManager(app)
+        companionLazy = lazy { CompanionManager(app) }
 
         host = AndroidHostServices(app)
-        tts = AndroidTtsController(app)
+        ttsLazy = lazy { AndroidTtsController(app) }
 
         listOf(
             storageModule,
@@ -78,5 +87,18 @@ object AppGraph {
             AssetBundleManagerModule(),
             AndroidHostModule(app),
         ).forEach(dispatcher::register)
+
+        // The companion's connection loop still starts with the process, just off the main thread.
+        scope.launch(Dispatchers.IO) {
+            listOf("companion" to companionLazy, "tts" to ttsLazy).forEach { (name, holder) ->
+                try {
+                    holder.value
+                } catch (e: Exception) {
+                    Log.e(TAG, "cannot create the $name (${e.javaClass.simpleName})")
+                }
+            }
+        }
     }
+
+    private const val TAG = "VRCXAppGraph"
 }

@@ -1,7 +1,6 @@
 package io.github.vrcxandroid.bridge.appapi
 
 import android.Manifest
-import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
@@ -19,7 +18,8 @@ import io.github.vrcxandroid.bridge.appapi.docs.LocalFileDoc
 import java.io.File
 import java.io.IOException
 
-private const val PREF_UGC_TREE = "ugcTreeUri"
+/** No longer used: the photos library used to fall back to the UGC tree. Removed when seen. */
+private const val PREF_UGC_TREE_OLD = "ugcTreeUri"
 private const val PREF_PHOTOS_TREE = "photosTreeUri"
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
@@ -87,14 +87,10 @@ class AndroidUgcStorage(
     private val prefs: SharedPreferences,
     private val view: (Uri, String?) -> Boolean,
 ) : UgcStorage {
-    /** The granted UGC tree, remembered so the photos library can fall back to it. */
+    /** The granted UGC tree, or null. The photos library does not fall back to it (see [AndroidPhotosLibrary]). */
     private fun treeFor(ugcFolderPath: String?, write: Boolean): SafDocumentTree? {
-        val tree = SafDocumentTree.granted(context, ugcFolderPath, write)
-        val value = tree?.location
-        if (prefs.getString(PREF_UGC_TREE, null) != value) {
-            prefs.edit().apply { if (value != null) putString(PREF_UGC_TREE, value) else remove(PREF_UGC_TREE) }.apply()
-        }
-        return tree
+        if (prefs.contains(PREF_UGC_TREE_OLD)) prefs.edit().remove(PREF_UGC_TREE_OLD).apply()
+        return SafDocumentTree.granted(context, ugcFolderPath, write)
     }
 
     override fun folder(ugcFolderPath: String?, type: String, monthFolder: String): UgcFolder {
@@ -214,9 +210,11 @@ class AndroidUgcStorage(
 }
 
 /**
- * The folder the screenshot tools search (upstream `GetVRChatPhotosLocation`): a SAF tree picked through
- * `OpenVrcPhotosFolder`, else the UGC tree, else MediaStore `Pictures/VRChat/` (what the app can see there).
- * [picker] asks for the tree off the AppApi lane (see [BackgroundPicker]).
+ * The folder the screenshot tools search (upstream `GetVRChatPhotosLocation`): the SAF tree the user picked through
+ * `OpenVrcPhotosFolder` or `AndroidHost.ChoosePhotosFolder` ([PhotosFolder]). Without one, search and "last
+ * screenshot" have nothing to read: there is no fallback to the prints folder or to MediaStore, which would need a
+ * broad photo permission and still only show part of the pictures. [picker] asks for the tree off the AppApi lane
+ * (see [BackgroundPicker]).
  */
 class AndroidPhotosLibrary(
     private val context: Context,
@@ -224,32 +222,11 @@ class AndroidPhotosLibrary(
     private val view: (Uri, String?) -> Boolean,
     private val picker: BackgroundPicker<Uri>,
 ) : PhotosLibrary {
-    private fun rootTree(): SafDocumentTree? =
-        SafDocumentTree.granted(context, prefs.getString(PREF_PHOTOS_TREE, null), write = false)
-            ?: SafDocumentTree.granted(context, prefs.getString(PREF_UGC_TREE, null), write = false)
+    private fun rootTree(): SafDocumentTree? = PhotosFolder.tree(context, prefs)
 
     override fun location(): String = rootTree()?.location.orEmpty()
 
-    override fun listPngs(): List<PhotoEntry>? {
-        rootTree()?.let { tree -> return TreeWalk.listPngs(tree, tree.rootId) }
-        if (Build.VERSION.SDK_INT < 29) return null
-        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val out = mutableListOf<PhotoEntry>()
-        context.contentResolver.query(
-            collection,
-            arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.RELATIVE_PATH, *ContentDoc.MEDIA_INFO_COLUMNS),
-            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
-            arrayOf("$MEDIA_PREFIX%", "%.png"),
-            null,
-        )?.use { c ->
-            while (c.moveToNext()) {
-                val uri = ContentUris.withAppendedId(collection, c.getLong(0))
-                val relative = c.getString(1).orEmpty().removePrefix(MEDIA_PREFIX).trimEnd('/')
-                out += PhotoEntry(ContentDoc(context, uri, ContentDoc.mediaInfo(c, 2)), relative)
-            }
-        }
-        return TreeWalk.sortLikeListPngs(out)
-    }
+    override fun listPngs(): List<PhotoEntry>? = rootTree()?.let { tree -> TreeWalk.listPngs(tree, tree.rootId) }
 
     /**
      * Opens the photos tree. Without one, the folder picker is started in the background and false ("folder missing")
@@ -258,7 +235,7 @@ class AndroidPhotosLibrary(
     override fun open(): Boolean {
         rootTree()?.let { return openTree(it) }
         picker.launch { picked ->
-            prefs.edit().putString(PREF_PHOTOS_TREE, picked.toString()).apply()
+            PhotosFolder.remember(prefs, picked)
             openTree(SafDocumentTree(context, picked))
         }
         return false
@@ -266,9 +243,62 @@ class AndroidPhotosLibrary(
 
     private fun openTree(tree: SafDocumentTree): Boolean =
         view(Uri.parse(tree.folderUri(tree.rootId)), DocumentsContract.Document.MIME_TYPE_DIR)
+}
 
-    companion object {
-        /** MediaStore relative path of VRChat's photo folder on PC-like layouts. */
-        const val MEDIA_PREFIX = "Pictures/VRChat/"
+/**
+ * The chosen VRChat photos folder, shared by the photos library, `AndroidHost.GetPhotosFolder` /
+ * `ChoosePhotosFolder` and `electron.openFileDialog` (which maps a picked photo into the folder so the Screenshot
+ * Manager's previous/next buttons walk it).
+ */
+object PhotosFolder {
+    /** SharedPreferences file of the AppApi platform, which also holds the photos tree. */
+    const val PREFS = "vrcx_appapi"
+
+    fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** The photos tree when one is chosen and its grant is still held, else null. */
+    fun tree(context: Context, prefs: SharedPreferences = prefs(context)): SafDocumentTree? =
+        SafDocumentTree.granted(context, prefs.getString(PREF_PHOTOS_TREE, null), write = false)
+
+    fun remember(prefs: SharedPreferences, treeUri: Uri) {
+        prefs.edit().putString(PREF_PHOTOS_TREE, treeUri.toString()).apply()
     }
+
+    /** Display name of the chosen folder (`VRChat`), or "" when none is chosen. */
+    fun displayName(context: Context): String {
+        val tree = tree(context) ?: return ""
+        val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree.treeUri, tree.rootId)
+        val name = try {
+            context.contentResolver.query(rootUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (e: Exception) {
+            null
+        }
+        return name?.takeIf { it.isNotBlank() } ?: DocumentTreeNames.fallbackName(tree.rootId)
+    }
+
+    /**
+     * [picked] (a single document from ACTION_OPEN_DOCUMENT) as a document of the photos tree when it lies inside it,
+     * so its siblings are the photos in that folder; otherwise [picked] itself, whose siblings are unknown.
+     */
+    fun mapIntoTree(context: Context, picked: Uri): Uri {
+        val tree = tree(context) ?: return picked
+        if (picked.authority != tree.treeUri.authority || DocumentsContract.isTreeUri(picked)) return picked
+        return try {
+            val documentId = DocumentsContract.getDocumentId(picked)
+            val inTree = DocumentsContract.buildDocumentUriUsingTree(tree.treeUri, documentId)
+            // Throws or returns null unless the document is a descendant of the tree's root.
+            val path = DocumentsContract.findDocumentPath(context.contentResolver, inTree)?.path
+            if (path != null && path.size >= 2 && path.first() == tree.rootId && path.last() == documentId) inTree else picked
+        } catch (e: Exception) {
+            picked
+        }
+    }
+}
+
+/** Pure helpers for tree names. */
+object DocumentTreeNames {
+    /** Last path part of a document id such as `primary:Pictures/VRChat`, for providers that report no name. */
+    fun fallbackName(documentId: String): String =
+        documentId.substringAfterLast(':').trimEnd('/').substringAfterLast('/').ifEmpty { documentId }
 }

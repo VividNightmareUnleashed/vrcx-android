@@ -6,7 +6,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** What [DocResolver] needs from the host (ARCHITECTURE.md §6.6). */
 interface DocPlatform {
-    /** Maps a `/local/` URL or an absolute path inside the served roots to a file, or null. */
+    /**
+     * Maps a `/local/` URL or an absolute path inside the served roots to a file, or null (also for the WebView's own
+     * cache folders).
+     */
     fun fileFor(pathOrUrl: String): File?
 
     /** The `/local/` URL of a file inside the served roots ("" when it is not served). */
@@ -15,7 +18,10 @@ interface DocPlatform {
     /** Directories served under `/local/` (the local root and the cache directory). */
     fun servedRoots(): List<File>
 
-    /** A SAF document or MediaStore item, or null when the URI is not accessible. */
+    /**
+     * A SAF document or MediaStore item, or null when the URI is not accessible or the app holds no grant for it (see
+     * `ContentGrants`).
+     */
     fun contentDoc(uri: String): Doc?
 }
 
@@ -24,9 +30,13 @@ interface DocPlatform {
  *
  * The page can only display files served under `/local/`, and it reuses the displayed `filePath` as the argument of
  * every later call. Files already under a served root are shown through their own `/local/` URL. Anything else (SAF
- * documents, MediaStore items, files elsewhere) is shown through a mirror copy `mirror/<hash>.png` in the cache
+ * documents, MediaStore items, the photos folder) is shown through a mirror copy `mirror/<hash>.png` in the cache
  * directory; the mirror URL maps back to the original, so edits (deleting metadata) apply to the original document.
  * Mirror copies are made only when a file is displayed and are trimmed to [maxFiles] / [maxBytes].
+ *
+ * The page's path strings are resolved only inside the served roots or to content URIs the platform accepts: an
+ * absolute path elsewhere (the database, shared_prefs, /proc) resolves to nothing. Docs the app produced itself (photos
+ * folder entries shown through a mirror) map back through the mirror's source record, which lives in the cache.
  */
 class DocResolver(
     private val platform: DocPlatform,
@@ -36,12 +46,14 @@ class DocResolver(
 ) {
     private val mirrorSources = ConcurrentHashMap<String, String>()
 
-    /** Resolves a path string (`/local/` URL, absolute path, mirror URL or `content://` URI); null when unusable. */
+    /**
+     * Resolves a path string (`/local/` URL, absolute path inside the served roots, mirror URL or `content://` URI);
+     * null when unusable or outside what the page may reach. Windows paths from PC logs (`C:\...`) resolve to nothing.
+     */
     fun resolve(path: String?): Doc? {
         if (path.isNullOrEmpty()) return null
         if (path.startsWith("content://")) return platform.contentDoc(path)
-        // Windows paths from PC logs ("C:\...") are not absolute on Android and end up as missing files.
-        val file = platform.fileFor(path) ?: File(path).takeIf { it.isAbsolute } ?: return null
+        val file = platform.fileFor(path) ?: return null
         mirrorSourceOf(file)?.let { source -> sourceDoc(source)?.let { return it } }
         return LocalFileDoc(file)
     }

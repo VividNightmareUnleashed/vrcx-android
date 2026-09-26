@@ -93,18 +93,4 @@ class DocumentTreesTest {
         // every folder is listed exactly once: root, 2025-08, 2025-09, 2025-08/x
         assertEquals(4, tree.listings)
     }
-
-    @Test
-    fun flatQueryResultsAreOrderedLikeTheWalk() {
-        file("b.png")
-        file("A.png")
-        file("2025-09/VRChat_2.png")
-        file("2025-09/VRChat_1.png")
-        file("2025-08/x/deep.png")
-        file("2025-08/VRChat_0.png")
-        file("Prints/2025-09/p.png")
-        val walked = TreeWalk.listPngs(tree, tree.rootId)
-        val sorted = TreeWalk.sortLikeListPngs(walked.shuffled(kotlin.random.Random(7)).reversed())
-        assertEquals(walked.map { it.relativeDir to it.doc.name }, sorted.map { it.relativeDir to it.doc.name })
-    }
 }

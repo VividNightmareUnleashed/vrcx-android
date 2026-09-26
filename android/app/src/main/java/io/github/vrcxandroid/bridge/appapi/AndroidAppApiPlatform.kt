@@ -14,6 +14,7 @@ import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.BuildConfig
 import io.github.vrcxandroid.GameStateProvider
 import io.github.vrcxandroid.bridge.appapi.docs.ContentDoc
+import io.github.vrcxandroid.bridge.appapi.docs.ContentGrants
 import io.github.vrcxandroid.bridge.appapi.docs.Doc
 import io.github.vrcxandroid.host.HostServices
 import kotlinx.coroutines.Dispatchers
@@ -26,15 +27,13 @@ import java.util.Locale
 /** [AppApiPlatform] on Android, through the collaborators wired in [AppGraph]. */
 class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
     private val host: HostServices get() = AppGraph.host
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = PhotosFolder.prefs(context)
 
     override val vrcxVersion: String = BuildConfig.VRCX_VERSION
     override val gameState: GameStateProvider get() = AppGraph.gameState
     override val httpClient: OkHttpClient get() = AppGraph.http.client
     override val cacheDir: File get() = context.cacheDir
-    override val externalFilesDir: File? get() = context.getExternalFilesDir(null)
-    override val customScriptDir: File?
-        get() = CustomFiles.scriptDir(Build.VERSION.SDK_INT, externalFilesDir, context.filesDir)
+    override val customDir: File? get() = customDir(context)
 
     override val images: ImageCodec = AndroidImageCodec()
     override val ugc: UgcStorage = AndroidUgcStorage(context, prefs) { uri, type -> viewUri(uri.toString(), type) }
@@ -143,8 +142,10 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
 
     override fun servedRoots(): List<File> = listOf(host.localRoot, context.cacheDir)
 
+    /** Only documents this app was given (a picker or tree grant) or owns in MediaStore; see [ContentGrants]. */
     override fun contentDoc(uri: String): Doc? = try {
-        ContentDoc(context, Uri.parse(uri))
+        val parsed = Uri.parse(uri)
+        if (ContentGrants.canUse(context, parsed)) ContentDoc(context, parsed) else null
     } catch (e: Exception) {
         null
     }
@@ -166,7 +167,37 @@ class AndroidAppApiPlatform(private val context: Context) : AppApiPlatform {
 
     companion object {
         private const val TAG = "VRCXAppApi"
-        private const val PREFS = "vrcx_appapi"
         const val FILE_PROVIDER_SUFFIX = ".fileprovider"
+
+        private val customLock = Any()
+
+        @Volatile
+        private var customReady = false
+
+        /**
+         * `filesDir/custom` ([CustomFiles]), after the one-time migration of the old locations: `custom.css` from
+         * `getExternalFilesDir(null)`, and `custom.js` only from the internal files directory Android 8-10 read it
+         * from (on Android 11+ it was read from the external folder, which other apps and USB could write).
+         */
+        fun customDir(context: Context): File {
+            val dir = CustomFiles.dir(context.filesDir)
+            if (!customReady) {
+                synchronized(customLock) {
+                    if (!customReady) {
+                        val legacyScriptDir = if (Build.VERSION.SDK_INT < LEGACY_SCRIPT_SDK_LIMIT) context.filesDir else null
+                        try {
+                            CustomFiles.migrate(dir, context.getExternalFilesDir(null), legacyScriptDir)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "custom file migration failed (${e.javaClass.simpleName})")
+                        }
+                        customReady = true
+                    }
+                }
+            }
+            return dir
+        }
+
+        /** Android 11: from here on, earlier versions read custom.js from the external files folder. */
+        private const val LEGACY_SCRIPT_SDK_LIMIT = 30
     }
 }

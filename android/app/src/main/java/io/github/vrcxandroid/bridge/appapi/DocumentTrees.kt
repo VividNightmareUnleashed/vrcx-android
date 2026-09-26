@@ -68,23 +68,6 @@ object TreeWalk {
         }
         return out
     }
-
-    /** Puts entries found by a flat query (MediaStore) in the order [listPngs] would produce. */
-    fun sortLikeListPngs(entries: List<PhotoEntry>): List<PhotoEntry> {
-        val parents = HashMap<String, List<String>>()
-        fun path(relative: String) = parents.getOrPut(relative) { if (relative.isEmpty()) emptyList() else relative.split('/') }
-        return entries.sortedWith { a, b ->
-            val pa = path(a.relativeDir)
-            val pb = path(b.relativeDir)
-            // breadth first: shallower folders first, then folders in the order their ancestors were visited
-            if (pa.size != pb.size) return@sortedWith pa.size - pb.size
-            for (i in pa.indices) {
-                val c = String.CASE_INSENSITIVE_ORDER.compare(pa[i], pb[i])
-                if (c != 0) return@sortedWith c
-            }
-            String.CASE_INSENSITIVE_ORDER.compare(a.doc.name, b.doc.name)
-        }
-    }
 }
 
 /** The `<root>/<type>/<month>` part of the UGC storage on a [DocumentTree]. */

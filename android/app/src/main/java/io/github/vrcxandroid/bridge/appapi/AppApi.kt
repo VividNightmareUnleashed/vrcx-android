@@ -96,8 +96,8 @@ class AppApi(
             openCalendarFile(a.str(0))
             JsonNull
         }
-        "CustomCss" -> jsonOf(readCustomFile(platform.externalFilesDir, CustomFiles.CSS))
-        "CustomScript" -> jsonOf(customScript())
+        "CustomCss" -> jsonOf(CustomFiles.read(platform.customDir, CustomFiles.CSS))
+        "CustomScript" -> jsonOf(CustomFiles.read(platform.customDir, CustomFiles.SCRIPT))
         "CurrentCulture" -> jsonOf(platform.formatLocaleTag().ifEmpty { "en-US" })
         "CurrentLanguage" -> jsonOf(platform.uiLocaleTag())
 
@@ -201,7 +201,7 @@ class AppApi(
         try {
             platform.openExternalUrl(parsed.toString())
         } catch (e: Exception) {
-            platform.log("Failed to open link: $url", e)
+            platform.log("Failed to open a link", e)
         }
     }
 
@@ -216,7 +216,8 @@ class AppApi(
     fun openCalendarFile(ics: String?) {
         if (!Ics.isValid(ics)) throw DotNetException("Exception", "Invalid calendar file")
         try {
-            val file = File(platform.cacheDir, "event.ics")
+            // cacheDir/share/ is one of the few folders the FileProvider hands to other apps
+            val file = File(File(platform.cacheDir, SHARE_DIR).apply { mkdirs() }, "event.ics")
             file.writeText(ics!!)
             platform.openCalendar(file, Ics.parseFirstEvent(ics, zone()))
         } catch (e: Exception) {
@@ -231,26 +232,6 @@ class AppApi(
             platform.copyImageToClipboard(doc)
         } catch (e: Exception) {
             platform.log("Failed to copy image to clipboard", e)
-        }
-    }
-
-    /** custom.js only from [AppApiPlatform.customScriptDir]: it runs in the page with full bridge access. */
-    private fun customScript(): String {
-        val dir = platform.customScriptDir
-        val external = platform.externalFilesDir
-        if (external != null && dir?.absoluteFile != external.absoluteFile && File(external, CustomFiles.SCRIPT).isFile) {
-            platform.log("Ignoring ${CustomFiles.SCRIPT} in ${external.name}: other apps can write that folder on this Android version")
-        }
-        return readCustomFile(dir, CustomFiles.SCRIPT)
-    }
-
-    private fun readCustomFile(dir: File?, name: String): String {
-        val file = File(dir ?: return "", name)
-        if (!file.isFile) return ""
-        return try {
-            file.readText(Charsets.UTF_8).removePrefix(BOM)
-        } catch (e: Exception) {
-            ""
         }
     }
 
@@ -476,7 +457,7 @@ class AppApi(
 
     companion object {
         const val CLASS_NAME = "AppApiElectron"
-        private val BOM: String = Char(0xFEFF).toString()
+        const val SHARE_DIR = "share"
         private val IMAGE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
         private val UGC_FOLDERS = setOf("prints", "stickers", "emoji")
         private val LOCAL_DATE_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")

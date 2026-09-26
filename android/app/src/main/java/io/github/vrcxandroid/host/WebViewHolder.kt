@@ -67,6 +67,17 @@ object WebViewHolder {
         return wv
     }
 
+    /**
+     * Start on boot: creates and loads the WebView without an Activity; [attach] adopts it when the app is opened.
+     * False when the WebView gate fails (then only the Activity can explain it). Main thread.
+     */
+    fun startHeadless(context: Context): Boolean {
+        if (webView != null) return true
+        if (!WebViewGate.check(context).ok) return false
+        load(create(context.applicationContext))
+        return true
+    }
+
     /** Removes the WebView from [activity] without destroying it and points its context back at the application. */
     fun detach(activity: MainActivity) {
         val wv = webView ?: return
@@ -168,7 +179,7 @@ object WebViewHolder {
         s.builtInZoomControls = false
         s.displayZoomControls = false
         s.mediaPlaybackRequiresUserGesture = false
-        s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         s.setSupportMultipleWindows(false)
         s.javaScriptCanOpenWindowsAutomatically = false
         s.setGeolocationEnabled(false)
@@ -210,8 +221,8 @@ object WebViewHolder {
         )
         val script = BridgeConfig.prelude(config) + shim(ctx)
         WebViewCompat.addDocumentStartJavaScript(wv, script, setOf(HostUrls.ORIGIN))
-        WebViewCompat.addWebMessageListener(wv, NATIVE_OBJECT, setOf(HostUrls.ORIGIN)) { view, message, _, isMainFrame, replyProxy ->
-            onMessage(view, message, isMainFrame, replyProxy)
+        WebViewCompat.addWebMessageListener(wv, NATIVE_OBJECT, setOf(HostUrls.ORIGIN)) { view, message, origin, mainFrame, proxy ->
+            onMessage(view, message, origin.toString(), mainFrame, proxy)
         }
     }
 
@@ -223,8 +234,15 @@ object WebViewHolder {
     }
 
     @SuppressLint("RequiresFeature")
-    private fun onMessage(view: WebView, message: WebMessageCompat, isMainFrame: Boolean, proxy: JavaScriptReplyProxy) {
-        if (!isMainFrame || view !== webView) return
+    private fun onMessage(
+        view: WebView,
+        message: WebMessageCompat,
+        sourceOrigin: String,
+        isMainFrame: Boolean,
+        proxy: JavaScriptReplyProxy,
+    ) {
+        // The allowed-origin rule already limits the listener to the app origin; checking again costs nothing.
+        if (!isMainFrame || view !== webView || !HostUrls.isAppOrigin(sourceOrigin)) return
         val data = message.data ?: return
         if (data.startsWith(HELLO_PREFIX)) {
             onPageHello(proxy)

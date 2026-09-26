@@ -78,45 +78,34 @@ class MediaStoreAppApiTest {
     }
 
     @Test
-    fun screenshotToolsFallBackToPicturesVrchatWithoutAPhotosFolder() {
+    fun screenshotToolsDoNotFallBackToMediaStoreWithoutAPhotosFolder() {
         val worldId = "wrld_test_" + System.nanoTime()
         val json = "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_a\",\"displayName\":\"A\"}," +
             "\"world\":{\"name\":\"Test World\",\"id\":\"$worldId\",\"instanceId\":\"$worldId:1\"}," +
             "\"players\":[{\"id\":\"usr_c\",\"displayName\":\"Charlie\"}]}"
-        val shot = insertImage("Pictures/VRChat/$month/", "VRChat_2099-01-01_00-00-00.000_64x36.png", ScreenshotParser.writeVrcxMetadata(json, png(64, 36, Color.CYAN))!!)
-        // a newer print with the same metadata: found by search, but never the "last screenshot"
-        val print = insertImage("Pictures/VRChat/Prints/$month/", "print.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 32, Color.CYAN))!!)
+        insertImage("Pictures/VRChat/$month/", "VRChat_2099-01-01_00-00-00.000_64x36.png", ScreenshotParser.writeVrcxMetadata(json, png(64, 36, Color.CYAN))!!)
+        PhotosFolder.prefs(context).edit().remove("photosTreeUri").commit()
 
+        // Without a chosen photos folder there is nothing to search (no MediaStore query, no prints folder).
         assertEquals("", call("GetVRChatPhotosLocation").jsonPrimitive.content)
-        val found = Json.parseToJsonElement(call("FindScreenshotsBySearch", worldId, 3).jsonPrimitive.content).jsonArray
-        assertEquals(setOf(shot.toString(), print.toString()), found.map { api.docs.resolve(it.jsonPrimitive.content)!!.key }.toSet())
-        val byName = Json.parseToJsonElement(call("FindScreenshotsBySearch", "charl", 0).jsonPrimitive.content).jsonArray
-        assertTrue(byName.map { api.docs.resolve(it.jsonPrimitive.content)!!.key }.containsAll(listOf(shot.toString(), print.toString())))
-
-        val last = call("GetLastScreenshot").jsonPrimitive.content
-        assertEquals(shot.toString(), api.docs.resolve(last)!!.key)
+        assertEquals(0, Json.parseToJsonElement(call("FindScreenshotsBySearch", worldId, 3).jsonPrimitive.content).jsonArray.size)
+        assertEquals(JsonNull, call("GetLastScreenshot"))
     }
 
     @Test
-    fun rewritingAnOlderShotKeepsItsCreationTimeAndTheNewestShotLast() {
+    fun rewritingAShotKeepsItsCreationTime() {
         val json = "{\"application\":\"VRCX\",\"version\":1,\"author\":{\"id\":\"usr_a\",\"displayName\":\"A\"}}"
-        // names without a VRChat capture time: ordered by the MediaStore creation time (DATE_ADDED)
         val older = insertImage("Pictures/VRChat/$month/", "vrcx_test_older.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 18, Color.RED))!!)
         val created = ContentDoc(context, older).creationTime()
-        Thread.sleep(1_100)
-        val newer = insertImage("Pictures/VRChat/$month/", "vrcx_test_newer.png", ScreenshotParser.writeVrcxMetadata(json, png(32, 18, Color.GREEN))!!)
-        val newerDoc = ContentDoc(context, newer)
-        assertTrue(newerDoc.creationTime() > created)
-        assertEquals(newer.toString(), api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
+        val modified = ContentDoc(context, older).lastModified()
 
         Thread.sleep(1_100)
         assertEquals("true", call("DeleteScreenshotMetadata", older.toString()).jsonPrimitive.content)
         val rewritten = ContentDoc(context, older)
         assertEquals(ScreenshotParser.NO_METADATA, Json.parseToJsonElement(call("GetScreenshotMetadata", older.toString()).jsonPrimitive.content).jsonObject["error"]!!.jsonPrimitive.content)
-        // the rewrite moved the modification time past the newer shot, but not the creation time
-        assertTrue("${rewritten.lastModified()} > ${newerDoc.lastModified()}", rewritten.lastModified() > newerDoc.lastModified())
+        // the rewrite moved the modification time, but not the creation time
+        assertTrue("${rewritten.lastModified()} > $modified", rewritten.lastModified() > modified)
         assertEquals(created, rewritten.creationTime())
-        assertEquals(newer.toString(), api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
     }
 
     @Test

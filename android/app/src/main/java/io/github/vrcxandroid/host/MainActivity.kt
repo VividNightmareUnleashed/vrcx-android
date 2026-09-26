@@ -104,7 +104,8 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val command = LaunchCommands.fromIntent(intent.action, intent.dataString, intent.getCharSequenceExtra(Intent.EXTRA_TEXT))
-        if (command != null) VrcxHost.deliverLaunchCommand(command)
+        // Any app or browser page can send this intent: it is routed as untrusted (ARCHITECTURE.md §6.9).
+        if (command != null) VrcxHost.deliverExternalLaunchCommand(command)
         if (BuildConfig.DEBUG) DebugSelfTest.onIntent(intent)
     }
 

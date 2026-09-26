@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.bridge.storage
 
 import android.util.Log
+import io.github.vrcxandroid.bridge.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -105,7 +106,7 @@ class VrcxStorage(
                 writeAtomically(VrcxJsonFormat.encode(snapshot))
                 synchronized(lock) { if (gen > savedGeneration) savedGeneration = gen }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to save ${file.name}", e)
+                Log.e(TAG, "Failed to save ${file.name} ${SafeLog.kind(e)}")
             }
         }
     }
@@ -132,7 +133,8 @@ class VrcxStorage(
         return try {
             VrcxJsonFormat.decode(file.readBytes())
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to read ${file.name}; starting empty", e)
+            // The parser quotes the file (it holds the proxy credentials): class name only.
+            Log.e(TAG, "Failed to read ${file.name} ${SafeLog.kind(e)}; starting empty")
             try {
                 file.copyTo(File(file.parentFile, file.name + ".corrupt"), overwrite = true)
             } catch (_: Exception) {

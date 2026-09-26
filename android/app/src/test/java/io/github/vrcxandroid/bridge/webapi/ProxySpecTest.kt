@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.bridge.webapi
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
@@ -71,6 +72,19 @@ class ProxySpecTest {
                 fail("expected $bad to be rejected")
             } catch (_: InvalidProxyException) {
             }
+        }
+    }
+
+    @Test
+    fun rejectionsNeverQuoteTheValue() {
+        // URISyntaxException would quote the whole URI, credentials included
+        try {
+            ProxySpec.parse("http://user:hunter2 secret@proxy.example:8080")
+            fail("expected a rejection")
+        } catch (e: InvalidProxyException) {
+            assertNull(e.cause)
+            assertFalse(e.message!!, "hunter2" in e.message!!)
+            assertFalse(e.toString(), "proxy.example" in e.toString())
         }
     }
 }

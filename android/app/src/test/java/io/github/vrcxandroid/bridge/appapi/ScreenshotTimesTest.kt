@@ -113,12 +113,14 @@ class ScreenshotTimesTest {
         platform.photos = FakeAppApiPlatform.FakePhotosLibrary(photos)
         assertEquals(newer.absolutePath, api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
 
-        assertEquals("true", call("DeleteScreenshotMetadata", older.absolutePath).jsonPrimitive.content)
+        // the page only ever holds the path the app gave it (photos outside the served roots: a mirror path)
+        val olderPath = api.docs.displayPath(LocalFileDoc(older), materialize = false)
+        assertEquals("true", call("DeleteScreenshotMetadata", olderPath).jsonPrimitive.content)
         // what the rewrite leaves on Android storage: the only time stamp SAF and local files expose is now "now"
         touch(older, System.currentTimeMillis())
         assertEquals(newer.absolutePath, api.docs.resolve(call("GetLastScreenshot").jsonPrimitive.content)!!.key)
         // and the displayed creation date is still when the shot was taken
-        val extra = Json.parseToJsonElement(call("GetExtraScreenshotData", older.absolutePath, false).jsonPrimitive.content).jsonObject
+        val extra = Json.parseToJsonElement(call("GetExtraScreenshotData", olderPath, false).jsonPrimitive.content).jsonObject
         assertEquals("2025-09-01 10:00:00", extra["creationDate"]!!.jsonPrimitive.content)
 
         // the same after "Delete all screenshot metadata", which rewrites every shot in walk order

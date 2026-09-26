@@ -18,11 +18,8 @@ interface AppApiPlatform : DocPlatform {
     val httpClient: OkHttpClient
     val cacheDir: File
 
-    /** `getExternalFilesDir(null)`, where users put custom.css (and custom.js on Android 11+). */
-    val externalFilesDir: File?
-
-    /** The folder custom.js is read from, one no other app can write ([CustomFiles.scriptDir]); null for none. */
-    val customScriptDir: File?
+    /** `filesDir/custom`, where custom.css and custom.js live ([CustomFiles]); null for none. */
+    val customDir: File?
 
     val images: ImageCodec
     val ugc: UgcStorage
