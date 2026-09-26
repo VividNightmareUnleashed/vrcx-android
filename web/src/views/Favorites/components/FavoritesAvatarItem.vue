@@ -31,7 +31,7 @@
                                 class="h-4 w-4" />
                             <Lock v-if="isPrivateAvatar" :title="t('view.favorite.private')" class="h-4 w-4" />
                         </ItemTitle>
-                        <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-1.75rem)]">
+                        <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-2rem)]">
                             {{ localFavFakeRef.authorName }}
                         </ItemDescription>
                     </ItemContent>
@@ -44,7 +44,7 @@
                                 <Button
                                     size="icon-sm"
                                     variant="ghost"
-                                    class="rounded-full compact:size-7"
+                                    class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                     @click.stop
                                     :ariaLabel="t('nav_tooltip.manage')">
                                     <MoreHorizontal class="h-4 w-4" />

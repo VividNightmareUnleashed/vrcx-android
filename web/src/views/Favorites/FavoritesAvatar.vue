@@ -46,7 +46,7 @@
                                         @update:open="handleGroupMenuVisible(remoteGroupMenuKey(group.key), $event)">
                                         <DropdownMenuTrigger asChild>
                                             <Button
-                                                class="rounded-full"
+                                                class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                                 variant="ghost"
                                                 size="icon-sm"
                                                 :ariaLabel="t('nav_tooltip.manage')"
@@ -142,7 +142,11 @@
                                             :open="activeGroupMenu === localGroupMenuKey(group)"
                                             @update:open="handleGroupMenuVisible(localGroupMenuKey(group), $event)">
                                             <DropdownMenuTrigger asChild>
-                                                <Button class="rounded-full" size="icon-sm" variant="ghost" @click.stop
+                                                <Button
+                                                    class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                                                    size="icon-sm"
+                                                    variant="ghost"
+                                                    @click.stop
                                                     ><Ellipsis
                                                 /></Button>
                                             </DropdownMenuTrigger>
@@ -201,7 +205,11 @@
                             :open="activeGroupMenu === historyGroupMenuKey"
                             @update:open="handleGroupMenuVisible(historyGroupMenuKey, $event)">
                             <DropdownMenuTrigger asChild>
-                                <Button class="rounded-full" size="icon-sm" variant="ghost" @click.stop
+                                <Button
+                                    class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    @click.stop
                                     ><Ellipsis
                                 /></Button>
                             </DropdownMenuTrigger>

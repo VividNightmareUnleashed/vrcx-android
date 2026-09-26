@@ -22,14 +22,14 @@
                 </ItemMedia>
                 <ItemContent class="min-w-0">
                     <ItemTitle class="truncate max-w-full compact:block">{{ favorite.name }}</ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-1.75rem)]">
+                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-2rem)]">
                         {{ favorite.authorName }}
                     </ItemDescription>
                 </ItemContent>
                 <ItemActions class="compact:absolute compact:bottom-1 compact:right-1">
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>
-                            <Button size="icon-sm" variant="ghost" class="rounded-full compact:size-7" @click.stop>
+                            <Button size="icon-sm" variant="ghost" class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1" @click.stop>
                                 <MoreHorizontal class="h-4 w-4" />
                             </Button>
                         </DropdownMenuTrigger>

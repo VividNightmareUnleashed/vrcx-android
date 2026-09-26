@@ -30,7 +30,7 @@
                             class="h-4 w-4" />
                         <Lock v-if="isPrivateWorld" :title="t('view.favorite.private')" class="h-4 w-4" />
                     </ItemTitle>
-                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-1.75rem)]">
+                    <ItemDescription class="truncate line-clamp-1 text-xs compact:max-w-[calc(100%-2rem)]">
                         {{ authorText }}
                     </ItemDescription>
                 </ItemContent>
@@ -42,7 +42,7 @@
                         <Button
                             size="icon-sm"
                             variant="ghost"
-                            class="rounded-full compact:absolute compact:bottom-1 compact:right-1 compact:size-7"
+                            class="rounded-full compact:absolute compact:bottom-1 compact:right-1 pointer-coarse:[html:not(.vrcx-compact)_&]:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                             @click.stop
                             :ariaLabel="t('nav_tooltip.manage')">
                             <MoreHorizontal class="h-4 w-4" />
