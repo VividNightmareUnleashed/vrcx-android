@@ -164,7 +164,7 @@ html.vrcx-compact [data-slot='dialog-content']:not([data-mobile='card']) {
 }
 
 /* Dialogs that draw edge to edge themselves (Quick Search and others using p-0). */
-html.vrcx-compact [data-slot='dialog-content'].p-0:not([data-mobile='card']) {
+html.vrcx-compact [data-slot='dialog-content'].p-0:not([data-mobile='card']):not([data-mobile='bare']) {
     padding: var(--safe-top) var(--safe-right) var(--vrcx-bottom-inset) var(--safe-left);
 }
 
