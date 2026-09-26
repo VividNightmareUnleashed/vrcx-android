@@ -1,15 +1,23 @@
 <template>
-    <div :class="['flex flex-col min-w-0 data-table', autoHeight && 'flex-1 min-h-0 overflow-hidden']">
+    <div
+        ref="rootRef"
+        :class="['flex flex-col min-w-0 data-table', autoHeight && 'flex-1 min-h-0 overflow-hidden']"
+        :data-pagination="paginationInline ? 'inline' : undefined">
         <div v-if="$slots.toolbar && !showTouchTools" class="mb-2">
             <slot name="toolbar"></slot>
         </div>
-        <!-- Touch layouts: View options (the PC header menu) and the Shift stand-in next to the toolbar. -->
+        <!-- Touch layouts: View options (the PC header menu) and the Shift stand-in next to the toolbar. A phone
+             toolbar that stacks its rows (a flex-col root) shares only its first row with these tools, so the rows
+             below it get the full width (platform/android/mobile.css). -->
         <div v-else-if="showTouchTools" class="mb-2 flex items-start gap-2" data-slot="data-table-toolbar">
             <!-- A PC toolbar row that is wider than the phone scrolls sideways instead of spilling out. -->
-            <div v-if="$slots.toolbar" class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden">
+            <div
+                v-if="$slots.toolbar"
+                class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-hidden"
+                data-slot="data-table-toolbar-content">
                 <slot name="toolbar"></slot>
             </div>
-            <div class="ml-auto flex shrink-0 items-center gap-1">
+            <div class="ml-auto flex shrink-0 items-center gap-1" data-slot="data-table-toolbar-tools">
                 <QuickActionsToggle v-if="showQuickActions" />
                 <DataTableViewOptions
                     v-if="showViewOptions"
@@ -328,7 +336,9 @@
                 show-edges
                 class="flex-none">
                 <PaginationContent v-slot="{ items }">
-                    <PaginationPrevious :class="compactPagination && 'h-8 px-2'" />
+                    <!-- Phones: icon-only Previous/Next (the labels show from 640px, which phone landscape reaches). -->
+                    <PaginationPrevious
+                        :class="compactPagination && 'size-8 px-0 sm:px-0 has-[>svg]:px-0 [&>span]:hidden'" />
                     <template
                         v-for="(item, index) in items"
                         :key="item.type === 'page' ? `page-${item.value}` : `ellipsis-${index}`">
@@ -341,7 +351,8 @@
                         </PaginationItem>
                         <PaginationEllipsis v-else :class="compactPagination && 'size-8'" />
                     </template>
-                    <PaginationNext :class="compactPagination && 'h-8 px-2'" />
+                    <PaginationNext
+                        :class="compactPagination && 'size-8 px-0 sm:px-0 has-[>svg]:px-0 [&>span]:hidden'" />
                 </PaginationContent>
             </Pagination>
             <div v-if="!compactPagination" class="dt-pagination-spacer flex-1"></div>
@@ -352,6 +363,7 @@
 <script setup>
     import { computed, nextTick, ref, watch } from 'vue';
     import { DragDropProvider } from '@dnd-kit/vue';
+    import { useElementSize } from '@vueuse/core';
     import { FlexRender } from '@tanstack/vue-table';
     import { Spinner } from '@/components/ui/spinner';
     import { isSortable } from '@dnd-kit/vue/sortable';
@@ -473,8 +485,8 @@
         }
     });
 
-    // Both flags are always false in desktop builds.
-    const { isCompact, isCoarsePointer } = useCompactLayout();
+    // All flags are always false in desktop builds.
+    const { isCompact, isCompactLandscape, isCoarsePointer } = useCompactLayout();
 
     const { t } = useI18n();
     const tableScrollRef = ref(null);
@@ -531,6 +543,20 @@
 
     // Phones: no page-size selector (it lives in View options), no sibling pages, 32px items.
     const compactPagination = computed(() => isCompact.value);
+
+    // Phone landscape: a table that fills the page moves its pagination up into the toolbar row, so the card list
+    // keeps the height a separate pagination row would take (placed by platform/android/mobile.css). Only when the
+    // table is wide enough to leave the view's toolbar its room (not beside the open friends panel). The width is
+    // only observed in phone landscape.
+    const rootRef = ref(null);
+    const PAGINATION_INLINE_MIN_WIDTH = 600;
+    const canInlinePagination = computed(
+        () => isCompactLandscape.value && props.autoHeight && props.showPagination && showTouchTools.value
+    );
+    const { width: tableWidth } = useElementSize(computed(() => (canInlinePagination.value ? rootRef.value : null)));
+    const paginationInline = computed(
+        () => canInlinePagination.value && tableWidth.value >= PAGINATION_INLINE_MIN_WIDTH
+    );
 
     const dndContextKey = computed(() => (props.table?.getVisibleLeafColumns?.() ?? []).map((c) => c.id).join(','));
 

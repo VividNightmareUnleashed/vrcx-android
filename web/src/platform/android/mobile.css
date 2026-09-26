@@ -323,6 +323,92 @@ html.vrcx-compact [data-slot='sheet-content'].bottom-0 {
     overflow-y: auto;
 }
 
+/* ---------------------------------------------------------------- tables (DESIGN.md §3.1, §3.4) */
+
+/* Phone portrait: a toolbar whose root stacks its rows (the views' compact toolbars are a flex-col: search first, then
+ * the filters) shares only its first row with View options and Quick actions, so the rows below get the full card
+ * width. The slot wrapper and the view's root dissolve (display: contents) and their rows become items of this grid;
+ * `gap` stands in for the root's own gap. Single-row toolbars keep the flex row from DataTableLayout. */
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']:has(> [data-slot='data-table-toolbar-content'] > .flex-col) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']:has(> .flex-col),
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']
+    > .flex-col {
+    display: contents;
+}
+
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']
+    > .flex-col
+    > * {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']
+    > .flex-col
+    > :first-child {
+    grid-column: 1;
+}
+
+/* A row the column kept at its own width (self-start) stays that width in the grid. */
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']
+    > .flex-col
+    > .self-start {
+    justify-self: start;
+}
+
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']:has(> [data-slot='data-table-toolbar-content'] > .flex-col)
+    > [data-slot='data-table-toolbar-tools'] {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+/* Phone landscape (DESIGN.md §2.4): the height goes to the card list. A table that fills the page has its pagination
+ * in the toolbar row (DataTableLayout sets data-pagination="inline"), right of View options, and the toolbar row
+ * sits closer to the list. */
+html.vrcx-compact-landscape .data-table[data-pagination='inline'] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 8px;
+}
+
+html.vrcx-compact-landscape .data-table[data-pagination='inline'] > * {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+
+html.vrcx-compact-landscape .data-table[data-pagination='inline'] > [data-slot='data-table-toolbar'] {
+    grid-column: 1;
+    grid-row: 1;
+    margin-bottom: 6px;
+}
+
+html.vrcx-compact-landscape .data-table[data-pagination='inline'] > .dt-pagination {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    width: auto;
+    margin: 0 0 6px;
+}
+
 /* ---------------------------------------------------------------- stacking */
 
 /* Long-press menus are the touch stand-in for right-click, so they must show above dialogs. Upstream ContextMenu
@@ -371,14 +457,35 @@ html.vrcx-compact [data-slot$='overlay'] {
     }
 
     /* 32px icon buttons get a 40px hit area without changing how they look. A Button wrapped in an as-child trigger
-     * (TooltipWrapper, DialogTrigger, DropdownMenuTrigger, PopoverTrigger) carries the trigger's data-slot instead. */
-    :is([data-slot='button'], button[data-slot$='-trigger']).size-8:not(.absolute):not(.fixed):not(.sticky) {
+     * (TooltipWrapper, DialogTrigger, DropdownMenuTrigger, PopoverTrigger) carries the trigger's data-slot instead.
+     * The table chrome's own 32px controls carry their own data-slot: View options, Quick actions and the pagination
+     * (32px items in compact layout). */
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8:not(.absolute):not(.fixed):not(.sticky),
+    :is(
+        [data-slot='data-table-view-options'],
+        [data-slot='quick-actions-toggle'],
+        .dt-pagination button[data-slot^='pagination-']
+    ):not(.absolute):not(.fixed):not(.sticky) {
         position: relative;
     }
 
-    :is([data-slot='button'], button[data-slot$='-trigger']).size-8::after {
+    /* At least --touch-min square around the centre: the inset counts from the padding box, so a bordered button needs
+     * a pixel more than an unbordered one. */
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8::after,
+    :is(
+        [data-slot='data-table-view-options'],
+        [data-slot='quick-actions-toggle'],
+        .dt-pagination button[data-slot^='pagination-']
+    )::after {
         content: '';
         position: absolute;
-        inset: -4px;
+        inset: min(0px, calc(50% - var(--touch-min) / 2));
+    }
+
+    /* A page-filling table clips its overflow; let the hit areas of the toolbar controls at its edges (View options
+     * and Quick actions sit in the top right corner) reach past it, into the page card's padding. */
+    .data-table.overflow-hidden {
+        overflow: clip;
+        overflow-clip-margin: 4px;
     }
 }
