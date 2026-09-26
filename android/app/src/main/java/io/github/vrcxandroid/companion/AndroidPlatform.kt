@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.SystemClock
 import android.util.Log
@@ -62,7 +64,7 @@ class EncryptedPrefsSecureStore(context: Context) : SecureStore {
         } catch (e: Exception) {
             if (firstFailureMs == 0L) firstFailureMs = now
             if (now - firstFailureMs < RECREATE_AFTER_MS) {
-                Log.w(TAG, "encrypted companion store cannot be opened; retrying later", e)
+                Log.w(TAG, "encrypted companion store cannot be opened; retrying later", e.redacted())
                 throw SecureStoreException("companion store unavailable", e)
             }
         }
@@ -71,7 +73,7 @@ class EncryptedPrefsSecureStore(context: Context) : SecureStore {
             appContext.deleteSharedPreferences(FILE_NAME)
             create().also { prefs = it }
         } catch (e: Exception) {
-            Log.e(TAG, "encrypted companion store unavailable; pairings are kept in memory only", e)
+            Log.e(TAG, "encrypted companion store unavailable; pairings are kept in memory only", e.redacted())
             memoryOnly = true
             null
         }
@@ -82,7 +84,7 @@ class EncryptedPrefsSecureStore(context: Context) : SecureStore {
         return try {
             p.getString(key, null)
         } catch (e: Exception) {
-            Log.w(TAG, "stored $key cannot be decrypted; treating it as absent", e)
+            Log.w(TAG, "stored $key cannot be decrypted; treating it as absent", e.redacted())
             null
         }
     }
@@ -111,7 +113,7 @@ class AndroidMulticastLock(context: Context) : MulticastLockHandle {
                 ?.createMulticastLock("vrcx-companion-discovery")
                 ?.apply { setReferenceCounted(true) }
         } catch (e: Exception) {
-            Log.w(TAG, "no multicast lock", e)
+            Log.w(TAG, "no multicast lock", e.redacted())
             null
         }
     }
@@ -123,7 +125,7 @@ class AndroidMulticastLock(context: Context) : MulticastLockHandle {
             true
         } catch (e: Exception) {
             // SecurityException without CHANGE_WIFI_MULTICAST_STATE: discovery still works on most devices.
-            Log.w(TAG, "cannot acquire multicast lock: ${e.message}")
+            Log.w(TAG, "cannot acquire multicast lock: ${e.kind}")
             false
         }
     }
@@ -132,7 +134,7 @@ class AndroidMulticastLock(context: Context) : MulticastLockHandle {
         try {
             lock?.release()
         } catch (e: Exception) {
-            Log.w(TAG, "cannot release multicast lock: ${e.message}")
+            Log.w(TAG, "cannot release multicast lock: ${e.kind}")
         }
     }
 }
@@ -141,9 +143,16 @@ class AndroidMulticastLock(context: Context) : MulticastLockHandle {
  * Calls [onChange] when the default network changes (another network becomes the default, a network arrives while
  * there was none, or the default is lost), so the client reconnects at once instead of waiting for its backoff or the
  * 20 s read timeout. Only the callback for the network that was already the default when registering is ignored
- * ([DefaultNetworkTracker]). Needs ACCESS_NETWORK_STATE.
+ * ([DefaultNetworkTracker]). Calls [onWifiAvailable] whenever a Wi-Fi network becomes available, default or not: while
+ * the app is hidden the client retries an unreachable PC only every few minutes, and this is what brings it back at
+ * once when the phone gets home (PROTOCOL.md §5.10). Callbacks cost nothing while nothing changes. Needs
+ * ACCESS_NETWORK_STATE.
  */
-class AndroidNetworkMonitor(context: Context, private val onChange: () -> Unit) {
+class AndroidNetworkMonitor(
+    context: Context,
+    private val onChange: () -> Unit,
+    private val onWifiAvailable: () -> Unit = {},
+) {
     private val appContext = context.applicationContext
     private val started = AtomicBoolean(false)
 
@@ -160,16 +169,36 @@ class AndroidNetworkMonitor(context: Context, private val onChange: () -> Unit) 
         }
     }
 
+    /** Also called for the Wi-Fi networks present at registration; the client ignores it while connected. */
+    private val wifiCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = onWifiAvailable()
+    }
+
     fun start() {
         if (!started.compareAndSet(false, true)) return
+        val cm = try {
+            appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        } catch (e: Exception) {
+            Log.w(TAG, "no connectivity service: ${e.kind}")
+            return
+        }
         try {
-            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
             // Read before registering: a change in between arrives as a callback for another network.
             tracker = DefaultNetworkTracker(cm.activeNetwork)
             cm.registerDefaultNetworkCallback(callback)
         } catch (e: Exception) {
             // SecurityException without ACCESS_NETWORK_STATE: reconnects then rely on backoff and timeouts.
-            Log.w(TAG, "cannot watch the default network: ${e.message}")
+            Log.w(TAG, "cannot watch the default network: ${e.kind}")
+        }
+        try {
+            // A LAN-only Wi-Fi counts too: the PC is on the local network, not on the internet.
+            val wifi = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(wifi, wifiCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "cannot watch Wi-Fi networks: ${e.kind}")
         }
     }
 }

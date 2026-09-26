@@ -40,6 +40,8 @@ object CompanionProtocol {
     const val T_PING = "ping"
     const val T_ACK = "ack"
     const val T_FETCH = "fetch"
+    /** Phone → companion, and the companion's confirmation (PROTOCOL.md §5.11). */
+    const val T_IDLE = "idle"
     const val T_DISCOVER = "vrcx-discover"
     const val T_DISCOVER_REPLY = "vrcx-companion"
 

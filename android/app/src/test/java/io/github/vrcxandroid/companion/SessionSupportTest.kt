@@ -118,6 +118,20 @@ class SessionSupportTest {
     }
 
     @Test
+    fun hiddenBackoffCapIsPassedPerDelay() {
+        val b = Backoff(1_000, 60_000, Random(7))
+        // The same attempt count reaches the longer cap while the app is hidden (PROTOCOL.md §5.10).
+        repeat(50) {
+            val d = b.delayFor(20 + it, 600_000)
+            assertTrue("$d", d in 510_000..600_000)
+        }
+        assertTrue(b.delayFor(0, 600_000) in 1_000..1_150)
+        assertTrue(b.delayFor(40, 600_000) <= 600_000)
+        // A cap below the base is raised to it.
+        assertEquals(1_000L, Backoff(1_000, 60_000, Random(1)).delayFor(5, 10))
+    }
+
+    @Test
     fun acksCoverConsumedBytesOnlyAndIncrease() {
         val acks = AckCounter()
         val sent = mutableListOf<Long>()

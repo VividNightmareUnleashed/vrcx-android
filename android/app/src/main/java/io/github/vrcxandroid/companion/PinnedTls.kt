@@ -84,6 +84,15 @@ class TlsConnection internal constructor(
 
     fun readFrame(): Frame = FrameCodec.read(input)
 
+    /**
+     * Changes the read timeout for the next [readFrame] (a read already blocked keeps its timeout). The client calls
+     * it when the companion confirmed the idle mode, which stretches the heartbeat (PROTOCOL.md §5.11).
+     */
+    fun setReadTimeout(timeoutMs: Int) {
+        raw.soTimeout = timeoutMs
+        ssl.soTimeout = timeoutMs
+    }
+
     fun send(frame: ByteArray) {
         synchronized(writeLock) {
             output.write(frame)

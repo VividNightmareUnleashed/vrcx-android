@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.CompanionController
+import io.github.vrcxandroid.CompanionVisibility
 import io.github.vrcxandroid.EventEmitter
 import io.github.vrcxandroid.logwatcher.CompanionMirrorControl
 import io.github.vrcxandroid.logwatcher.LogSink
@@ -30,8 +31,11 @@ import kotlinx.serialization.json.JsonObject
  *
  * The connection loop starts with the process (no network traffic without a pairing); the host stops it with
  * `setRunning(false)` when background mode is off and the app has been hidden for a while (ARCHITECTURE.md §7).
+ * With background mode on, the host reports the Activity's visibility through [CompanionVisibility.setAppVisible]:
+ * while hidden, the link runs in the companion's idle mode and an unreachable PC is retried rarely and without
+ * broadcast discovery, but at once when a Wi-Fi network appears (PROTOCOL.md §5.10, §5.11).
  */
-class CompanionManager(private val context: Context) : CompanionController {
+class CompanionManager(private val context: Context) : CompanionController, CompanionVisibility {
     private val appContext: Context = context.applicationContext ?: context
 
     private val engine = CompanionEngine(
@@ -49,7 +53,8 @@ class CompanionManager(private val context: Context) : CompanionController {
         mirrorCleaner = ::forgetMirror,
     )
 
-    private val networkMonitor = AndroidNetworkMonitor(appContext, engine::onNetworkChanged).also { it.start() }
+    private val networkMonitor =
+        AndroidNetworkMonitor(appContext, engine::onNetworkChanged, engine::onNetworkAvailable).also { it.start() }
 
     init {
         // AppGraph creates the LogWatcher first; resolveLogSink repeats this for any later order.
@@ -64,6 +69,9 @@ class CompanionManager(private val context: Context) : CompanionController {
     override fun setActive(companionId: String) = engine.setActive(companionId)
     override fun setRunning(running: Boolean) = engine.setRunning(running)
     override fun onTillDateChanged(utcTicks: Long) = engine.onTillDateChanged(utcTicks)
+
+    /** Any thread (the host calls it on Activity start/stop); no network work happens on the caller's thread. */
+    override fun setAppVisible(visible: Boolean) = engine.setAppVisible(visible)
 
     /** Asks for a resend after the log mirror found a gap or lost a file (PROTOCOL.md §5.9 `fetch`). */
     fun requestFetch(name: String, fileId: String, fromOffset: Long) = engine.requestFetch(name, fileId, fromOffset)

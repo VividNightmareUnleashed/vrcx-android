@@ -2,6 +2,7 @@ package io.github.vrcxandroid.companion
 
 import android.util.Log
 import io.github.vrcxandroid.CompanionController
+import io.github.vrcxandroid.CompanionVisibility
 import io.github.vrcxandroid.EventEmitter
 import io.github.vrcxandroid.logwatcher.CompanionInfo
 import io.github.vrcxandroid.logwatcher.FetchRequester
@@ -31,21 +32,33 @@ import kotlin.concurrent.withLock
 /** Tunables of the client. The defaults are the values of docs/PROTOCOL.md; tests shorten them. */
 data class CompanionConfig(
     val connectTimeoutMs: Int = 4_000,
-    /** PROTOCOL.md §5.9: close after 20 s without receiving anything. */
+    /** PROTOCOL.md §5.9: close after 20 s without receiving anything (the companion speaks at least every 5 s). */
     val readTimeoutMs: Int = 20_000,
     /**
-     * Keep-alive (PROTOCOL.md §5.9): a frame from the companion (heartbeats come every 5 s) is answered with an
+     * Keep-alive (PROTOCOL.md §5.9): a frame from the companion (at least a heartbeat every 5 s) is answered with an
      * `ack` of the bytes consumed so far, or a `ping`, when nothing was sent for this long. The connection loop sends
      * it, never the sink thread, so the companion, which closes after 20 s of silence, hears from the phone within
-     * about 15 s even while a [LogSink] call runs for long. This also covers the 30 s idle `ping`: without incoming
-     * frames the read timeout ends the connection first.
+     * about 15 s even while a [LogSink] call runs for long.
      */
     val keepAliveAfterMs: Long = 10_000,
-    /** `ack` whenever this many data-frame bytes arrived since the last one (PROTOCOL.md: at least every 1 MiB). */
+    /**
+     * The keep-alive while the companion confirmed the idle mode (PROTOCOL.md §5.11): it then speaks at least every
+     * 30 s and closes after 90 s of silence, so the phone answers within about 75 s.
+     */
+    val idleKeepAliveAfterMs: Long = 45_000,
+    /** The read timeout while the idle mode is confirmed (PROTOCOL.md §5.11). */
+    val idleReadTimeoutMs: Int = 90_000,
+    /** `ack` whenever this many data-frame bytes were consumed since the last one (PROTOCOL.md §5.9). */
     val ackEveryBytes: Long = 512L * 1024,
     val backoffBaseMs: Long = 1_000,
+    /** Reconnect backoff cap while the app is visible (PROTOCOL.md §5.10). */
     val backoffMaxMs: Long = 60_000,
-    /** Discovery run when every stored address fails (0 disables it). */
+    /**
+     * Reconnect backoff cap while the app is hidden (PROTOCOL.md §5.10). A new Wi-Fi or default network, or the app
+     * becoming visible, still retries at once.
+     */
+    val hiddenBackoffMaxMs: Long = 600_000,
+    /** Discovery run when every stored address fails, while the app is visible (0 disables it). */
     val reconnectDiscoveryMs: Long = 1_500,
     /**
      * How long an authenticated session waits for the LogWatcher's tillDate before subscribing with 0 ("send
@@ -84,9 +97,15 @@ object NullLogSink : LogSink {
  * Threads:
  * - `companion-loop`: connects (with backoff), authenticates, then reads frames until the connection ends. It also
  *   sends the keep-alives ([CompanionConfig.keepAliveAfterMs]), so a slow [LogSink] call never silences the phone.
- * - `companion-sink`: every [LogSink] call, in wire order, plus the writes that depend on them (subscribe, ack, fetch).
- *   Frames are handed over from the loop thread in the order they were read.
+ * - `companion-sink`: every [LogSink] call, in wire order, plus the writes that depend on them (subscribe, ack, fetch,
+ *   idle). Frames are handed over from the loop thread in the order they were read.
  * Pairing and discovery run on the caller's coroutine (Dispatchers.IO).
+ *
+ * Battery (ARCHITECTURE.md §7, PROTOCOL.md §5.10, §5.11): while the app is hidden ([setAppVisible]) the connected
+ * companion is told `idle` and, once it confirmed, the phone answers only every 45 s and waits up to 90 s for it; a
+ * companion that cannot be reached is retried at most every [CompanionConfig.hiddenBackoffMaxMs], without broadcast
+ * discovery, and at once when a Wi-Fi or default network appears ([onNetworkAvailable], [onNetworkChanged]) or the
+ * app becomes visible.
  *
  * [mirrorCleaner] runs on the sink thread once the forgotten companion's session has ended.
  */
@@ -99,7 +118,7 @@ class CompanionEngine(
     private val mirrorCleaner: (String) -> Unit = {},
     private val config: CompanionConfig = CompanionConfig(),
     private val wallClock: () -> Long = System::currentTimeMillis,
-) : CompanionController, FetchRequester, Closeable {
+) : CompanionController, CompanionVisibility, FetchRequester, Closeable {
 
     private enum class Phase(val wire: String) {
         IDLE("idle"),
@@ -130,6 +149,8 @@ class CompanionEngine(
     private var activeId: String? = null
     private var deviceId: String = ""
     private var running = config.startRunning
+    /** [setAppVisible]; visible until the host says otherwise, which keeps the foreground timings. */
+    private var appVisible = true
     private var closed = false
     private var phase = Phase.IDLE
     private var lastError: String? = null
@@ -280,7 +301,7 @@ class CompanionEngine(
             try {
                 mirrorCleaner(companionId)
             } catch (e: Exception) {
-                Log.w(TAG, "mirror cleanup failed", e)
+                Log.w(TAG, "mirror cleanup failed", e.redacted())
             }
         }
     }
@@ -351,6 +372,39 @@ class CompanionEngine(
         }
     }
 
+    /**
+     * A Wi-Fi network became available (not necessarily the default one): when not connected, retry now instead of
+     * after the backoff, which is long while the app is hidden. A working connection is left alone.
+     */
+    fun onNetworkAvailable() {
+        mutex.withLock {
+            if (!running || closed || connection != null) return
+            wakeRequested = true
+            changed.signalAll()
+        }
+    }
+
+    /**
+     * The host's Activity became visible or hidden (ARCHITECTURE.md §7). A connected companion is told `idle` so it
+     * stretches its heartbeat and batches log data (PROTOCOL.md §5.11); while hidden, reconnects back off to
+     * [CompanionConfig.hiddenBackoffMaxMs] without broadcast discovery. Becoming visible while not connected retries
+     * at once. Safe on any thread; nothing here touches the network on the caller's thread.
+     */
+    override fun setAppVisible(visible: Boolean) {
+        val current = mutex.withLock {
+            if (appVisible == visible) return
+            appVisible = visible
+            if (visible && running && !closed && connection == null && haltedId != activeId) {
+                wakeRequested = true
+                changed.signalAll()
+            }
+            session
+        }
+        current?.let { s -> post { s.syncIdle() } }
+    }
+
+    private fun isAppVisible(): Boolean = mutex.withLock { appVisible }
+
     /** Stops every thread (tests; the app keeps the engine for the process lifetime). */
     override fun close() {
         mutex.withLock {
@@ -392,16 +446,18 @@ class CompanionEngine(
             val outcome = try {
                 connectOnce(record!!, gen)
             } catch (t: Throwable) {
-                Log.e(TAG, "connection attempt crashed", t)
+                Log.e(TAG, "connection attempt crashed", t.redacted())
                 Outcome.FAILED
             }
+            // While hidden, a PC that is off is retried rarely; network callbacks and becoming visible wake the wait.
+            val cap = if (isAppVisible()) config.backoffMaxMs else config.hiddenBackoffMaxMs
             val delay = when (outcome) {
                 Outcome.ABORTED, Outcome.HALTED -> 0L
                 Outcome.SYNCED -> {
                     attempt = 0
-                    backoff.delayFor(attempt++)
+                    backoff.delayFor(attempt++, cap)
                 }
-                Outcome.FAILED -> backoff.delayFor(attempt++)
+                Outcome.FAILED -> backoff.delayFor(attempt++, cap)
             }
             if (delay > 0) waitForRetry(delay, gen)
         }
@@ -460,7 +516,8 @@ class CompanionEngine(
         }
 
         var conn = tryHosts(record.hosts, record.port, trusted = true)
-        if (conn == null && config.reconnectDiscoveryMs > 0 && isCurrent(gen)) {
+        // Broadcast discovery (and its Wi-Fi multicast lock) only while the app is visible.
+        if (conn == null && config.reconnectDiscoveryMs > 0 && isAppVisible() && isCurrent(gen)) {
             update { if (generation == gen && phase != Phase.ERROR) phase = Phase.SEARCHING }
             // Matched on id and fingerprint; the pinned connection below is what verifies an address. Only the address
             // that worked is stored (by runSession), so a spoofed reply can neither hide the companion nor pollute the
@@ -604,6 +661,8 @@ class CompanionEngine(
             true
         }
         if (!accepted) return Outcome.ABORTED
+        // A session that starts while the app is hidden tells the companion right away (PROTOCOL.md §5.11).
+        post { sess.syncIdle() }
 
         var synced = false
         var protocolError = false
@@ -611,11 +670,18 @@ class CompanionEngine(
             while (true) {
                 val frame = conn.readFrame()
                 val receivedAt = wallClock()
-                if (frame is Frame.Control && frame.type == CompanionProtocol.T_SYNC_COMPLETE) synced = true
+                if (frame is Frame.Control) {
+                    when (frame.type) {
+                        CompanionProtocol.T_SYNC_COMPLETE -> synced = true
+                        // On this thread, so the next read already uses the matching timeout.
+                        CompanionProtocol.T_IDLE -> frame.json.bool("on")?.let(sess::onIdleConfirmed)
+                    }
+                }
                 if (!post { sess.handle(frame, receivedAt) }) break
                 sess.keepAlive()
             }
         } catch (e: ProtocolException) {
+            // Messages of ProtocolException are the client's own (sizes and field names), never received content.
             Log.w(TAG, "protocol error: ${e.message}")
             protocolError = true
         } catch (e: IOException) {
@@ -710,6 +776,12 @@ class CompanionEngine(
         if (!hello.pairing) throw PairingException(PairingException.CLOSED)
 
         val pinnedFp = fp ?: conn.fingerprint
+        // A companion id this phone already pairs with keeps its key: the stored fingerprint is the pin, whatever the
+        // QR code, the discovery reply or the captured certificate says. A PC that really got a new identity also gets
+        // a new id; otherwise the user forgets the old pairing first (PROTOCOL.md §5.2). Checked before any proof is
+        // sent, so an impostor claiming a known id learns nothing about the code.
+        val known = mutex.withLock { records.firstOrNull { it.id == hello.id } }
+        if (known != null && !fpMatches(known.fp, pinnedFp)) throw PairingException(PairingException.FINGERPRINT)
         val clientNonce = PairingCrypto.randomToken()
         try {
             conn.sendControl(control(CompanionProtocol.T_PAIR) {
@@ -780,9 +852,19 @@ class CompanionEngine(
         private val sink: LogSink = try {
             sinkProvider()
         } catch (e: Exception) {
-            Log.w(TAG, "log sink unavailable", e)
+            Log.w(TAG, "log sink unavailable", e.redacted())
             NullLogSink
         }
+
+        /** Sink thread: the idle value last sent (the companion starts every connection in the normal mode). */
+        private var requestedIdle = false
+
+        /**
+         * The companion confirmed the idle mode (PROTOCOL.md §5.11). Only then does the phone stretch its keep-alive
+         * and read timeout, so a companion that ignores `idle` keeps the normal timings. Set on the loop thread.
+         */
+        @Volatile
+        private var idleConfirmed = false
         private val tracker = OffsetTracker()
         private val skew = SkewEstimator()
         private var lastSkew: Long? = null
@@ -804,11 +886,36 @@ class CompanionEngine(
          * sink thread, so heartbeats keep being answered while a [LogSink] call runs (PROTOCOL.md §5.9).
          */
         fun keepAlive() {
-            if (monotonicMs() - conn.lastSentAtMs < config.keepAliveAfterMs) return
+            val after = if (idleConfirmed) config.idleKeepAliveAfterMs else config.keepAliveAfterMs
+            if (monotonicMs() - conn.lastSentAtMs < after) return
             try {
                 if (!acks.ackIfAtLeast(1, ::sendAck)) sendPing()
             } catch (e: IOException) {
                 conn.close()
+            }
+        }
+
+        /**
+         * Loop thread: the companion confirmed `idle` [on] or off. The next read uses the matching timeout (90 s while
+         * idle: heartbeats come every 30 s), and [keepAlive] the matching interval.
+         */
+        fun onIdleConfirmed(on: Boolean) {
+            idleConfirmed = on
+            try {
+                conn.setReadTimeout(if (on) config.idleReadTimeoutMs else config.readTimeoutMs)
+            } catch (e: IOException) {
+                conn.close()
+            }
+        }
+
+        /** Sink thread: tells the companion whether the app is hidden, when that differs from what it was told. */
+        fun syncIdle() {
+            if (ended || failed) return
+            val idle = !isAppVisible()
+            if (idle == requestedIdle) return
+            guarded {
+                conn.sendControl(control(CompanionProtocol.T_IDLE) { put("on", idle) })
+                requestedIdle = idle
             }
         }
 
@@ -826,7 +933,8 @@ class CompanionEngine(
                 failed = true
                 conn.close()
             } catch (e: Exception) {
-                Log.e(TAG, "log sink failed on ${frameKind(frame)}; reconnecting", e)
+                // Redacted: the log side's exceptions can quote log lines.
+                Log.e(TAG, "log sink failed on ${frameKind(frame)}; reconnecting", e.redacted())
                 failed = true
                 conn.close()
             }
@@ -860,8 +968,11 @@ class CompanionEngine(
                 CompanionProtocol.T_PROCESS -> if (started) {
                     val vr = json.bool("vrchatRunning") ?: false
                     val svr = json.bool("steamVrRunning") ?: false
-                    sink.onProcessState(vr, svr, json.long("pcUtcNowMs") ?: 0L)
+                    val pcNow = json.long("pcUtcNowMs") ?: 0L
+                    sink.onProcessState(vr, svr, pcNow)
                     onProcessReceived(companionId, vr, svr)
+                    // Heartbeats pause while other frames flow (PROTOCOL.md §5.9): process messages carry the clock too.
+                    sampleSkew(pcNow, receivedAt)
                 }
                 CompanionProtocol.T_TRUNCATE -> if (started) {
                     val name = json.str("name") ?: return
@@ -918,7 +1029,7 @@ class CompanionEngine(
                 try {
                     sink.onDisconnected()
                 } catch (e: Exception) {
-                    Log.w(TAG, "log sink failed on disconnect", e)
+                    Log.w(TAG, "log sink failed on disconnect", e.redacted())
                 }
             }
         }
@@ -990,7 +1101,7 @@ class CompanionEngine(
             } catch (e: IOException) {
                 conn.close()
             } catch (e: Exception) {
-                Log.e(TAG, "log sink failed; reconnecting", e)
+                Log.e(TAG, "log sink failed; reconnecting", e.redacted())
                 failed = true
                 conn.close()
             }
@@ -1045,7 +1156,7 @@ class CompanionEngine(
         val snapshot = try {
             repository.load()
         } catch (e: Exception) {
-            Log.w(TAG, "cannot read the pairings; retrying later", e)
+            Log.w(TAG, "cannot read the pairings; retrying later", e.redacted())
             loadFailed = true
             nextLoadAtMs = now + config.storeRetryMs
             return false
@@ -1072,7 +1183,7 @@ class CompanionEngine(
         try {
             repository.save(records, activeId)
         } catch (e: Exception) {
-            Log.e(TAG, "cannot save pairings", e)
+            Log.e(TAG, "cannot save pairings", e.redacted())
         }
     }
 
@@ -1113,7 +1224,7 @@ class CompanionEngine(
             try {
                 emitter.emit(EVENT_STATE, s)
             } catch (e: Exception) {
-                Log.w(TAG, "cannot emit companion state", e)
+                Log.w(TAG, "cannot emit companion state", e.redacted())
             }
         }
     }

@@ -205,6 +205,8 @@ class FakeCompanionServer(
     @Volatile var steamVrRunning = false
     @Volatile var pcClockOffsetMs = 0L
     @Volatile var chunkSize = 4096
+    /** Confirms `idle` like a companion that supports it (PROTOCOL.md §5.11); false: an older companion. */
+    @Volatile var echoIdle = true
 
     val tokens = ConcurrentHashMap<String, String>()
     val files = CopyOnWriteArrayList<ServerFile>()
@@ -407,6 +409,9 @@ class FakeCompanionServer(
                 if (frame !is Frame.Control) continue
                 conn.messages += frame.json
                 if (frame.type == CompanionProtocol.T_SUBSCRIBE && autoSync) conn.sync(frame.json)
+                if (frame.type == CompanionProtocol.T_IDLE && echoIdle) {
+                    conn.sendControl(control(CompanionProtocol.T_IDLE) { put("on", frame.json.bool("on") ?: false) })
+                }
             }
         } catch (e: Exception) {
             // connection ended

@@ -106,7 +106,7 @@ class CompanionDiscovery(
                 }
             }
         } catch (e: IOException) {
-            Log.w(TAG, "discovery failed: ${e.message}")
+            Log.w(TAG, "discovery failed: ${e.kind}")
         } finally {
             if (acquired) multicastLock.release()
         }
@@ -171,7 +171,7 @@ class CompanionDiscovery(
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "cannot enumerate interfaces: ${e.message}")
+                Log.w(TAG, "cannot enumerate interfaces: ${e.kind}")
             }
             return out.toList()
         }

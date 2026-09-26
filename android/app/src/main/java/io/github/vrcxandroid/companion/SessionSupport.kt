@@ -110,13 +110,18 @@ class SkewEstimator(private val window: Int = 8) {
     fun reset() = samples.clear()
 }
 
-/** Reconnect delays: [baseMs] doubling up to [maxMs], with ±15 % jitter, always within [baseMs, maxMs]. */
+/**
+ * Reconnect delays: [baseMs] doubling up to a cap ([maxMs] unless the caller passes another one, such as the longer
+ * cap while the app is hidden), with ±15 % jitter, always within [baseMs, cap].
+ */
 class Backoff(private val baseMs: Long, private val maxMs: Long, private val random: Random = Random.Default) {
-    fun delayFor(attempt: Int): Long {
-        val shift = attempt.coerceIn(0, 20)
-        val raw = minOf(maxMs, baseMs shl shift)
+    fun delayFor(attempt: Int, capMs: Long = maxMs): Long {
+        val cap = capMs.coerceAtLeast(baseMs)
+        // 30 doublings reach any cap from a 1 s base; a base below 2^32 ms cannot overflow.
+        val shift = attempt.coerceIn(0, 30)
+        val raw = minOf(cap, baseMs shl shift)
         val jittered = (raw * (0.85 + random.nextDouble() * 0.3)).toLong()
-        return jittered.coerceIn(baseMs, maxMs)
+        return jittered.coerceIn(baseMs, cap)
     }
 }
 
