@@ -66,7 +66,7 @@
                             <Button
                                 size="icon-sm"
                                 variant="ghost"
-                                class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100 pointer-coarse:size-8"
+                                class="ml-auto size-6 shrink-0 opacity-0 group-hover:opacity-100 pointer-coarse:size-8 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-['']"
                                 @click.stop="handleShowItem(item.key)">
                                 <Minus class="size-3.5" />
                             </Button>
@@ -153,12 +153,16 @@
                             <PopoverTrigger as-child>
                                 <InputGroupButton
                                     size="icon-xs"
-                                    class="pointer-coarse:size-8"
+                                    class="pointer-coarse:size-8 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-['']"
                                     :aria-label="t('nav_menu.custom_nav.folder_icon_placeholder')">
                                     <LinkIcon class="size-3.5" />
                                 </InputGroupButton>
                             </PopoverTrigger>
-                            <PopoverContent side="bottom" align="end" :collision-padding="12" class="w-80 max-w-[calc(100vw-24px)]">
+                            <PopoverContent
+                                side="bottom"
+                                align="end"
+                                :collision-padding="12"
+                                class="w-80 max-w-[calc(100vw-24px)]">
                                 <ReuseIconHelp />
                             </PopoverContent>
                         </Popover>

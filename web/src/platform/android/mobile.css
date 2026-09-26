@@ -230,6 +230,13 @@ html.vrcx-compact [data-slot='alert-dialog-footer'] > * {
     margin-top: 0;
 }
 
+/* Cards keep the PC's small close X, with a --touch-min hit area around it (the icon is 16px, 16px from the corner). */
+html.vrcx-compact [data-slot='dialog-content'][data-mobile='card'] > [data-slot='dialog-close']::after {
+    content: '';
+    position: absolute;
+    inset: calc((16px - var(--touch-min)) / 2);
+}
+
 /* Titles stay left-aligned as on PC (shadcn centres them below 640px). */
 html.vrcx-compact [data-slot='alert-dialog-header'] {
     text-align: left;
@@ -363,12 +370,13 @@ html.vrcx-compact [data-slot$='overlay'] {
         -webkit-touch-callout: none;
     }
 
-    /* 32px icon buttons get a 40px hit area without changing how they look. */
-    [data-slot='button'].size-8:not(.absolute):not(.fixed):not(.sticky) {
+    /* 32px icon buttons get a 40px hit area without changing how they look. A Button wrapped in an as-child trigger
+     * (TooltipWrapper, DialogTrigger, DropdownMenuTrigger, PopoverTrigger) carries the trigger's data-slot instead. */
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8:not(.absolute):not(.fixed):not(.sticky) {
         position: relative;
     }
 
-    [data-slot='button'].size-8::after {
+    :is([data-slot='button'], button[data-slot$='-trigger']).size-8::after {
         content: '';
         position: absolute;
         inset: -4px;
