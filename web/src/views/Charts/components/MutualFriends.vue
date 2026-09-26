@@ -1,10 +1,12 @@
 <template>
     <div id="chart" class="x-container">
         <div
-            class="mt-0 flex min-h-[calc(100vh-140px)] flex-col items-center justify-betweenpt-12"
+            class="mt-0 flex min-h-[calc(100vh-140px)] flex-col items-center justify-betweenpt-12 compact:min-h-0"
             ref="mutualGraphRef">
-            <div class="flex items-center w-full">
-                <div class="options-container flex items-center gap-3 bg-transparent pb-3 shadow-none">
+            <!-- Phones: the toolbar wraps and the friend picker takes the free width (docs/DESIGN.md §3.4). -->
+            <div class="flex items-center w-full compact:flex-wrap compact:gap-2">
+                <div
+                    class="options-container flex items-center gap-3 bg-transparent pb-3 shadow-none compact:min-w-0 compact:flex-1 compact:px-0 compact:pb-0 compact:mt-0 compact:[&>[role=combobox]]:w-auto compact:[&>[role=combobox]]:min-w-0 compact:[&>[role=combobox]]:flex-1">
                     <div>
                         <TooltipWrapper
                             v-if="isFetching"
@@ -59,7 +61,7 @@
                         </template>
                     </VirtualCombobox>
                 </div>
-                <div class="ml-auto flex items-center gap-2">
+                <div class="ml-auto flex items-center gap-2 compact:flex-wrap">
                     <Sheet>
                         <SheetTrigger as-child>
                             <div>
@@ -226,7 +228,7 @@
 
                     <div
                         v-if="isFetching"
-                        class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-center rounded-md bg-transparent p-3 w-70">
+                        class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-center rounded-md bg-transparent p-3 w-70 compact:w-full compact:p-0">
                         <div class="flex justify-between text-sm mb-1">
                             <span class="mr-1">{{ t('view.charts.mutual_friend.progress.friends_processed') }}</span>
                             <strong>{{ fetchState.processedFriends }} / {{ totalFriends }}</strong>
@@ -241,10 +243,15 @@
                     <div
                         v-show="!(hasFetched && !isFetching && !graphReady)"
                         ref="graphContainerRef"
-                        class="mt-3 h-[calc(100vh-260px)] min-h-[520px] w-full flex-1 rounded-lg bg-transparent"
+                        class="mt-3 h-[calc(100vh-260px)] min-h-[520px] w-full flex-1 rounded-lg bg-transparent compact:h-auto compact:min-h-[280px]"
                         :style="{ backgroundColor: canvasBackground }"></div>
                 </ContextMenuTrigger>
-                <ContextMenuContent v-if="contextMenuNodeId" class="min-w-40">
+                <!-- Android: the menu opens at the finger, so it moves sideways to stay on a phone screen. -->
+                <ContextMenuContent
+                    v-if="contextMenuNodeId"
+                    class="min-w-40"
+                    :prioritize-position="isAndroid"
+                    :collision-padding="isAndroid ? 8 : 0">
                     <ContextMenuItem @click="handleNodeMenuViewDetails">
                         <UserIcon class="size-4" />
                         {{ t('view.charts.mutual_friend.context_menu.view_details') }}
@@ -315,6 +322,10 @@
 
     import GraphLayoutWorker from '../graphLayoutWorker.js?worker&inline';
 
+    import { createLongPress, getClientPoint, isTouchLikeEvent } from '../composables/touchLongPress';
+    import { isAndroid } from '../../../shared/utils/platform';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+
     import {
         useAppearanceSettingsStore,
         useChartsStore,
@@ -330,6 +341,8 @@
     import configRepository from '../../../services/config';
 
     const { userImage, userStatusClass } = useUserDisplay();
+    // Always false in desktop builds.
+    const { isCompact } = useCompactLayout();
     const { t } = useI18n();
     const friendStore = useFriendStore();
     const userStore = useUserStore();
@@ -624,10 +637,43 @@
 
     function setMutualGraphHeight() {
         if (mutualGraphRef.value) {
+            // Phones: fill the page card, which the shell already sizes (--app-chrome-h).
             const availableHeight = window.innerHeight - 100;
-            mutualGraphRef.value.style.height = `${availableHeight}px`;
+            mutualGraphRef.value.style.height = isCompact.value ? '100%' : `${availableHeight}px`;
             mutualGraphRef.value.style.overflowY = 'auto';
         }
+    }
+
+    watch(isCompact, () => setMutualGraphHeight());
+
+    // Android touch: holding a node opens the node menu, which is a right-click menu on PC (sigma has no touch path to
+    // rightClickNode). reka's ContextMenu opens from a contextmenu event at the finger.
+    const nodeLongPress = createLongPress({
+        onLongPress(node, point) {
+            contextMenuNodeId.value = node;
+            nextTick(() => {
+                graphContainerRef.value?.dispatchEvent(
+                    new MouseEvent('contextmenu', {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: point.x,
+                        clientY: point.y
+                    })
+                );
+            });
+        }
+    });
+
+    function handleGraphTouchMove(event) {
+        if (event.touches?.length > 1) {
+            nodeLongPress.cancel();
+            return;
+        }
+        nodeLongPress.move(getClientPoint(event));
+    }
+
+    function handleGraphTouchEnd() {
+        nodeLongPress.cancel();
     }
 
     onMounted(() => {
@@ -639,6 +685,11 @@
                 if (sigmaInstance?.refresh) sigmaInstance.refresh();
             });
             resizeObserver.observe(graphContainerRef.value);
+            if (isAndroid) {
+                graphContainerRef.value.addEventListener('touchmove', handleGraphTouchMove, { passive: true });
+                graphContainerRef.value.addEventListener('touchend', handleGraphTouchEnd, { passive: true });
+                graphContainerRef.value.addEventListener('touchcancel', handleGraphTouchEnd, { passive: true });
+            }
             mutualGraphResizeObserver = new ResizeObserver(() => setMutualGraphHeight());
             mutualGraphResizeObserver.observe(mutualGraphRef.value);
             setMutualGraphHeight();
@@ -651,6 +702,12 @@
         if (resizeObserver) {
             resizeObserver.disconnect();
             resizeObserver = null;
+        }
+        nodeLongPress.cancel();
+        if (isAndroid && graphContainerRef.value) {
+            graphContainerRef.value.removeEventListener('touchmove', handleGraphTouchMove);
+            graphContainerRef.value.removeEventListener('touchend', handleGraphTouchEnd);
+            graphContainerRef.value.removeEventListener('touchcancel', handleGraphTouchEnd);
         }
         if (sigmaInstance) {
             sigmaInstance.kill();
@@ -960,6 +1017,8 @@
             sigmaInstance = new Sigma(graph, container, {
                 // Sentry: VRCX-WEB-2EG
                 allowInvalidContainer: true,
+                // Phones: a narrow canvas cuts the names of the outermost nodes; leave room for them.
+                ...(isCompact.value ? { stagePadding: 56 } : {}),
                 renderLabels: true,
                 labelRenderedSizeThreshold: DEFAULT_LABEL_THRESHOLD,
                 labelColor: { color: labelColor },
@@ -996,8 +1055,13 @@
                     const totalLines = subLine ? 2 : 1;
                     const h = lineHeight * totalLines + paddingY;
 
-                    const x = data.x + data.size - 5;
+                    let x = data.x + data.size - 5;
                     const y = data.y - h / 2;
+                    // Phones: a narrow canvas cuts the box of a node near the right edge; draw it on the left instead.
+                    const canvasWidth = ctx.canvas.clientWidth || ctx.canvas.width;
+                    if (isCompact.value && x + w > canvasWidth) {
+                        x = Math.max(0, data.x - data.size + 5 - w);
+                    }
 
                     ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
                     ctx.shadowBlur = 6;
@@ -1127,8 +1191,24 @@
         });
 
         sigmaInstance.on('clickNode', ({ node }) => {
+            // The tap that ends a long-press only closes it; the menu is already open.
+            if (nodeLongPress.consumeFired()) return;
             if (node) showUserDialog(node);
         });
+
+        if (isAndroid) {
+            sigmaInstance.on('downNode', ({ node, event }) => {
+                const original = event?.original;
+                if (!node || !isTouchLikeEvent(original) || original?.touches?.length > 1) {
+                    nodeLongPress.cancel();
+                    return;
+                }
+                nodeLongPress.begin(node, getClientPoint(original));
+            });
+            sigmaInstance.on('downStage', () => nodeLongPress.cancel());
+            sigmaInstance.on('upNode', () => nodeLongPress.cancel());
+            sigmaInstance.on('upStage', () => nodeLongPress.cancel());
+        }
 
         sigmaInstance.on('rightClickNode', ({ node }) => {
             contextMenuNodeId.value = node || null;

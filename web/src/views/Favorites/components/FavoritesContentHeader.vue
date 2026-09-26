@@ -1,9 +1,19 @@
 <template>
     <div class="flex items-center justify-between gap-3 mb-3">
-        <div class="flex flex-col gap-0.5 text-base font-semibold pl-0.5 [&_small]:text-xs [&_small]:font-normal">
+        <!-- Phones: the title opens the group sheet, like the toolbar's group button (docs/DESIGN.md §3.4). -->
+        <button
+            v-if="titleClickable"
+            type="button"
+            class="flex min-w-0 cursor-pointer flex-col gap-0.5 pl-0.5 text-left text-base font-semibold [&_small]:text-xs [&_small]:font-normal"
+            @click="$emit('title-click')">
+            <slot name="title" />
+        </button>
+        <div
+            v-else
+            class="flex flex-col gap-0.5 text-base font-semibold pl-0.5 [&_small]:text-xs [&_small]:font-normal">
             <slot name="title" />
         </div>
-        <div class="flex items-center gap-2 text-[13px]">
+        <div class="flex items-center gap-2 text-[13px] compact:shrink-0">
             <span>{{ t('view.favorite.edit_mode') }}</span>
             <Switch
                 :model-value="editMode"
@@ -46,10 +56,18 @@
         editModeVisible: { type: Boolean, default: false },
         isAllSelected: { type: Boolean, default: false },
         hasSelection: { type: Boolean, default: false },
-        showCopyButton: { type: Boolean, default: true }
+        showCopyButton: { type: Boolean, default: true },
+        titleClickable: { type: Boolean, default: false }
     });
 
-    defineEmits(['update:editMode', 'toggle-select-all', 'clear-selection', 'copy-selection', 'bulk-unfavorite']);
+    defineEmits([
+        'update:editMode',
+        'toggle-select-all',
+        'clear-selection',
+        'copy-selection',
+        'bulk-unfavorite',
+        'title-click'
+    ]);
 
     const { t } = useI18n();
 </script>

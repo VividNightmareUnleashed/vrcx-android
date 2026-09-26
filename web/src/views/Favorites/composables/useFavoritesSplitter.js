@@ -112,15 +112,47 @@ export function useFavoritesSplitter(options = {}) {
         loadSplitterPreferences();
     });
 
+    let observedElement = null;
+
+    const observeSplitterGroup = (element) => {
+        if (element === observedElement) {
+            return;
+        }
+        if (splitterObserver) {
+            splitterObserver.disconnect();
+            splitterObserver = null;
+        }
+        observedElement = element ?? null;
+        if (observedElement && typeof ResizeObserver !== 'undefined') {
+            splitterObserver = new ResizeObserver(updateSplitterWidth);
+            splitterObserver.observe(observedElement);
+        }
+    };
+
+    let mountedOnce = false;
+
     onMounted(async () => {
         await nextTick();
+        mountedOnce = true;
         updateSplitterWidth();
-        const element = splitterGroupRef.value?.$el ?? splitterGroupRef.value;
-        if (element && typeof ResizeObserver !== 'undefined') {
-            splitterObserver = new ResizeObserver(updateSplitterWidth);
-            splitterObserver.observe(element);
-        }
+        observeSplitterGroup(splitterGroupRef.value?.$el ?? splitterGroupRef.value);
     });
+
+    // Phones render the groups in a sheet instead of the splitter (docs/DESIGN.md §3.4). When the layout switches
+    // after mount (a foldable opening, a rotation), the splitter appears or disappears and is (un)observed then.
+    watch(
+        () => splitterGroupRef.value?.$el ?? splitterGroupRef.value ?? null,
+        (element) => {
+            if (!mountedOnce) {
+                return;
+            }
+            observeSplitterGroup(element);
+            if (element) {
+                nextTick(updateSplitterWidth);
+            }
+        },
+        { flush: 'post' }
+    );
 
     watch(splitterSize, (value, previous) => {
         if (value === previous) {
@@ -137,6 +169,7 @@ export function useFavoritesSplitter(options = {}) {
             splitterObserver.disconnect();
             splitterObserver = null;
         }
+        observedElement = null;
     });
 
     return {

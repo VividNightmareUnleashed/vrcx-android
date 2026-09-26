@@ -4,14 +4,23 @@
             <DialogHeader>
                 <DialogTitle>{{ dialogTitle }}</DialogTitle>
             </DialogHeader>
-            <div class="text-[15px] h-[75vh] overflow-y-auto">
-                <div v-for="setting in currentOptions" :key="setting.key" class="mb-[5px] flex items-center">
-                    <span class="inline-block min-w-[190px] pr-2.5 text-right"
+            <!-- Phones: each filter stacks its label (and the tooltip text, which has no hover there) above the
+                 options; the page scrolls instead of a 75vh box (docs/DESIGN.md §3.2). -->
+            <div class="text-[15px] h-[75vh] overflow-y-auto compact:h-auto compact:overflow-visible">
+                <div
+                    v-for="setting in currentOptions"
+                    :key="setting.key"
+                    class="mb-[5px] flex items-center compact:mb-3 compact:flex-col compact:items-start compact:gap-1.5">
+                    <span
+                        class="inline-block min-w-[190px] pr-2.5 text-right compact:min-w-0 compact:pr-0 compact:text-left"
                         >{{ setting.name
                         }}<TooltipWrapper class="ml-1.5" v-if="setting.tooltip" side="top" :content="setting.tooltip">
                             <AlertTriangle class="inline-block" v-if="setting.tooltipWarning" />
                             <Info class="inline-block" v-else />
                         </TooltipWrapper>
+                        <span v-if="setting.tooltip && isCompact" class="block text-xs text-muted-foreground">{{
+                            setting.tooltip
+                        }}</span>
                     </span>
 
                     <ToggleGroup
@@ -35,15 +44,18 @@
                 <template v-if="photonLoggingEnabled">
                     <br />
                     <div class="mb-[5px] flex items-center">
-                        <span class="inline-block min-w-[190px] pr-2.5 text-right">{{
+                        <span class="inline-block min-w-[190px] pr-2.5 text-right compact:min-w-0 compact:text-left">{{
                             t('view.feed.photon_event_logging')
                         }}</span>
                     </div>
                     <div
                         v-for="setting in photonFeedFiltersOptions"
                         :key="setting.key"
-                        class="mb-[5px] flex items-center">
-                        <span class="inline-block min-w-[190px] pr-2.5 text-right">{{ setting.name }}</span>
+                        class="mb-[5px] flex items-center compact:mb-3 compact:flex-col compact:items-start compact:gap-1.5">
+                        <span
+                            class="inline-block min-w-[190px] pr-2.5 text-right compact:min-w-0 compact:pr-0 compact:text-left"
+                            >{{ setting.name }}</span
+                        >
                         <ToggleGroup
                             type="single"
                             required
@@ -90,8 +102,11 @@
     import { feedFiltersOptions, sharedFeedFiltersDefaults } from '../../../shared/constants';
 
     import configRepository from '../../../services/config';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { t } = useI18n();
+    // Always false in desktop builds.
+    const { isCompact } = useCompactLayout();
 
     const { photonLoggingEnabled } = storeToRefs(usePhotonStore());
     const { notyFeedFiltersOptions, wristFeedFiltersOptions, photonFeedFiltersOptions } = feedFiltersOptions();

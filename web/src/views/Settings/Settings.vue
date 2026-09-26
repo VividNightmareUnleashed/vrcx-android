@@ -1,5 +1,6 @@
 <template>
-    <div class="x-container flex w-full flex-col">
+    <div class="x-container flex w-full flex-col compact:w-auto">
+        <!-- Phones: the page card keeps its 6px frame margins (w-full would push its right edge off screen). -->
         <div class="mx-auto flex w-full max-w-2xl flex-col">
             <div class="shrink-0 p-1.5">
                 <span class="text-lg font-semibold text-foreground">{{ t('view.settings.header') }}</span>

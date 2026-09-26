@@ -30,11 +30,15 @@
     import * as echarts from 'echarts';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
     import InstanceActivityTooltip from './InstanceActivityTooltip.jsx';
+    import { applyCompactChartLayout } from '../composables/compactChartLayout';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
     import { renderToHtml } from '@/lib/utils';
 
     const { isDarkMode, dtHour12 } = storeToRefs(useAppearanceSettingsStore());
 
     const { currentUser } = storeToRefs(useUserStore());
+    // Always false in desktop builds.
+    const { isCompact } = useCompactLayout();
 
     const props = defineProps({
         activityDetailData: {
@@ -394,7 +398,10 @@
             backgroundColor: 'transparent'
         };
 
-        return echartsOption;
+        return applyCompactChartLayout(echartsOption, {
+            compact: isCompact.value,
+            width: isCompact.value ? (activityDetailChartRef.value?.clientWidth ?? 0) : 0
+        });
     }
 
     defineExpose({

@@ -1,0 +1,11 @@
+{
+    "android": {
+        "favorites": {
+            "groups": "Favorite groups",
+            "groups_description": "Choose which favorite group to show"
+        },
+        "group_calendar": {
+            "event_details": "Event details"
+        }
+    }
+}

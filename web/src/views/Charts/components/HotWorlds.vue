@@ -1,8 +1,9 @@
 <template>
     <div id="chart" class="x-container">
-        <div ref="hotWorldsRef" class="pt-4">
+        <div ref="hotWorldsRef" class="pt-4 compact:pt-1">
             <BackToTop :target="hotWorldsRef" :right="30" :bottom="30" :teleport="false" />
-            <div class="options-container mt-0 flex items-center justify-between">
+            <div
+                class="options-container mt-0 flex items-center justify-between compact:flex-wrap compact:gap-x-3 compact:px-0">
                 <div class="flex items-center gap-2 mb-4">
                     <span class="shrink-0">{{ t('view.charts.hot_worlds.header') }}</span>
                     <HoverCard>
@@ -45,7 +46,7 @@
             </div>
 
             <template v-else>
-                <div class="mx-auto mt-3 flex max-w-[1100px] items-center gap-3">
+                <div class="mx-auto mt-3 flex max-w-[1100px] items-center gap-3 compact:flex-wrap compact:gap-2">
                     <div class="flex items-center gap-2 rounded-lg border px-3 py-2">
                         <MapPin class="size-3.5 text-muted-foreground" />
                         <span class="text-sm font-medium">{{ totalVisits.toLocaleString() }}</span>
@@ -72,7 +73,8 @@
                     }}</span>
                 </div>
 
-                <div class="mx-auto mt-3 flex max-w-[1100px] gap-x-6">
+                <!-- Phones: one column, ranks 1-20 in order. -->
+                <div class="mx-auto mt-3 flex max-w-[1100px] gap-x-6 compact:flex-col">
                     <div v-for="(column, colIdx) in columns" :key="colIdx" class="min-w-0 flex-1">
                         <button
                             v-for="world in column"
@@ -201,13 +203,13 @@
 <script setup>
     defineOptions({ name: 'ChartsHotWorlds' });
 
-    import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+    import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
     import { Info, MapPin, RefreshCcw, TrendingDown, TrendingUp, Users } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
 
     import BackToTop from '@/components/BackToTop.vue';
-
+    import { useCompactLayout } from '@/composables/useCompactLayout';
     import { DataTableEmpty } from '@/components/ui/data-table';
     import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
     import { Separator } from '@/components/ui/separator';
@@ -217,10 +219,13 @@
     import { showUserDialog } from '@/coordinators/userCoordinator';
     import { showWorldDialog } from '@/coordinators/worldCoordinator';
     import { database } from '@/services/database';
+    import { isAndroid } from '@/shared/utils/platform';
     import { useAppearanceSettingsStore } from '@/stores';
 
     const { t } = useI18n();
     const { isDarkMode } = storeToRefs(useAppearanceSettingsStore());
+    // Always false in desktop builds.
+    const { isCompact } = useCompactLayout();
 
     const hotWorldsRef = ref(null);
     const isLoading = ref(true);
@@ -268,11 +273,14 @@
 
     function setContainerHeight() {
         if (hotWorldsRef.value) {
+            // Phones: fill the page card, which the shell already sizes (--app-chrome-h).
             const availableHeight = window.innerHeight - 110;
-            hotWorldsRef.value.style.height = `${availableHeight}px`;
+            hotWorldsRef.value.style.height = isCompact.value ? '100%' : `${availableHeight}px`;
             hotWorldsRef.value.style.overflowY = 'auto';
         }
     }
+
+    watch(isCompact, () => setContainerHeight());
 
     function handleDaysChange(value) {
         if (!value) return;
@@ -314,6 +322,14 @@
             friendDetail.value = [];
         }
     }
+
+    // Android: the sheet is teleported to <body> and full width on phones, so it would cover the next page when the
+    // route changes while it is open (the page itself stays alive in KeepAlive). Close it when the page is left.
+    onDeactivated(() => {
+        if (isAndroid) {
+            handleSheetClose(false);
+        }
+    });
 
     function handleWorldClick() {
         if (selectedWorld.value?.worldId) {

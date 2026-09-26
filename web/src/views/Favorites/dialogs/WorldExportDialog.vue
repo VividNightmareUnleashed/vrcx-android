@@ -14,7 +14,7 @@
                 </label>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 compact:flex-wrap">
                 <Select
                     :model-value="worldExportFavoriteGroupSelection"
                     @update:modelValue="handleWorldExportGroupSelect">

@@ -4,7 +4,9 @@
             <DialogHeader>
                 <DialogTitle>{{ t('dialog.world_import.header') }}</DialogTitle>
             </DialogHeader>
-            <div style="display: flex; align-items: center; justify-content: space-between">
+            <div
+                class="compact:flex-wrap compact:gap-2"
+                style="display: flex; align-items: center; justify-content: space-between">
                 <div class="text-xs">{{ t('dialog.world_import.description') }}</div>
                 <div style="display: flex; align-items: center">
                     <div v-if="worldImportDialog.progress">
@@ -23,7 +25,7 @@
             <InputGroupTextareaField v-model="worldImportDialog.input" :rows="10" input-class="resize-none mt-2" />
             <div>
                 <div class="mb-2">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 compact:flex-wrap">
                         <Select
                             :model-value="worldImportFavoriteGroupSelection"
                             @update:modelValue="handleWorldImportGroupSelect">

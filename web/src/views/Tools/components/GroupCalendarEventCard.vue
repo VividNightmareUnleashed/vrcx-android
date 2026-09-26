@@ -1,11 +1,11 @@
 <template>
-    <Popover :open="eventPopoverOpen">
+    <Popover :open="eventPopoverOpen" @update:open="handlePopoverOpenChange">
         <PopoverTrigger as-child>
             <Card
                 class="event-card x-hover-card p-0 gap-0 hover:bg-accent hover:shadow-sm"
                 :class="cardClass"
-                @mouseenter="openEventPopover"
-                @mouseleave="scheduleCloseEventPopover">
+                @mouseenter="handleHoverEnter"
+                @mouseleave="handleHoverLeave">
                 <img
                     v-if="!bannerError"
                     :src="bannerUrl"
@@ -29,7 +29,8 @@
                             {{ event.title }}
                         </div>
                     </div>
-                    <div class="event-info">
+                    <!-- Touch: the details open with a tap here or on the info badge, not on hover. -->
+                    <div class="event-info" @click="handleInfoTap">
                         <div :class="timeClass">
                             {{ formattedTime }}
                         </div>
@@ -39,6 +40,16 @@
                     </div>
                 </div>
                 <div class="badges">
+                    <Button
+                        v-if="isCoarsePointer"
+                        size="icon"
+                        :variant="eventPopoverOpen ? 'default' : 'secondary'"
+                        class="rounded-full badge"
+                        :aria-label="t('android.group_calendar.event_details')"
+                        :aria-expanded="eventPopoverOpen"
+                        @click.stop="toggleEventPopover">
+                        <Info />
+                    </Button>
                     <Button
                         v-if="canManageEvent"
                         @click="editEvent(event)"
@@ -62,11 +73,11 @@
             </Card>
         </PopoverTrigger>
         <PopoverContent
-            side="right"
+            :side="isCompact ? 'bottom' : 'right'"
             align="start"
-            class="w-125 p-3"
-            @mouseenter="openEventPopover"
-            @mouseleave="scheduleCloseEventPopover">
+            class="w-125 p-3 compact:w-[calc(100vw-2rem)]"
+            @mouseenter="handleHoverEnter"
+            @mouseleave="handleHoverLeave">
             <div class="flex items-baseline justify-between gap-3 text-xs">
                 <div class="text-[13px] font-semibold">{{ event.title }}</div>
                 <div class="whitespace-nowrap">
@@ -128,7 +139,7 @@
 </template>
 
 <script setup>
-    import { Calendar, Download, Image, Pencil, Repeat, Share2, Star } from 'lucide-vue-next';
+    import { Calendar, Download, Image, Info, Pencil, Repeat, Share2, Star } from 'lucide-vue-next';
     import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
     import { computed, ref } from 'vue';
     import { Button } from '@/components/ui/button';
@@ -141,6 +152,7 @@
     import { formatDateFilter, hasGroupPermission } from '../../../shared/utils';
     import { groupRequest, queryRequest } from '../../../api';
     import TooltipWrapper from '@/components/ui/tooltip/TooltipWrapper.vue';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     const { showFullscreenImageDialog } = useGalleryStore();
 
@@ -316,6 +328,44 @@
             eventPopoverOpen.value = false;
         }, 100);
     };
+
+    // Touch screens (Android only; both flags are false in desktop builds): the hover popover becomes a tap toggle,
+    // and the compatibility mouse events a tap produces are ignored (docs/DESIGN.md §3.3).
+    const { isCompact, isCoarsePointer } = useCompactLayout();
+
+    const handleHoverEnter = () => {
+        if (!isCoarsePointer.value) {
+            openEventPopover();
+        }
+    };
+
+    const handleHoverLeave = () => {
+        if (!isCoarsePointer.value) {
+            scheduleCloseEventPopover();
+        }
+    };
+
+    const toggleEventPopover = () => {
+        eventPopoverOpen.value = !eventPopoverOpen.value;
+    };
+
+    /**
+     * @param {MouseEvent} [event]
+     */
+    const handleInfoTap = (event) => {
+        if (isCoarsePointer.value) {
+            // The tap would bubble on to PopoverTrigger (the card), whose own toggle would close the popover again.
+            event?.stopPropagation();
+            toggleEventPopover();
+        }
+    };
+
+    // An outside tap or Escape closes the popover on touch; on PC it follows the pointer only, as upstream.
+    const handlePopoverOpenChange = (open) => {
+        if (!open && isCoarsePointer.value) {
+            eventPopoverOpen.value = false;
+        }
+    };
 </script>
 
 <style scoped>
@@ -333,6 +383,12 @@
     .event-card.grid-card {
         flex: 0 0 280px;
         max-width: 280px;
+    }
+
+    /* Phones: grid cards take the full row. */
+    html.vrcx-compact .event-card.grid-card {
+        flex: 1 1 100%;
+        max-width: none;
     }
 
     .event-card.group-dialog-grid-card {

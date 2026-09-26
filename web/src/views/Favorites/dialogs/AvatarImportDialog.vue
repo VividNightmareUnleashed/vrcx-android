@@ -4,7 +4,9 @@
             <DialogHeader>
                 <DialogTitle>{{ t('dialog.avatar_import.header') }}</DialogTitle>
             </DialogHeader>
-            <div style="display: flex; align-items: center; justify-content: space-between">
+            <div
+                class="compact:flex-wrap compact:gap-2"
+                style="display: flex; align-items: center; justify-content: space-between">
                 <div class="text-xs">{{ t('dialog.avatar_import.description') }}</div>
                 <div style="display: flex; align-items: center">
                     <div v-if="avatarImportDialog.progress">
@@ -21,9 +23,11 @@
                 </div>
             </div>
             <InputGroupTextareaField v-model="avatarImportDialog.input" :rows="10" input-class="resize-none mt-2" />
-            <div class="mt-1.5" style="display: flex; align-items: center; justify-content: space-between">
+            <div
+                class="mt-1.5 compact:flex-wrap compact:gap-2"
+                style="display: flex; align-items: center; justify-content: space-between">
                 <div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 compact:flex-wrap">
                         <Select
                             class="mr-1.5"
                             :model-value="avatarImportFavoriteGroupSelection"

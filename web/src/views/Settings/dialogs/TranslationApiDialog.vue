@@ -4,8 +4,11 @@
             <DialogHeader>
                 <DialogTitle>{{ t('dialog.translation_api.header') }}</DialogTitle>
             </DialogHeader>
-            <div class="options-container-item">
-                <span class="name">{{ t('view.settings.appearance.appearance.bio_language') }}</span>
+            <!-- Phones: the fixed 235 px label column (styles/options-container.css) gives way to the select. -->
+            <div class="options-container-item compact:gap-3">
+                <span class="name compact:w-auto! compact:min-w-0 compact:flex-1">{{
+                    t('view.settings.appearance.appearance.bio_language')
+                }}</span>
                 <Select :model-value="bioLanguage" @update:modelValue="setBioLanguage">
                     <SelectTrigger size="sm" style="float: right">
                         <SelectValue :placeholder="String(getLanguageName(bioLanguage) || bioLanguage || '')" />
@@ -88,7 +91,7 @@
                     <Field>
                         <FieldLabel>{{ t('dialog.translation_api.openai.model') }}</FieldLabel>
                         <FieldContent>
-                            <div class="flex gap-2 items-start">
+                            <div class="flex gap-2 items-start compact:flex-col compact:items-stretch">
                                 <div class="flex-1">
                                     <Select
                                         v-if="availableModels.length > 0"

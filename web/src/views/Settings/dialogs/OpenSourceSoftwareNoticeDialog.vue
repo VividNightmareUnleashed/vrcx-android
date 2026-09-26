@@ -31,16 +31,17 @@
                 </div>
 
                 <div v-else class="grid gap-4 md:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-                    <div class="h-[28rem] space-y-3 overflow-y-auto pr-1">
+                    <div class="h-[28rem] space-y-3 overflow-y-auto pr-1 compact:h-[40dvh]">
                         <Card
                             v-for="entry in filteredEntries"
                             :key="entry.id"
                             :class="[
-                                'cursor-pointer transition-colors',
+                                'cursor-pointer transition-colors compact:gap-2 compact:py-3',
                                 entry.id === selectedEntry?.id ? 'border-primary bg-accent' : 'hover:bg-accent/40'
                             ]"
                             @click="selectedEntryId = entry.id">
-                            <CardHeader class="gap-2">
+                            <!-- Phones: tighter package cards, so the 40dvh list shows more than two of them. -->
+                            <CardHeader class="gap-2 compact:gap-1 compact:px-4">
                                 <CardTitle class="truncate text-sm" :title="entry.name">
                                     {{ entry.name }}
                                 </CardTitle>
@@ -48,7 +49,7 @@
                                     {{ entry.version || t('dialog.open_source.no_version') }}
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent class="flex min-w-0 flex-wrap items-center gap-2">
+                            <CardContent class="flex min-w-0 flex-wrap items-center gap-2 compact:px-4">
                                 <Badge
                                     variant="secondary"
                                     class="max-w-full min-w-0 shrink truncate"
@@ -68,7 +69,7 @@
                         </div>
                     </div>
 
-                    <Card class="min-h-[28rem]">
+                    <Card class="min-h-[28rem] compact:min-h-0">
                         <template v-if="selectedEntry">
                             <CardHeader>
                                 <div class="flex flex-wrap items-center gap-2">
@@ -120,7 +121,7 @@
 
                         <CardContent
                             v-else
-                            class="flex h-full min-h-[28rem] items-center justify-center text-sm text-muted-foreground">
+                            class="flex h-full min-h-[28rem] items-center justify-center text-sm text-muted-foreground compact:min-h-24">
                             {{ t('dialog.open_source.select_package') }}
                         </CardContent>
                     </Card>
