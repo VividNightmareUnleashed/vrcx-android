@@ -194,6 +194,7 @@
     import { columns as baseColumns } from './columns.jsx';
     import { useVrcxVueTable } from '../../lib/table/useVrcxVueTable';
     import { useCompactLayout } from '../../composables/useCompactLayout';
+    import { capCompactPageSizes } from '../../platform/android/tablePageSizes';
     import ResponsivePopover from '../../components/ui/responsive-popover/ResponsivePopover.vue';
 
     const { isCompact } = useCompactLayout();
@@ -240,7 +241,13 @@
 
     const feedRef = ref(null);
 
-    const pageSizes = computed(() => appearanceSettingsStore.tablePageSizes);
+    // Phones: feed cards are not virtualised and each costs several milliseconds to mount on a phone, so the
+    // compact layout offers at most 50 per page (docs/DESIGN.md §7).
+    const pageSizes = computed(() =>
+        isCompact.value
+            ? capCompactPageSizes(appearanceSettingsStore.tablePageSizes)
+            : appearanceSettingsStore.tablePageSizes
+    );
 
     /**
      * @param row
