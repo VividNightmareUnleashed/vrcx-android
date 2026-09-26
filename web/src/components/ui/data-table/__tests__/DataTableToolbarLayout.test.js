@@ -43,6 +43,11 @@ vi.mock('@/shared/utils/platform', () => ({ isAndroid: true }));
 import { i18n } from '../../../../plugins/i18n';
 import { TooltipProvider } from '../../tooltip';
 import DataTableLayout from '../DataTableLayout.vue';
+import {
+    estimateCompactPaginationWidth,
+    INLINE_PAGINATION_TOOLBAR_MIN_PX,
+    shouldInlinePagination
+} from '../dataTableHelpers.js';
 
 const rows = Array.from({ length: 30 }, (_, index) => ({ id: `r${index}`, name: `Row ${index}` }));
 const columns = [
@@ -129,14 +134,39 @@ describe('DataTableLayout phone toolbar', () => {
         wrapper.unmount();
     });
 
-    it('keeps the pagination below the list when the table is narrow (friends panel open)', async () => {
+    it('keeps the pagination below the list when it would leave the toolbar too little room', async () => {
         layout.landscape.value = true;
-        size.width.value = 420;
+        // 406px: the table beside the open friends panel at 844 x 390. Three pages (five pagination items) and View
+        // options leave the toolbar less than INLINE_PAGINATION_TOOLBAR_MIN_PX.
+        size.width.value = 406;
         const wrapper = mountLayout({}, stackedToolbar);
         expect(wrapper.find('.data-table').attributes('data-pagination')).toBeUndefined();
 
         size.width.value = 766;
         await nextTick();
+        expect(wrapper.find('.data-table').attributes('data-pagination')).toBe('inline');
+        wrapper.unmount();
+    });
+
+    it('inlines a short pagination in narrower landscape tables (small phones, the open friends panel)', () => {
+        layout.landscape.value = true;
+        size.width.value = 406;
+        const wrapper = mountLayout({ totalItems: 8 }, stackedToolbar);
+        expect(wrapper.find('.data-table').attributes('data-pagination')).toBe('inline');
+        wrapper.unmount();
+
+        // 640 x 360: a 562px table fits the three-page pagination next to the toolbar.
+        size.width.value = 562;
+        const small = mountLayout({}, stackedToolbar);
+        expect(small.find('.data-table').attributes('data-pagination')).toBe('inline');
+        small.unmount();
+    });
+
+    it('inlines the pagination next to the tools of a table without its own toolbar (My Avatars)', () => {
+        layout.landscape.value = true;
+        size.width.value = 406;
+        const wrapper = mountLayout({});
+        expect(wrapper.find('[data-slot="data-table-toolbar-content"]').exists()).toBe(false);
         expect(wrapper.find('.data-table').attributes('data-pagination')).toBe('inline');
         wrapper.unmount();
     });
@@ -160,6 +190,23 @@ describe('DataTableLayout phone toolbar', () => {
         wrapper.unmount();
     });
 
+    it('lets a PC toolbar scroll sideways in the touch tablet frame, and leaves it alone on desktop', () => {
+        layout.compact.value = false;
+        const tablet = mountLayout({}, stackedToolbar);
+        const scroller = tablet.find('[data-slot="data-table-toolbar-scroller"]');
+        expect(tablet.find('[data-slot="data-table-toolbar"]').exists()).toBe(false);
+        expect(scroller.classes()).toEqual(expect.arrayContaining(['mb-2', 'overflow-x-auto', 'overflow-y-hidden']));
+        expect(scroller.find('.search').exists()).toBe(true);
+        tablet.unmount();
+
+        layout.coarse.value = false;
+        const desktop = mountLayout({}, stackedToolbar);
+        const wrapperDiv = desktop.find('.search').element.closest('.data-table > div');
+        expect(wrapperDiv.className).toBe('mb-2');
+        expect(wrapperDiv.hasAttribute('data-slot')).toBe(false);
+        desktop.unmount();
+    });
+
     it('shows icon-only Previous and Next on phones', () => {
         const wrapper = mountLayout({}, stackedToolbar);
         const previous = wrapper.find('[data-slot="pagination-previous"]');
@@ -172,5 +219,38 @@ describe('DataTableLayout phone toolbar', () => {
         const desktop = mountLayout({}, stackedToolbar);
         expect(desktop.find('[data-slot="pagination-previous"]').classes()).not.toContain('[&>span]:hidden');
         desktop.unmount();
+    });
+});
+
+describe('shouldInlinePagination', () => {
+    it('sizes the compact pagination from the page count (up to five items plus Previous and Next)', () => {
+        expect(estimateCompactPaginationWidth(0)).toBe(3 * 32 + 2 * 4);
+        expect(estimateCompactPaginationWidth(1)).toBe(3 * 32 + 2 * 4);
+        expect(estimateCompactPaginationWidth(3)).toBe(5 * 32 + 4 * 4);
+        expect(estimateCompactPaginationWidth(200)).toBe(7 * 32 + 6 * 4);
+    });
+
+    it('inlines while the toolbar keeps its minimum next to the tools and the pagination', () => {
+        const base = { pageCount: 20, toolCount: 1, hasToolbar: true };
+        // 844 x 390 and 640 x 360 phones, the widest pagination.
+        expect(shouldInlinePagination({ ...base, tableWidth: 766 })).toBe(true);
+        expect(shouldInlinePagination({ ...base, tableWidth: 562 })).toBe(true);
+        // Beside the open friends panel (406px) only a short pagination fits.
+        expect(shouldInlinePagination({ ...base, tableWidth: 406 })).toBe(false);
+        expect(shouldInlinePagination({ ...base, tableWidth: 406, pageCount: 1 })).toBe(true);
+        // The exact edge: toolbar = width - pagination - gap - tools - gap.
+        const edge = INLINE_PAGINATION_TOOLBAR_MIN_PX + estimateCompactPaginationWidth(20) + 8 + 32 + 8;
+        expect(shouldInlinePagination({ ...base, tableWidth: edge })).toBe(true);
+        expect(shouldInlinePagination({ ...base, tableWidth: edge - 1 })).toBe(false);
+        // Quick actions take their share.
+        expect(shouldInlinePagination({ ...base, tableWidth: edge, toolCount: 2 })).toBe(false);
+    });
+
+    it('needs no toolbar room when the view passes no toolbar, and a measured width', () => {
+        expect(shouldInlinePagination({ tableWidth: 300, pageCount: 20, toolCount: 1, hasToolbar: false })).toBe(true);
+        expect(shouldInlinePagination({ tableWidth: 0, pageCount: 1, toolCount: 1, hasToolbar: true })).toBe(false);
+        expect(shouldInlinePagination({ tableWidth: Number.NaN, pageCount: 1, toolCount: 1, hasToolbar: false })).toBe(
+            false
+        );
     });
 });

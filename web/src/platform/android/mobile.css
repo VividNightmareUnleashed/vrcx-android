@@ -41,7 +41,7 @@ html.vrcx-compact {
 }
 
 html.vrcx-compact-landscape {
-    --app-bar-h: 40px;
+    --app-bar-h: 36px;
     --dock-h: 0px;
 }
 
@@ -112,6 +112,19 @@ html.vrcx-compact:not(.vrcx-compact-landscape) :is(#noty_layout__bottomLeft, #no
     width: auto;
     right: calc(var(--safe-right) + 12px);
     max-width: none;
+}
+
+/* Phone landscape: the app bar's 40px buttons draw at 36px to fit the 36px bar, and keep a 40px hit area. */
+html.vrcx-compact-landscape .vrcx-app-bar > button.size-10 {
+    position: relative;
+    width: 36px;
+    height: 36px;
+}
+
+html.vrcx-compact-landscape .vrcx-app-bar > button.size-10::after {
+    content: '';
+    position: absolute;
+    inset: calc((36px - var(--touch-min)) / 2);
 }
 
 /* ---------------------------------------------------------------- page card (DESIGN.md §2) */
@@ -364,6 +377,20 @@ html.vrcx-compact:not(.vrcx-compact-landscape)
     grid-column: 1;
 }
 
+/* A row that scrolls sideways itself (a filter strip, often with a negative margin so its padding holds the hit
+ * areas) spans exactly the card width, so its scrollport ends at the list's border and not in the page card's
+ * padding. */
+html.vrcx-compact:not(.vrcx-compact-landscape)
+    [data-slot='data-table-toolbar']
+    > [data-slot='data-table-toolbar-content']
+    > .flex-col
+    > .overflow-x-auto {
+    margin-right: 0;
+    margin-left: 0;
+    padding-right: 0;
+    padding-left: 0;
+}
+
 /* A row the column kept at its own width (self-start) stays that width in the grid. */
 html.vrcx-compact:not(.vrcx-compact-landscape)
     [data-slot='data-table-toolbar']
@@ -482,9 +509,10 @@ html.vrcx-compact [data-slot$='overlay'] {
         inset: min(0px, calc(50% - var(--touch-min) / 2));
     }
 
-    /* A page-filling table clips its overflow; let the hit areas of the toolbar controls at its edges (View options
-     * and Quick actions sit in the top right corner) reach past it, into the page card's padding. */
-    .data-table.overflow-hidden {
+    /* A page-filling table clips its overflow. When its touch toolbar puts View options and Quick actions (and, in
+     * phone landscape, the pagination) in its top right corner, their hit areas reach past it into the page card's
+     * padding. Everything else in the toolbar scrolls inside it, so nothing else paints there. */
+    .data-table.overflow-hidden:has(> [data-slot='data-table-toolbar']) {
         overflow: clip;
         overflow-clip-margin: 4px;
     }

@@ -3,7 +3,12 @@
         ref="rootRef"
         :class="['flex flex-col min-w-0 data-table', autoHeight && 'flex-1 min-h-0 overflow-hidden']"
         :data-pagination="paginationInline ? 'inline' : undefined">
-        <div v-if="$slots.toolbar && !showTouchTools" class="mb-2">
+        <!-- Android touch screens (the tablet frame): a PC toolbar wider than the page scrolls sideways instead of being
+             cut off at the table's edge. -->
+        <div
+            v-if="$slots.toolbar && !showTouchTools"
+            :class="['mb-2', isCoarsePointer && 'overflow-x-auto overflow-y-hidden scrollbar-hidden']"
+            :data-slot="isCoarsePointer ? 'data-table-toolbar-scroller' : undefined">
             <slot name="toolbar"></slot>
         </div>
         <!-- Touch layouts: View options (the PC header menu) and the Shift stand-in next to the toolbar. A phone
@@ -361,7 +366,7 @@
 </template>
 
 <script setup>
-    import { computed, nextTick, ref, watch } from 'vue';
+    import { computed, nextTick, ref, useSlots, watch } from 'vue';
     import { DragDropProvider } from '@dnd-kit/vue';
     import { useElementSize } from '@vueuse/core';
     import { FlexRender } from '@tanstack/vue-table';
@@ -398,7 +403,8 @@
         hasMobileHint,
         isReorderable as isReorderableHelper,
         isSpacer,
-        resolveHeaderLabel
+        resolveHeaderLabel,
+        shouldInlinePagination
     } from './dataTableHelpers.js';
     import { QuickActionsToggle } from '../quick-actions';
 
@@ -545,17 +551,24 @@
     const compactPagination = computed(() => isCompact.value);
 
     // Phone landscape: a table that fills the page moves its pagination up into the toolbar row, so the card list
-    // keeps the height a separate pagination row would take (placed by platform/android/mobile.css). Only when the
-    // table is wide enough to leave the view's toolbar its room (not beside the open friends panel). The width is
-    // only observed in phone landscape.
+    // keeps the height a separate pagination row would take (placed by platform/android/mobile.css). Only while the
+    // view's toolbar keeps its room next to the tools and the pagination (shouldInlinePagination). The width is only
+    // observed in phone landscape.
     const rootRef = ref(null);
-    const PAGINATION_INLINE_MIN_WIDTH = 600;
+    const slots = useSlots();
     const canInlinePagination = computed(
         () => isCompactLandscape.value && props.autoHeight && props.showPagination && showTouchTools.value
     );
     const { width: tableWidth } = useElementSize(computed(() => (canInlinePagination.value ? rootRef.value : null)));
     const paginationInline = computed(
-        () => canInlinePagination.value && tableWidth.value >= PAGINATION_INLINE_MIN_WIDTH
+        () =>
+            canInlinePagination.value &&
+            shouldInlinePagination({
+                tableWidth: tableWidth.value,
+                pageCount: pageSizeProxy.value > 0 ? Math.ceil(props.totalItems / pageSizeProxy.value) : 1,
+                toolCount: Number(showQuickActions.value) + Number(showViewOptions.value),
+                hasToolbar: Boolean(slots.toolbar)
+            })
     );
 
     const dndContextKey = computed(() => (props.table?.getVisibleLeafColumns?.() ?? []).map((c) => c.id).join(','));

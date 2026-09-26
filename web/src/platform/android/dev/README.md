@@ -21,7 +21,7 @@ viewport) to a phone size. Useful sizes:
 | ---------- | --------------------------------------------------------------------------- |
 | 360 x 780  | small phone, portrait: app bar, page card, dock                             |
 | 412 x 915  | large phone, portrait                                                       |
-| 780 x 360  | phone landscape: 48 px rail, 40 px app bar, friends panel as a right column |
+| 780 x 360  | phone landscape: 48 px rail, 36 px app bar, friends panel as a right column |
 | 800 x 1280 | tablet: the upstream desktop frame with the touch fixes                     |
 
 Turn on touch emulation in the device toolbar to check the coarse-pointer rules (long-press tooltips, visible
