@@ -89,4 +89,53 @@ describe('AndroidSystemSettings', () => {
         expect(wrapper.find('[data-testid="android-notification-request"]').exists()).toBe(false);
         expect(wrapper.find('[data-testid="android-notification-settings"]').exists()).toBe(true);
     });
+
+    describe('start on boot', () => {
+        beforeEach(() => {
+            host.GetStartOnBoot = vi.fn().mockResolvedValue(false);
+            host.SetStartOnBoot = vi.fn(async (value) => value);
+        });
+
+        test('reads the setting and turns it on through native', async () => {
+            const wrapper = mount(AndroidSystemSettings);
+            await flushPromises();
+            const toggle = wrapper.find('[data-testid="android-start-on-boot"]');
+            expect(wrapper.text()).toContain('android.system.boot_label');
+            expect(wrapper.text()).toContain('android.system.boot_description');
+            expect(toggle.attributes('data-state')).toBe('unchecked');
+
+            await toggle.trigger('click');
+            await flushPromises();
+            expect(host.SetStartOnBoot).toHaveBeenCalledWith(true);
+            expect(wrapper.find('[data-testid="android-start-on-boot"]').attributes('data-state')).toBe('checked');
+        });
+
+        test('keeps the previous value when native fails', async () => {
+            host.SetStartOnBoot.mockRejectedValue(new Error('SecurityException: no'));
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const wrapper = mount(AndroidSystemSettings);
+            await flushPromises();
+            await wrapper.find('[data-testid="android-start-on-boot"]').trigger('click');
+            await flushPromises();
+            expect(wrapper.find('[data-testid="android-start-on-boot"]').attributes('data-state')).toBe('unchecked');
+            error.mockRestore();
+        });
+
+        test('needs background mode', async () => {
+            host.GetBackgroundMode.mockResolvedValue(false);
+            const wrapper = mount(AndroidSystemSettings);
+            await flushPromises();
+            expect(wrapper.text()).toContain('android.system.boot_needs_background');
+            expect(wrapper.find('[data-testid="android-start-on-boot"]').attributes('disabled')).toBeDefined();
+        });
+
+        test('stays disabled on a host without the setting', async () => {
+            delete host.GetStartOnBoot;
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const wrapper = mount(AndroidSystemSettings);
+            await flushPromises();
+            expect(wrapper.find('[data-testid="android-start-on-boot"]').attributes('disabled')).toBeDefined();
+            error.mockRestore();
+        });
+    });
 });

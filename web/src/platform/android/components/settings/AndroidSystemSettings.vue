@@ -11,6 +11,19 @@
     </SettingsItem>
 
     <SettingsItem
+        :label="t('android.system.boot_label')"
+        :description="
+            backgroundMode === false ? t('android.system.boot_needs_background') : t('android.system.boot_description')
+        ">
+        <Switch
+            :model-value="startOnBoot === true"
+            :disabled="startOnBoot === null || backgroundMode === false"
+            :ariaLabel="t('android.system.boot_label')"
+            data-testid="android-start-on-boot"
+            @update:modelValue="setStartOnBoot" />
+    </SettingsItem>
+
+    <SettingsItem
         :label="t('android.system.battery_label')"
         :description="
             ignoringBatteryOptimizations
@@ -56,14 +69,16 @@
     import { getAndroidHost, onAndroidEvent } from '@/shared/utils/platform';
     import SettingsItem from '@/views/Settings/components/SettingsItem.vue';
 
-    // Android replacements for the PC's tray row (docs/ARCHITECTURE.md §7): background mode, battery
-    // optimization and the notification permission. Statuses are read on mount and again when the app returns
-    // to the foreground (the user may have changed them in Android settings); nothing polls.
+    // Android replacements for the PC's tray and start-with-OS rows (docs/ARCHITECTURE.md §7): background mode,
+    // start on boot, battery optimization and the notification permission. Statuses are read on mount and again when
+    // the app returns to the foreground (the user may have changed them in Android settings); nothing polls.
 
     const { t } = useI18n();
 
     /** @type {import('vue').Ref<boolean | null>} */
     const backgroundMode = ref(null);
+    /** @type {import('vue').Ref<boolean | null>} */
+    const startOnBoot = ref(null);
     /** @type {import('vue').Ref<boolean | null>} */
     const ignoringBatteryOptimizations = ref(null);
     /** @type {import('vue').Ref<'granted' | 'denied' | 'default' | null>} */
@@ -98,12 +113,14 @@
     }
 
     async function refreshStatus() {
-        const [background, battery, permission] = await Promise.all([
+        const [background, boot, battery, permission] = await Promise.all([
             callHost('GetBackgroundMode'),
+            callHost('GetStartOnBoot'),
             callHost('IsIgnoringBatteryOptimizations'),
             callHost('GetNotificationPermission')
         ]);
         if (typeof background === 'boolean') backgroundMode.value = background;
+        if (typeof boot === 'boolean') startOnBoot.value = boot;
         if (typeof battery === 'boolean') ignoringBatteryOptimizations.value = battery;
         if (typeof permission === 'string') notificationPermission.value = permission;
     }
@@ -116,6 +133,18 @@
         backgroundMode.value = Boolean(value);
         const result = await callHost('SetBackgroundMode', Boolean(value));
         backgroundMode.value = typeof result === 'boolean' ? result : previous;
+    }
+
+    /**
+     * Opt-in, off by default: on boot the host starts the service and the page when background mode is on.
+     *
+     * @param {boolean} value
+     */
+    async function setStartOnBoot(value) {
+        const previous = startOnBoot.value;
+        startOnBoot.value = Boolean(value);
+        const result = await callHost('SetStartOnBoot', Boolean(value));
+        startOnBoot.value = typeof result === 'boolean' ? result : previous;
     }
 
     async function requestBatteryExemption() {

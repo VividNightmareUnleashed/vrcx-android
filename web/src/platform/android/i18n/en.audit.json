@@ -1,4 +1,26 @@
 {
+    "view": {
+        "settings": {
+            "appearance": {
+                "appearance": {
+                    "show_notification_icon_dot": "Show new activity in the background notification"
+                }
+            },
+            "advanced": {
+                "advanced": {
+                    "save_instance_prints_to_file": {
+                        "description": "Save spawned prints to your content folder"
+                    },
+                    "save_instance_stickers_to_file": {
+                        "description": "Save placed stickers to your content folder"
+                    },
+                    "save_instance_emoji_to_file": {
+                        "description": "Save spawned emoji to your content folder"
+                    }
+                }
+            }
+        }
+    },
     "android": {
         "launch_command": {
             "title": "Request from another app",
@@ -13,6 +35,31 @@
             "allow": "Allow",
             "cancel": "Don't allow",
             "invalid": "VRCX ignored a request from another app that it doesn't understand."
+        },
+        "system": {
+            "boot_label": "Start when the device boots",
+            "boot_description": "Starts VRCX in the background after the device restarts, so notifications and the PC companion keep working without opening the app.",
+            "boot_needs_background": "Turn on Keep running in background to use this."
+        },
+        "custom_files": {
+            "import_description": "Import custom.css and custom.js from your device. Only add scripts you trust: custom JS can do anything VRCX can, including reading your saved logins.",
+            "css_file_label": "custom.css",
+            "css_file_description": "A style sheet that changes how VRCX looks. It applies right away.",
+            "js_file_label": "custom.js",
+            "js_file_description": "A script that runs every time VRCX starts.",
+            "import_button": "Import",
+            "remove_button": "Remove",
+            "css_imported": "Imported {name} as custom.css",
+            "js_imported": "Imported {name} as custom.js. Reload VRCX to run it.",
+            "css_removed": "custom.css removed",
+            "js_removed": "custom.js removed. Reload VRCX to stop it.",
+            "nothing_to_remove": "There is no {file} to remove.",
+            "reload_now": "Reload",
+            "import_failed": "Couldn't import the file: {message}",
+            "remove_failed": "Couldn't remove the file: {message}",
+            "js_confirm_title": "Import a custom script?",
+            "js_confirm_description": "custom.js runs inside VRCX with the same access as the app, including your saved logins and your VRChat session. Only import a script you wrote yourself or fully trust.",
+            "js_confirm": "Choose file"
         }
     }
 }

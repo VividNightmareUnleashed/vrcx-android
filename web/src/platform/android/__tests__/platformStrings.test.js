@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n';
 
 import en from '../../../localization/en.json';
 import enPlatform from '../i18n/en.platform.json';
+import { getAndroidMessages } from '../i18n/index.js';
 
 import androidCustomFilesSettings from '../components/settings/AndroidCustomFilesSettings.vue?raw';
 import androidSystemSettings from '../components/settings/AndroidSystemSettings.vue?raw';
@@ -34,6 +35,9 @@ function lookup(messages, path) {
     return path.split('.').reduce((node, key) => (node && typeof node === 'object' ? node[key] : undefined), messages);
 }
 
+/** Every English Android file merged, as plugins/i18n.js does (en.platform.json plus later areas' files). */
+const enAndroid = getAndroidMessages('en');
+
 function usedAndroidKeys() {
     const keys = new Set();
     for (const text of Object.values(sources)) {
@@ -48,7 +52,7 @@ describe('Android platform strings', () => {
     test('every android.* key used by the platform layer exists', () => {
         const keys = usedAndroidKeys();
         expect(keys.length).toBeGreaterThan(50);
-        const missing = keys.filter((key) => typeof lookup(enPlatform, key) !== 'string');
+        const missing = keys.filter((key) => typeof lookup(enAndroid, key) !== 'string');
         expect(missing).toEqual([]);
     });
 
@@ -81,8 +85,15 @@ describe('Android platform strings', () => {
 
     test('every string compiles and interpolates with vue-i18n', () => {
         const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: structuredClone(en) } });
-        i18n.global.mergeLocaleMessage('en', enPlatform);
-        const params = { name: 'DESKTOP', detail: 'x', message: 'y', time: 'z', folder: 'Pictures/VRCX' };
+        i18n.global.mergeLocaleMessage('en', enAndroid);
+        const params = {
+            name: 'DESKTOP',
+            detail: 'x',
+            message: 'y',
+            time: 'z',
+            folder: 'Pictures/VRCX',
+            file: 'custom.css'
+        };
         for (const key of usedAndroidKeys()) {
             const text = i18n.global.t(key, params);
             expect(text, key).not.toBe(key);

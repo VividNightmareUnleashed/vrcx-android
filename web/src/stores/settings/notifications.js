@@ -9,23 +9,6 @@ import { useVrStore } from '../vr';
 
 import configRepository from '../../services/config';
 
-/** Notification conditions that need VR/HMD state from this machine; hidden when there is no VR overlay. */
-export const VR_ONLY_NOTIFICATION_CONDITIONS = Object.freeze(['Inside VR', 'Outside VR']);
-
-/**
- * Replaces a condition that cannot be evaluated on this platform (docs/ARCHITECTURE.md §9) with `Always`.
- *
- * @param {string} value Stored condition
- * @param {boolean} [vrAvailable]
- * @returns {string}
- */
-export function coerceNotificationCondition(value, vrAvailable = hasVrOverlay) {
-    if (!vrAvailable && VR_ONLY_NOTIFICATION_CONDITIONS.includes(value)) {
-        return 'Always';
-    }
-    return value;
-}
-
 export const useNotificationsSettingsStore = defineStore('NotificationsSettings', () => {
     const vrStore = useVrStore();
     const modalStore = useModalStore();
@@ -190,19 +173,14 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         notificationTTS.value = notificationTTSConfig;
         if (!hasVrOverlay) {
             // No SteamVR overlay, XSOverlay or OVR Toolkit here: keep them off so no notification image is
-            // downloaded just for them, and move hidden VR-only conditions to a visible one (persisted).
+            // downloaded just for them. The AFK toast needs the headset state, which only the overlay has. "Inside VR"
+            // and "Outside VR" are kept: on Android they use the SteamVR state the PC companion reports.
             openVR.value = false;
             overlayNotifications.value = false;
             xsNotifications.value = false;
             ovrtHudNotifications.value = false;
             ovrtWristNotifications.value = false;
             afkDesktopToast.value = false;
-            if (coerceNotificationCondition(desktopToastConfig) !== desktopToastConfig) {
-                setDesktopToast(coerceNotificationCondition(desktopToastConfig));
-            }
-            if (coerceNotificationCondition(notificationTTSConfig) !== notificationTTSConfig) {
-                setNotificationTTS(coerceNotificationCondition(notificationTTSConfig));
-            }
         }
         notificationTTSNickName.value = notificationTTSNickNameConfig;
         sharedFeedFilters.value = JSON.parse(sharedFeedFiltersConfig);
