@@ -8,7 +8,7 @@
                             v-if="item.row"
                             class="absolute left-0 top-0 w-full box-border"
                             :data-index="item.virtualItem.index"
-                            :ref="virtualizer.measureElement"
+                            :ref="measureRow ?? virtualizer.measureElement"
                             :style="rowStyle(item)">
                             <template v-if="item.row.type === 'toggle-header'">
                                 <div
@@ -256,6 +256,8 @@
     import EditProfileDialog from '../../../components/dialogs/UserDialog/EditProfileDialog.vue';
     import configRepository from '../../../services/config';
     import { useStatusPresets } from '../../../components/dialogs/UserDialog/composables/useStatusPresets';
+    import { isAndroid } from '../../../shared/utils/platform';
+    import { useFriendsPanelMeasure } from '../../../platform/android/shell/friendsPanelMeasure';
 
     import '@/styles/status-icon.css';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
@@ -619,6 +621,9 @@
             overscan: 6
         }))
     );
+
+    // Android: rows of the closed phone friends panel are not measured (friendsPanelMeasure.js).
+    const measureRow = isAndroid ? useFriendsPanelMeasure(virtualizer).measureRow : null;
 
     const virtualItems = computed(() => {
         const items = virtualizer.value?.getVirtualItems?.() ?? [];
