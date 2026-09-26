@@ -3,7 +3,9 @@
 // - Aurora (usr_...0101) has groups, mutual friends, uploaded worlds, favourite worlds and a represented group.
 // - The preview user owns a world (Preview Garden) and two avatars (with a gallery), so the author menus
 //   (Change Image, gallery Upload) can be checked, and belongs to the groups (Groups tab edit mode, leave/delete).
-// - Harbor Lights (grp_...c001) is owned by the preview user: members, posts, events, a gallery and an instance.
+// - Harbor Lights (grp_...c001) is owned by the preview user: members, posts, events, a gallery and an instance, plus
+//   member moderation data (bans, sent invites, join requests, a blocked request, audit logs); each moderation table
+//   loads from its refresh button.
 // - Lantern Harbor (wrld_...a001) lists two more instances besides the friends' one.
 // All ids are in the made-up usr_00000000-... / wrld_00000000-... ranges; images are generated SVGs.
 

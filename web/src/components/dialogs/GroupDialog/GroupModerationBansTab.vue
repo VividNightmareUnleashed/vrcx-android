@@ -1,6 +1,7 @@
 <template>
     <div style="margin-top: 8px">
-        <div class="flex justify-between compact:flex-wrap compact:gap-2">
+        <!-- Phones, and touch tablets (the PC layout is 12px too wide for the 800px portrait tablet): wrap. -->
+        <div class="flex justify-between compact:flex-wrap compact:gap-2 pointer-coarse:flex-wrap pointer-coarse:gap-2">
             <div class="flex gap-2 items-center">
                 <Button
                     class="rounded-full pointer-coarse:size-10"

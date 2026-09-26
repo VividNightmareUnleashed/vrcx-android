@@ -50,7 +50,9 @@ describe('GroupModerationBansTab.vue toolbar on phones', () => {
         const toolbar = wrapper.find('div > div.justify-between');
         expect(phoneOnly(toolbar.classes(), ['flex', 'justify-between'])).toEqual([
             'compact:flex-wrap',
-            'compact:gap-2'
+            'compact:gap-2',
+            'pointer-coarse:flex-wrap',
+            'pointer-coarse:gap-2'
         ]);
     });
 });

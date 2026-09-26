@@ -430,7 +430,7 @@
         bottom: calc(-12px - var(--vrcx-bottom-inset, 0px));
         margin: auto calc(-12px - var(--safe-right, 0px)) calc(-12px - var(--vrcx-bottom-inset, 0px))
             calc(-12px - var(--safe-left, 0px));
-        padding: 8px calc(12px + var(--safe-right, 0px)) calc(8px + var(--vrcx-bottom-inset, 0px))
+        padding: 6px calc(12px + var(--safe-right, 0px)) calc(6px + var(--vrcx-bottom-inset, 0px))
             calc(12px + var(--safe-left, 0px));
     }
 </style>
