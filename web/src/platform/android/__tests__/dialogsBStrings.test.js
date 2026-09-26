@@ -46,7 +46,9 @@ describe('dialogs-b Android strings', () => {
         for (const [file, messages] of Object.entries(files)) {
             for (const path of leafPaths(messages).filter((key) => key.startsWith('onboarding.'))) {
                 const text = lookup(messages, path);
-                expect(text, `${localeOf(file)}: ${path}`).not.toMatch(/ctrl|⌘|right[- ]click|右クリック|右键|右鍵|klikk/i);
+                expect(text, `${localeOf(file)}: ${path}`).not.toMatch(
+                    /ctrl|⌘|right[- ]click|右クリック|右键|右鍵|klikk/i
+                );
             }
         }
     });
@@ -55,8 +57,7 @@ describe('dialogs-b Android strings', () => {
     // locale that translated a mouse or keyboard phrase needs its own override, or the phone shows the PC wording.
     // Chinese 点击/點擊 is the usual word for a tap on phones as well, so it is not PC wording.
     test("no locale shows mouse or keyboard wording in onboarding or What's New", () => {
-        const pcWording =
-            /ctrl\s*\+|⌘|right[- ]click|click|clique|botão direito|クリック|右键|右鍵|klikk|kattint|คลิก/i;
+        const pcWording = /ctrl\s*\+|⌘|right[- ]click|click|clique|botão direito|クリック|右键|右鍵|klikk|kattint|คลิก/i;
         const leftovers = [];
         for (const [file, messages] of Object.entries(upstream)) {
             if (!messages.onboarding) continue;
