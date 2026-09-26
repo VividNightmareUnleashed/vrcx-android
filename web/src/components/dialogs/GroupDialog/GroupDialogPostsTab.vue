@@ -23,7 +23,7 @@
                             <TooltipWrapper side="top" :content="t('dialog.group.posts.edit_tooltip')">
                                 <Button
                                     size="icon-sm"
-                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-9"
+                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                                     variant="ghost"
                                     :ariaLabel="t('dialog.group.posts.edit_tooltip')"
                                     @click="showGroupPostEditDialog(groupDialog.id, post)"
@@ -33,7 +33,7 @@
                             <TooltipWrapper side="top" :content="t('dialog.group.posts.delete_tooltip')">
                                 <Button
                                     size="icon-sm"
-                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-9"
+                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                                     variant="ghost"
                                     :ariaLabel="t('dialog.group.posts.delete_tooltip')"
                                     @click="confirmDeleteGroupPost(post)"

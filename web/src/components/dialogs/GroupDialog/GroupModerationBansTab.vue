@@ -1,9 +1,9 @@
 <template>
     <div style="margin-top: 8px">
-        <div class="flex justify-between">
+        <div class="flex justify-between compact:flex-wrap compact:gap-2">
             <div class="flex gap-2 items-center">
                 <Button
-                    class="rounded-full"
+                    class="rounded-full pointer-coarse:size-10"
                     variant="outline"
                     size="icon-sm"
                     :disabled="loading"
@@ -17,7 +17,7 @@
                 <span class="text-sm mx-1.5">{{ tableData.data.length }}</span>
             </div>
 
-            <div class="flex gap-2 items-center">
+            <div class="flex gap-2 items-center compact:w-full compact:flex-wrap">
                 <Button variant="outline" size="sm" :disabled="!tableData.data.length" @click="$emit('export')">{{
                     t('dialog.group_member_moderation.export_bans')
                 }}</Button>
@@ -32,7 +32,7 @@
                     v-model="tableData.filters[0].value"
                     clearable
                     size="sm"
-                    class="w-80"
+                    class="w-80 compact:w-full compact:basis-full"
                     :placeholder="t('dialog.group.members.search')" />
             </div>
         </div>

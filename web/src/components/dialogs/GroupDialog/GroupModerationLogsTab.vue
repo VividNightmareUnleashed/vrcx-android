@@ -1,6 +1,11 @@
 <template>
     <div style="margin-top: 8px">
-        <Button class="rounded-full" variant="outline" size="icon-sm" :disabled="loading" @click="$emit('refresh')">
+        <Button
+            class="rounded-full pointer-coarse:size-10"
+            variant="outline"
+            size="icon-sm"
+            :disabled="loading"
+            @click="$emit('refresh')">
             <Spinner v-if="loading" />
             <RefreshCw v-else />
         </Button>

@@ -7,7 +7,7 @@
             <span v-else class="text-base font-bold">{{ t('dialog.group.members.friends_only') }}</span>
             <div class="mt-2 compact:flex compact:flex-wrap compact:items-center compact:gap-y-2">
                 <Button
-                    class="rounded-full h-6 w-6 pointer-coarse:size-9"
+                    class="rounded-full h-6 w-6 pointer-coarse:size-10"
                     variant="ghost"
                     size="icon-sm"
                     :loading="isGroupMembersLoading"
@@ -16,7 +16,7 @@
                     <Spinner v-if="isGroupMembersLoading" /><RefreshCcw v-else
                 /></Button>
                 <Button
-                    class="rounded-full h-6 w-6 ml-2 pointer-coarse:size-9"
+                    class="rounded-full h-6 w-6 ml-2 pointer-coarse:size-10"
                     size="icon-sm"
                     variant="ghost"
                     style="margin-left: 6px"

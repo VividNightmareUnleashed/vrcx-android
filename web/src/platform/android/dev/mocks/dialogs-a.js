@@ -305,6 +305,108 @@ function groupMembers(groupId, data) {
     }));
 }
 
+// Group member moderation (Harbor Lights only): made-up people who are not the preview user's friends.
+const MODERATION_PEOPLE = [
+    ['usr_00000000-0000-4000-8000-000000000201', 'Gale Wanderer', '#8d5a97'],
+    ['usr_00000000-0000-4000-8000-000000000202', 'Hollow_Lantern_With_A_Very_Long_Display_Name', '#5f7470'],
+    ['usr_00000000-0000-4000-8000-000000000203', 'Iris', '#c97b63'],
+    ['usr_00000000-0000-4000-8000-000000000204', 'Juniper Vale', '#3d5a80'],
+    ['usr_00000000-0000-4000-8000-000000000205', 'Kestrel', '#6a994e'],
+    ['usr_00000000-0000-4000-8000-000000000206', 'Lumen', '#bc4749'],
+    ['usr_00000000-0000-4000-8000-000000000207', 'Marlow', '#7f5539']
+];
+
+function moderationMember(groupId, index, membershipStatus, extra = {}) {
+    const [userId, displayName, color] = MODERATION_PEOPLE[index];
+    const thumbnail = image(color, displayName.slice(0, 1), 256, 192);
+    return {
+        id: `gmem_00000000-0000-4000-8000-${String(200 + index).padStart(4, '0')}${groupId.slice(-8)}`,
+        groupId,
+        userId,
+        isRepresenting: false,
+        user: {
+            id: userId,
+            displayName,
+            thumbnailUrl: thumbnail,
+            iconUrl: '',
+            profilePicOverride: '',
+            currentAvatarThumbnailImageUrl: thumbnail
+        },
+        roleIds: [],
+        joinedAt: daysAgo(90 - index * 7),
+        membershipStatus,
+        visibility: 'visible',
+        isSubscribedToAnnouncements: false,
+        managerNotes: '',
+        ...extra
+    };
+}
+
+function groupBans(groupId) {
+    if (groupId !== GROUP_HARBOR) return [];
+    return [
+        moderationMember(groupId, 0, 'banned', { bannedAt: daysAgo(3), managerNotes: 'Crashed the Friday meetup.' }),
+        moderationMember(groupId, 1, 'banned', { bannedAt: daysAgo(18), managerNotes: 'Spam in group posts.' }),
+        moderationMember(groupId, 2, 'banned', { bannedAt: daysAgo(40) })
+    ];
+}
+
+function groupInvites(groupId) {
+    if (groupId !== GROUP_HARBOR) return [];
+    return [moderationMember(groupId, 3, 'invited'), moderationMember(groupId, 4, 'invited')];
+}
+
+function groupJoinRequests(groupId, blocked) {
+    if (groupId !== GROUP_HARBOR) return [];
+    if (blocked) return [moderationMember(groupId, 6, 'userblocked', { managerNotes: 'Asked five times a day.' })];
+    return [moderationMember(groupId, 5, 'requested'), moderationMember(groupId, 2, 'requested')];
+}
+
+const AUDIT_LOG_TYPES = [
+    'group.member.join',
+    'group.member.leave',
+    'group.member.remove',
+    'group.user.ban',
+    'group.user.unban',
+    'group.role.assign',
+    'group.instance.create',
+    'group.post.create',
+    'group.update'
+];
+
+function groupAuditLogs(groupId, data) {
+    if (groupId !== GROUP_HARBOR) return [];
+    const me = data.currentUser;
+    const [banned] = MODERATION_PEOPLE;
+    const entry = (index, eventType, description, targetId, extra = {}) => ({
+        id: `gaud_00000000-0000-4000-8000-00000000c5${String(index).padStart(2, '0')}`,
+        created_at: new Date(Date.now() - (index + 1) * 5 * 60 * MINUTE).toISOString(),
+        groupId,
+        actorId: me.id,
+        actorDisplayName: me.displayName,
+        targetId,
+        eventType,
+        description,
+        data: {},
+        ...extra
+    });
+    return [
+        entry(0, 'group.user.ban', `User ${banned[1]} was banned from the group.`, banned[0]),
+        entry(1, 'group.instance.create', 'An instance was created.', `${LANTERN_HARBOR}:12345~group(${groupId})`),
+        entry(2, 'group.role.assign', 'Role Harbor Crew was assigned to Aurora.', AURORA, {
+            data: { roleId: ROLES[1].id }
+        }),
+        entry(3, 'group.post.create', 'Post "Friday meetup moves to 21:00" was created.', groupId),
+        entry(4, 'group.member.join', 'Birch joined the group.', BIRCH, {
+            actorId: BIRCH,
+            actorDisplayName: data.friends.find((friend) => friend.id === BIRCH)?.displayName ?? 'Birch'
+        }),
+        entry(5, 'group.update', 'Group description was changed.', groupId, {
+            data: { description: { old: 'A small community.', new: GROUP_BASE[groupId].description } }
+        })
+    ];
+}
+
 function groupPosts(groupId) {
     if (groupId !== GROUP_HARBOR) return [];
     return [
@@ -705,6 +807,27 @@ export function webApi(path, query, method, options, data) {
     match = path.match(/^groups\/(grp_[^/]+)\/members\/(usr_[^/]+)$/);
     if (match && GROUP_BASE[match[1]] && method === 'GET') {
         return groupMembers(match[1], data).find((member) => member.userId === match[2]) ?? null;
+    }
+
+    // Group member moderation: the dialog loads each table from its refresh button.
+    match = path.match(/^groups\/(grp_[^/]+)\/bans$/);
+    if (match && GROUP_BASE[match[1]] && method === 'GET') return page(groupBans(match[1]), query);
+
+    match = path.match(/^groups\/(grp_[^/]+)\/invites$/);
+    if (match && GROUP_BASE[match[1]] && method === 'GET') return page(groupInvites(match[1]), query);
+
+    match = path.match(/^groups\/(grp_[^/]+)\/requests$/);
+    if (match && GROUP_BASE[match[1]] && method === 'GET') {
+        return page(groupJoinRequests(match[1], query.get('blocked') === 'true'), query);
+    }
+
+    match = path.match(/^groups\/(grp_[^/]+)\/auditLogTypes$/);
+    if (match && GROUP_BASE[match[1]]) return match[1] === GROUP_HARBOR ? AUDIT_LOG_TYPES : [];
+
+    match = path.match(/^groups\/(grp_[^/]+)\/auditLogs$/);
+    if (match && GROUP_BASE[match[1]] && method === 'GET') {
+        const results = page(groupAuditLogs(match[1], data), query);
+        return { results, totalCount: results.length, hasNext: false };
     }
 
     match = path.match(/^groups\/(grp_[^/]+)\/posts$/);

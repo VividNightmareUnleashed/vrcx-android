@@ -174,7 +174,8 @@
             </div>
             <div
                 v-if="upcomingCalenderEvents.length"
-                class="flex flex-wrap gap-4 overflow-y-auto max-h-[360px] py-2.5 compact:max-h-none compact:overflow-visible">
+                class="flex flex-wrap gap-4 overflow-y-auto max-h-[360px] py-2.5 compact:max-h-none compact:overflow-visible"
+                @mouseenter.capture="suppressEventCardHover">
                 <GroupCalendarEventCard
                     v-for="value in upcomingCalenderEvents"
                     :key="value.id"
@@ -195,7 +196,8 @@
             </div>
             <div
                 v-if="pastCalenderEvents.length"
-                class="flex flex-wrap gap-4 overflow-y-auto overflow-x-hidden max-h-[230px] py-2.5 compact:max-h-none compact:overflow-visible">
+                class="flex flex-wrap gap-4 overflow-y-auto overflow-x-hidden max-h-[230px] py-2.5 compact:max-h-none compact:overflow-visible"
+                @mouseenter.capture="suppressEventCardHover">
                 <GroupCalendarEventCard
                     v-for="value in pastCalenderEvents"
                     :key="value.id"
@@ -240,6 +242,8 @@
     import GroupCalendarEventCard from '../../../views/Tools/components/GroupCalendarEventCard.vue';
     import InstanceActionBar from '../../InstanceActionBar.vue';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+    import { createCompactHoverGuard } from '../useEntityDialogCompact';
 
     defineProps({
         showGroupPostEditDialog: {
@@ -263,6 +267,11 @@
         useGroupCalendarEvents(groupDialog);
 
     const announcementPhotoError = ref(false);
+
+    // Phones: the event cards' hover popover would open off-screen next to the full-width card, and a tap fires that
+    // hover, so it stays closed in compact layout (the tap trigger belongs to GroupCalendarEventCard, views/Tools).
+    const { isCompact } = useCompactLayout();
+    const suppressEventCardHover = createCompactHoverGuard(isCompact);
 
     watch(
         () => groupDialog.value.id,
