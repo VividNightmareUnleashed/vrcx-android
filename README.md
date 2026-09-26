@@ -75,6 +75,8 @@ Android 8.0 or later. Coming from VRCX Android 1.x? 2.0 installs over it as an u
 3. On the phone, open Settings → PC companion → Pair. On the PC, right-click the tray icon and choose
    **Pair new device**, then scan the QR code or type the code.
 
+<img src="docs/images/companion.png" width="620" alt="VRCX Companion's status window and its Pair new device window">
+
 The companion only talks to devices on your local network, over TLS pinned when you pair. It sends VRChat's log files
 and whether VRChat and SteamVR are running, nothing else, and it makes no connections of its own.
 [docs/PROTOCOL.md](docs/PROTOCOL.md) has the details.
@@ -137,5 +139,5 @@ VRCX is made by [pypy](https://github.com/pypy-vrc), [Natsumi](https://github.co
 Android robot in the icon is reproduced or modified from work created and shared by Google and used according to terms
 described in the Creative Commons 3.0 Attribution License.
 
-VRCX Android is not affiliated with VRChat Inc. or the VRCX team. The screenshots show the app's preview mode with
-made-up users.
+VRCX Android is not affiliated with VRChat Inc. or the VRCX team. The screenshots show the app's and the companion's
+preview modes, with made-up users and addresses.
