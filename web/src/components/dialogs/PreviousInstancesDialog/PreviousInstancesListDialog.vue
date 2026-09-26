@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div ref="compactScrollRootRef">
         <DialogHeader>
             <DialogTitle>{{ t('dialog.previous_instances.header') }}</DialogTitle>
         </DialogHeader>
@@ -59,6 +59,7 @@
     import { createPreviousInstancesColumns } from './previousInstancesColumns.jsx';
     import { database } from '../../../services/database';
     import { useVrcxVueTable } from '../../../lib/table/useVrcxVueTable';
+    import { useCompactDialogScrollReset } from '../useEntityDialogCompact';
 
     const props = defineProps({
         variant: {
@@ -78,6 +79,10 @@
     const modalStore = useModalStore();
     const vrcxStore = useVrcxStore();
     const { t } = useI18n();
+
+    // Phones: this page shares the dialog scroller with the page it was opened from; start it at the top.
+    const compactScrollRootRef = ref(null);
+    useCompactDialogScrollReset(compactScrollRootRef);
 
     const dialogState = computed(() => {
         return previousInstancesListDialog.value;

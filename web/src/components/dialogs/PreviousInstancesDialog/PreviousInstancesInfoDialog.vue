@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div ref="compactScrollRootRef">
         <DialogHeader>
             <DialogTitle>{{ t('dialog.previous_instances.info') }}</DialogTitle>
         </DialogHeader>
@@ -123,10 +123,15 @@
     import { lookupUser } from '../../../coordinators/userCoordinator';
 
     import PreviousInstancesInfoChart from './PreviousInstancesInfoChart.vue';
+    import { useCompactDialogScrollReset } from '../useEntityDialogCompact';
 
     const { previousInstancesInfoDialog, previousInstancesInfoState } = storeToRefs(useInstanceStore());
     const { gameLogIsFriend, gameLogIsFavorite } = useGameLogStore();
     const { t } = useI18n();
+
+    // Phones: this page shares the dialog scroller with the page it was opened from; start it at the top.
+    const compactScrollRootRef = ref(null);
+    useCompactDialogScrollReset(compactScrollRootRef);
 
     const dialogState = computed(() => {
         return previousInstancesInfoState.value;

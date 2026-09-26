@@ -17,6 +17,8 @@ import {
     MENU_CONTENT_TOUCH_CLASS,
     findDialogScroller,
     getPaneScrollTarget,
+    scrollDialogToTop,
+    useCompactDialogScrollReset,
     useEntityDialogCompact
 } from '../useEntityDialogCompact';
 
@@ -79,7 +81,8 @@ describe('useEntityDialogCompact', () => {
     let scroller;
     let pane;
 
-    function mountHarness(state) {
+    // Mounts and lets the mount-time reset run, so the tests below start from a settled dialog.
+    async function mountHarness(state) {
         const Harness = defineComponent({
             setup() {
                 const paneRef = ref(pane);
@@ -91,7 +94,10 @@ describe('useEntityDialogCompact', () => {
                 return () => h('div');
             }
         });
-        return mount(Harness);
+        const wrapper = mount(Harness);
+        await nextTick();
+        await nextTick();
+        return wrapper;
     }
 
     beforeEach(() => {
@@ -117,9 +123,18 @@ describe('useEntityDialogCompact', () => {
         scroller.remove();
     });
 
+    it('opens at the top when it mounts into a scroller the previous dialog left scrolled down', async () => {
+        // MainDialogContainer keeps one scroller and remounts the dialog when the type changes (user -> world).
+        scroller.scrollTop = 534;
+        const state = ref({ id: 'wrld_1', tab: 'Info' });
+        await mountHarness(state);
+
+        expect(scroller.scrollTop).toBe(0);
+    });
+
     it('returns to the top of the page when another entity opens', async () => {
         const state = ref({ id: 'usr_1', tab: 'Info' });
-        mountHarness(state);
+        await mountHarness(state);
         scroller.scrollTop = 500;
 
         state.value = { id: 'usr_2', tab: 'Info' };
@@ -131,7 +146,7 @@ describe('useEntityDialogCompact', () => {
 
     it('shows a new tab from its start when the tab strip is stuck', async () => {
         const state = ref({ id: 'usr_1', tab: 'Info' });
-        mountHarness(state);
+        await mountHarness(state);
         scroller.scrollTop = 1200;
         pane.getBoundingClientRect = () => ({ top: -404 });
 
@@ -144,7 +159,7 @@ describe('useEntityDialogCompact', () => {
 
     it('keeps the scroll position when the tab strip is not stuck yet', async () => {
         const state = ref({ id: 'usr_1', tab: 'Info' });
-        mountHarness(state);
+        await mountHarness(state);
         scroller.scrollTop = 120;
         pane.getBoundingClientRect = () => ({ top: 400 });
 
@@ -158,8 +173,10 @@ describe('useEntityDialogCompact', () => {
     it('does nothing in the PC layout', async () => {
         compact.isCompact = ref(false);
         const state = ref({ id: 'usr_1', tab: 'Info' });
-        mountHarness(state);
         scroller.scrollTop = 500;
+        await mountHarness(state);
+        expect(scroller.scrollTop).toBe(500);
+
         pane.getBoundingClientRect = () => ({ top: -404 });
 
         state.value = { id: 'usr_2', tab: 'Groups' };
@@ -167,5 +184,65 @@ describe('useEntityDialogCompact', () => {
         await nextTick();
 
         expect(scroller.scrollTop).toBe(500);
+    });
+});
+
+describe('useCompactDialogScrollReset', () => {
+    let scroller;
+    let inner;
+
+    function mountReset() {
+        const Harness = defineComponent({
+            setup() {
+                useCompactDialogScrollReset(ref(inner));
+                return () => h('div');
+            }
+        });
+        return mount(Harness);
+    }
+
+    beforeEach(() => {
+        compact.isCompact = ref(true);
+        scroller = document.createElement('div');
+        scroller.setAttribute('data-slot', 'main-dialog-scroller');
+        inner = document.createElement('div');
+        scroller.appendChild(inner);
+        document.body.appendChild(scroller);
+        let scrollTop = 0;
+        Object.defineProperty(scroller, 'scrollTop', {
+            configurable: true,
+            get: () => scrollTop,
+            set: (value) => {
+                scrollTop = value;
+            }
+        });
+    });
+
+    afterEach(() => {
+        scroller.remove();
+    });
+
+    it('starts a newly mounted dialog (for example the Previous instances list) at the top', async () => {
+        scroller.scrollTop = 700;
+        mountReset();
+        await nextTick();
+        await nextTick();
+
+        expect(scroller.scrollTop).toBe(0);
+    });
+
+    it('leaves the scroller alone in the PC layout', async () => {
+        compact.isCompact = ref(false);
+        scroller.scrollTop = 700;
+        mountReset();
+        await nextTick();
+        await nextTick();
+
+        expect(scroller.scrollTop).toBe(700);
+    });
+
+    it('scrollDialogToTop ignores elements outside a dialog scroller', () => {
+        expect(() => scrollDialogToTop(document.createElement('div'))).not.toThrow();
+        expect(() => scrollDialogToTop(null)).not.toThrow();
     });
 });

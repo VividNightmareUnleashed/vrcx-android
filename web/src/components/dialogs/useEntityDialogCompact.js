@@ -4,7 +4,7 @@
 // MainDialogContainer hosts the dialog in one vertical scroller, so the rail becomes the page header, the tab strip
 // sticks to the top of that scroller, and the tab content flows below it. Everything here is inert on desktop:
 // `isCompact` is always false there and the classes use the `compact:` variant.
-import { nextTick, watch } from 'vue';
+import { nextTick, onMounted, watch } from 'vue';
 
 import { useCompactLayout } from '../../composables/useCompactLayout';
 
@@ -76,9 +76,40 @@ export function getPaneScrollTarget(scrollerRect, paneRect, scrollTop) {
 }
 
 /**
- * Keeps the compact dialog scroller in step with the dialog: a new entity starts at the top of the page, and a tab
- * switch while the tab strip is stuck shows the new tab from its start instead of the old tab's scroll depth.
- * Layout is only read on those two events, never while scrolling.
+ * Puts the compact dialog scroller around `element` back at the top.
+ *
+ * @param {Element | null | undefined} element
+ */
+export function scrollDialogToTop(element) {
+    const scroller = findDialogScroller(element);
+    if (scroller && scroller.scrollTop > 0) {
+        scroller.scrollTop = 0;
+    }
+}
+
+/**
+ * Starts a dialog that MainDialogContainer hosts at the top of the compact scroller. The container keeps one scroller
+ * for every dialog type and remounts the dialog when the type changes (a crumb from a user to a world, a group, an
+ * avatar or the Previous instances list), so without this the new page would open at the old page's scroll depth.
+ *
+ * @param {import('vue').Ref<HTMLElement | null>} elementRef Any element inside the dialog
+ * @returns {{ isCompact: import('vue').Ref<boolean> }}
+ */
+export function useCompactDialogScrollReset(elementRef) {
+    const { isCompact } = useCompactLayout();
+
+    onMounted(() => {
+        if (!isCompact.value) return;
+        nextTick(() => scrollDialogToTop(elementRef.value));
+    });
+
+    return { isCompact };
+}
+
+/**
+ * Keeps the compact dialog scroller in step with the dialog: the dialog opens at the top of the page, so does a new
+ * entity of the same type, and a tab switch while the tab strip is stuck shows the new tab from its start instead of
+ * the old tab's scroll depth. Layout is only read on those events, never while scrolling.
  *
  * @param {object} options
  * @param {import('vue').Ref<HTMLElement | null>} options.paneRef The tab pane element
@@ -87,16 +118,13 @@ export function getPaneScrollTarget(scrollerRect, paneRect, scrollTop) {
  * @returns {{ isCompact: import('vue').Ref<boolean> }}
  */
 export function useEntityDialogCompact({ paneRef, entityId, activeTab }) {
-    const { isCompact } = useCompactLayout();
+    // A different dialog type (user -> world) mounts a new dialog in the same scroller.
+    const { isCompact } = useCompactDialogScrollReset(paneRef);
 
+    // The same dialog type shows another entity (user -> user) without remounting.
     watch(entityId, () => {
         if (!isCompact.value) return;
-        nextTick(() => {
-            const scroller = findDialogScroller(paneRef.value);
-            if (scroller && scroller.scrollTop > 0) {
-                scroller.scrollTop = 0;
-            }
-        });
+        nextTick(() => scrollDialogToTop(paneRef.value));
     });
 
     watch(activeTab, () => {
