@@ -8,8 +8,8 @@
         <!-- A tap on the card wears the avatar, so the info card never opens on touch (the menu has View details). -->
         <HoverCardTrigger as="div">
             <ContextMenu @update:open="handleContextMenuOpen">
-                <ContextMenuTrigger ref="menuTriggerRef" as="div">
-                    <div class="avatar-card-wrapper rounded-lg" @click="$emit('click')">
+                <ContextMenuTrigger as="div">
+                    <div ref="cardWrapperRef" class="avatar-card-wrapper rounded-lg" @click="$emit('click')">
                         <Card
                             class="avatar-card x-hover-card flex flex-col gap-0 p-0 cursor-pointer overflow-hidden rounded-lg relative hover:bg-accent hover:shadow-sm"
                             :class="isActive ? 'x-highlight-ring' : 'border border-border/50'">
@@ -45,7 +45,7 @@
                                     v-if="isCoarsePointer"
                                     size="icon-sm"
                                     variant="ghost"
-                                    class="absolute right-1 bottom-1 size-7 rounded-full bg-background/50"
+                                    class="absolute right-1 bottom-1 rounded-full bg-background/50"
                                     :aria-label="t('nav_tooltip.manage')"
                                     @click.stop="openMenuFromButton">
                                     <Ellipsis />
@@ -80,7 +80,8 @@
                         </Card>
                     </div>
                 </ContextMenuTrigger>
-                <ContextMenuContent>
+                <!-- Touch: the menu opens at the finger or the button, so it moves sideways to stay on screen. -->
+                <ContextMenuContent :prioritize-position="isCoarsePointer" :collision-padding="isCoarsePointer ? 8 : 0">
                     <ContextMenuItem @click="emit('context-action', 'details', avatar)">
                         <Eye class="size-4" />
                         {{ t('dialog.avatar.actions.view_details') }}
@@ -271,20 +272,23 @@
     const { t } = useI18n();
     // Always false in desktop builds.
     const { isCoarsePointer } = useCompactLayout();
-    const menuTriggerRef = ref(null);
+    // A real element inside the menu trigger: reka's ContextMenuTrigger renders a fragment, so its own $el is only
+    // the fragment's empty text anchor and an event sent there never reaches reka's contextmenu listener.
+    const cardWrapperRef = ref(null);
 
     /**
-     * Opens the card's context menu under the touch "more" button (reka opens it from a contextmenu event).
+     * Opens the card's context menu under the touch "more" button (reka opens it from a contextmenu event that
+     * bubbles to the trigger element).
      *
      * @param {MouseEvent} event
      */
     function openMenuFromButton(event) {
-        const trigger = menuTriggerRef.value?.$el ?? menuTriggerRef.value;
+        const target = cardWrapperRef.value;
         const rect = event.currentTarget?.getBoundingClientRect?.();
-        if (!trigger || !rect) {
+        if (!target || !rect) {
             return;
         }
-        trigger.dispatchEvent(
+        target.dispatchEvent(
             new MouseEvent('contextmenu', {
                 bubbles: true,
                 cancelable: true,
