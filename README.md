@@ -16,6 +16,8 @@
 
 **[Download the latest release](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)**
 
+https://github.com/user-attachments/assets/be5f88e0-5647-4f51-9ec1-1f72dd690d7c
+
 </div>
 
 VRCX Android runs VRCX itself, with its own interface and features, on Android, and folds the desktop layout to fit
