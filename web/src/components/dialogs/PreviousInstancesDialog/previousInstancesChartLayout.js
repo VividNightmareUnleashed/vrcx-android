@@ -4,19 +4,28 @@
 const PC_LAYOUT = Object.freeze({
     grid: Object.freeze({ top: 50, left: 160, right: 90 }),
     labelMaxLength: 20,
-    confineTooltip: false
+    confineTooltip: false,
+    hideEndTimeLabel: false
 });
 
 const COMPACT_LAYOUT = Object.freeze({
     grid: Object.freeze({ top: 50, left: 96, right: 16 }),
     labelMaxLength: 12,
     // The tooltip stays inside the chart instead of running off the side of the screen.
-    confineTooltip: true
+    confineTooltip: true,
+    // The time axis ends at the last leave, which is rarely on a tick: on a phone-wide axis its label runs into the
+    // last tick's label ("13:0813:25"). The bars still end at the right edge, and their tooltips give the times.
+    hideEndTimeLabel: true
 });
 
 /**
  * @param {boolean} compact Phone (compact) layout
- * @returns {{ grid: { top: number; left: number; right: number }; labelMaxLength: number; confineTooltip: boolean }}
+ * @returns {{
+ *     grid: { top: number; left: number; right: number };
+ *     labelMaxLength: number;
+ *     confineTooltip: boolean;
+ *     hideEndTimeLabel: boolean;
+ * }}
  */
 export function getInstanceChartLayout(compact) {
     return compact ? COMPACT_LAYOUT : PC_LAYOUT;

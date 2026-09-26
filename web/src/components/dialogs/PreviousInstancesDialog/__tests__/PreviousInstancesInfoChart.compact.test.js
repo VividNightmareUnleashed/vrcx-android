@@ -63,7 +63,8 @@ describe('previousInstancesChartLayout', () => {
         expect(getInstanceChartLayout(false)).toEqual({
             grid: { top: 50, left: 160, right: 90 },
             labelMaxLength: 20,
-            confineTooltip: false
+            confineTooltip: false,
+            hideEndTimeLabel: false
         });
     });
 
@@ -71,7 +72,8 @@ describe('previousInstancesChartLayout', () => {
         expect(getInstanceChartLayout(true)).toEqual({
             grid: { top: 50, left: 96, right: 16 },
             labelMaxLength: 12,
-            confineTooltip: true
+            confineTooltip: true,
+            hideEndTimeLabel: true
         });
     });
 
@@ -97,6 +99,7 @@ describe('PreviousInstancesInfoChart', () => {
         const option = await renderedOption();
         expect(option.grid).toEqual({ top: 50, left: 160, right: 90 });
         expect(option.tooltip).not.toHaveProperty('confine');
+        expect(option.xAxis.axisLabel).not.toHaveProperty('showMaxLabel');
         expect(option.yAxis.axisLabel.formatter('VeryLongDisplayNameForTesting')).toBe(' VeryLongDisplayNameF...');
     });
 
@@ -105,6 +108,7 @@ describe('PreviousInstancesInfoChart', () => {
         const option = await renderedOption();
         expect(option.grid).toEqual({ top: 50, left: 96, right: 16 });
         expect(option.tooltip.confine).toBe(true);
+        expect(option.xAxis.axisLabel.showMaxLabel).toBe(false);
         expect(option.yAxis.axisLabel.formatter('VeryLongDisplayNameForTesting')).toBe(' VeryLongDisp...');
     });
 

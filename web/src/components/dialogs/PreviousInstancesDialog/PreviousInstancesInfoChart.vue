@@ -406,7 +406,8 @@
                 max: endTimeStamp.value - startTimeStamp.value,
                 axisLine: { show: true },
                 axisLabel: {
-                    formatter: (value) => dayjs(value + startTimeStamp.value).format(format)
+                    formatter: (value) => dayjs(value + startTimeStamp.value).format(format),
+                    ...(layout.hideEndTimeLabel && { showMaxLabel: false })
                 },
                 splitLine: { lineStyle: { type: 'dashed' } }
             },
