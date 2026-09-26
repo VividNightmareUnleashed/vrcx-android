@@ -5,10 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <DebugType>embedded</DebugType>
-    <Version>1.0.0</Version>
+    <!-- One version for the app and the companion: VERSION at the repository root. -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../VERSION').Trim())</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Company>VRCX Android</Company>
     <Product>VRCX Companion</Product>
-    <Copyright>MIT</Copyright>
+    <Copyright>Copyright (c) 2026 VividNightmare</Copyright>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <WarningsAsErrors>$(WarningsAsErrors);CA1416;nullable</WarningsAsErrors>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>

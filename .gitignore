@@ -22,3 +22,8 @@ node_modules/
 .vs/
 *.user
 /dist/
+# release signing secrets and keys
+.env
+/*.jks
+/*.keystore
+/*.p12

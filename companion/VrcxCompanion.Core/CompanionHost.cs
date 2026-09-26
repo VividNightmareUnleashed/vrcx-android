@@ -68,7 +68,15 @@ public sealed class CompanionHostOptions
 
     public static string DefaultVersion()
     {
-        var v = typeof(CompanionHost).Assembly.GetName().Version;
+        // The informational version carries a prerelease suffix ("1.1.0-alpha.1"); the assembly version cannot.
+        var assembly = typeof(CompanionHost).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            return informational.Split('+')[0];
+        }
+        var v = assembly.GetName().Version;
         return v == null ? "1.0.0" : $"{v.Major}.{v.Minor}.{Math.Max(0, v.Build)}";
     }
 }
