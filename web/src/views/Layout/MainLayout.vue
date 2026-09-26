@@ -37,6 +37,7 @@
 
                 <SidebarInset class="min-w-0 bg-sidebar">
                     <ResizablePanelGroup
+                        ref="panelGroupRef"
                         direction="horizontal"
                         auto-save-id="vrcx-main-layout-right-sidebar"
                         :class="[
@@ -62,7 +63,7 @@
                             <ResizablePanel
                                 ref="asidePanelRef"
                                 :default-size="asideDefaultSize"
-                                :min-size="asideMinSize"
+                                :min-size="tabletAsideMinSize"
                                 :collapsed-size="0"
                                 collapsible
                                 :order="2"
@@ -130,6 +131,7 @@
     import { useAppearanceSettingsStore } from '../../stores';
     import { useMainLayoutResizable } from '../../composables/useMainLayoutResizable';
     import { useCompactLayout } from '../../composables/useCompactLayout';
+    import { useTouchTabletFrame } from '../../composables/useTouchTabletFrame';
     import { watchState } from '../../services/watchState';
     import { isAndroid } from '../../shared/utils/platform';
     import { COMPACT_KEEP_ALIVE_MAX } from './keepAlive';
@@ -253,6 +255,14 @@
         isAsideCollapsedStatic,
         isSideBarTabShow
     } = useMainLayoutResizable();
+
+    // Android touch tablets: icon nav on first run in portrait, and a friends panel no narrower than 280px. The PC
+    // minimum everywhere else.
+    const panelGroupRef = ref(null);
+    const { asideMinSize: tabletAsideMinSize } = useTouchTabletFrame({
+        groupRef: panelGroupRef,
+        baseMinSize: asideMinSize
+    });
 
     const asidePanelRef = ref(null);
     let restoreAsideAfterHiddenRoute = false;
