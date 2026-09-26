@@ -5,6 +5,7 @@
     import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
     import { useI18n } from 'vue-i18n';
     import { Button } from '@/components/ui/button';
+    import { cn } from '@/lib/utils';
 
     const props = defineProps({
         modelValue: String,
@@ -28,7 +29,9 @@
         fill: { type: Boolean, default: false },
         sticky: { type: Boolean, default: false },
         activeColor: { type: String, default: '' },
-        background: { type: Boolean, default: false }
+        background: { type: Boolean, default: false },
+        // Extra classes for the tab strip (the header), merged last, e.g. a sticky offset or stacking order.
+        headerClass: { type: [String, Array, Object], default: '' }
     });
 
     const emit = defineEmits(['update:modelValue']);
@@ -187,14 +190,22 @@
         ].join(' ');
     });
 
-    const headerClass = computed(() => {
-        return [
+    // cn() merges the variants: the last one wins a conflict, and a sticky strip on the translucent `--profile-card`
+    // card keeps an opaque base, with the card tint as an image layer over it, so content scrolling behind it does
+    // not show through.
+    const headerClasses = computed(() =>
+        cn(
             'relative flex w-full min-w-0 shrink-0 items-center border-b border-border',
-            variant.value === 'pill' ? 'rounded-full bg-muted' : '',
-            sticky.value ? 'sticky top-0 z-10 bg-background' : '',
-            background.value ? 'rounded-xl bg-(--profile-card) overflow-hidden' : ''
-        ].join(' ');
-    });
+            variant.value === 'pill' && 'rounded-full bg-muted',
+            sticky.value && 'sticky top-0 z-10 bg-background',
+            background.value && 'rounded-xl overflow-hidden',
+            background.value &&
+                (sticky.value
+                    ? 'bg-[image:linear-gradient(var(--profile-card),var(--profile-card))]'
+                    : 'bg-(--profile-card)'),
+            props.headerClass
+        )
+    );
 </script>
 
 <template>
@@ -204,7 +215,7 @@
         :class="['w-full min-w-0', fill ? 'flex min-h-0 flex-col' : '']"
         :unmount-on-hide="unmountOnHide"
         @update:modelValue="onValueChange">
-        <div ref="header" :class="headerClass">
+        <div ref="header" :class="headerClasses">
             <Button
                 v-if="hasOverflow"
                 type="button"
