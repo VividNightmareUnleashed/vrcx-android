@@ -246,7 +246,12 @@
                         class="mt-3 h-[calc(100vh-260px)] min-h-[520px] w-full flex-1 rounded-lg bg-transparent compact:h-auto compact:min-h-[280px]"
                         :style="{ backgroundColor: canvasBackground }"></div>
                 </ContextMenuTrigger>
-                <ContextMenuContent v-if="contextMenuNodeId" class="min-w-40">
+                <!-- Android: the menu opens at the finger, so it moves sideways to stay on a phone screen. -->
+                <ContextMenuContent
+                    v-if="contextMenuNodeId"
+                    class="min-w-40"
+                    :prioritize-position="isAndroid"
+                    :collision-padding="isAndroid ? 8 : 0">
                     <ContextMenuItem @click="handleNodeMenuViewDetails">
                         <UserIcon class="size-4" />
                         {{ t('view.charts.mutual_friend.context_menu.view_details') }}
@@ -1050,8 +1055,13 @@
                     const totalLines = subLine ? 2 : 1;
                     const h = lineHeight * totalLines + paddingY;
 
-                    const x = data.x + data.size - 5;
+                    let x = data.x + data.size - 5;
                     const y = data.y - h / 2;
+                    // Phones: a narrow canvas cuts the box of a node near the right edge; draw it on the left instead.
+                    const canvasWidth = ctx.canvas.clientWidth || ctx.canvas.width;
+                    if (isCompact.value && x + w > canvasWidth) {
+                        x = Math.max(0, data.x - data.size + 5 - w);
+                    }
 
                     ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
                     ctx.shadowBlur = 6;
