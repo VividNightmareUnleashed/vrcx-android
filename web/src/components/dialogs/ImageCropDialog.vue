@@ -11,10 +11,17 @@
                 <DialogTitle>{{ title }}</DialogTitle>
             </DialogHeader>
 
-            <div v-if="cropperImageSrc" class="mt-4">
+            <!-- Phone landscape: the cropper takes every pixel between the header and the footer, with the tools in
+                 a narrow column beside it, so the stencil handles and every tool stay on screen without scrolling.
+                 Android: min-w-0 lets the dialog's grid column shrink after a rotation instead of keeping the width the
+                 cropper was sized for, so the cropper can measure its new box. -->
+            <div
+                v-if="cropperImageSrc"
+                class="mt-4 compact-landscape:mt-0 compact-landscape:flex compact-landscape:min-h-0 compact-landscape:flex-1 compact-landscape:gap-3"
+                :class="{ 'min-w-0': isAndroid }">
                 <Cropper
                     ref="cropperRef"
-                    class="h-100 max-h-full compact:h-[min(60dvh,100vw)]"
+                    class="h-100 max-h-full compact:h-[min(60dvh,100vw)] compact-landscape:h-auto compact-landscape:min-w-0 compact-landscape:flex-1"
                     :src="cropperImageSrc"
                     :stencil-props="{ aspectRatio, movable: !loading, resizable: !loading }"
                     :move-image="!loading"
@@ -24,7 +31,8 @@
                     @change="onCropperChange" />
 
                 <!-- Toolbar -->
-                <div class="flex items-center justify-center gap-1 mt-3 compact:flex-wrap compact:gap-y-3">
+                <div
+                    class="flex items-center justify-center gap-1 mt-3 compact:flex-wrap compact:gap-y-3 compact-landscape:mt-0 compact-landscape:w-32 compact-landscape:flex-none compact-landscape:content-center compact-landscape:gap-y-1">
                     <TooltipWrapper :content="t('dialog.image_crop.rotate_left')">
                         <Button
                             size="icon-sm"
@@ -48,7 +56,7 @@
                         </Button>
                     </TooltipWrapper>
 
-                    <div class="w-px h-5 bg-border mx-1" />
+                    <div class="w-px h-5 bg-border mx-1 compact-landscape:hidden" />
 
                     <TooltipWrapper :content="t('dialog.image_crop.flip_h')">
                         <Button
@@ -73,11 +81,13 @@
                         </Button>
                     </TooltipWrapper>
 
-                    <div class="w-px h-5 bg-border mx-1" />
+                    <div class="w-px h-5 bg-border mx-1 compact-landscape:hidden" />
 
                     <!-- Zoom: part of the single PC row (display: contents); on phones its own full-width row
-                         under the other tools, with a wide slider. -->
-                    <div class="contents compact:order-last compact:flex compact:w-full compact:items-center compact:gap-2">
+                         under the other tools, with a wide slider (in landscape: the zoom buttons, then the slider
+                         across the tool column). -->
+                    <div
+                        class="contents compact:order-last compact:flex compact:w-full compact:items-center compact:gap-2 compact-landscape:mt-1 compact-landscape:flex-wrap compact-landscape:justify-between compact-landscape:gap-y-3">
                         <TooltipWrapper :content="t('dialog.image_crop.zoom_out')">
                             <Button
                                 size="icon-sm"
@@ -95,7 +105,7 @@
                             :max="100"
                             :step="1"
                             :disabled="loading"
-                            class="w-28 compact:w-auto compact:flex-1"
+                            class="w-28 compact:w-auto compact:flex-1 compact-landscape:order-last compact-landscape:basis-full"
                             @value-commit="onZoomCommit" />
                         <TooltipWrapper :content="t('dialog.image_crop.zoom_in')">
                             <Button
@@ -141,12 +151,13 @@
                 </div>
             </div>
 
+            <!-- Phones: the footer buttons get the --touch-min height of the tools above. -->
             <DialogFooter>
                 <template v-if="cropperImageSrc">
-                    <Button variant="secondary" size="sm" :disabled="loading" @click="cancelCrop">
+                    <Button variant="secondary" size="sm" class="compact:h-10" :disabled="loading" @click="cancelCrop">
                         {{ t('dialog.change_content_image.cancel') }}
                     </Button>
-                    <Button size="sm" :disabled="loading" @click="onConfirmCrop">
+                    <Button size="sm" class="compact:h-10" :disabled="loading" @click="onConfirmCrop">
                         <Spinner v-if="loading" />
                         {{ loading ? t('message.upload.loading') : t('dialog.gallery_icons.crop_image') }}
                     </Button>
@@ -178,6 +189,7 @@
 
     import TooltipWrapper from '@/components/ui/tooltip/TooltipWrapper.vue';
 
+    import { isAndroid } from '../../shared/utils/platform';
     import { useImageCropper } from '../../composables/useImageCropper';
 
     import 'vue-advanced-cropper/dist/style.css';
@@ -218,6 +230,37 @@
     const LOG_MAX = Math.log(MAX_ZOOM_RATIO);
 
     const { cropperRef, cropperImageSrc, resetCropState, loadImageForCrop, getCroppedBlob } = useImageCropper();
+
+    // Android: the phone layouts size the cropper from classes on <html> (vrcx-compact, vrcx-compact-landscape) that
+    // change after the window resize event the cropper refreshes on, so after a rotation it would keep the previous
+    // box. It measures itself again whenever its own box changes size (once per frame at most). Desktop: unchanged.
+    if (isAndroid && typeof ResizeObserver !== 'undefined') {
+        watch(
+            () => cropperRef.value?.$el,
+            (element, _previous, onCleanup) => {
+                if (!(element instanceof Element)) {
+                    return;
+                }
+                let initial = true;
+                let frame = 0;
+                const observer = new ResizeObserver(() => {
+                    // The first callback reports the size the cropper was created with.
+                    if (initial) {
+                        initial = false;
+                        return;
+                    }
+                    cancelAnimationFrame(frame);
+                    frame = requestAnimationFrame(() => cropperRef.value?.refresh?.());
+                });
+                observer.observe(element);
+                onCleanup(() => {
+                    observer.disconnect();
+                    cancelAnimationFrame(frame);
+                });
+            },
+            { flush: 'post' }
+        );
+    }
 
     watch(
         () => props.file,
