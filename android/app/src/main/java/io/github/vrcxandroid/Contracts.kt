@@ -59,6 +59,15 @@ interface CompanionController {
     fun onTillDateChanged(utcTicks: Long)
 }
 
+/**
+ * Battery hints for the companion link (docs/ARCHITECTURE.md §7). The host calls this on Activity start/stop; the
+ * companion client stretches keep-alives, reconnect backoff and discovery while the app is hidden.
+ * Default no-op so implementations can adopt it independently.
+ */
+interface CompanionVisibility {
+    fun setAppVisible(visible: Boolean) {}
+}
+
 /** Implemented by host/TtsController. */
 interface TtsController {
     fun voices(): JsonArray

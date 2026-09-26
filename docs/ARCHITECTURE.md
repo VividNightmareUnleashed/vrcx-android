@@ -176,6 +176,12 @@ The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host
 | `SetKeepScreenOn(bool)` | `undefined` (also held natively during a database import) |
 | `ShowKeyboard()` | `undefined`. Called by the shim when a dialog focuses its own text field (Android only raises the keyboard for focus from a tap) |
 | `Electron*` (`GetClipboardText`, `OpenFileDialog`, `OpenDirectoryDialog`, `DesktopNotification`, `SetTrayIconNotification`, `RestartApp`) | back the shim's `window.electron` object |
+| `SetSessionActive(bool)` | `undefined`. The page reports whether a VRChat session is logged in. The foreground service runs only while background mode is on AND (a session is active OR a companion is connected) |
+| `TakeExternalLaunchCommand()` | string, `''` when none. A launch command that came from another app or a browser and needs confirmation (§6.9) |
+| `ImportCustomFile('css'\|'js')` | `{ok, name}`; SAF pick, copied to `filesDir/custom/custom.css` or `custom.js` (read by `AppApi.CustomCss/CustomScript`) |
+| `RemoveCustomFile('css'\|'js')` | bool |
+| `GetStartOnBoot()` / `SetStartOnBoot(bool)` | bool; opt-in, default off. On boot, starts the service and page when background mode is on |
+| `GetPhotosFolder()` | string (display name of the chosen VRChat photos folder) or `''` when none is chosen |
 
 Companion state object (also the `companion-state` event payload):
 ```
@@ -224,6 +230,12 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 9. **Deep links.** `singleTask` activity, intent-filter `vrcx://`. Cold start: the command (prefix stripped, trimmed) is
    returned once by `AppApi.GetLaunchCommand`. `onNewIntent`: `launch-command` event. `ACTION_SEND` text is delivered as
    the launch command `search/<text>` handled by the frontend (Direct Access).
+   Commands from intents are untrusted (any app or browser page can send them):
+   - navigation commands (`world/`, `avatar/`, `user/`, `group/`, `search/`) are delivered as above;
+   - state-changing commands (`switchavatar/`, `addavatardb/`, `local-favorite-world/`, `local-favorite-avatar/`,
+     `import/`) are delivered as the `external-launch-command` event (or held for `AndroidHost.TakeExternalLaunchCommand`
+     at cold start); the page asks the user to confirm, then runs the command;
+   - `crash/` and anything else is dropped; only the host itself sets `crash/...` after a renderer crash.
 10. **Pickers and downloads.** `WebChromeClient.onShowFileChooser` (Photo Picker for `image/*`, SAF otherwise; always
     answer the callback, `null` on cancel). `AndroidHost.SaveFile` uses `ACTION_CREATE_DOCUMENT`.
 11. **Notifications.** Channel `vrcx_notifications` for VRCX desktop-style notifications (`electron.desktopNotification`,
