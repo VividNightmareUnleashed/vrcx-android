@@ -1,7 +1,6 @@
 // Touch: the calendar event details are a tap toggle instead of a hover popover (docs/DESIGN.md §3.3).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
-import { ref } from 'vue';
 
 const mocks = vi.hoisted(() => ({ triggerClicks: 0, coarse: null }));
 
