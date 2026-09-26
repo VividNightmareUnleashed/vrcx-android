@@ -159,11 +159,7 @@
             v-else
             class="grid flex-1 min-h-0 overflow-hidden gap-4 compact:grid-cols-1! compact:flex-none compact:overflow-visible"
             style="grid-template-columns: 1fr 380px">
-            <div
-                class="flex flex-col items-center min-h-0"
-                @dragover.prevent
-                @dragenter.prevent
-                @drop="handleDrop">
+            <div class="flex flex-col items-center min-h-0" @dragover.prevent @dragenter.prevent @drop="handleDrop">
                 <div class="relative flex-1 w-full min-h-0 flex items-center justify-center">
                     <template v-if="screenshotMetadataDialog.metadata.filePath">
                         <!-- Phones: the page scrolls, so the image keeps its own height up to 45% of the screen. -->

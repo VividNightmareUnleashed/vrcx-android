@@ -29,7 +29,11 @@
                 <ItemActions class="compact:absolute compact:bottom-1 compact:right-1">
                     <DropdownMenu>
                         <DropdownMenuTrigger as-child>
-                            <Button size="icon-sm" variant="ghost" class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1" @click.stop>
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                class="rounded-full pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
+                                @click.stop>
                                 <MoreHorizontal class="h-4 w-4" />
                             </Button>
                         </DropdownMenuTrigger>

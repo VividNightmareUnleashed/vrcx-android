@@ -458,7 +458,9 @@
                                         class="aspect-[16/9] w-full rounded-t-md object-cover" />
                                 </ItemHeader>
                                 <ItemContent class="min-w-0 px-2.5 pt-1.5 pb-0">
-                                    <ItemTitle v-if="image.note" class="truncate text-sm compact:block compact:w-full compact:min-w-0">
+                                    <ItemTitle
+                                        v-if="image.note"
+                                        class="truncate text-sm compact:block compact:w-full compact:min-w-0">
                                         {{ image.note }}
                                     </ItemTitle>
                                     <ItemDescription class="text-xs truncate">
