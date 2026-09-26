@@ -95,8 +95,9 @@ class OffsetTracker {
 }
 
 /**
- * Clock skew (PC clock minus phone clock) from heartbeats: `sample = pcUtcNowMs - phone receive time`. Network delay
- * only ever lowers a sample, so the estimate is the largest sample of the last [window] (about 40 s of heartbeats).
+ * Clock skew (PC clock minus phone clock) from the `pcUtcNowMs` of `info`, `heartbeat` and `process`:
+ * `sample = pcUtcNowMs - phone receive time`. Network delay only ever lowers a sample, so the estimate is the largest
+ * of the last [window] samples.
  */
 class SkewEstimator(private val window: Int = 8) {
     private val samples = ArrayDeque<Long>()
