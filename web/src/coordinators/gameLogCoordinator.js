@@ -16,7 +16,8 @@ import { AppDebug, logWebRequest } from '../services/appConfig';
 import { database } from '../services/database';
 import { runLastLocationResetFlow, runUpdateCurrentUserLocationFlow } from './locationCoordinator';
 import { getGroupName } from '../shared/utils';
-import { hasLocalGame } from '../shared/utils/platform';
+import { hasLocalGame, isAndroid } from '../shared/utils/platform';
+import { runUpdateIsGameRunningFlow } from './gameCoordinator';
 import { userRequest } from '../api';
 import { watchState } from '../services/watchState';
 import { toast } from 'vue-sonner';
@@ -59,8 +60,14 @@ export async function tryLoadPlayerList() {
     console.log('Loading player list from game log...');
     let ctx;
     let i;
+    // Android: log lines can arrive while the rows are read (see isPlayerListReloadCurrent).
+    const liveLocation = locationStore.lastLocation;
     const data = await database.getGamelogDatabase();
     if (data.length === 0) {
+        return;
+    }
+    if (isAndroid && !isPlayerListReloadCurrent(liveLocation, data)) {
+        console.log('Player list reload skipped: the game log moved on while it was read');
         return;
     }
     let length = 0;
@@ -106,6 +113,9 @@ export async function tryLoadPlayerList() {
                 locationStore.lastLocation.friendList.delete(ctx.userId);
             }
         }
+        if (isAndroid) {
+            keepLivePlayers(liveLocation, locationStore.lastLocation, friendStore.friends);
+        }
         locationStore.lastLocation.playerList.forEach((ref1) => {
             if (ref1.userId && typeof ref1.userId === 'string') {
                 if (!userStore.cachedUsers.has(ref1.userId)) {
@@ -125,6 +135,94 @@ export async function tryLoadPlayerList() {
         instanceStore.applyWorldDialogInstances();
         instanceStore.applyGroupDialogInstances();
     }
+}
+
+/**
+ * Android: whether the rows tryLoadPlayerList read still describe the current instance. There the reload can run
+ * while log lines are processed (the PC companion reports VRChat running whenever it connects, see
+ * runAndroidGameRunningCheckFlow), and the live state wins when it is newer than the rows: when the game stopped or
+ * lastLocation was replaced (a `location` line or a reset) during the read, and when lastLocation names an instance
+ * the rows do not end with (its row is still being written, after the group name lookup).
+ *
+ * @param {object} liveLocation The lastLocation object when the read started
+ * @param {object[]} rows Rows from getGamelogDatabase(), oldest first
+ * @returns {boolean}
+ */
+function isPlayerListReloadCurrent(liveLocation, rows) {
+    const gameStore = useGameStore();
+    const locationStore = useLocationStore();
+
+    if (!gameStore.isGameRunning || locationStore.lastLocation !== liveLocation) {
+        return false;
+    }
+    if (!liveLocation.location) {
+        return true;
+    }
+    return rows.findLast((row) => row.type === 'Location')?.location === liveLocation.location;
+}
+
+/**
+ * Android: carries the players that log lines added to lastLocation while tryLoadPlayerList read the rows (their
+ * rows were written after the read) into the rebuilt list, so a reload never drops a live join. Players already in
+ * the rebuilt list keep its entry, so nobody is counted twice. Only called when isPlayerListReloadCurrent held: the
+ * live players belong to the rebuilt instance.
+ *
+ * @param {object} liveLocation The lastLocation object when the read started
+ * @param {object} rebuilt The lastLocation rebuilt from the rows
+ * @param {Map<string, object>} friends The friend store's friends
+ */
+function keepLivePlayers(liveLocation, rebuilt, friends) {
+    for (const [userId, userMap] of liveLocation.playerList) {
+        if (rebuilt.playerList.has(userId)) {
+            continue;
+        }
+        rebuilt.playerList.set(userId, userMap);
+        if (friends.has(userId)) {
+            rebuilt.friendList.set(userId, userMap);
+        }
+    }
+}
+
+/**
+ * Android: the updateLoop's game-running check (pull mode).
+ *
+ * The PC companion can connect, and report VRChat running, long after start-up, when the friends list (whose arrival
+ * runs tryLoadPlayerList) has already loaded. Upstream would then show an empty player list until the next join or
+ * world change, so after a start this rebuilds it from the game log database.
+ *
+ * Native publishes a start before the log lines of that game session, which may include a backlog the phone missed
+ * while it was not connected. `beforeLogLines` therefore applies a start ahead of the tick's lines, so they see a
+ * running game as they would on the PC (a `location` line then moves the rebuilt list on, and the reset writes the
+ * leave rows, as upstream). A stop still applies after the lines, which precede it. A companion disconnect changes
+ * nothing here: native keeps the last state for 120 s (docs/ARCHITECTURE.md §8), so the list stays until then.
+ *
+ * @param {boolean} [beforeLogLines] Only apply a start (the call before the tick's log lines)
+ */
+export async function runAndroidGameRunningCheckFlow(beforeLogLines = false) {
+    const gameStore = useGameStore();
+
+    const wasGameRunning = gameStore.isGameRunning;
+    const isGameRunning = await AppApi.IsGameRunning();
+    if (beforeLogLines && (wasGameRunning || !isGameRunning)) {
+        return;
+    }
+    await runUpdateIsGameRunningFlow(isGameRunning, await AppApi.IsSteamVRRunning());
+    if (!wasGameRunning && gameStore.isGameRunning) {
+        await reloadPlayerListAfterGameStart();
+    }
+}
+
+/**
+ * Android: rebuilds the player list after VRChat was reported running. Nothing to do before the friends list loaded
+ * (its watcher in stores/gameLog runs tryLoadPlayerList then) or when log lines already filled the list.
+ */
+async function reloadPlayerListAfterGameStart() {
+    const { lastLocation } = useLocationStore();
+
+    if (!watchState.isFriendsLoaded || lastLocation.location || lastLocation.playerList.size > 0) {
+        return;
+    }
+    await tryLoadPlayerList();
 }
 
 /**
