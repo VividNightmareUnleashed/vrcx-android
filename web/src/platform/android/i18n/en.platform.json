@@ -8,6 +8,9 @@
                 "vrcx_updater": {
                     "header": "Updates",
                     "updater_disabled": "Updates come with new versions of the Android app."
+                },
+                "contributors": {
+                    "android_app": "Android app"
                 }
             },
             "notifications": {

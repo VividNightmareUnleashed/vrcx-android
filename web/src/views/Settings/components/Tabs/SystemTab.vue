@@ -152,6 +152,18 @@
                     class="cursor-pointer"
                     @click="openExternalLink('https://github.com/vrcx-team/VRCX/graphs/contributors')" />
             </div>
+            <div v-if="isAndroid" class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{{ t('view.settings.general.contributors.android_app') }}</span>
+                <a
+                    class="flex cursor-pointer items-center gap-1.5"
+                    @click="openExternalLink('https://github.com/VividNightmareUnleashed/vrcx-android')">
+                    <img
+                        src="https://github.com/VividNightmareUnleashed.png?size=48"
+                        alt=""
+                        class="size-6 rounded-full" />
+                    VividNightmare
+                </a>
+            </div>
         </SettingsGroup>
 
         <SettingsGroup :title="t('view.settings.general.legal_notice.header')">
