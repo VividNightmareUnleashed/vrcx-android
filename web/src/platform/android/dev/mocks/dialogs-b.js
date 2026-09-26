@@ -108,6 +108,17 @@ export function wrapInteropForLogin(api, mode) {
             const list = Array.isArray(args) ? args : [];
             if (className === 'SQLite') {
                 const [sql, sqlArgs] = list;
+                if (typeof sql === 'string' && /^SELECT key, value FROM configs$/i.test(sql.trim())) {
+                    // The Android config cache (services/config.js) reads the table once: overlay this mode's keys.
+                    const rows = await api.callDotNetMethod(className, methodName, args);
+                    const merged = new Map(typeof rows === 'string' ? JSON.parse(rows) : rows);
+                    for (const [ownedKey, value] of owned) {
+                        if (value) merged.set(ownedKey, value);
+                        else merged.delete(ownedKey);
+                    }
+                    const all = [...merged.entries()];
+                    return methodName === 'ExecuteJson' ? JSON.stringify(all) : all;
+                }
                 const key = readKey(sqlArgs);
                 if (typeof sql === 'string' && owned.has(key)) {
                     if (/^SELECT value FROM configs WHERE key = @key/i.test(sql)) {

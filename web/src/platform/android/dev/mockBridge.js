@@ -258,6 +258,10 @@ function createSqlite(configs, data) {
                 const key = args.get('@key');
                 return JSON.stringify(configs.has(key) ? [[configs.get(key)]] : []);
             }
+            // The Android config cache loads the whole table once (services/config.js).
+            if (/^SELECT key, value FROM configs$/i.test(sql.trim())) {
+                return JSON.stringify([...configs.entries()]);
+            }
             const pluginRows = fromPlugins('sqlite', sql, args, data);
             if (pluginRows !== undefined) {
                 return JSON.stringify(pluginRows);
