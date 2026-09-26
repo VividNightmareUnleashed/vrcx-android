@@ -128,7 +128,7 @@
                     @update:modelValue="setShowConfirmationOnSwitchAvatar" />
             </SettingsItem>
 
-            <div class="flex gap-2 compact:flex-wrap">
+            <div class="flex gap-2 [.is-android_&]:flex-wrap">
                 <Button
                     size="sm"
                     variant="outline"
