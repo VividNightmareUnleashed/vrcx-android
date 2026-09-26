@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- VRCX speech-bubble logo (web/images/VRCX.png). The monochrome layer keeps only the outline and the X. -->
+<!-- The VRCX speech bubble with the Android robot peeking over it (masters in android/icon/). The monochrome layer
+     knocks out the X and the eyes and leaves a gap between the head and the bubble. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
