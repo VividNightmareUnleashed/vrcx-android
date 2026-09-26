@@ -34,11 +34,14 @@
                     </Button>
                 </ButtonGroup>
                 <br />
-                <div v-for="image in imageTable" :key="image.id" class="box-border inline-block mt-2.5 cursor-default">
+                <div
+                    v-for="image in imageTable"
+                    :key="image.id"
+                    class="box-border inline-block mt-2.5 cursor-default compact:w-1/2 compact:pr-2">
                     <template v-if="image.versions && image.versions.length > 0">
                         <div
                             v-if="image.versions[image.versions.length - 1].file.url"
-                            class="h-[200px] w-[200px] rounded-[20px] cursor-pointer overflow-hidden mr-5"
+                            class="h-[200px] w-[200px] rounded-[20px] cursor-pointer overflow-hidden mr-5 compact:aspect-square compact:h-auto compact:w-full compact:mr-0"
                             @click="
                                 selectImageGallerySelect(
                                     image.versions[image.versions.length - 1].file.url,

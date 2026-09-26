@@ -2,7 +2,7 @@
     <div
         :class="
             cn(
-                'flex min-w-0 items-center gap-2 overflow-hidden text-muted-foreground rounded-full border border-muted-foreground/10 py-0.5 px-2',
+                'flex min-w-0 items-center gap-2 overflow-hidden text-muted-foreground rounded-full border border-muted-foreground/10 py-0.5 px-2 pointer-coarse:py-1.5',
                 props.class
             )
         ">
@@ -22,7 +22,7 @@
             >({{ groupName }})</span
         >
         <div v-if="closedAt">
-            <TooltipWrapper side="top">
+            <TooltipWrapper side="top" tap-to-open>
                 <template #content>
                     {{ t('dialog.user.info.instance_closed_at') }}:
                     {{ formatDateFilter(closedAt, 'long') }}

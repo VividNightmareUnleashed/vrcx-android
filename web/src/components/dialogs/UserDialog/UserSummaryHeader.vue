@@ -1,7 +1,7 @@
 <template>
     <div class="rounded-b-lg rounded-t-[15px] bg-(--profile-card) overflow-hidden flex flex-col relative">
         <ProfileEffect :profile-effect="userDialog.ref.profileEffect" class="z-1" />
-        <div class="relative aspect-17/6">
+        <div class="relative aspect-17/6 compact-landscape:aspect-auto compact-landscape:h-28">
             <div
                 v-if="
                     userDialog.loading ||
@@ -287,7 +287,9 @@
                                     :class="{ grayscale: badge.hidden }"
                                     loading="lazy" />
                             </PopoverTrigger>
-                            <PopoverContent side="right" class="w-75">
+                            <PopoverContent
+                                :side="isCompact ? 'bottom' : 'right'"
+                                class="w-75 compact:max-w-[calc(100vw-2rem)]">
                                 <img
                                     :src="badge.badgeImageUrl"
                                     :class="['cursor-pointer', 'max-w-full', 'max-h-full']"
@@ -330,7 +332,7 @@
                 v-if="currentUser.id === userDialog.id"
                 class="border-t border-muted-foreground/20 flex flex-col gap-1.5">
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground mt-1.5"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10 mt-1.5"
                     @click="toggleAvatarCopying">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.avatar_cloning') }}</span>
                     <span class="text-muted-foreground">{{
@@ -340,7 +342,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleAllowBooping">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.booping') }}</span>
                     <span class="text-muted-foreground">{{
@@ -350,7 +352,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleSharedConnectionsOptOut">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.show_mutual_friends') }}</span>
                     <span class="text-muted-foreground">{{
@@ -360,7 +362,7 @@
                     }}</span>
                 </div>
                 <div
-                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground"
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground pointer-coarse:min-h-10"
                     @click="toggleDiscordFriendsOptOut">
                     <span class="text-muted-foreground">{{ t('dialog.user.info.show_discord_connections') }}</span>
                     <span class="text-muted-foreground">{{
@@ -487,6 +489,7 @@
     import ProfileEffect from '../../ProfileEffect.vue';
 
     import UserActionDropdown from './UserActionDropdown.vue';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
     import { showGroupDialog } from '@/coordinators/groupCoordinator';
     import { getAvatarName } from '@/coordinators/avatarCoordinator';
 
@@ -514,6 +517,8 @@
     });
 
     const { t } = useI18n();
+    // Phones: the badge card opens below the badge; there is no room to its right.
+    const { isCompact } = useCompactLayout();
 
     const { userDialog, currentUser } = storeToRefs(useUserStore());
     const { toggleSharedConnectionsOptOut, toggleDiscordFriendsOptOut, toggleAvatarCopying, toggleAllowBooping } =

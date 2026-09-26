@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-(--profile-card) p-2">
-        <div class="shrink-0" style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:justify-start compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     class="rounded-full"
                     variant="ghost"
@@ -16,18 +16,19 @@
                     {{ t('dialog.user.groups.total_count', { count: userDialog.mutualFriends.length }) }}
                 </span>
             </div>
-            <div style="display: flex; align-items: center">
+            <div class="flex items-center compact:contents">
                 <Input
                     v-model="searchQuery"
-                    class="h-8 w-40 mr-2"
+                    class="h-8 w-40 mr-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:mr-0"
                     :placeholder="t('dialog.user.mutual_friends.search_placeholder')"
                     @click.stop />
-                <span style="margin-right: 6px">{{ t('dialog.user.groups.sort_by') }}</span>
+                <span class="hidden compact:block compact:h-0 compact:basis-full" aria-hidden="true"></span>
+                <span class="mr-1.5">{{ t('dialog.user.groups.sort_by') }}</span>
                 <Select
                     :model-value="userDialogMutualFriendSortingKey"
                     :disabled="userDialog.isMutualFriendsLoading"
                     @update:modelValue="setUserDialogMutualFriendSortingByKey">
-                    <SelectTrigger size="sm" @click.stop>
+                    <SelectTrigger size="sm" class="compact:mr-auto" @click.stop>
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -46,7 +47,7 @@
                 <li
                     v-for="user in filteredMutualFriends"
                     :key="user.id"
-                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                    class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                     @click="showUserDialog(user.id)">
                     <div class="relative inline-block flex-none size-9 mr-2.5">
                         <Avatar class="size-9">

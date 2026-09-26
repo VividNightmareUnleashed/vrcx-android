@@ -30,6 +30,8 @@ export const createColumns = ({ onLookupUser }) => [
         id: 'created_at',
         accessorFn: (row) => (row?.created_at ? Date.parse(row.created_at) : 0),
         size: 170,
+        // Phone cards (docs/DESIGN.md §3.1): the player is the title, the date and count go below it.
+        meta: { mobile: { slot: 'footer', order: 1 } },
         header: ({ column }) =>
             sortButton({
                 column,
@@ -51,7 +53,8 @@ export const createColumns = ({ onLookupUser }) => [
         header: () => t('table.gameLog.icon'),
         meta: {
             thClass: 'text-center',
-            tdClass: 'text-center'
+            tdClass: 'text-center',
+            mobile: { slot: 'titleSuffix' }
         },
         cell: ({ row }) => {
             const original = row.original;
@@ -73,7 +76,8 @@ export const createColumns = ({ onLookupUser }) => [
                 label: t('table.previous_instances.display_name')
             }),
         meta: {
-            stretch: true
+            stretch: true,
+            mobile: { slot: 'title' }
         },
         cell: ({ row }) => {
             const original = row.original;
@@ -94,6 +98,7 @@ export const createColumns = ({ onLookupUser }) => [
         id: 'time',
         accessorFn: (row) => row?.time ?? 0,
         size: 100,
+        meta: { mobile: { slot: 'trailing' } },
         header: ({ column }) => sortButton({ column, label: t('table.previous_instances.time') }),
         cell: ({ row }) => <span>{row.original?.timer ?? ''}</span>
     },
@@ -101,6 +106,7 @@ export const createColumns = ({ onLookupUser }) => [
         id: 'count',
         accessorFn: (row) => row?.count ?? 0,
         size: 100,
+        meta: { mobile: { slot: 'footer', order: 2, class: "before:content-['×']" } },
         header: ({ column }) => sortButton({ column, label: t('table.previous_instances.count') }),
         cell: ({ row }) => <span>{row.original?.count ?? ''}</span>
     }

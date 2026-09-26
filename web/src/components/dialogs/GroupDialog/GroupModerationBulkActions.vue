@@ -21,7 +21,7 @@
         <br />
         <span class="name">{{ t('dialog.group_member_moderation.selected_users') }}</span>
         <Button
-            class="rounded-full"
+            class="rounded-full pointer-coarse:size-10"
             size="icon-sm"
             variant="outline"
             style="margin-left: 6px"
@@ -42,8 +42,10 @@
                 <AlertTriangle style="margin-left: 3px; display: inline-block" />
             </TooltipWrapper>
             <span v-text="user.user?.displayName || user.userId" style="font-weight: bold; margin-left: 6px"></span>
+            <!-- Touch: a 32px hit area around the 12px icon, without making the badge taller. -->
             <button
                 type="button"
+                class="pointer-coarse:-my-2 pointer-coarse:-mr-2 pointer-coarse:size-8 pointer-coarse:justify-center"
                 :ariaLabel="t('common.actions.delete')"
                 style="
                     margin-left: 8px;
@@ -88,7 +90,7 @@
         <br />
         <span class="name">{{ t('dialog.group_member_moderation.actions') }}</span>
         <br />
-        <div class="flex gap-2">
+        <div class="flex gap-2 compact:flex-wrap">
             <Button
                 variant="outline"
                 :disabled="

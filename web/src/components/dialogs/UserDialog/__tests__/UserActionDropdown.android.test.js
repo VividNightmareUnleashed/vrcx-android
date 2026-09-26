@@ -51,6 +51,8 @@ vi.mock('../../../ui/dropdown-menu', () => ({
     DropdownMenuSub: { template: '<div><slot /></div>' },
     DropdownMenuSubTrigger: { template: '<div><slot /></div>' },
     DropdownMenuSubContent: { template: '<div><slot /></div>' },
+    DropdownMenuLabel: { template: '<div data-testid="dd-label"><slot /></div>' },
+    DropdownMenuGroup: { template: '<div><slot /></div>' },
     DropdownMenuItem: {
         emits: ['click'],
         template: '<button data-testid="dd-item" @click="$emit(\'click\')"><slot /></button>'
@@ -64,6 +66,12 @@ vi.mock('@/components/ui/button', () => ({
 }));
 vi.mock('../../../ui/tooltip', () => ({
     TooltipWrapper: { template: '<div><slot /></div>' }
+}));
+vi.mock('../../../UserActionMenuItems.vue', () => ({
+    default: {
+        props: ['items', 'userId', 'state', 'location', 'variant'],
+        template: `<div data-testid="user-action-items" :data-items="items.join(',')" :data-variant="variant" />`
+    }
 }));
 
 import UserActionDropdown from '../UserActionDropdown.vue';
@@ -80,5 +88,14 @@ describe('UserActionDropdown.vue on Android', () => {
         expect(text).toContain('dialog.user.actions.moderation_mute');
         expect(text).toContain('dialog.user.actions.moderation_disable_chatbox');
         expect(text).toContain('dialog.user.actions.moderation_disable_avatar_interaction');
+    });
+
+    it("offers the row menu's join and self-invite actions in a friend's header menu", () => {
+        const wrapper = mount(UserActionDropdown, { props: { userDialogCommand: vi.fn() } });
+        const items = wrapper.find('[data-testid="user-action-items"]');
+
+        expect(items.exists()).toBe(true);
+        expect(items.attributes('data-items')).toBe('join,self-invite');
+        expect(items.attributes('data-variant')).toBe('dropdown');
     });
 });

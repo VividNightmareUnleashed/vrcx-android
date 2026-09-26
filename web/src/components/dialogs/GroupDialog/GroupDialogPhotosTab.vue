@@ -14,7 +14,7 @@
             v-model="groupDialogGalleryCurrentName"
             :items="groupGalleryTabs"
             :unmount-on-hide="false"
-            fill
+            :fill="!isCompact"
             class="mt-2.5 min-h-0">
             <template
                 v-for="(gallery, index) in groupDialog.ref.galleries"
@@ -32,12 +32,7 @@
                 v-slot:[String(index)]>
                 <span class="text-muted-foreground" style="padding: 8px" v-text="gallery.description" />
                 <div
-                    style="
-                        display: grid;
-                        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                        gap: 16px;
-                        margin-top: 8px;
-                    ">
+                    class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 compact:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] compact:gap-2">
                     <Card
                         v-for="image in groupDialog.galleries[gallery.id]"
                         :key="image.id"
@@ -74,6 +69,10 @@
 
     import { useGalleryStore, useGroupStore } from '../../../stores';
     import { useGroupGalleries } from './useGroupGalleries';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+
+    // Phones: the gallery tabs flow in the dialog's page scroller.
+    const { isCompact } = useCompactLayout();
 
     const { groupDialog } = storeToRefs(useGroupStore());
     const { showFullscreenImageDialog } = useGalleryStore();

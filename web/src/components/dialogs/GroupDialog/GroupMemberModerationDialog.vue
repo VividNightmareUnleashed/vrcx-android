@@ -1,13 +1,14 @@
 <template>
-    <div class="flex-1 min-h-0 flex flex-col">
+    <div ref="compactScrollRootRef" class="flex-1 min-h-0 flex flex-col compact:flex-[1_0_auto]">
         <DialogHeader class="sr-only">
             <DialogTitle>{{ t('dialog.group_member_moderation.header') }}</DialogTitle>
         </DialogHeader>
 
-        <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0 flex flex-col compact:flex-[1_0_auto]">
             <h3>{{ groupMemberModeration.groupRef.name }}</h3>
             <TabsUnderline
                 v-model="groupMemberModeration.activeTab"
+                class="compact:mb-3"
                 @update:modelValue="tabClick"
                 default-value="members"
                 :items="groupModerationTabs"
@@ -81,29 +82,44 @@
                 </template>
             </TabsUnderline>
 
-            <br />
-            <br />
-            <GroupModerationBulkActions
-                :select-user-id="selectUserId"
-                :selected-users-array="groupMemberModeration.selectedUsersArray"
-                :selected-roles="selectedRoles"
-                :note="note"
-                :progress-current="progressCurrent"
-                :progress-total="progressTotal"
-                :group-ref="groupMemberModeration.groupRef"
-                @update:select-user-id="selectUserId = $event"
-                @update:note="note = $event"
-                @update:selected-roles="selectedRoles = $event"
-                @select-user="handleSelectUser"
-                @clear-all="clearAllSelected"
-                @delete-user="deleteSelectedUser"
-                @add-roles="handleAddRoles"
-                @remove-roles="handleRemoveRoles"
-                @save-note="handleSaveNote"
-                @kick="handleKick"
-                @ban="handleBan"
-                @unban="handleUnban"
-                @cancel-progress="progressTotal = 0" />
+            <template v-if="!isCompact">
+                <br />
+                <br />
+                <GroupModerationBulkActions v-bind="bulkActionsProps" v-on="bulkActionsListeners" />
+            </template>
+            <div
+                v-else
+                class="vrcx-moderation-actions-bar sticky z-40 flex items-center gap-2 border-t border-border bg-background"
+                data-slot="moderation-actions-bar">
+                <!-- Phones: the bulk actions live in a bottom sheet, opened from this bar, which stays at the bottom of
+                     the page while the tables scroll. -->
+                <span class="min-w-0 truncate text-sm">{{ t('dialog.group_member_moderation.selected_users') }}</span>
+                <Badge variant="secondary" class="shrink-0" data-slot="moderation-selected-count">{{
+                    groupMemberModeration.selectedUsersArray.length
+                }}</Badge>
+                <span v-if="progressCurrent" class="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    <Spinner />
+                    {{ progressCurrent }}/{{ progressTotal }}
+                </span>
+                <Button class="ml-auto h-10 shrink-0" @click="isBulkActionsSheetOpen = true">{{
+                    t('dialog.group_member_moderation.actions')
+                }}</Button>
+            </div>
+            <Sheet v-if="isCompact" v-model:open="isBulkActionsSheetOpen">
+                <!-- Above the entity dialog (the modal portal root is z-10000), below floating content (z-12000) so
+                     the roles select still opens on top. -->
+                <SheetContent side="bottom" class="z-[10001] gap-0 rounded-t-lg p-0" overlay-class="z-[10001]">
+                    <SheetHeader class="border-b pb-3">
+                        <SheetTitle>{{ t('dialog.group_member_moderation.actions') }}</SheetTitle>
+                        <SheetDescription class="sr-only">{{
+                            t('dialog.group_member_moderation.header')
+                        }}</SheetDescription>
+                    </SheetHeader>
+                    <div class="overflow-y-auto p-4">
+                        <GroupModerationBulkActions v-bind="bulkActionsProps" v-on="bulkActionsListeners" />
+                    </div>
+                </SheetContent>
+            </Sheet>
         </div>
 
         <group-member-moderation-export-dialog
@@ -125,6 +141,10 @@
     import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
     import { computed, ref, watch } from 'vue';
     import { TabsUnderline } from '@/components/ui/tabs';
+    import { Badge } from '@/components/ui/badge';
+    import { Button } from '@/components/ui/button';
+    import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+    import { Spinner } from '@/components/ui/spinner';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
 
@@ -152,6 +172,7 @@
     import GroupModerationLogsTab from './GroupModerationLogsTab.vue';
     import GroupModerationMembersTab from './GroupModerationMembersTab.vue';
     import { showUserDialog } from '../../../coordinators/userCoordinator';
+    import { useCompactDialogScrollReset } from '../useEntityDialogCompact';
 
     // ── Stores ───────────────────────────────────────────────────
     const { userImage, userImageFull } = useUserDisplay();
@@ -162,6 +183,11 @@
     const { groupDialog, groupMemberModeration } = storeToRefs(useGroupStore());
     const { showFullscreenImageDialog } = useGalleryStore();
     const { t } = useI18n();
+
+    // Phones: opens at the top of the dialog scroller (it is usually reached from a scrolled Group dialog).
+    const compactScrollRootRef = ref(null);
+    const { isCompact } = useCompactDialogScrollReset(compactScrollRootRef);
+    const isBulkActionsSheetOpen = ref(false);
 
     // ── Tab definitions ──────────────────────────────────────────
     const groupModerationTabs = computed(() => [
@@ -300,6 +326,32 @@
     const isGroupBansImportDialogVisible = ref(false);
     const logsTabRef = ref(null);
 
+    // ── Bulk actions (inline on PC, in a bottom sheet on phones) ─
+    const bulkActionsProps = computed(() => ({
+        selectUserId: selectUserId.value,
+        selectedUsersArray: groupMemberModeration.value.selectedUsersArray,
+        selectedRoles: selectedRoles.value,
+        note: note.value,
+        progressCurrent: progressCurrent.value,
+        progressTotal: progressTotal.value,
+        groupRef: groupMemberModeration.value.groupRef
+    }));
+    const bulkActionsListeners = {
+        'update:selectUserId': (value) => (selectUserId.value = value),
+        'update:note': (value) => (note.value = value),
+        'update:selectedRoles': (value) => (selectedRoles.value = value),
+        'select-user': () => handleSelectUser(),
+        'clear-all': () => clearAllSelected(),
+        'delete-user': (user) => deleteSelectedUser(user),
+        'add-roles': () => handleAddRoles(),
+        'remove-roles': () => handleRemoveRoles(),
+        'save-note': () => handleSaveNote(),
+        kick: () => handleKick(),
+        ban: () => handleBan(),
+        unban: () => handleUnban(),
+        'cancel-progress': () => (progressTotal.value = 0)
+    };
+
     // ── Event handlers ───────────────────────────────────────────
     function handleBan() {
         groupMembersBan({ onComplete: () => getAllGroupBans(groupMemberModeration.value.id) });
@@ -370,3 +422,15 @@
         { immediate: true }
     );
 </script>
+
+<style scoped>
+    /* Phones: the bar spans the dialog scroller edge to edge and sits on the screen's bottom edge, above the gesture
+       bar, cancelling MainDialogContainer's scroller padding (12px plus the safe areas). */
+    .vrcx-moderation-actions-bar {
+        bottom: calc(-12px - var(--vrcx-bottom-inset, 0px));
+        margin: auto calc(-12px - var(--safe-right, 0px)) calc(-12px - var(--vrcx-bottom-inset, 0px))
+            calc(-12px - var(--safe-left, 0px));
+        padding: 6px calc(12px + var(--safe-right, 0px)) calc(6px + var(--vrcx-bottom-inset, 0px))
+            calc(12px + var(--safe-left, 0px));
+    }
+</style>

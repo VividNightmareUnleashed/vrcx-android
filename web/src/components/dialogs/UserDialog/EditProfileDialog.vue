@@ -10,12 +10,14 @@
                 <section class="space-y-3">
                     <h3 class="text-sm font-semibold">{{ t('dialog.social_status.header') }}</h3>
 
-                    <div class="flex items-center gap-2 min-w-0">
+                    <div class="flex items-center gap-2 min-w-0 compact:flex-wrap">
                         <Select
                             :model-value="editProfileDialog.status"
                             :disabled="editProfileDialog.loading"
                             @update:modelValue="handleSocialStatusChange">
-                            <SelectTrigger size="sm" class="w-42 shrink-0">
+                            <SelectTrigger
+                                size="sm"
+                                class="w-42 shrink-0 compact:w-auto compact:min-w-0 compact:flex-1">
                                 <SelectValue>
                                     <template v-if="selectedStatusOption">
                                         <span class="inline-flex items-center gap-2">
@@ -41,8 +43,9 @@
                             </SelectContent>
                         </Select>
 
+                        <!-- Phones: the status text gets its own full-width row below the status and history. -->
                         <InputGroupField
-                            class="min-w-0 flex-1"
+                            class="min-w-0 flex-1 compact:order-last compact:basis-full"
                             v-model="editProfileDialog.statusDescription"
                             :placeholder="t('dialog.social_status.status_placeholder')"
                             :maxlength="32"

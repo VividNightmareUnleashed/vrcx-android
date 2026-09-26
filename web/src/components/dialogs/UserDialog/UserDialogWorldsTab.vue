@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div class="shrink-0" style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:justify-start compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     class="rounded-full"
                     variant="ghost"
@@ -15,14 +15,15 @@
                     t('dialog.user.worlds.total_count', { count: userDialog.worlds.length })
                 }}</span>
             </div>
-            <div style="display: flex; align-items: center">
+            <div class="flex items-center compact:min-w-0 compact:flex-1">
                 <Input
                     v-model="searchQuery"
-                    class="h-8 mr-2 w-32"
+                    class="h-8 mr-2 w-32 compact:w-full compact:mr-0"
                     :placeholder="t('dialog.user.worlds.search_placeholder')"
                     @click.stop />
             </div>
-            <div style="display: flex; align-items: center">
+            <span class="hidden compact:block compact:h-0 compact:basis-full" aria-hidden="true"></span>
+            <div class="flex items-center">
                 <span class="mr-1">{{ t('dialog.user.worlds.sort_by') }}</span>
                 <Select
                     :model-value="userDialogWorldSortingKey"
@@ -41,8 +42,8 @@
                     </SelectContent>
                 </Select>
             </div>
-            <div style="display: flex; align-items: center">
-                <span class="ml-2 mr-1">{{ t('dialog.user.worlds.order_by') }}</span>
+            <div class="flex items-center">
+                <span class="ml-2 mr-1 compact:ml-0">{{ t('dialog.user.worlds.order_by') }}</span>
                 <Select
                     :model-value="userDialogWorldOrderKey"
                     :disabled="userDialog.isWorldsLoading"
@@ -67,7 +68,7 @@
                     <div
                         v-for="world in filteredWorlds"
                         :key="world.id"
-                        class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                        class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                         @click="showWorldDialog(world.id)">
                         <div class="relative inline-block flex-none size-9 mr-2.5">
                             <Avatar class="size-9">

@@ -1,5 +1,5 @@
 <template>
-    <div class="flex-1 min-h-0 min-w-0 flex flex-row">
+    <div :class="['flex-1 min-h-0 min-w-0 flex flex-row', ENTITY_ROOT_COMPACT_CLASS]">
         <DialogHeader class="sr-only">
             <DialogTitle>{{ avatarDialog.ref?.name || t('dialog.avatar.info.header') }}</DialogTitle>
             <DialogDescription>
@@ -7,9 +7,9 @@
             </DialogDescription>
         </DialogHeader>
         <div class="contents">
-            <div class="flex-none w-77 pr-4 overflow-y-auto">
+            <div :class="['flex-none w-77 pr-4 overflow-y-auto', ENTITY_RAIL_COMPACT_CLASS]">
                 <div class="rounded-xl bg-(--profile-card) overflow-hidden flex flex-col">
-                    <div class="relative aspect-4/3">
+                    <div class="relative aspect-4/3 compact-landscape:aspect-auto compact-landscape:h-44">
                         <img
                             v-if="!imageError"
                             :src="avatarDialog.ref.thumbnailImageUrl"
@@ -207,7 +207,10 @@
                                         <Ellipsis />
                                     </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent>
+                                <DropdownMenuContent
+                                    :class="MENU_CONTENT_TOUCH_CLASS"
+                                    :align="isCompact ? 'end' : undefined"
+                                    :collision-padding="isCompact ? 8 : undefined">
                                     <DropdownMenuItem @click="avatarDialogCommand('Refresh')">
                                         <RefreshCw class="size-4" />
                                         {{ t('dialog.avatar.actions.refresh') }}
@@ -339,6 +342,7 @@
                     <div class="flex flex-col gap-1.5">
                         <TooltipWrapper
                             side="right"
+                            tap-to-open
                             :content="formatDateFilter(avatarDialog.ref.created_at, 'long')"
                             :disabled="!avatarDialog.ref.created_at">
                             <div class="flex justify-between items-start gap-2 text-xs">
@@ -352,6 +356,7 @@
                         </TooltipWrapper>
                         <TooltipWrapper
                             side="right"
+                            tap-to-open
                             :content="formatDateFilter(avatarDialog.ref.updated_at, 'long')"
                             :disabled="!avatarDialog.ref.updated_at">
                             <div class="flex justify-between items-start gap-2 text-xs">
@@ -363,10 +368,11 @@
                                 }}</span>
                             </div>
                         </TooltipWrapper>
-                        <TooltipWrapper side="right" :content="avatarTags" :disabled="!avatarTags">
+                        <TooltipWrapper side="right" tap-to-open :content="avatarTags" :disabled="!avatarTags">
                             <div class="flex items-start justify-between gap-2 text-xs">
                                 <span class="text-muted-foreground shrink-0">{{ t('dialog.avatar.info.tags') }}</span>
-                                <span class="max-w-30 truncate text-right text-muted-foreground">
+                                <span
+                                    class="max-w-30 truncate text-right compact:max-w-[70%] compact:whitespace-normal compact:break-words text-muted-foreground">
                                     {{ avatarTags || '—' }}
                                 </span>
                             </div>
@@ -375,13 +381,17 @@
                             <span class="text-muted-foreground shrink-0">{{ t('dialog.avatar.info.version') }}</span>
                             <span class="text-right text-muted-foreground">{{ avatarDialog.ref.version || '—' }}</span>
                         </div>
-                        <TooltipWrapper side="right" :content="avatarDialogPlatform" :disabled="!avatarDialogPlatform">
+                        <TooltipWrapper
+                            side="right"
+                            tap-to-open
+                            :content="avatarDialogPlatform"
+                            :disabled="!avatarDialogPlatform">
                             <div class="flex items-start justify-between gap-2 text-xs">
                                 <span class="text-muted-foreground shrink-0">{{
                                     t('dialog.avatar.info.platform')
                                 }}</span>
                                 <span
-                                    class="block max-w-25 truncate whitespace-nowrap text-right text-muted-foreground">
+                                    class="block max-w-25 truncate whitespace-nowrap text-right compact:max-w-[70%] compact:whitespace-normal compact:break-words text-muted-foreground">
                                     {{ avatarDialogPlatform || '—' }}
                                 </span>
                             </div>
@@ -394,7 +404,7 @@
                         <span
                             class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                             {{ t('dialog.user.info.vrcx_info') }}
-                            <TooltipWrapper side="right" :content="t('dialog.user.info.vrcx_info_tooltip')">
+                            <TooltipWrapper side="right" tap-to-open :content="t('dialog.user.info.vrcx_info_tooltip')">
                                 <Info class="h-3 w-3 shrink-0" />
                             </TooltipWrapper>
                         </span>
@@ -408,13 +418,14 @@
                 </div>
             </div>
 
-            <div class="flex-1 min-w-0 flex flex-col min-h-0 pl-4">
+            <div ref="tabsPaneRef" :class="['flex-1 min-w-0 flex flex-col min-h-0 pl-4', ENTITY_PANE_COMPACT_CLASS]">
                 <TabsUnderline
                     v-model="avatarDialog.activeTab"
                     :background="true"
                     :items="avatarDialogTabs"
                     :unmount-on-hide="false"
-                    fill
+                    :fill="!isCompact"
+                    :class="ENTITY_TABS_COMPACT_CLASS"
                     @update:modelValue="avatarDialogTabClick">
                     <template #Info>
                         <div>
@@ -448,7 +459,7 @@
                                             v-if="avatarDialog.ref.authorId === currentUser.id"
                                             size="sm"
                                             variant="outline"
-                                            class="h-6"
+                                            class="h-6 pointer-coarse:h-10"
                                             :disabled="avatarDialog.galleryLoading"
                                             @click="displayAvatarGalleryUpload"
                                             :ariaLabel="t('dialog.screenshot_metadata.upload')">
@@ -465,12 +476,16 @@
                                         style="display: none"
                                         @change="onFileChangeAvatarGallery" />
 
-                                    <div class="mt-2 w-[80%] ml-20">
+                                    <div class="mt-2 w-[80%] ml-20 compact:w-full compact:ml-0">
                                         <Carousel v-if="avatarDialog.galleryImages.length" class="w-full">
                                             <CarouselContent class="h-50">
+                                                <!-- Phones: the next image peeks in, since the arrows are hidden. -->
                                                 <CarouselItem
                                                     v-for="imageUrl in avatarDialog.galleryImages"
-                                                    :key="imageUrl">
+                                                    :key="imageUrl"
+                                                    :class="
+                                                        avatarDialog.galleryImages.length > 1 && 'compact:basis-[85%]'
+                                                    ">
                                                     <div class="relative h-50 w-full">
                                                         <img
                                                             :src="imageUrl"
@@ -490,8 +505,9 @@
                                                     </div>
                                                 </CarouselItem>
                                             </CarouselContent>
-                                            <CarouselPrevious />
-                                            <CarouselNext />
+                                            <!-- Phones swipe; the arrows sit outside the carousel, off the screen. -->
+                                            <CarouselPrevious v-if="!isCompact" />
+                                            <CarouselNext v-if="!isCompact" />
                                         </Carousel>
                                         <div v-else>
                                             <DataTableEmpty type="nodata" />
@@ -660,6 +676,14 @@
     import SetAvatarStylesDialog from './SetAvatarStylesDialog.vue';
     import SetAvatarTagsDialog from './SetAvatarTagsDialog.vue';
     import { AppDebug } from '@/services/appConfig';
+    import {
+        ENTITY_PANE_COMPACT_CLASS,
+        ENTITY_RAIL_COMPACT_CLASS,
+        ENTITY_ROOT_COMPACT_CLASS,
+        ENTITY_TABS_COMPACT_CLASS,
+        MENU_CONTENT_TOUCH_CLASS,
+        useEntityDialogCompact
+    } from '../useEntityDialogCompact';
 
     const { sortUserDialogAvatars } = useUserStore();
     const { userDialog, currentUser } = storeToRefs(useUserStore());
@@ -675,6 +699,14 @@
     const uiStore = useUiStore();
 
     const { t } = useI18n();
+
+    // Phones: one scroller with the avatar card on top and a sticky tab strip (docs/DESIGN.md §3.2).
+    const tabsPaneRef = ref(null);
+    const { isCompact } = useEntityDialogCompact({
+        paneRef: tabsPaneRef,
+        entityId: () => avatarDialog.value.id,
+        activeTab: () => avatarDialog.value.activeTab
+    });
 
     const {
         cropDialogOpen,

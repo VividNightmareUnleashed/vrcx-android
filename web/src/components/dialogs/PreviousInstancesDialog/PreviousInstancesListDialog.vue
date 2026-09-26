@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div ref="compactScrollRootRef">
         <DialogHeader>
             <DialogTitle>{{ t('dialog.previous_instances.header') }}</DialogTitle>
         </DialogHeader>
@@ -16,13 +16,13 @@
             :on-page-change="handlePageChange"
             :on-sort-change="handleSortChange">
             <template #toolbar>
-                <div style="display: flex; align-items: center; justify-content: space-between">
+                <div class="flex items-center justify-between compact:flex-wrap compact:gap-2">
                     <span class="text-sm" v-text="headerText"></span>
                     <InputGroupField
                         v-model="search"
                         :placeholder="t('dialog.previous_instances.search_placeholder')"
                         clearable
-                        class="w-1/3"
+                        class="w-1/3 compact:w-full"
                         style="display: block" />
                 </div>
             </template>
@@ -59,6 +59,7 @@
     import { createPreviousInstancesColumns } from './previousInstancesColumns.jsx';
     import { database } from '../../../services/database';
     import { useVrcxVueTable } from '../../../lib/table/useVrcxVueTable';
+    import { useCompactDialogScrollReset } from '../useEntityDialogCompact';
 
     const props = defineProps({
         variant: {
@@ -78,6 +79,10 @@
     const modalStore = useModalStore();
     const vrcxStore = useVrcxStore();
     const { t } = useI18n();
+
+    // Phones: this page shares the dialog scroller with the page it was opened from; start it at the top.
+    const compactScrollRootRef = ref(null);
+    useCompactDialogScrollReset(compactScrollRootRef);
 
     const dialogState = computed(() => {
         return previousInstancesListDialog.value;

@@ -23,7 +23,8 @@
             <div v-for="room in worldDialog.rooms" :key="room.id">
                 <template v-if="isAgeGatedInstancesVisible || !(room.ageGate || room.location?.includes('~ageGate'))">
                     <div style="margin: 6px 0">
-                        <div class="flex flex-wrap gap-2 whitespace-nowrap overflow-hidden text-ellipsis">
+                        <div
+                            class="flex flex-wrap gap-2 whitespace-nowrap overflow-hidden text-ellipsis compact:overflow-visible compact:whitespace-normal">
                             <LocationWorld
                                 class="text-sm"
                                 :locationobject="room.$location"
@@ -50,7 +51,7 @@
                             style="margin: 8px 0; max-height: unset">
                             <div
                                 v-if="room.$location.userId"
-                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                                 @click="showUserDialog(room.$location.userId)">
                                 <template v-if="room.$location.user">
                                     <div
@@ -81,7 +82,7 @@
                             <div
                                 v-for="user in room.users"
                                 :key="user.id"
-                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                                 @click="showUserDialog(user.id)">
                                 <div
                                     class="relative inline-block flex-none size-9 mr-2.5"

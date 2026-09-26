@@ -1,13 +1,13 @@
 <template>
     <div v-if="groupDialog.visible" class="flex h-full min-h-0 flex-col p-2 rounded-xl bg-(--profile-card)">
-        <div class="sticky top-0 z-10 pb-2">
+        <div class="sticky top-0 z-10 pb-2 compact:static compact:z-auto">
             <span v-if="hasGroupPermission(groupDialog.ref, 'group-members-viewall')" class="text-base font-bold p-1">{{
                 t('dialog.group.members.all_members')
             }}</span>
             <span v-else class="text-base font-bold">{{ t('dialog.group.members.friends_only') }}</span>
-            <div style="margin-top: 8px">
+            <div class="mt-2 compact:flex compact:flex-wrap compact:items-center compact:gap-y-2">
                 <Button
-                    class="rounded-full h-6 w-6"
+                    class="rounded-full h-6 w-6 pointer-coarse:size-10"
                     variant="ghost"
                     size="icon-sm"
                     :loading="isGroupMembersLoading"
@@ -16,7 +16,7 @@
                     <Spinner v-if="isGroupMembersLoading" /><RefreshCcw v-else
                 /></Button>
                 <Button
-                    class="rounded-full h-6 w-6 ml-2"
+                    class="rounded-full h-6 w-6 ml-2 pointer-coarse:size-10"
                     size="icon-sm"
                     variant="ghost"
                     style="margin-left: 6px"
@@ -31,13 +31,12 @@
                 >
                 <div
                     v-if="hasGroupPermission(groupDialog.ref, 'group-members-manage')"
-                    style="float: right"
-                    class="flex items-center">
-                    <span style="margin-right: 6px">{{ t('dialog.group.members.sort_by') }}</span>
+                    class="float-right flex items-center compact:float-none compact:order-last compact:grid compact:w-full compact:grid-cols-[auto_minmax(0,1fr)] compact:gap-2">
+                    <span class="mr-1.5 compact:mr-0">{{ t('dialog.group.members.sort_by') }}</span>
                     <Select
                         v-model="groupDialogMemberSortValue"
                         :disabled="isGroupMembersLoading || groupDialog.memberSearch.length > 0">
-                        <SelectTrigger class="h-8 w-45 mr-1">
+                        <SelectTrigger class="h-8 w-45 mr-1 compact:w-full compact:mr-0">
                             <SelectValue :placeholder="t('dialog.group.members.sort_by')" />
                         </SelectTrigger>
                         <SelectContent>
@@ -46,8 +45,8 @@
                             </SelectItem>
                         </SelectContent>
                     </Select>
-                    <span class="ml-2 mr-1">{{ t('dialog.group.members.filter') }}</span>
-                    <div style="display: inline-block; width: 220px">
+                    <span class="ml-2 mr-1 compact:m-0">{{ t('dialog.group.members.filter') }}</span>
+                    <div class="inline-block w-[220px] compact:w-full">
                         <VirtualCombobox
                             v-model="groupDialogMemberFilterKey"
                             :groups="groupDialogMemberFilterGroups"
@@ -70,7 +69,7 @@
                     clearable
                     size="sm"
                     :placeholder="t('dialog.group.members.search')"
-                    class="flex-1"
+                    class="flex-1 compact:basis-full"
                     @input="groupMembersSearch" />
             </div>
         </div>
@@ -81,7 +80,7 @@
             <div
                 v-for="user in groupDialog.memberSearchResults"
                 :key="user.id"
-                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                 @click="showUserDialog(user.userId)">
                 <div class="relative inline-block flex-none size-9 mr-2.5">
                     <Avatar class="size-9">
@@ -140,7 +139,7 @@
             <li
                 v-for="user in groupDialog.members"
                 :key="user.id"
-                class="infinite-list-item box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                class="infinite-list-item box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                 @click="showUserDialog(user.userId)">
                 <div class="relative inline-block flex-none size-9 mr-2.5">
                     <Avatar class="size-9">

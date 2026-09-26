@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex items-center justify-between compact:flex-wrap compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     class="rounded-full"
                     variant="ghost"
@@ -19,7 +19,7 @@
             <div class="flex items-center gap-2">
                 <span class="text-muted-foreground text-sm">{{ t('dialog.user.activity.period') }}</span>
                 <Select v-model="userDialog.activityPeriodDays" :disabled="isLoading">
-                    <SelectTrigger size="sm" class="w-40" @click.stop>
+                    <SelectTrigger size="sm" class="w-40 compact:w-36" @click.stop>
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -45,7 +45,9 @@
                 {{ t('dialog.user.activity.building_cache') }}
             </div>
 
-            <div v-if="peakDayText || peakTimeText" class="mt-2 mb-1 text-sm flex gap-4">
+            <div
+                v-if="peakDayText || peakTimeText"
+                class="mt-2 mb-1 text-sm flex gap-4 compact:flex-wrap compact:gap-y-1">
                 <div v-if="peakDayText">
                     <span class="text-muted-foreground">{{ t('dialog.user.activity.most_active_day') }}</span>
                     <span class="font-medium ml-1">{{ peakDayText }}</span>
@@ -78,12 +80,12 @@
             <DailyPlaytime v-if="isSelf" :sessions="cachedSessions" :range-days="currentRangeDays" />
 
             <div v-if="!isSelf" v-show="filteredEventCount > 0" class="mt-4 border-t border-border pt-3">
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center justify-between mb-2 compact:flex-wrap compact:gap-2">
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-medium">{{ t('dialog.user.activity.overlap.header') }}</span>
                         <Spinner v-if="isOverlapLoadingVisible" class="h-3.5 w-3.5" />
                     </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
+                    <div class="flex items-center gap-1.5 shrink-0 compact:shrink compact:flex-wrap">
                         <Switch
                             :model-value="excludeHoursEnabled"
                             class="scale-75"
@@ -152,14 +154,14 @@
             </div>
 
             <div v-if="isSelf && filteredEventCount > 0" class="mt-4 border-t border-border pt-3">
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center justify-between mb-2 compact:flex-wrap compact:gap-2">
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-medium">
                             {{ t('dialog.user.activity.most_visited_worlds.header') }}
                         </span>
                         <Spinner v-if="topWorldsLoadingVisible" class="h-3.5 w-3.5" />
                     </div>
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 compact:flex-wrap compact:gap-x-4 compact:gap-y-2">
                         <div
                             v-if="isSelf && currentHomeWorldId"
                             class="flex items-center gap-1.5 text-sm text-muted-foreground">

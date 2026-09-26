@@ -56,31 +56,33 @@
                     </Button>
                 </div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent
+                :class="MENU_CONTENT_TOUCH_CLASS"
+                :align="isCompact ? 'end' : undefined"
+                :collision-padding="isCompact ? 8 : undefined">
                 <DropdownMenuItem @click="onCommand('Refresh')">
                     <RefreshCw class="size-4" />
                     {{ t('dialog.user.actions.refresh') }}
                 </DropdownMenuItem>
-                <DropdownMenuSub>
-                    <DropdownMenuSubTrigger @click="onCommand('Copy Profile URL')">
-                        <Share2 class="size-4 mr-2" />
-                        <span>{{ t('dialog.user.actions.share') }}</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent side="right" align="start" class="w-56">
-                        <DropdownMenuItem @click="onCommand('Copy Profile URL')">
-                            <Copy class="size-4" />
-                            {{ t('dialog.user.info.copy_url') }}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem @click="onCommand('Copy DisplayName')">
-                            <Copy class="size-4" />
-                            {{ t('dialog.user.info.copy_display_name') }}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem @click="onCommand('Copy UserId')">
-                            <Copy class="size-4" />
-                            {{ t('dialog.user.info.copy_id') }}
-                        </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                <CompactDropdownMenuSub
+                    :label="t('dialog.user.actions.share')"
+                    :icon="Share2"
+                    align="start"
+                    :separator-after="userDialog.ref.id === currentUser.id || !userDialog.isFriend"
+                    @trigger-click="onCommand('Copy Profile URL')">
+                    <DropdownMenuItem @click="onCommand('Copy Profile URL')">
+                        <Copy class="size-4" />
+                        {{ t('dialog.user.info.copy_url') }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="onCommand('Copy DisplayName')">
+                        <Copy class="size-4" />
+                        {{ t('dialog.user.info.copy_display_name') }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="onCommand('Copy UserId')">
+                        <Copy class="size-4" />
+                        {{ t('dialog.user.info.copy_id') }}
+                    </DropdownMenuItem>
+                </CompactDropdownMenuSub>
                 <template v-if="userDialog.ref.id === currentUser.id">
                     <DropdownMenuItem @click="onCommand('Edit Profile')">
                         <Pencil class="size-4" />
@@ -132,6 +134,16 @@
                             <Hand class="size-4" />
                             {{ t('dialog.user.actions.send_boop') }}
                         </DropdownMenuItem>
+                        <!-- Android: the long-press menu of user rows (join, self invite) is also here, so the
+                             header kebab offers everything the row menu does. -->
+                        <UserActionMenuItems
+                            v-if="isAndroid"
+                            variant="dropdown"
+                            :items="['join', 'self-invite']"
+                            separator-before
+                            :user-id="userDialog.id"
+                            :state="userDialog.ref.state"
+                            :location="userDialog.ref.location" />
                     </template>
                     <template v-else-if="userDialog.incomingRequest">
                         <DropdownMenuItem @click="onCommand('Accept Friend Request')">
@@ -160,81 +172,73 @@
                         <Pencil class="size-4" />
                         {{ t('dialog.user.actions.edit_note_memo') }}
                     </DropdownMenuItem>
-                    <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                            <XCircle class="size-4 mr-2" />
-                            <span>{{ t('nav_tooltip.moderation') }}</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent side="right" align="start" class="w-56">
-                            <DropdownMenuItem
-                                v-if="userDialog.isBlock"
-                                variant="destructive"
-                                @click="onCommand('Moderation Unblock')">
-                                <CheckCircle class="size-4" />
-                                {{ t('dialog.user.actions.moderation_unblock') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                v-else
-                                :disabled="userDialog.ref.$isModerator"
-                                @click="onCommand('Moderation Block')">
-                                <XCircle class="size-4" />
-                                {{ t('dialog.user.actions.moderation_block') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                v-if="userDialog.isMute"
-                                variant="destructive"
-                                @click="onCommand('Moderation Unmute')">
-                                <Mic class="size-4" />
-                                {{ t('dialog.user.actions.moderation_unmute') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                v-else
-                                :disabled="userDialog.ref.$isModerator"
-                                @click="onCommand('Moderation Mute')">
-                                <VolumeX class="size-4" />
-                                {{ t('dialog.user.actions.moderation_mute') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                v-if="userDialog.isMuteChat"
-                                variant="destructive"
-                                @click="onCommand('Moderation Enable Chatbox')">
-                                <MessageCircle class="size-4" />
-                                {{ t('dialog.user.actions.moderation_enable_chatbox') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem v-else @click="onCommand('Moderation Disable Chatbox')">
-                                <MessageCircle class="size-4" />
-                                {{ t('dialog.user.actions.moderation_disable_chatbox') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Show Avatar')">
-                                <User class="size-4" />
-                                <Check v-if="userDialog.isShowAvatar" class="size-4" />
-                                <span>{{ t('dialog.user.actions.moderation_show_avatar') }}</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Hide Avatar')">
-                                <User class="size-4" />
-                                <Check v-if="userDialog.isHideAvatar" class="size-4" />
-                                <span>{{ t('dialog.user.actions.moderation_hide_avatar') }}</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                v-if="userDialog.isInteractOff"
-                                variant="destructive"
-                                @click="onCommand('Moderation Enable Avatar Interaction')">
-                                <Hand class="size-4" />
-                                {{ t('dialog.user.actions.moderation_enable_avatar_interaction') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem v-else @click="onCommand('Moderation Disable Avatar Interaction')">
-                                <XCircle class="size-4" />
-                                {{ t('dialog.user.actions.moderation_disable_avatar_interaction') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                :disabled="userDialog.ref.$isModerator"
-                                @click="onCommand('Report Hacking')">
-                                <Flag class="size-4" />
-                                {{ t('dialog.user.actions.report_hacking') }}
-                            </DropdownMenuItem>
-                        </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+                    <CompactDropdownMenuSub :label="t('nav_tooltip.moderation')" :icon="XCircle" align="start">
+                        <DropdownMenuItem
+                            v-if="userDialog.isBlock"
+                            variant="destructive"
+                            @click="onCommand('Moderation Unblock')">
+                            <CheckCircle class="size-4" />
+                            {{ t('dialog.user.actions.moderation_unblock') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-else
+                            :disabled="userDialog.ref.$isModerator"
+                            @click="onCommand('Moderation Block')">
+                            <XCircle class="size-4" />
+                            {{ t('dialog.user.actions.moderation_block') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="userDialog.isMute"
+                            variant="destructive"
+                            @click="onCommand('Moderation Unmute')">
+                            <Mic class="size-4" />
+                            {{ t('dialog.user.actions.moderation_unmute') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-else
+                            :disabled="userDialog.ref.$isModerator"
+                            @click="onCommand('Moderation Mute')">
+                            <VolumeX class="size-4" />
+                            {{ t('dialog.user.actions.moderation_mute') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="userDialog.isMuteChat"
+                            variant="destructive"
+                            @click="onCommand('Moderation Enable Chatbox')">
+                            <MessageCircle class="size-4" />
+                            {{ t('dialog.user.actions.moderation_enable_chatbox') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem v-else @click="onCommand('Moderation Disable Chatbox')">
+                            <MessageCircle class="size-4" />
+                            {{ t('dialog.user.actions.moderation_disable_chatbox') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Show Avatar')">
+                            <User class="size-4" />
+                            <Check v-if="userDialog.isShowAvatar" class="size-4" />
+                            <span>{{ t('dialog.user.actions.moderation_show_avatar') }}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem v-if="hasLocalVrchatFiles" @click="onCommand('Hide Avatar')">
+                            <User class="size-4" />
+                            <Check v-if="userDialog.isHideAvatar" class="size-4" />
+                            <span>{{ t('dialog.user.actions.moderation_hide_avatar') }}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="userDialog.isInteractOff"
+                            variant="destructive"
+                            @click="onCommand('Moderation Enable Avatar Interaction')">
+                            <Hand class="size-4" />
+                            {{ t('dialog.user.actions.moderation_enable_avatar_interaction') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem v-else @click="onCommand('Moderation Disable Avatar Interaction')">
+                            <XCircle class="size-4" />
+                            {{ t('dialog.user.actions.moderation_disable_avatar_interaction') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem :disabled="userDialog.ref.$isModerator" @click="onCommand('Report Hacking')">
+                            <Flag class="size-4" />
+                            {{ t('dialog.user.actions.report_hacking') }}
+                        </DropdownMenuItem>
+                    </CompactDropdownMenuSub>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem @click="onCommand('Invite To Group')">
                         <MessageSquare class="size-4" />
@@ -310,9 +314,6 @@
         DropdownMenuContent,
         DropdownMenuItem,
         DropdownMenuSeparator,
-        DropdownMenuSub,
-        DropdownMenuSubContent,
-        DropdownMenuSubTrigger,
         DropdownMenuShortcut,
         DropdownMenuTrigger
     } from '../../ui/dropdown-menu';
@@ -320,7 +321,12 @@
     import { useInviteChecks } from '../../../composables/useInviteChecks';
     import { isActionRecent } from '../../../composables/useRecentActions';
     import { invertHexColor } from '@/shared/utils';
-    import { hasLocalVrchatFiles } from '@/shared/utils/platform';
+    import { hasLocalVrchatFiles, isAndroid } from '@/shared/utils/platform';
+    import { MENU_CONTENT_TOUCH_CLASS } from '../useEntityDialogCompact';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
+
+    import CompactDropdownMenuSub from '../../CompactDropdownMenuSub.vue';
+    import UserActionMenuItems from '../../UserActionMenuItems.vue';
 
     const props = defineProps({
         userDialogCommand: {
@@ -330,6 +336,8 @@
     });
 
     const { t } = useI18n();
+    // Phones: the menu hangs from the button's right edge and keeps clear of the screen edge.
+    const { isCompact } = useCompactLayout();
 
     const { userDialog, currentUser } = storeToRefs(useUserStore());
     const { isGameRunning } = storeToRefs(useGameStore());

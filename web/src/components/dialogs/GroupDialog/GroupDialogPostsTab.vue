@@ -1,6 +1,6 @@
 <template v-if="groupDialog.visible">
     <div class="flex h-full min-h-0 flex-col p-2 rounded-xl bg-(--profile-card)">
-        <div class="sticky flex items-center gap-2 top-0 z-10 p-2">
+        <div class="sticky flex items-center gap-2 top-0 z-10 p-2 compact:static compact:z-auto">
             <span style="margin-right: 8px; vertical-align: top"
                 >{{ t('dialog.group.posts.posts_count') }} {{ groupDialog.posts.length }}</span
             >
@@ -23,7 +23,7 @@
                             <TooltipWrapper side="top" :content="t('dialog.group.posts.edit_tooltip')">
                                 <Button
                                     size="icon-sm"
-                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                                     variant="ghost"
                                     :ariaLabel="t('dialog.group.posts.edit_tooltip')"
                                     @click="showGroupPostEditDialog(groupDialog.id, post)"
@@ -33,7 +33,7 @@
                             <TooltipWrapper side="top" :content="t('dialog.group.posts.delete_tooltip')">
                                 <Button
                                     size="icon-sm"
-                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
+                                    class="h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
                                     variant="ghost"
                                     :ariaLabel="t('dialog.group.posts.delete_tooltip')"
                                     @click="confirmDeleteGroupPost(post)"
@@ -42,7 +42,7 @@
                             </TooltipWrapper>
                         </div>
                     </template>
-                    <span class="block pr-15" v-text="post.title" />
+                    <span class="block pr-15 pointer-coarse:pr-20" v-text="post.title" />
                     <div v-if="post.imageUrl" style="display: inline-block; margin-right: 6px">
                         <div
                             class="cursor-pointer"

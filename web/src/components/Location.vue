@@ -39,7 +39,7 @@
                             </div>
                         </TooltipWrapper>
                         <div v-if="closedAt">
-                            <TooltipWrapper side="top">
+                            <TooltipWrapper side="top" tap-to-open>
                                 <template #content>
                                     {{ t('dialog.user.info.instance_closed_at') }}:
                                     {{ formatDateFilter(closedAt, 'long') }}

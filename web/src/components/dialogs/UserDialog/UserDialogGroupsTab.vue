@@ -1,7 +1,7 @@
 <template>
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2 rounded-xl bg-(--profile-card)">
-        <div class="shrink-0" style="display: flex; align-items: center; justify-content: space-between">
-            <div style="display: flex; align-items: center">
+        <div class="flex shrink-0 items-center justify-between compact:flex-wrap compact:justify-start compact:gap-2">
+            <div class="flex items-center">
                 <Button
                     class="rounded-full"
                     variant="ghost"
@@ -17,20 +17,23 @@
                 <template v-if="userDialogGroupEditMode && !isAndroid">
                     <span class="text-[10px] ml-2">{{ t('dialog.user.groups.hold_shift') }}</span>
                 </template>
+                <!-- Android: the touch stand-in for holding Shift (leave without asking). -->
+                <QuickActionsToggle v-else-if="userDialogGroupEditMode" class="ml-2" />
             </div>
-            <div style="display: flex; align-items: center">
+            <div class="flex items-center" :class="!userDialogGroupEditMode && 'compact:contents'">
                 <template v-if="!userDialogGroupEditMode">
                     <Input
                         v-model="groupSearchQuery"
-                        class="h-8 w-40 mr-2"
+                        class="h-8 w-40 mr-2 compact:w-auto compact:min-w-0 compact:flex-1 compact:mr-0"
                         :placeholder="t('dialog.user.groups.search_placeholder')"
                         @click.stop />
-                    <span style="margin-right: 6px">{{ t('dialog.user.groups.sort_by') }}</span>
+                    <span class="hidden compact:block compact:h-0 compact:basis-full" aria-hidden="true"></span>
+                    <span class="mr-1.5">{{ t('dialog.user.groups.sort_by') }}</span>
                     <Select
                         :model-value="userDialogGroupSortingKey"
                         :disabled="userDialog.isGroupsLoading"
                         @update:modelValue="setUserDialogGroupSortingByKey">
-                        <SelectTrigger size="sm" @click.stop>
+                        <SelectTrigger size="sm" class="compact:mr-auto" @click.stop>
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -108,17 +111,20 @@
                         <div
                             v-for="group in userDialogGroupEditGroups"
                             :key="group.id"
-                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-full hover:rounded-[25px_5px_5px_25px]"
+                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-full hover:rounded-[25px_5px_5px_25px] compact:flex-wrap compact:gap-y-1.5"
                             @click="showGroupDialog(group.id)">
-                            <!-- Manual checkbox -->
+                            <!-- Manual checkbox. Touch: a 40px unscaled hit area that toggles the selection too, so a
+                                 near miss never leaves edit mode for the group dialog. -->
                             <div
+                                class="pointer-coarse:mx-0! pointer-coarse:flex pointer-coarse:size-10 pointer-coarse:shrink-0 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:transform-none!"
+                                data-slot="group-select-area"
                                 style="
                                     margin-left: 6px;
                                     margin-right: 6px;
                                     transform: scale(0.8);
                                     transform-origin: left center;
                                 "
-                                @click.stop>
+                                @click.stop="handleGroupSelectAreaClick($event, group.id)">
                                 <Checkbox
                                     :model-value="userDialogGroupEditSelectedGroupIds.includes(group.id)"
                                     @update:modelValue="() => toggleGroupSelection(group.id)" />
@@ -192,7 +198,7 @@
                                     </AvatarFallback>
                                 </Avatar>
                             </div>
-                            <div class="flex-1 overflow-hidden">
+                            <div class="flex-1 overflow-hidden compact:min-w-[calc(100%-5.5rem)]">
                                 <span class="block truncate font-medium leading-[18px]" v-text="group.name"></span>
                                 <span class="block truncate text-xs">
                                     <TooltipWrapper
@@ -218,7 +224,7 @@
                                 :model-value="group.myMember.visibility"
                                 :disabled="group.privacy !== 'default'"
                                 @update:modelValue="(value) => setGroupVisibility(group.id, value)">
-                                <SelectTrigger size="sm" @click.stop>
+                                <SelectTrigger size="sm" class="compact:ml-auto" @click.stop>
                                     <SelectValue
                                         :placeholder="
                                             group.myMember.visibility === 'visible'
@@ -264,7 +270,7 @@
                                         : t('dialog.user.groups.leave_group_tooltip')
                                 ">
                                 <Button
-                                    class="rounded-full h-6 w-6"
+                                    class="rounded-full h-6 w-6 pointer-coarse:size-10"
                                     size="icon-sm"
                                     variant="outline"
                                     v-if="shiftHeld"
@@ -279,7 +285,7 @@
                                     <LogOut v-else />
                                 </Button>
                                 <Button
-                                    class="rounded-full h-6 w-6 text-red-600"
+                                    class="rounded-full h-6 w-6 text-red-600 pointer-coarse:size-10"
                                     size="icon-sm"
                                     variant="outline"
                                     v-else
@@ -401,6 +407,7 @@
     import { Checkbox } from '@/components/ui/checkbox';
     import { Input } from '@/components/ui/input';
     import { Spinner } from '@/components/ui/spinner';
+    import { QuickActionsToggle } from '@/components/ui/quick-actions';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
@@ -424,6 +431,7 @@
     import { userDialogGroupSortingOptions } from '../../../shared/constants';
     import { hasLocalVrchatFiles, isAndroid } from '../../../shared/utils/platform';
     import { moveGroupInOrder, normalizeGroupOrder } from '../../../shared/utils/groupOrder';
+    import { useCompactLayout } from '../../../composables/useCompactLayout';
 
     const { t } = useI18n();
 
@@ -433,6 +441,7 @@
     const { showCreateGroupDialog } = groupStore;
     const { cachedConfig } = storeToRefs(useAuthStore());
     const { shiftHeld } = storeToRefs(useUiStore());
+    const { isCoarsePointer } = useCompactLayout();
 
     const userDialogGroupEditMode = ref(false);
     const userDialogGroupEditGroups = ref([]);
@@ -681,6 +690,20 @@
         for (const groupId of userDialogGroupEditSelectedGroupIds.value) {
             leaveGroup(groupId);
         }
+    }
+
+    /**
+     * Touch: a tap on the enlarged area around a group's checkbox (not on the checkbox itself, which toggles on its
+     * own) selects the group as well.
+     *
+     * @param {MouseEvent} event
+     * @param {string} groupId
+     */
+    function handleGroupSelectAreaClick(event, groupId) {
+        if (!isCoarsePointer.value || event.target?.closest?.('[role="checkbox"]')) {
+            return;
+        }
+        toggleGroupSelection(groupId);
     }
 
     // Toggle individual group selection for bulk actions

@@ -66,10 +66,11 @@
                             @click="showFullscreenImageDialog(userDialog.instance?.ref?.world?.imageUrl)"
                             loading="lazy" />
                     </div>
-                    <div class="flex flex-wrap items-start" style="flex: 1; max-height: 150px; overflow: auto">
+                    <div
+                        class="flex flex-1 flex-wrap items-start max-h-[150px] overflow-auto compact:max-h-none compact:overflow-visible">
                         <div
                             v-if="userDialog.$location.userId"
-                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                             @click="showUserDialog(userDialog.$location.userId)">
                             <template v-if="userDialog.$location.user">
                                 <div
@@ -100,7 +101,7 @@
                         <div
                             v-for="user in userDialog.users"
                             :key="user.id"
-                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] hover:rounded-[25px_5px_5px_25px]"
+                            class="box-border flex items-center p-1.5 text-[13px] cursor-pointer w-[167px] compact:w-1/2 compact-landscape:w-1/3 hover:rounded-[25px_5px_5px_25px]"
                             @click="showUserDialog(user.id)">
                             <div class="relative inline-block flex-none size-9 mr-2.5" :class="userStatusClass(user)">
                                 <Avatar class="size-9">
@@ -244,6 +245,7 @@
                     <div class="flex flex-col gap-1.5">
                         <TooltipWrapper
                             side="right"
+                            tap-to-open
                             :content="formatDateFilter(userOnlineForTimestamp(userDialog), 'long')"
                             :disabled="!userOnlineForTimestamp(userDialog)">
                             <template #content>
@@ -266,6 +268,7 @@
                         <template v-if="currentUser.id !== userDialog.id">
                             <TooltipWrapper
                                 side="right"
+                                tap-to-open
                                 :disabled="!userDialog.lastSeen"
                                 :content="formatDateFilter(userDialog.lastSeen, 'long')">
                                 <div class="flex justify-between items-start gap-2 text-xs">
@@ -277,7 +280,10 @@
                                     }}</span>
                                 </div>
                             </TooltipWrapper>
-                            <TooltipWrapper side="right" :disabled="userDialog.dateFriendedInfo.length === 0">
+                            <TooltipWrapper
+                                side="right"
+                                tap-to-open
+                                :disabled="userDialog.dateFriendedInfo.length === 0">
                                 <template #content>
                                     <template v-if="userDialog.dateFriendedInfo.length === 1">
                                         {{ formatDateFilter(userDialog.dateFriended, 'long') }}
@@ -304,6 +310,7 @@
                             </TooltipWrapper>
                             <TooltipWrapper
                                 side="right"
+                                tap-to-open
                                 :content="timeToText(userDialog.timeSpent, true)"
                                 :disabled="!userDialog.timeSpent">
                                 <div class="flex justify-between items-start gap-2 text-xs">
@@ -352,7 +359,7 @@
                         {{ t('dialog.user.info.header') }}
                     </div>
                     <div class="flex flex-col gap-1.5">
-                        <TooltipWrapper side="right">
+                        <TooltipWrapper side="right" tap-to-open>
                             <template #content>
                                 <span
                                     >{{ t('dialog.user.info.last_login') }}
@@ -376,6 +383,7 @@
 
                         <TooltipWrapper
                             side="right"
+                            tap-to-open
                             :content="formatDateFilter(userDialog.ref.date_joined, 'date')"
                             :disabled="!userDialog.ref.date_joined">
                             <div class="flex justify-between items-start gap-2 text-xs">
