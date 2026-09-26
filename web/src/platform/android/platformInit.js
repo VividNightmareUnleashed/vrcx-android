@@ -131,10 +131,37 @@ export function watchFirstLogin({ state = watchState, request = () => requestNot
 }
 
 /**
+ * Tells the host whether a VRChat session is logged in, once at start and on every change. The foreground service
+ * only runs while background mode is on and a session is active or a PC companion is connected
+ * (docs/ARCHITECTURE.md §5.1), so a logged-out app is not kept alive.
+ *
+ * @param {object} [deps]
+ * @param {{ isLoggedIn: boolean }} [deps.state]
+ * @param {typeof getAndroidHost} [deps.getHost]
+ * @returns {() => void} Stop function
+ */
+export function reportSessionState({ state = watchState, getHost = getAndroidHost } = {}) {
+    return watch(
+        () => Boolean(state.isLoggedIn),
+        async (active) => {
+            const host = getHost();
+            if (!host) return;
+            try {
+                await host.SetSessionActive(active);
+            } catch (error) {
+                console.warn('SetSessionActive failed', error);
+            }
+        },
+        { immediate: true }
+    );
+}
+
+/**
  * @param {import('vue').App} _app
  */
 export async function initAndroidPlatform(_app) {
     await applyAndroidDefaults();
     connectCompanionState(useCompanionStore());
     watchFirstLogin();
+    reportSessionState();
 }

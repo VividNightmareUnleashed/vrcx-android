@@ -15,6 +15,7 @@ import {
     applyAndroidDefaults,
     connectCompanionState,
     requestNotificationPermissionOnce,
+    reportSessionState,
     watchFirstLogin
 } from '../platformInit.js';
 
@@ -187,5 +188,41 @@ describe('watchFirstLogin', () => {
         watchFirstLogin({ state, request });
         await Promise.resolve();
         expect(request).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('reportSessionState', () => {
+    test('reports the session once at start and on every login and logout', async () => {
+        const state = reactive({ isLoggedIn: false });
+        const host = { SetSessionActive: vi.fn().mockResolvedValue(undefined) };
+        const stop = reportSessionState({ state, getHost: () => host });
+        expect(host.SetSessionActive).toHaveBeenLastCalledWith(false);
+
+        state.isLoggedIn = true;
+        await nextTick();
+        expect(host.SetSessionActive).toHaveBeenLastCalledWith(true);
+
+        state.isLoggedIn = false;
+        await nextTick();
+        expect(host.SetSessionActive).toHaveBeenLastCalledWith(false);
+        expect(host.SetSessionActive).toHaveBeenCalledTimes(3);
+        stop();
+    });
+
+    test('an old host without SetSessionActive is tolerated', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const host = { SetSessionActive: vi.fn().mockRejectedValue(new Error('MissingMethodException: x')) };
+        const stop = reportSessionState({ state: reactive({ isLoggedIn: true }), getHost: () => host });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(warn).toHaveBeenCalled();
+        stop();
+        warn.mockRestore();
+    });
+
+    test('does nothing without a host', () => {
+        expect(() =>
+            reportSessionState({ state: reactive({ isLoggedIn: true }), getHost: () => null })()
+        ).not.toThrow();
     });
 });
