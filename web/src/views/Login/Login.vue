@@ -90,7 +90,9 @@
                                 </Field>
                             </VeeField>
                         </FieldGroup>
-                        <label class="inline-flex items-center gap-2 mr-2 mt-3 text-sm">
+                        <!-- Touch: the whole row (checkbox and text) is a --touch-min tap target. -->
+                        <label
+                            class="inline-flex items-center gap-2 mr-2 mt-3 text-sm pointer-coarse:mt-1 pointer-coarse:min-h-10">
                             <Checkbox v-model="loginForm.saveCredentials" />
                             <span>{{ t('view.login.field.saveCredentials') }}</span>
                         </label>
@@ -500,8 +502,9 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
-    /* Phone landscape is wide enough for the PC's two columns (form | saved accounts). */
-    html.vrcx-compact-landscape .x-login {
+    /* Phone landscape is wide enough for the PC's two columns (form | saved accounts); the form alone keeps the
+     * portrait width. */
+    html.vrcx-compact-landscape .x-login:has(.x-login-form-container > div:nth-child(3)) {
         max-width: 720px;
     }
 

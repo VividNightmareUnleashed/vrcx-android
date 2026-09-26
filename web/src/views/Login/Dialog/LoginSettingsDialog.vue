@@ -24,7 +24,8 @@
                         </FieldContent>
                     </Field>
                 </template>
-                <label class="inline-flex items-center gap-2 text-sm">
+                <!-- Touch: the whole row (checkbox and text) is a --touch-min tap target. -->
+                <label class="inline-flex items-center gap-2 text-sm pointer-coarse:min-h-10">
                     <Checkbox v-model="enableCustomEndpoint" @update:modelValue="handleCustomEndpointToggle" />
                     <span>{{ t('view.login.field.devEndpoint') }}</span>
                 </label>
