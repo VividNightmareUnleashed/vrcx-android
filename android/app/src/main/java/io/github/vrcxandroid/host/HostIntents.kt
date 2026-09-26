@@ -81,11 +81,11 @@ object QrScanner {
     }
 }
 
-/** Files shared with other apps and files copied in from pickers. */
+/** Files shared with other apps. */
 object HostFiles {
     fun authority(context: Context): String = "${context.packageName}.fileprovider"
 
-    /** content:// URI (FileProvider) for a file under cacheDir or filesDir/local. */
+    /** content:// URI (FileProvider) for a file in one of the folders res/xml/file_paths.xml shares. */
     fun contentUri(context: Context, file: File): Uri = FileProvider.getUriForFile(context, authority(context), file)
 
     fun displayName(context: Context, uri: Uri): String? = try {
@@ -94,32 +94,6 @@ object HostFiles {
         }
     } catch (e: Exception) {
         null
-    }
-
-    /**
-     * Copies a picked document to `filesDir/local/<subdir>/<name>` and returns the file. Keeps the newest [keep]
-     * files of that directory.
-     */
-    fun copyToLocal(context: Context, uri: Uri, subdir: String, fallbackName: String, keep: Int = 20): File {
-        val dir = File(VrcxHost.paths.localRoot, subdir).apply { mkdirs() }
-        val name = FileNames.sanitize(displayName(context, uri), fallbackName)
-        val target = File(dir, name)
-        val tmp = File(dir, ".$name.part")
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Could not open $uri" }
-            tmp.outputStream().use { input.copyTo(it) }
-        }
-        if (target.exists()) target.delete()
-        if (!tmp.renameTo(target)) {
-            tmp.copyTo(target, overwrite = true)
-            tmp.delete()
-        }
-        target.setLastModified(System.currentTimeMillis())
-        dir.listFiles()?.filter { it.isFile && !it.name.startsWith(".") }
-            ?.sortedByDescending { it.lastModified() }
-            ?.drop(keep)
-            ?.forEach { it.delete() }
-        return target
     }
 
     fun writeBytes(context: Context, uri: Uri, bytes: ByteArray) {

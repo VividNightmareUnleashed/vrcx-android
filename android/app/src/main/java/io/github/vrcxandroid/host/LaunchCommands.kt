@@ -54,7 +54,46 @@ object LaunchCommands {
         return c.ifEmpty { null }
     }
 
+    /** Commands that only open a dialog or a search: delivered like any launch command. */
+    val NAVIGATION = setOf("world", "avatar", "user", "group", "search")
+
+    /** Commands that change the account or the VRCX configuration: the page asks the user before running them. */
+    val NEEDS_CONFIRMATION = setOf("switchavatar", "addavatardb", "local-favorite-world", "local-favorite-avatar", "import")
+
+    /**
+     * Route of a command that came from outside the app: an intent from another app or a browser, or a `vrcx:` link
+     * inside page content (user bios and descriptions are not trusted either). Only the host itself sets `crash/...`
+     * (after a renderer crash), so that and every unknown command is dropped. Names match case-sensitively, like the
+     * frontend's `eventLaunchCommand` switch.
+     */
+    fun routeExternal(command: String): ExternalRoute {
+        val name = commandName(command)
+        return when (name) {
+            in NAVIGATION -> ExternalRoute.Navigate(command)
+            in NEEDS_CONFIRMATION -> ExternalRoute.Confirm(command)
+            else -> ExternalRoute.Drop
+        }
+    }
+
+    /** The command name (text before the first '/'), for routing and for logs. */
+    fun commandName(command: String): String = command.substringBefore('/')
+
+    /** A dropped command's name reduced to a short, printable form, so logs never carry the payload. */
+    fun loggableName(command: String): String =
+        commandName(command).take(32).map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '?' }.joinToString("")
+
     private const val ACTION_SEND = "android.intent.action.SEND"
+}
+
+/** Where an external launch command goes (docs/ARCHITECTURE.md §6.9). */
+sealed interface ExternalRoute {
+    /** `launch-command` event, or `AppApi.GetLaunchCommand` at cold start. */
+    data class Navigate(val command: String) : ExternalRoute
+
+    /** `external-launch-command` event, or `AndroidHost.TakeExternalLaunchCommand` at cold start. */
+    data class Confirm(val command: String) : ExternalRoute
+
+    data object Drop : ExternalRoute
 }
 
 /**

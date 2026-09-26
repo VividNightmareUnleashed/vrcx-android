@@ -274,6 +274,11 @@
     var listeners = new Map();
     var internalHandlers = {};
 
+    // Events that must not be lost while the frontend has not subscribed yet (the page connects at document start,
+    // the stores subscribe later): the last one is kept and handed to the first on() subscriber.
+    var BUFFERED_EVENTS = { 'external-launch-command': true };
+    var bufferedEvents = new Map();
+
     function dispatchEvent(name, data) {
         var internal = internalHandlers[name];
         if (internal) {
@@ -282,6 +287,9 @@
             });
         }
         var set = listeners.get(name);
+        if (BUFFERED_EVENTS[name] === true && (!set || set.size === 0)) {
+            bufferedEvents.set(name, data);
+        }
         if (set) {
             Array.from(set).forEach(function (callback) {
                 try {
@@ -307,6 +315,21 @@
             listeners.set(key, set);
         }
         set.add(callback);
+        if (bufferedEvents.has(key)) {
+            var buffered = bufferedEvents.get(key);
+            bufferedEvents.delete(key);
+            setTimeout(function () {
+                if (!set.has(callback)) {
+                    bufferedEvents.set(key, buffered);
+                    return;
+                }
+                try {
+                    callback(buffered);
+                } catch (e) {
+                    warn('listener for ' + key + ' threw', e);
+                }
+            }, 0);
+        }
         return function () {
             off(key, callback);
         };

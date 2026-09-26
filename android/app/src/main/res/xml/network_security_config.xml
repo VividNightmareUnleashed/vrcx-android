@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Explicit network policy (docs/ARCHITECTURE.md §6.2): no cleartext HTTP anywhere, system CAs only. VRChat, its CDNs
+     and the PC companion (TLS with a pinned certificate, docs/PROTOCOL.md) all use TLS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -81,14 +81,14 @@ class WebApiModule(private val context: Context) : BridgeModule, HttpProvider {
         val raw = try {
             AppGraph.storage.get(PROXY_KEY)
         } catch (e: Exception) {
-            Log.e(TAG, "Cannot read $PROXY_KEY", e)
+            Log.e(TAG, "Cannot read $PROXY_KEY ${SafeLog.kind(e)}")
             ""
         }
         val spec = try {
             ProxySpec.parse(raw)
         } catch (e: InvalidProxyException) {
             // The value may hold credentials, so it is not logged.
-            Log.e(TAG, "Invalid proxy URI; the setting is cleared and VRCX continues without a proxy", e)
+            Log.e(TAG, "Invalid proxy URI ${SafeLog.kind(e)}; the setting is cleared and VRCX continues without a proxy")
             AppGraph.storage.set(PROXY_KEY, "")
             (AppGraph.storage as? VRCXStorageModule)?.store?.save()
             toast(INVALID_PROXY_MESSAGE)

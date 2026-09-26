@@ -47,6 +47,18 @@ class DocResolverAndIcsTest {
     }
 
     @Test
+    fun absolutePathsOutsideTheServedRootsResolveToNothing() {
+        val database = File(platform.root, "files/VRCX/VRCX.sqlite3").apply { parentFile!!.mkdirs(); writeText("saved logins") }
+        assertNull(resolver.resolve(database.absolutePath))
+        assertNull(resolver.resolve(File(platform.servedDir, "../files/VRCX/VRCX.sqlite3").path))
+        val api = AppApi(platform)
+        val base64 = runBlocking { api.call("GetFileBase64", JsonArray(listOf(JsonPrimitive(database.absolutePath)))) }
+        assertEquals(kotlinx.serialization.json.JsonNull, base64)
+        // content URIs the platform refuses (no grant) resolve to nothing either
+        assertNull(resolver.resolve("content://io.github.vrcxandroid.fileprovider/cache/x.png"))
+    }
+
+    @Test
     fun contentDocumentsAreShownThroughAMirrorThatMapsBack() {
         File(platform.contentDir, "shot.png").writeBytes(Vectors.fixture("vrcx_json.png"))
         val doc = resolver.resolve("content://test/shot.png")!!

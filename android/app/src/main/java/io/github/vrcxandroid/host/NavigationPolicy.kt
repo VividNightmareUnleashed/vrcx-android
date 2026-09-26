@@ -64,4 +64,7 @@ object HostUrls {
     const val ASSETS_PREFIX = "/assets/"
     const val LOCAL_PREFIX = "/local/"
     const val LOCAL_CACHE_PREFIX = "/local/cache/"
+
+    /** True for the serialized app origin a web message listener reports (`sourceOrigin`). */
+    fun isAppOrigin(origin: String?): Boolean = origin != null && origin.trimEnd('/').equals(ORIGIN, ignoreCase = true)
 }

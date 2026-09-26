@@ -14,6 +14,10 @@ import java.net.URI
  * file under either root is also served at that same path on the app origin, so an absolute path string works both as
  * an AppApi argument and as an `<img src>`.
  *
+ * The WebView's own caches in cacheDir ([isDeniedCacheEntry]: `WebView/`, `org.chromium*`) are never served or
+ * resolved. The check runs on the canonical path relative to the root, so a path that climbs back into them through
+ * another folder cannot reach them either.
+ *
  * Pure JVM code (no android.* imports) so it is unit-tested directly.
  */
 class LocalPaths(localRoot: File, cacheRoot: File, private val origin: String = HostUrls.ORIGIN) {
@@ -65,31 +69,39 @@ class LocalPaths(localRoot: File, cacheRoot: File, private val origin: String = 
 
     /**
      * File for a request path suffix below a served root ([root] is [localRoot] or [cacheRoot]); null when it escapes
-     * the root or names a directory. [deniedTopLevel] lists first segments that must never be served.
+     * the root, is a WebView cache entry, or is reserved. [deniedTopLevel] lists further first segments (of the
+     * canonical relative path) that must never be served.
      */
     fun resolveServed(root: File, suffix: String, deniedTopLevel: Set<String> = emptySet()): File? {
         val clean = suffix.trimStart('/')
         if (clean.isEmpty()) return null
-        val first = clean.substringBefore('/')
-        if (deniedTopLevel.any { first.equals(it, ignoreCase = true) || first.startsWith("org.chromium") }) return null
         val rootCanonical = canonical(root)
         val file = canonical(File(root, clean))
-        if (relativeTo(file, rootCanonical) == null) return null
-        if (root.absoluteFile == localRoot) {
-            val rel = relativeTo(file, rootCanonical)
-            if (rel == RESERVED_CACHE || rel?.startsWith("$RESERVED_CACHE/") == true) return null
-        }
+        val rel = relativeTo(file, rootCanonical) ?: return null
+        val first = rel.substringBefore('/')
+        if (deniedTopLevel.any { first.equals(it, ignoreCase = true) }) return null
+        if (rootCanonical == cacheCanonical && isDeniedCacheEntry(first)) return null
+        if (rootCanonical == localCanonical && (rel == RESERVED_CACHE || rel.startsWith("$RESERVED_CACHE/"))) return null
         return file
     }
 
-    /** Returns [file] (canonical) when it lies inside one of the roots, else null. */
+    /** Returns [file] (canonical) when it lies inside one of the roots and is not a WebView cache entry, else null. */
     fun contained(file: File): File? {
         val c = canonical(file)
-        return if (relativeTo(c, localCanonical) != null || relativeTo(c, cacheCanonical) != null) c else null
+        if (relativeTo(c, localCanonical) != null) return c
+        val rel = relativeTo(c, cacheCanonical) ?: return null
+        return if (isDeniedCacheEntry(rel.substringBefore('/'))) null else c
     }
 
     companion object {
         private const val RESERVED_CACHE = "cache"
+
+        /** cacheDir entries of the WebView itself (HTTP cache, code cache, crash dumps). */
+        val DENIED_CACHE_DIRS = setOf("WebView", "org.chromium.android_webview")
+
+        /** True for a first path segment below cacheDir that belongs to the WebView: never served or resolved. */
+        fun isDeniedCacheEntry(first: String): Boolean =
+            DENIED_CACHE_DIRS.any { first.equals(it, ignoreCase = true) } || first.startsWith("org.chromium", ignoreCase = true)
 
         /** Relative path of [file] below [root] ('/'-separated, non-empty), or null when not strictly inside. */
         internal fun relativeTo(file: File, root: File): String? {

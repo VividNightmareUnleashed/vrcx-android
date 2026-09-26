@@ -33,7 +33,8 @@ class HostWebViewClient : WebViewClient() {
         return when (val action = NavigationPolicy.decide(url)) {
             NavigationAction.Allow -> false
             is NavigationAction.LaunchCommand -> {
-                if (request.isForMainFrame) VrcxHost.deliverLaunchCommand(action.command)
+                // A vrcx: link in page content (a bio, a description) is as untrusted as an intent from another app.
+                if (request.isForMainFrame) VrcxHost.deliverExternalLaunchCommand(action.command)
                 true
             }
             is NavigationAction.External -> {
@@ -41,7 +42,8 @@ class HostWebViewClient : WebViewClient() {
                 true
             }
             NavigationAction.Block -> {
-                Log.w(TAG, "blocked navigation to ${url?.take(200)}")
+                // Only the scheme: data: and javascript: URLs carry their payload in the URL.
+                Log.w(TAG, "blocked navigation (${url?.substringBefore(':')?.take(16)}:)")
                 true
             }
         }
@@ -98,10 +100,19 @@ class HostWebChromeClient : WebChromeClient() {
 /**
  * Serves APK assets under `/assets/` and app-private files under `/local/` (docs/ARCHITECTURE.md §6.6). Requests for
  * the app origin that match nothing get a 404 instead of going to the network.
+ *
+ * `/local/` holds files whose names and content come from outside (picked documents, cached downloads), and it shares
+ * the page's origin, which reaches the whole bridge. So it only ever serves passive types ([mimeType]: images, video,
+ * JSON, plain text, calendar files; everything else as `application/octet-stream`), with `nosniff` and a sandboxing
+ * CSP: a file opened as a document gets an opaque origin and runs no script.
  */
 object LocalFileServer {
-    /** cacheDir entries that must never be served (the WebView's own caches). */
-    private val DENIED_CACHE_DIRS = setOf("WebView", "org.chromium.android_webview")
+    /** Headers of every `/local/` response. */
+    val LOCAL_HEADERS: Map<String, String> = mapOf(
+        "Cache-Control" to "no-cache",
+        "X-Content-Type-Options" to "nosniff",
+        "Content-Security-Policy" to "sandbox; default-src 'none'",
+    )
 
     private val loader: WebViewAssetLoader by lazy { build() }
 
@@ -114,8 +125,9 @@ object LocalFileServer {
     private fun build(): WebViewAssetLoader {
         val app = VrcxHost.app
         val paths = VrcxHost.paths
-        val local = DirHandler(paths.localRoot, emptySet())
-        val cache = DirHandler(paths.cacheRoot, DENIED_CACHE_DIRS)
+        val local = DirHandler(paths.localRoot)
+        // LocalPaths also refuses the WebView's own cache folders below cacheDir.
+        val cache = DirHandler(paths.cacheRoot)
         val builder = WebViewAssetLoader.Builder()
             .setDomain(HostUrls.DOMAIN)
             .addPathHandler(HostUrls.ASSETS_PREFIX, WebViewAssetLoader.AssetsPathHandler(app))
@@ -131,39 +143,38 @@ object LocalFileServer {
     private fun absolutePrefixes(dir: File): Set<String> =
         setOf(dir.absolutePath, LocalPaths.canonical(dir).path).map { it.trimEnd('/') + "/" }.toSet()
 
-    private class DirHandler(private val root: File, private val denied: Set<String>) : WebViewAssetLoader.PathHandler {
+    private class DirHandler(private val root: File) : WebViewAssetLoader.PathHandler {
         override fun handle(path: String): WebResourceResponse {
-            val file = VrcxHost.paths.resolveServed(root, path, denied)
+            val file = VrcxHost.paths.resolveServed(root, path)
             if (file == null || !file.isFile) return notFound()
             return try {
-                WebResourceResponse(
-                    mimeType(file.name), null, 200, "OK",
-                    mapOf("Cache-Control" to "no-cache"),
-                    FileInputStream(file),
-                )
+                WebResourceResponse(mimeType(file.name), null, 200, "OK", LOCAL_HEADERS, FileInputStream(file))
             } catch (e: Exception) {
                 notFound()
             }
         }
     }
 
-    fun notFound(): WebResourceResponse =
-        WebResourceResponse("text/plain", "utf-8", 404, "Not Found", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
+    fun notFound(): WebResourceResponse = WebResourceResponse(
+        "text/plain", "utf-8", 404, "Not Found",
+        LOCAL_HEADERS + ("Cache-Control" to "no-store"),
+        ByteArrayInputStream(ByteArray(0)),
+    )
 
+    /**
+     * Content type of a `/local/` file. Only passive types: SVG (scripts), HTML, CSS and JavaScript are served as
+     * `application/octet-stream`, which the page cannot run or style with.
+     */
     fun mimeType(name: String): String = when (name.substringAfterLast('.', "").lowercase(Locale.ROOT)) {
         "png" -> "image/png"
         "jpg", "jpeg" -> "image/jpeg"
         "gif" -> "image/gif"
         "webp" -> "image/webp"
         "bmp" -> "image/bmp"
-        "svg" -> "image/svg+xml"
         "ico" -> "image/x-icon"
         "json" -> "application/json"
         "txt", "log" -> "text/plain"
         "ics" -> "text/calendar"
-        "css" -> "text/css"
-        "js", "mjs" -> "text/javascript"
-        "html", "htm" -> "text/html"
         "mp4" -> "video/mp4"
         "webm" -> "video/webm"
         else -> "application/octet-stream"

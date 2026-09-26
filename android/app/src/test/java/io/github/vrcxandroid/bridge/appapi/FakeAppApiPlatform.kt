@@ -26,10 +26,7 @@ class FakeAppApiPlatform(
 
     override val gameState = State()
     override var httpClient: OkHttpClient = OkHttpClient()
-    override var externalFilesDir: File? = File(root, "external").apply { mkdirs() }
-
-    /** Like Android 11+: custom.js is read from the external folder too. */
-    override var customScriptDir: File? = externalFilesDir
+    override var customDir: File? = File(root, "files/custom")
     override var images: ImageCodec = object : ImageCodec {
         override fun resizeToFitLimits(bytes: ByteArray, matchingDimensions: Boolean, maxWidth: Int, maxHeight: Int, maxSize: Long) = bytes
         override fun resizePrint(bytes: ByteArray) = bytes
@@ -121,10 +118,14 @@ class FakeAppApiPlatform(
         logs += message
     }
 
-    // ---- DocPlatform: {dir}/name <-> servedDir/name, and the cache directory as {cache}/...
+    // ---- DocPlatform: {dir}/name <-> servedDir/name, and the cache directory as {cache}/...; absolute paths only
+    // inside those two roots (like host/LocalPaths.fileFor)
     override fun fileFor(pathOrUrl: String): File? = when {
         pathOrUrl.startsWith("{dir}/") -> File(servedDir, pathOrUrl.removePrefix("{dir}/"))
         pathOrUrl.startsWith("{cache}/") -> File(cacheDir, pathOrUrl.removePrefix("{cache}/"))
+        File(pathOrUrl).isAbsolute -> File(pathOrUrl).takeIf { f ->
+            servedRoots().any { f.canonicalPath.startsWith(it.canonicalPath + File.separator) }
+        }
         else -> null
     }
 

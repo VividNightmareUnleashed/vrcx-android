@@ -1,7 +1,10 @@
 package io.github.vrcxandroid.host
 
+import io.github.vrcxandroid.bridge.BridgeJson
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -128,6 +131,26 @@ class NetworkChangeTracker<N : Any> {
         if (network != current) return false
         current = null
         return true
+    }
+}
+
+/** What the host needs from a `companion-state` event: the status and the PC name (ARCHITECTURE.md §5.1). */
+data class CompanionStateSummary(val status: String?, val machineName: String?) {
+    val connected: Boolean get() = status == "connected"
+
+    companion object {
+        /** From the event text (`{"ev":"companion-state","d":{...}}`); null when it cannot be read. */
+        fun fromEvent(text: String): CompanionStateSummary? {
+            val state = try {
+                (BridgeJson.parseToJsonElement(text) as? JsonObject)?.get("d") as? JsonObject
+            } catch (e: Exception) {
+                null
+            } ?: return null
+            return CompanionStateSummary(
+                (state["status"] as? JsonPrimitive)?.contentOrNull,
+                (state["machineName"] as? JsonPrimitive)?.contentOrNull,
+            )
+        }
     }
 }
 

@@ -99,9 +99,33 @@ class LocalPathsTest {
         assertNull(paths.resolveServed(local, "../VRCX/VRCX.sqlite3"))
         assertNull(paths.resolveServed(local, ""))
         assertNull(paths.resolveServed(local, "cache/x.png"))
-        assertNull(paths.resolveServed(cache, "WebView/Default/Cookies", setOf("WebView")))
-        assertNull(paths.resolveServed(cache, "org.chromium.android_webview/x", setOf("WebView")))
-        assertEquals(canonical(File(cache, "ImageCache/f/1.png")), paths.resolveServed(cache, "ImageCache/f/1.png", setOf("WebView")))
+        assertNull(paths.resolveServed(cache, "WebView/Default/Cookies"))
+        assertNull(paths.resolveServed(cache, "org.chromium.android_webview/x"))
+        assertEquals(canonical(File(cache, "ImageCache/f/1.png")), paths.resolveServed(cache, "ImageCache/f/1.png"))
+        assertNull(paths.resolveServed(cache, "ImageCache/f/1.png", setOf("imagecache")))
+    }
+
+    @Test
+    fun theWebViewCachesCannotBeReachedThroughAnotherFolder() {
+        File(cache, "WebView/Default/HTTP Cache").mkdirs()
+        File(cache, "ImageCache").mkdirs()
+        File(cache, "org.chromium.android_webview").mkdirs()
+        // the deny-list applies to the canonical path, not to the first segment of the raw suffix
+        assertNull(paths.resolveServed(cache, "ImageCache/../WebView/Cookies"))
+        assertNull(paths.resolveServed(cache, "./WebView/Cookies"))
+        assertNull(paths.resolveServed(cache, "WebView/Default/HTTP Cache/Cache_Data/index"))
+        assertNull(paths.resolveServed(cache, "webview/Cookies"))
+        assertNull(paths.resolveServed(cache, "ImageCache/../org.chromium.android_webview/x"))
+        assertNull(paths.resolveServed(cache, "org.chromium.other/x"))
+        assertEquals(canonical(File(cache, "ImageCache/a.png")), paths.resolveServed(cache, "ImageCache/./a.png"))
+        // the same through the AppApi side (URLs, absolute paths, file: URIs)
+        assertNull(paths.fileFor("https://appassets.androidplatform.net/local/cache/ImageCache/%2E%2E/WebView/Cookies"))
+        assertNull(paths.fileFor(File(cache, "ImageCache/../WebView/Cookies").absolutePath))
+        assertNull(paths.fileFor(File(cache, "WebView/Default/Cookies").toURI().toString()))
+        assertNull(paths.contained(File(cache, "org.chromium.android_webview/x")))
+        assertEquals(canonical(File(cache, "ImageCache/a.png")), paths.contained(File(cache, "ImageCache/a.png")))
+        // folders of the same name below filesDir/local are ordinary app files
+        assertEquals(canonical(File(local, "WebView/a.png")), paths.fileFor(File(local, "WebView/a.png").absolutePath))
     }
 
     @Test

@@ -63,7 +63,8 @@ data class ProxySpec(
             val uri = try {
                 URI(text)
             } catch (e: Exception) {
-                throw InvalidProxyException("Invalid proxy URI", e)
+                // No cause: URISyntaxException quotes the whole value, credentials included.
+                throw InvalidProxyException("Invalid proxy URI (${e.javaClass.simpleName})")
             }
             val scheme = uri.scheme?.lowercase() ?: throw InvalidProxyException("Invalid proxy URI: no scheme")
             val normalized = if (scheme in SOCKS5) "socks5" else scheme

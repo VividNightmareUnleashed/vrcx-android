@@ -12,6 +12,7 @@ import android.os.Process
 import android.util.Log
 import android.view.WindowManager
 import io.github.vrcxandroid.AppGraph
+import io.github.vrcxandroid.CompanionVisibility
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,9 +34,12 @@ object VrcxHost {
     private const val TAG = "VRCXHost"
     private const val PREFS = "vrcx_host"
     private const val KEY_BACKGROUND_MODE = "background_mode"
+    private const val KEY_START_ON_BOOT = "start_on_boot"
 
     /** Background mode off: pause the WebView and the companion after this long hidden (ARCHITECTURE.md §7). */
     const val PAUSE_DELAY_MS = 60_000L
+
+    const val EVENT_EXTERNAL_LAUNCH_COMMAND = "external-launch-command"
 
     lateinit var app: Application
         private set
@@ -60,10 +64,17 @@ object VrcxHost {
         paths = LocalPaths(File(app.filesDir, "local"), app.cacheDir)
         AppGraph.dispatcher.eventSink = events::deliver
         events.observe { name, text ->
-            if (name == "companion-state") VrcxForegroundService.onCompanionState(text)
+            if (name != "companion-state") return@observe
+            val summary = CompanionStateSummary.fromEvent(text) ?: return@observe
+            VrcxForegroundService.onCompanionState(summary)
+            main.post { governor.setCompanionConnected(summary.connected) }
         }
-        HostNotifications.ensureChannels(app)
-        NetworkMonitor.start(app)
+        // Binder calls, kept off the main thread so Application.onCreate stays cheap. The service creates the channels
+        // again before its first notification.
+        AppGraph.scope.launch(Dispatchers.IO) {
+            runCatching { HostNotifications.ensureChannels(app) }
+            NetworkMonitor.start(app)
+        }
     }
 
     // ---- Activity and visibility ----
@@ -101,7 +112,8 @@ object VrcxHost {
         }
         if (wasPaused || firstStart) runCatching { AppGraph.companion.setRunning(true) }
         firstStart = false
-        if (backgroundMode && hasPage) VrcxForegroundService.start(app)
+        setCompanionAppVisible(true)
+        governor.setVisible(true)
         HostNotifications.cancelAttention(app)
         applyKeepScreenOn()
         emit("visibility", buildJsonObject {
@@ -114,6 +126,8 @@ object VrcxHost {
         if (this.activity !== activity) return
         started = false
         emit("visibility", buildJsonObject { put("visible", false) })
+        setCompanionAppVisible(false)
+        governor.setVisible(false)
         if (!backgroundMode) schedulePause()
     }
 
@@ -124,8 +138,11 @@ object VrcxHost {
         }
     }
 
-    /** False behind the WebView gate screen: then there is no page for the service to keep alive. */
-    private val hasPage: Boolean get() = WebViewHolder.current != null
+    /** Battery hints for the companion link (Contracts.kt [CompanionVisibility]). */
+    private fun setCompanionAppVisible(visible: Boolean) {
+        runCatching { (AppGraph.companion as? CompanionVisibility)?.setAppVisible(visible) }
+            .onFailure { Log.w(TAG, "companion visibility hint failed (${it.javaClass.simpleName})") }
+    }
 
     private fun schedulePause() {
         main.removeCallbacks(pauseRunnable)
@@ -146,16 +163,53 @@ object VrcxHost {
         get() = prefs.getBoolean(KEY_BACKGROUND_MODE, true)
         set(value) {
             prefs.edit().putBoolean(KEY_BACKGROUND_MODE, value).apply()
+            BootReceiver.sync(app, startOnBoot = startOnBoot, backgroundMode = value)
             main.post {
-                if (value) {
-                    main.removeCallbacks(pauseRunnable)
-                    if (started && hasPage) VrcxForegroundService.start(app)
-                } else {
-                    VrcxForegroundService.stop(app)
-                    if (!started) schedulePause()
-                }
+                if (value) main.removeCallbacks(pauseRunnable)
+                governor.update()
+                if (!value && !started) schedulePause()
             }
         }
+
+    /** Start on boot (opt-in, default off). Only acts while background mode is on (ARCHITECTURE.md §5.1). */
+    var startOnBoot: Boolean
+        get() = prefs.getBoolean(KEY_START_ON_BOOT, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_START_ON_BOOT, value).apply()
+            BootReceiver.sync(app, startOnBoot = value, backgroundMode = backgroundMode)
+        }
+
+    // ---- Foreground service (ARCHITECTURE.md §7) ----
+
+    private val governor: ServiceGovernor by lazy {
+        ServiceGovernor(object : ServiceGovernor.Control {
+            override val backgroundMode: Boolean get() = VrcxHost.backgroundMode
+            override val hasPage: Boolean get() = WebViewHolder.current != null
+            override val isRunning: Boolean get() = VrcxForegroundService.isRunning
+            override fun start() = VrcxForegroundService.start(app)
+            override fun stop() = VrcxForegroundService.stop(app)
+            override fun postDelayed(task: Runnable, delayMs: Long) {
+                main.postDelayed(task, delayMs)
+            }
+            override fun cancel(task: Runnable) = main.removeCallbacks(task)
+        })
+    }
+
+    /** AndroidHost.SetSessionActive: the page reports whether a VRChat session is logged in. Any thread. */
+    fun setSessionActive(active: Boolean) {
+        main.post { governor.setSessionActive(active) }
+    }
+
+    /**
+     * BOOT_COMPLETED with start on boot and background mode on: loads the page without an Activity and starts the
+     * service, which the boot broadcast allows from the background. Main thread.
+     */
+    fun startFromBoot() {
+        if (!startOnBoot || !backgroundMode) return
+        if (!WebViewHolder.startHeadless(app)) return
+        Log.i(TAG, "started at boot")
+        governor.holdForBoot()
+    }
 
     // ---- Events ----
 
@@ -173,14 +227,34 @@ object VrcxHost {
     // ---- Launch commands (ARCHITECTURE.md §6.9) ----
 
     private val launchInbox = LaunchCommandInbox()
+    private val externalInbox = LaunchCommandInbox()
 
+    /** A command the host itself created (`crash/...` after a renderer crash), for GetLaunchCommand. */
     fun setPendingLaunchCommand(command: String) = launchInbox.setPending(command)
 
     /** Returns the pending command once, then "" (AppApi.GetLaunchCommand). */
     fun takeLaunchCommand(): String = launchInbox.take()
 
+    /** Returns the pending command that needs confirmation once, then "" (AndroidHost.TakeExternalLaunchCommand). */
+    fun takeExternalLaunchCommand(): String = externalInbox.take()
+
+    /**
+     * A command from outside the app (an intent, or a `vrcx:` link in page content), ARCHITECTURE.md §6.9: navigation
+     * commands go the normal way, state-changing ones as `external-launch-command` for the page to confirm, anything
+     * else (including `crash/`) is dropped.
+     */
+    fun deliverExternalLaunchCommand(command: String) {
+        when (val route = LaunchCommands.routeExternal(command)) {
+            is ExternalRoute.Navigate -> deliverLaunchCommand(route.command)
+            is ExternalRoute.Confirm -> externalInbox.deliver(route.command, events.isPageConnected) {
+                emit(EVENT_EXTERNAL_LAUNCH_COMMAND, JsonPrimitive(it))
+            }
+            ExternalRoute.Drop -> Log.w(TAG, "dropped an external launch command (${LaunchCommands.loggableName(command)})")
+        }
+    }
+
     /** Running page: `launch-command` event. Page not loaded yet: pending for GetLaunchCommand after login. */
-    fun deliverLaunchCommand(command: String) {
+    private fun deliverLaunchCommand(command: String) {
         launchInbox.deliver(command, events.isPageConnected) { emit("launch-command", JsonPrimitive(it)) }
     }
 

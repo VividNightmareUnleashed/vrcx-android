@@ -1,6 +1,7 @@
 package io.github.vrcxandroid.bridge.webapi
 
 import android.util.Log
+import io.github.vrcxandroid.bridge.SafeLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -66,7 +67,7 @@ class PersistentCookieJar(
                 val stored = try {
                     store.load()?.let { NetCookieCodec.decodeBase64(it, now()) }.orEmpty()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to load cookies: ${e.message}")
+                    Log.e(TAG, "Failed to load cookies ${SafeLog.kind(e)}")
                     emptyList()
                 }
                 synchronized(lock) {
@@ -132,7 +133,7 @@ class PersistentCookieJar(
             try {
                 NetCookieCodec.decodeBase64(base64.orEmpty(), now()).forEach { putLocked(it) }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to set cookies: ${e.message}")
+                Log.e(TAG, "Failed to set cookies ${SafeLog.kind(e)}")
             }
             markDirtyLocked()
         }
@@ -167,7 +168,7 @@ class PersistentCookieJar(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save cookies: ${e.message}")
+            Log.e(TAG, "Failed to save cookies ${SafeLog.kind(e)}")
             synchronized(lock) { if (snapshotEpoch == epoch && loaded) dirty = true }
         }
     }

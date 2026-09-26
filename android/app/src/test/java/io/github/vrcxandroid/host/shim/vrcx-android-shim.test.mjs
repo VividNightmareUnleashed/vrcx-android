@@ -360,6 +360,32 @@ test('launch commands reach the ipcRenderer listener, including ones that arrive
     off();
 });
 
+test('an external launch command that arrives before the page subscribes goes to the first subscriber only', async () => {
+    const env = createEnv();
+    env.event('external-launch-command', 'switchavatar/avtr_1');
+    env.event('external-launch-command', 'addavatardb/https://example.com');
+    const first = [];
+    const second = [];
+    env.win.__vrcxAndroid.on('external-launch-command', (cmd) => first.push(cmd));
+    env.win.__vrcxAndroid.on('external-launch-command', (cmd) => second.push(cmd));
+    await new Promise((r) => setTimeout(r, 10));
+    // The last one wins, like the native pending slot.
+    assert.deepEqual(first, ['addavatardb/https://example.com']);
+    assert.deepEqual(second, []);
+    env.event('external-launch-command', 'import/avatar/avtr_2');
+    assert.deepEqual(first, ['addavatardb/https://example.com', 'import/avatar/avtr_2']);
+    assert.deepEqual(second, ['import/avatar/avtr_2']);
+});
+
+test('other events are not buffered for later subscribers', async () => {
+    const env = createEnv();
+    env.event('network-changed', { available: true });
+    const received = [];
+    env.win.__vrcxAndroid.on('network-changed', (d) => received.push(d));
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(received, []);
+});
+
 test('focus fires onBrowserFocus with a null event', () => {
     const env = createEnv();
     const calls = [];

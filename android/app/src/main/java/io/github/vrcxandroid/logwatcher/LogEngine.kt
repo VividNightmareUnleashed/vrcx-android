@@ -1,5 +1,6 @@
 package io.github.vrcxandroid.logwatcher
 
+import io.github.vrcxandroid.bridge.SafeLog
 import java.io.RandomAccessFile
 
 /**
@@ -175,7 +176,7 @@ internal class LogEngine(
         } catch (e: Exception) {
             // Upstream aborts the pass and keeps Position (it is only written at EOF); Length is already updated.
             context.pendingTail = false
-            log.log(LwLog.WARN, "Failed to parse log file: ${file.name} $current ${e.message}", e)
+            log.log(LwLog.WARN, "Failed to parse log file: ${file.name} $current ${SafeLog.kind(e)}", SafeLog.redacted(e))
         }
     }
 
@@ -188,12 +189,12 @@ internal class LogEngine(
 
         val lineTicks = zone.lineStampToUtcTicks(line)
         if (lineTicks == null) {
-            log.log(LwLog.WARN, "Failed to parse log date: $line", null)
+            log.log(LwLog.WARN, "Failed to parse log date in ${file.name} (${line.length} chars)", null)
             return
         }
         if (lineTicks <= tillDateTicks) return
         if (Ticks.fromEpochMs(pcNowMs()) + 61 * 60 * Ticks.PER_SECOND < lineTicks) {
-            log.log(LwLog.WARN, "Invalid log time, too new: $line", null)
+            log.log(LwLog.WARN, "Invalid log time, too new, in ${file.name}", null)
             return
         }
 
@@ -342,7 +343,7 @@ internal class LogEngine(
 
             val (displayName, userId) = parseUserInfo(sub(line, lineOffset))
             if (displayName.isEmpty() && userId.isEmpty()) {
-                log.log(LwLog.WARN, "Failed to parse user info from log line: $line", null)
+                log.log(LwLog.WARN, "Failed to parse user info from a log line in ${file.name}", null)
                 return true
             }
             append(file, line, "player-joined", displayName, userId)
@@ -359,7 +360,7 @@ internal class LogEngine(
 
             val (displayName, userId) = parseUserInfo(sub(line, lineOffset))
             if (displayName.isEmpty() && userId.isEmpty()) {
-                log.log(LwLog.WARN, "Failed to parse user info from log line: $line", null)
+                log.log(LwLog.WARN, "Failed to parse user info from a log line in ${file.name}", null)
                 return true
             }
             append(file, line, "player-left", displayName, userId)
@@ -439,7 +440,7 @@ internal class LogEngine(
     private fun parseLogWorldDataVrcx(line: String, offset: Int): Boolean {
         if (!compareAt(line, offset, "[VRCX-World] ", 13)) return false
         // PWI, deprecated upstream: logged only.
-        log.log(LwLog.INFO, "VRCX-World data: ${sub(line, offset + 13)}", null)
+        log.log(LwLog.INFO, "VRCX-World data (${line.length - offset - 13} chars, not logged)", null)
         return true
     }
 
@@ -639,7 +640,7 @@ internal class LogEngine(
         // Flipped on purpose, as upstream: the part before " (" is the user id, the part inside is the name.
         val (userId, displayName) = parseUserInfo(info)
         if (displayName.isEmpty() && userId.isEmpty()) {
-            log.log(LwLog.WARN, "Failed to parse user info from log line: $line", null)
+            log.log(LwLog.WARN, "Failed to parse user info from a log line in ${file.name}", null)
             return true
         }
 

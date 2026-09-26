@@ -84,9 +84,14 @@ docs/                  this file, PROTOCOL.md, DESIGN.md
   `JavaScriptReplyProxy` of the calling frame. The shim resolves or rejects (with `new Error(e)`) the pending promise.
   `r` is the JSON value itself, not a string, except where the contract says the method returns a JSON **string**
   (for example `WebApi.ExecuteJson`, `SQLite.ExecuteJson`): then `r` is that string.
-- Native → JS events: `{ev:"<name>", d:<json>}` on the same proxy. Event names: `launch-command`, `focus`, `insets`,
-  `tts-voices`, `tts-event`, `network-changed`, `companion-state`, `log-available`, `game-state`, `visibility`.
-  The shim dispatches them to its registered handlers and as `window` `CustomEvent("vrcx-android:<name>")`.
+- Native → JS events: `{ev:"<name>", d:<json>}` on the same proxy. Event names: `launch-command`,
+  `external-launch-command`, `focus`, `insets`, `tts-voices`, `tts-event`, `network-changed`, `companion-state`,
+  `log-available`, `game-state`, `visibility`.
+  The shim dispatches them to its registered handlers and as `window` `CustomEvent("vrcx-android:<name>")`. An
+  `external-launch-command` that arrives before anything subscribed through `__vrcxAndroid.on` is kept (the last one)
+  and handed to the first subscriber.
+- Only the main frame of the app origin reaches the bridge: the listener's allowed-origin rule, plus a `sourceOrigin`
+  check in `onMessage`.
 - Native → JS calls that need a result (back button) use `webView.evaluateJavascript("window.__vrcxAndroid.handleBack()")`.
 - Class names received from the frontend: `AppApiElectron`, `WebApi`, `VRCXStorage`, `SQLite`, `LogWatcher`, `Discord`,
   `AssetBundleManager`, `AppApiVrElectron` (only from the VR page, which is not shipped) and the Android-only `AndroidHost`.
@@ -178,10 +183,11 @@ The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host
 | `Electron*` (`GetClipboardText`, `OpenFileDialog`, `OpenDirectoryDialog`, `DesktopNotification`, `SetTrayIconNotification`, `RestartApp`) | back the shim's `window.electron` object |
 | `SetSessionActive(bool)` | `undefined`. The page reports whether a VRChat session is logged in. The foreground service runs only while background mode is on AND (a session is active OR a companion is connected) |
 | `TakeExternalLaunchCommand()` | string, `''` when none. A launch command that came from another app or a browser and needs confirmation (§6.9) |
-| `ImportCustomFile('css'\|'js')` | `{ok, name}`; SAF pick, copied to `filesDir/custom/custom.css` or `custom.js` (read by `AppApi.CustomCss/CustomScript`) |
-| `RemoveCustomFile('css'\|'js')` | bool |
+| `ImportCustomFile('css'\|'js')` | `{ok, name}`; SAF pick, copied to `filesDir/custom/custom.css` or `custom.js` (read by `AppApi.CustomCss/CustomScript`). `{ok:false, name:''}` when cancelled; rejects `IOException: ...` for a file over 4 MB or one that is not text |
+| `RemoveCustomFile('css'\|'js')` | bool: `true` when no such file remains |
 | `GetStartOnBoot()` / `SetStartOnBoot(bool)` | bool; opt-in, default off. On boot, starts the service and page when background mode is on |
 | `GetPhotosFolder()` | string (display name of the chosen VRChat photos folder) or `''` when none is chosen |
+| `ChoosePhotosFolder()` | string: folder picker for the photos folder (also changes an existing choice); its display name, `''` when cancelled |
 
 Companion state object (also the `companion-state` event payload):
 ```
@@ -211,18 +217,27 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
    `pauseTimers()` are never called while background mode is on. Renderer priority is `RENDERER_PRIORITY_IMPORTANT`
    (`waivedWhenNotVisible=false`).
 2. **Settings.** JavaScript and DOM storage on; `allowFileAccess=false`; `textZoom=100`; zoom controls off; algorithmic
-   darkening off; `mediaPlaybackRequiresUserGesture=false`; `MIXED_CONTENT_COMPATIBILITY_MODE`; `setSupportMultipleWindows(false)`.
-   Web contents debugging on in debug builds.
+   darkening off; `mediaPlaybackRequiresUserGesture=false`; `MIXED_CONTENT_NEVER_ALLOW`; `setSupportMultipleWindows(false)`.
+   Web contents debugging on in debug builds. `res/xml/network_security_config.xml` forbids cleartext traffic and
+   trusts the system CAs only (the companion link is TLS with its own pinning).
 3. **Startup gate.** Require WebView major version ≥ 120 and the features `WEB_MESSAGE_LISTENER` and
    `DOCUMENT_START_SCRIPT`; otherwise show a native screen asking the user to update Android System WebView.
 4. **Navigation policy.** Same-origin navigations only. `vrcx:` → launch command. `http(s)` → Custom Tab / `ACTION_VIEW`.
    Everything else is blocked.
 5. **Renderer crash.** `onRenderProcessGone` returns true, recreates the WebView and sets the pending launch command
    `crash/Browser crashed.` or `crash/Browser was killed.`.
-6. **Local files.** Anything the page must show as `<img src>` (picked files, cached images, screenshots) is copied or
+6. **Local files.** Anything the page must show as `<img src>` (cached images, screenshots) is copied or
    written under `filesDir/local/` or `cacheDir/...` and exposed through the `/local/` path handler as
    `https://appassets.androidplatform.net/local/<relative path>`. AppApi file methods accept both that URL form and
-   the absolute path.
+   the absolute path, but only inside those two roots, plus `content://` documents the app holds a grant for (a
+   picker or a chosen folder) and its own MediaStore items; any other path resolves to nothing. The WebView's own
+   caches (`cacheDir/WebView`, `org.chromium*`) are never served or resolved, checked on the canonical path. `/local/`
+   serves only passive types (images, video, JSON, plain text, calendar; everything else as
+   `application/octet-stream`) with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox;
+   default-src 'none'`. The FileProvider shares only `cacheDir/{clipboard,share,ImageCache,screenshot-mirror}/` and
+   `filesDir/local/`. `electron.openFileDialog` resolves the picked PNG's own `content://` URI (grant persisted, with
+   write access where the provider allows it), mapped into the chosen photos folder when it lies inside it, so the
+   Screenshot Manager edits the original and previous/next walk that folder (none otherwise).
 7. **Insets and theme.** Edge-to-edge (targetSdk 35). The WebView fills the window; system bar, cutout and IME insets are
    sent to the page as CSS variables (`insets` event), and the page pads its own chrome. `AppApi.ChangeTheme(0|1|2)`
    sets the system bar icon appearance and the window background colour.
@@ -236,6 +251,7 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
      `import/`) are delivered as the `external-launch-command` event (or held for `AndroidHost.TakeExternalLaunchCommand`
      at cold start); the page asks the user to confirm, then runs the command;
    - `crash/` and anything else is dropped; only the host itself sets `crash/...` after a renderer crash.
+   A `vrcx:` link the page navigates to (a link in a bio or description) is routed the same way.
 10. **Pickers and downloads.** `WebChromeClient.onShowFileChooser` (Photo Picker for `image/*`, SAF otherwise; always
     answer the callback, `null` on cancel). `AndroidHost.SaveFile` uses `ACTION_CREATE_DOCUMENT`.
 11. **Notifications.** Channel `vrcx_notifications` for VRCX desktop-style notifications (`electron.desktopNotification`,
@@ -247,8 +263,12 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 - Setting `AndroidHost.GetBackgroundMode/SetBackgroundMode`, **default on**, stored natively (`SharedPreferences`), shown
   in Settings → System where the PC shows "Close to tray".
 - On: `VrcxForegroundService` (type `specialUse`, subtype "keeps the VRChat connection and PC companion stream open")
-  runs while the app process is alive. Its notification shows the connection state and has Open and Quit actions
-  (the Android equivalent of the tray icon; `electron.setTrayIconNotification` sets a dot/"new activity" text on it).
+  runs while there is something to keep alive: a VRChat session the page reported (`AndroidHost.SetSessionActive`) or
+  a connected companion (`host/ServiceGovernor.kt`). It is started while the app is visible (Android 12+ refuses
+  background starts); while visible it stops at once when neither holds (logout), while hidden after a 90 s grace
+  (page reload, companion reconnect). Start on boot holds it for up to 3 min while the page logs in. Its notification
+  shows the connection state and has Open and Quit actions (the Android equivalent of the tray icon;
+  `electron.setTrayIconNotification` sets a dot/"new activity" text on it).
 - Battery-lean rules while in background mode:
   - no wake locks; JS timers only run while the device is awake for other reasons, such as network traffic;
   - the per-second PC-only and polling calls are answered inside the shim (§4.4 items 2–3), so a tick costs no native
@@ -285,12 +305,12 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 | Launch VRChat / Launch options / Start as desktop | `StartGame` fires the `vrchat://launch?...` intent only if an app resolves it; otherwise Launch is hidden. "Open in-game" is disabled (`canOpenInstanceInGame=false`), so self-invite is used. Crash relaunch and QuitFix are always off |
 | Registry backup, VRChat config.json, cache (AssetBundleManager), folders (VRC photos, Steam screenshots, VRCX/VRChat data, crash dumps) | Hidden (Tools marked `pcOnly`, settings rows gated) |
 | Screenshot helper (writes metadata into PC screenshots) | Hidden |
-| Screenshot Metadata tool | Ported over SAF: works on PNGs on the phone |
+| Screenshot Metadata tool | Ported over SAF: works on PNGs on the phone. Search and "last screenshot" read only the photos folder the user chose (`ChoosePhotosFolder` / `OpenVrcPhotosFolder`); no MediaStore fallback and no media permission |
 | Prints/stickers/emoji auto-save | Saved to MediaStore `Pictures/VRCX/<type>/<YYYY-MM>/` by default; an SAF folder can be chosen |
 | Desktop notifications, TTS | Android notifications and TextToSpeech. On the first Android run, `desktopToast` is seeded to `Always` if unset. Conditions needing VR/HMD state ("Inside VR", "Outside VR", "while AFK") are hidden |
 | Tray, start with OS, start minimized, GPU acceleration, updater, zoom | Hidden. Updates come from the APK distribution; `electron.getNoUpdater()` → `true` |
 | Proxy | Implemented (OkHttp + `ProxyController`); restart to apply |
-| Custom CSS/JS | `getExternalFilesDir(null)/custom.css` and `custom.js`; a Settings action reloads them |
+| Custom CSS/JS | `filesDir/custom/custom.css` and `custom.js`, imported with `AndroidHost.ImportCustomFile` (a custom.css in the old `getExternalFilesDir(null)` location is copied over once); a Settings action reloads them |
 | Import PC data | Settings → PC companion → "Import VRCX database": SAF pick `VRCX.sqlite3` (and optionally `VRCX.json`), integrity check, restart. "Export database" checkpoints WAL first. Backups exclude the database (it holds saved credentials) |
 | Request-invite platform | Unchanged (`standalonewindows`): the user joins on PC |
 
@@ -300,7 +320,8 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
   define, Chrome 120 CSS/JS targets, no `vr.html`, `outDir` `web/build/android/web`.
 - The Gradle module adds `../../web/build/android` as an extra assets directory, so the page ends up at APK asset path
   `web/index.html`. `GetVersion` is generated from `web/Version` into `BuildConfig.VRCX_VERSION`.
-- `gradlew assembleDebug` (or `assembleRelease`) in `android/` then builds the APK.
+- `gradlew assembleDebug` (or `assembleRelease`) in `android/` then builds the APK. Release APKs carry the
+  `arm64-v8a` and `armeabi-v7a` native libraries only; debug adds `x86_64` for the emulator.
 - The companion: `dotnet publish companion/VrcxCompanion -c Release -r win-x64 --no-self-contained
   -p:SelfContained=false -p:PublishSingleFile=true -o dist/companion` (the .NET 10 SDK treats
   `--self-contained false` as self-contained). The result is a ~0.9 MB exe that needs the .NET 8 Desktop Runtime.

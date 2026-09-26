@@ -12,6 +12,10 @@ import androidx.webkit.WebViewCompat
 import io.github.vrcxandroid.AppGraph
 import io.github.vrcxandroid.BuildConfig
 import io.github.vrcxandroid.R
+import io.github.vrcxandroid.bridge.appapi.AndroidAppApiPlatform
+import io.github.vrcxandroid.bridge.appapi.CustomFiles
+import io.github.vrcxandroid.bridge.appapi.PhotosFolder
+import io.github.vrcxandroid.host.ActivityPickers
 import io.github.vrcxandroid.host.AndroidHostServices
 import io.github.vrcxandroid.host.DatabaseImportFlow
 import io.github.vrcxandroid.host.HostFiles
@@ -27,6 +31,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.File
 
 /**
  * `AndroidHost` (docs/ARCHITECTURE.md §5.1): Android-only helpers reached through the normal bridge, plus the `Electron*`
@@ -90,6 +95,15 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
             host.backgroundMode = args.bool(0) ?: true
             jsonOf(host.backgroundMode)
         }
+        "SetSessionActive" -> {
+            VrcxHost.setSessionActive(args.bool(0) == true)
+            JsonNull
+        }
+        "GetStartOnBoot" -> jsonOf(VrcxHost.startOnBoot)
+        "SetStartOnBoot" -> {
+            VrcxHost.startOnBoot = args.bool(0) == true
+            jsonOf(VrcxHost.startOnBoot)
+        }
         "IsIgnoringBatteryOptimizations" -> jsonOf((host as? AndroidHostServices)?.isIgnoringBatteryOptimizations() == true)
         "RequestIgnoreBatteryOptimizations" -> {
             host.requestIgnoreBatteryOptimizations()
@@ -109,6 +123,15 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
             VrcxHost.showKeyboard()
             JsonNull
         }
+
+        // ---- launch commands that need confirmation (ARCHITECTURE.md §6.9) ----
+        "TakeExternalLaunchCommand" -> jsonOf(VrcxHost.takeExternalLaunchCommand())
+
+        // ---- custom CSS/JS and the photos folder ----
+        "ImportCustomFile" -> importCustomFile(args.str(0))
+        "RemoveCustomFile" -> jsonOf(removeCustomFile(args.str(0)))
+        "GetPhotosFolder" -> jsonOf(withContext(Dispatchers.IO) { PhotosFolder.displayName(context) })
+        "ChoosePhotosFolder" -> jsonOf(choosePhotosFolder())
 
         // ---- app ----
         "CanLaunchVRChat" -> jsonOf(host.canHandle(Intent(Intent.ACTION_VIEW, Uri.parse("vrchat://launch"))))
@@ -168,14 +191,63 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
     }
 
     /**
-     * electron.openFileDialog: SAF pick of a PNG, copied under filesDir/local/picked/ (docs/ARCHITECTURE.md §6.6).
-     * Resolves the absolute path, which AppApi file methods accept and the page can also use as `<img src>`; '' on
-     * cancel (ScreenshotMetadata.vue only treats '' as cancel).
+     * electron.openFileDialog (Screenshot Manager "Browse"): SAF pick of a PNG. Resolves the document's own
+     * `content://` URI, with the grant persisted (read, and write where the provider allows it), so the AppApi file
+     * methods work on the user's photo itself: deleting metadata edits the original, or fails (false) when the provider
+     * gave no write access. A photo inside the chosen photos folder is returned as a document of that folder, so
+     * previous/next walk it; any other photo has no previous/next. '' on cancel (ScreenshotMetadata.vue only treats ''
+     * as cancel).
      */
     private suspend fun openPngFile(): String {
-        val uri = host.pickDocument(listOf("image/png")) ?: return ""
+        withContext(Dispatchers.IO) { removeOldPickedCopies() }
+        val uri = ActivityPickers.openDocumentPersistable(listOf("image/png")) ?: return ""
+        return withContext(Dispatchers.IO) { PhotosFolder.mapIntoTree(context, uri).toString() }
+    }
+
+    /** Earlier versions copied picked PNGs to filesDir/local/picked/; nothing reads them any more. */
+    private fun removeOldPickedCopies() {
+        if (pickedCleaned) return
+        pickedCleaned = true
+        File(host.localRoot, OLD_PICKED_DIR).takeIf { it.isDirectory }?.deleteRecursively()
+    }
+
+    @Volatile
+    private var pickedCleaned = false
+
+    /** ImportCustomFile('css'|'js'): SAF pick, copied into filesDir/custom/ ([CustomFiles]). {ok, name}. */
+    private suspend fun importCustomFile(kind: String?): JsonElement {
+        val name = customFileName(kind)
+        // Any type: providers disagree on the MIME type of .css/.js files, and the user picks the file explicitly.
+        val uri = host.pickDocument(listOf("*/*")) ?: return customResult(false, "")
+        val shownName = withContext(Dispatchers.IO) {
+            val dir = AndroidAppApiPlatform.customDir(context)
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw DotNetException("FileNotFoundException", "Could not open the picked file.")
+            input.use { CustomFiles.install(dir, name, it) }
+            HostFiles.displayName(context, uri)?.takeIf { it.isNotBlank() } ?: name
+        }
+        return customResult(true, shownName)
+    }
+
+    private suspend fun removeCustomFile(kind: String?): Boolean {
+        val name = customFileName(kind)
+        return withContext(Dispatchers.IO) { CustomFiles.remove(AndroidAppApiPlatform.customDir(context), name) }
+    }
+
+    private fun customFileName(kind: String?): String = CustomFiles.nameFor(kind)
+        ?: throw DotNetException("ArgumentException", "Unknown custom file type '${kind.orEmpty().take(16)}'; expected 'css' or 'js'.")
+
+    private fun customResult(ok: Boolean, name: String): JsonObject = buildJsonObject {
+        put("ok", ok)
+        put("name", name)
+    }
+
+    /** ChoosePhotosFolder(): folder picker for the VRChat photos folder; its display name, or '' when cancelled. */
+    private suspend fun choosePhotosFolder(): String {
+        val tree = host.pickDirectory() ?: return ""
         return withContext(Dispatchers.IO) {
-            HostFiles.copyToLocal(context, uri, PICKED_DIR, "image.png").absolutePath
+            PhotosFolder.remember(PhotosFolder.prefs(context), tree)
+            PhotosFolder.displayName(context)
         }
     }
 
@@ -253,7 +325,7 @@ class AndroidHostModule(private val context: Context) : BridgeModule {
 
     companion object {
         private const val DEFAULT_DISCOVERY_MS = 3_000L
-        private const val PICKED_DIR = "picked"
+        private const val OLD_PICKED_DIR = "picked"
         private const val KEEP_ON_IMPORT = "import"
         private const val KEEP_ON_PAGE = "page"
 

@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- FileProvider roots (authority "${applicationId}.fileprovider", see host/HostFiles.kt): clipboard images, calendar
-     files, cached images and the files the page can display under filesDir/local. -->
+<!-- FileProvider roots (authority "${applicationId}.fileprovider", see host/HostFiles.kt): only the folders whose files
+     are handed to other apps (clipboard images, calendar files, cached images, screenshot copies) and the files the
+     page can display under filesDir/local. Never the whole cacheDir: it also holds the WebView's own caches. -->
 <paths>
-    <cache-path name="cache" path="." />
+    <cache-path name="clipboard" path="clipboard/" />
+    <cache-path name="share" path="share/" />
+    <cache-path name="images" path="ImageCache/" />
+    <cache-path name="screenshots" path="screenshot-mirror/" />
     <files-path name="local" path="local/" />
 </paths>
