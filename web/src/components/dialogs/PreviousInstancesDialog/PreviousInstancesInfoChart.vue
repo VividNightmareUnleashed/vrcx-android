@@ -23,10 +23,14 @@
     import { showUserDialog } from '../../../coordinators/userCoordinator';
     import InstanceActivityTooltip from '@/views/Charts/components/InstanceActivityTooltip.jsx';
     import { renderToHtml } from '@/lib/utils';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
+    import { formatInstanceChartLabel, getInstanceChartLayout } from './previousInstancesChartLayout';
 
     const { isDarkMode, dtHour12 } = storeToRefs(useAppearanceSettingsStore());
     const { currentUser } = storeToRefs(useUserStore());
     const { gameLogIsFriend, gameLogIsFavorite } = useGameLogStore();
+    // Phones: narrower label column and margins (always false in desktop builds).
+    const { isCompact } = useCompactLayout();
 
     const BAR_WIDTH = 12;
 
@@ -96,6 +100,12 @@
             }
         }
     );
+
+    watch(isCompact, () => {
+        if (echartsInstance) {
+            initEcharts();
+        }
+    });
 
     watch(
         () => props.chartData,
@@ -368,6 +378,7 @@
         };
 
         const format = dtHour12.value ? 'hh:mm A' : 'HH:mm';
+        const layout = getInstanceChartLayout(isCompact.value);
 
         const echartsOption = {
             tooltip: {
@@ -375,22 +386,15 @@
                 axisPointer: {
                     type: 'shadow'
                 },
-                formatter: getTooltip
+                formatter: getTooltip,
+                ...(layout.confineTooltip && { confine: true })
             },
-            grid: {
-                top: 50,
-                left: 160,
-                right: 90
-            },
+            grid: { ...layout.grid },
             yAxis: {
                 type: 'category',
                 axisLabel: {
                     interval: 0,
-                    formatter: (value) => {
-                        const MAX_LENGTH = 20;
-                        const len = value.length;
-                        return `${friendOrFavIcon(value)} ${len > MAX_LENGTH ? `${value.substring(0, MAX_LENGTH)}...` : value}`;
-                    }
+                    formatter: (value) => formatInstanceChartLabel(friendOrFavIcon(value), value, layout.labelMaxLength)
                 },
                 inverse: true,
                 data: uniqueUserEntries.map((item) => item.display_name),
