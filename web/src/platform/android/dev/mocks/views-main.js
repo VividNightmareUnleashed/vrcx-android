@@ -1,4 +1,4 @@
-// Preview harness data for route views group A: game log sessions
+// Preview harness data for the main route views: game log sessions
 // and table rows, the current instance's player list, notifications of several types, friend log and moderation
 // entries, search results and a dashboard. Dev only; see ../README.md for the hooks.
 //

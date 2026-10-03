@@ -94,7 +94,7 @@ export function appApi(method) {
  * @param {{ callDotNetMethod: Function }} api
  * @returns {{ callDotNetMethod: Function }}
  */
-export function wrapInteropForAudit(api) {
+export function wrapInteropForHost(api) {
     const previous = api.callDotNetMethod.bind(api);
     return {
         ...api,
@@ -108,7 +108,7 @@ export function wrapInteropForAudit(api) {
     };
 }
 
-// mockBridge assigns window.interopApi after the mocks are evaluated (and dialogs-b may replace it with a
+// mockBridge assigns window.interopApi after the mocks are evaluated (and dialogs-login.js may replace it with a
 // wrapper), so this wraps whatever is there once it exists, without reassigning the global.
 if (typeof window !== 'undefined') {
     let attempts = 0;
@@ -120,7 +120,7 @@ if (typeof window !== 'undefined') {
             return;
         }
         clearInterval(timer);
-        api.callDotNetMethod = wrapInteropForAudit(api).callDotNetMethod;
+        api.callDotNetMethod = wrapInteropForHost(api).callDotNetMethod;
         window.__vrcxDev = Object.assign(window.__vrcxDev ?? {}, {
             hostState,
             external(command) {

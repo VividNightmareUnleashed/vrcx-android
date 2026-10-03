@@ -6,7 +6,7 @@ import {
     webApi,
     wrapInteropForLaunch,
     wrapInteropForLogin
-} from '../dialogs-b.js';
+} from '../dialogs-login.js';
 
 // Preview-harness login modes (?login=0 / ?login=saved) and invite message fixtures.
 function fakeApi() {

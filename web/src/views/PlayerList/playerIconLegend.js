@@ -3,15 +3,15 @@
 
 /** Same order and icons as the icon column in columns.jsx. */
 export const PLAYER_ICON_LEGEND = Object.freeze([
-    { key: 'isMaster', icon: '👑', labelKey: 'android.views_a.player_icons.master' },
-    { key: 'isModerator', icon: '⚔️', labelKey: 'android.views_a.player_icons.moderator' },
-    { key: 'isFriend', icon: '💚', labelKey: 'android.views_a.player_icons.friend' },
-    { key: 'isBlocked', icon: '⛔', labelKey: 'android.views_a.player_icons.blocked' },
-    { key: 'isMuted', icon: '🔇', labelKey: 'android.views_a.player_icons.muted' },
-    { key: 'isAvatarInteractionDisabled', icon: '🚫', labelKey: 'android.views_a.player_icons.avatar_interaction' },
-    { key: 'isChatBoxMuted', icon: '💬', labelKey: 'android.views_a.player_icons.chatbox_muted' },
-    { key: 'timeoutTime', icon: '🔴', labelKey: 'android.views_a.player_icons.timeout' },
-    { key: 'ageVerified', icon: '', labelKey: 'android.views_a.player_icons.age_verified' }
+    { key: 'isMaster', icon: '👑', labelKey: 'android.main_views.player_icons.master' },
+    { key: 'isModerator', icon: '⚔️', labelKey: 'android.main_views.player_icons.moderator' },
+    { key: 'isFriend', icon: '💚', labelKey: 'android.main_views.player_icons.friend' },
+    { key: 'isBlocked', icon: '⛔', labelKey: 'android.main_views.player_icons.blocked' },
+    { key: 'isMuted', icon: '🔇', labelKey: 'android.main_views.player_icons.muted' },
+    { key: 'isAvatarInteractionDisabled', icon: '🚫', labelKey: 'android.main_views.player_icons.avatar_interaction' },
+    { key: 'isChatBoxMuted', icon: '💬', labelKey: 'android.main_views.player_icons.chatbox_muted' },
+    { key: 'timeoutTime', icon: '🔴', labelKey: 'android.main_views.player_icons.timeout' },
+    { key: 'ageVerified', icon: '', labelKey: 'android.main_views.player_icons.age_verified' }
 ]);
 
 /**

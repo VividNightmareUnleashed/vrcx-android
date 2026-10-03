@@ -4,7 +4,7 @@
 // Query parameters:
 //   gamestart=<s>  VRChat is reported running only <s> seconds after the page loaded, as when the PC companion
 //                  connects after start-up (AppApiElectron.IsGameRunning answers false until then). The player list is
-//                  then rebuilt when the start arrives. Use more than 60 s to see it without the views-a mock's own
+//                  then rebuilt when the start arrives. Use more than 60 s to see it without the views-main mock's own
 //                  reload, which gives up after a minute.
 //   freshlaunch=1  The VRChat API reports the preview user offline, as right after VRChat was launched: with
 //                  gamestart, the start must not restore the last logged instance (the Player List stays empty).

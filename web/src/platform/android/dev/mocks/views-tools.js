@@ -1,4 +1,4 @@
-// Preview harness data for route views group B: Favorites, My Avatars, Charts,
+// Preview harness data for these route views: Favorites, My Avatars, Charts,
 // Tools (Gallery, group calendar) and Settings. Dev only; loaded by ../mockBridge.js through its mocks/*.js hooks.
 //
 // Every id is made up (usr_/wrld_/avtr_/grp_/file_/prn_/cal_ 00000000-... ranges), every image is a local SVG, and

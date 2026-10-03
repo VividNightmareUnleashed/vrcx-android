@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import enViewsA from '../../../platform/android/i18n/en.views-a.json';
+import enMainViews from '../../../platform/android/i18n/en.main-views.json';
 import { PLAYER_ICON_LEGEND, getPlayerIconLegend } from '../playerIconLegend';
 
 function lookup(messages, path) {
@@ -34,7 +34,7 @@ describe('player list icon legend', () => {
 
     test('every legend label has an Android string', () => {
         for (const entry of PLAYER_ICON_LEGEND) {
-            expect(typeof lookup(enViewsA, entry.labelKey)).toBe('string');
+            expect(typeof lookup(enMainViews, entry.labelKey)).toBe('string');
         }
     });
 });

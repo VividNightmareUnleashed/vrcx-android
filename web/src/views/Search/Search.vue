@@ -33,7 +33,7 @@
                         size="icon"
                         variant="outline"
                         data-testid="search-submit"
-                        :aria-label="t('android.views_a.search')"
+                        :aria-label="t('android.main_views.search')"
                         @click="search">
                         <SearchIcon />
                     </Button>

@@ -8,7 +8,7 @@ Differential test data for the Kotlin port of upstream `Dotnet/LogWatcher.cs`
 | `scenarios/*.txt` | Scenario scripts (DSL below), run both by the .NET harness and by `ScenarioRunner.kt` |
 | `fixtures/*.bin` | Raw log bytes used by `write` commands (`binary` in `.gitattributes`: CRLF, BOMs and malformed UTF-8 must survive) |
 | `expected/*.txt` | Reports printed by the .NET harness, i.e. upstream's output; `GoldenScenarioTest` requires the Kotlin report to be identical |
-| `spec-15.2.txt` | The expected output of fixture 1 and phases 1-5, verbatim (`SpecGoldenTest`) |
+| `fixture1-expected.txt` | The expected output of fixture 1 and phases 1-5, verbatim (`Fixture1ExpectedTest`) |
 | `fixtures/golden-fixture1.bin` | Fixture 1, the log written by the `golden-15` scenarios, byte for byte |
 | `probes/` | .NET 10 behaviour probes: JSON escaping (including lone surrogates, `S <units>` rows), `StreamReader` UTF-8 decoding, strict date parsing and `ToUniversalTime`, `DateTime.Parse` for `SetDateTill`, culture `StartsWith`, Windows to IANA zone ids, DST transitions of 16 zones (2020-2026) |
 
@@ -26,7 +26,7 @@ record is printed with `JsonSerializer.Serialize`; records whose timestamp is th
 `holdtail` makes the harness write only complete lines to disk and keep an unterminated tail until `final`, or until a
 newer file is created: that is exactly the port's deliberate partial-line rule, so the
 upstream output of such a scenario is what the port must produce. `golden-15-verbatim` shows upstream without it
-(the split location of phase 2); it is only compared with `spec-15.2.txt`, not with the port.
+(the split location of phase 2); it is only compared with `fixture1-expected.txt`, not with the port.
 
 ## Scenario DSL
 

@@ -7,9 +7,9 @@ import {
     previousInstanceRows,
     sqlite,
     webApi
-} from '../fixes.js';
+} from '../late-companion.js';
 
-// mockBridge.js loads every mock; fake timers keep their start-up timers (views-a.js) from running here.
+// mockBridge.js loads every mock; fake timers keep their start-up timers (views-main.js) from running here.
 vi.useFakeTimers();
 globalThis.VERSION = 'preview';
 const { createAppApi } = await import('../../mockBridge.js');

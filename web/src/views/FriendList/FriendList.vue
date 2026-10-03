@@ -34,7 +34,7 @@
                                         size="icon-sm"
                                         class="shrink-0 pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:-inset-1"
                                         data-testid="friend-list-more"
-                                        :aria-label="t('android.views_a.more_actions')">
+                                        :aria-label="t('android.main_views.more_actions')">
                                         <Loader2 v-if="isMutualFetching" class="animate-spin" />
                                         <EllipsisVertical v-else />
                                     </Button>

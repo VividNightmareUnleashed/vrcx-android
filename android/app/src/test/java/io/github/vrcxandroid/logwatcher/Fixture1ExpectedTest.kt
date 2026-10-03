@@ -6,14 +6,14 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * The golden vectors in test resource logwatcher/spec-15.2.txt: the expected output for fixture 1 and phases 1-5
+ * The golden vectors in test resource logwatcher/fixture1-expected.txt: the expected output for fixture 1 and phases 1-5
  * (scenario golden-15).
  *
  * Two things differ by design: the `<NOW>` timestamp, and phases 2/3, where the port holds
  * the unterminated `Joining wrld_split:123~priv` back in phase 2 and emits the whole location in phase 3 (so
  * VrcClosedGracefully is still true after phase 2).
  */
-class SpecGoldenTest {
+class Fixture1ExpectedTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
@@ -67,12 +67,12 @@ class SpecGoldenTest {
     @Test
     fun harnessReproducesTheSpecVectors() {
         // The .NET harness run of the verbatim scenario is the spec block, record for record.
-        assertEquals(parseSpec(Resources.text("spec-15.2.txt")), parseReport(Resources.text("expected/golden-15-verbatim.txt")))
+        assertEquals(parseSpec(Resources.text("fixture1-expected.txt")), parseReport(Resources.text("expected/golden-15-verbatim.txt")))
     }
 
     @Test
     fun kotlinPortMatchesTheSpecVectors() {
-        val spec = parseSpec(Resources.text("spec-15.2.txt"))
+        val spec = parseSpec(Resources.text("fixture1-expected.txt"))
         val kotlin = parseReport(ScenarioRunner(tmp.newFolder()).run(Resources.text("scenarios/golden-15.txt")))
         assertEquals(5, spec.size)
         assertEquals(5, kotlin.size)

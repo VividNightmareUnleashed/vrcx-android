@@ -10,7 +10,7 @@ import { getAndroidMessages } from '../i18n';
 
 // Android strings for the dialogs, onboarding, Login and the phone shell: new android.* keys plus overrides of
 // upstream wording that assumes a mouse or a keyboard (docs/DESIGN.md §3.3).
-const files = import.meta.glob('../i18n/*.dialogs-b.json', { eager: true, import: 'default' });
+const files = import.meta.glob('../i18n/*.dialogs.json', { eager: true, import: 'default' });
 const upstream = import.meta.glob('../../../localization/*.json', { eager: true, import: 'default' });
 
 function lookup(messages, path) {
@@ -25,10 +25,10 @@ function leafPaths(node, prefix = '') {
 }
 
 function localeOf(file) {
-    return file.split('/').pop().replace('.dialogs-b.json', '');
+    return file.split('/').pop().replace('.dialogs.json', '');
 }
 
-describe('dialogs-b Android strings', () => {
+describe('Android dialog strings', () => {
     test('every override replaces an existing upstream string of the same locale', () => {
         const stale = [];
         for (const [file, messages] of Object.entries(files)) {
@@ -72,7 +72,7 @@ describe('dialogs-b Android strings', () => {
     });
 
     test('the English file has every android.* key the dialogs use', () => {
-        const en = files['../i18n/en.dialogs-b.json'];
+        const en = files['../i18n/en.dialogs.json'];
         const keys = [...customNavDialog.matchAll(/['"`](android\.[a-z_]+(?:\.[a-z_]+)+)['"`]/g)].map(([, key]) => key);
         expect(keys.length).toBeGreaterThan(0);
         for (const key of keys) {

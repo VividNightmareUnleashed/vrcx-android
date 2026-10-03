@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import en from '../../i18n/en.dialogs-b.json';
+import en from '../../i18n/en.dialogs.json';
 import { DOCK_LABEL_MAX_EM, estimateLabelEm, getDockLabel, shortenDockLabel } from '../shellNav';
 
 // Dock labels (docs/DESIGN.md §2.1): long nav titles use a short label or end at a word boundary, never "Friends Lo…".

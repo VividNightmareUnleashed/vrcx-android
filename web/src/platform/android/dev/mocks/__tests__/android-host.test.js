@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test, vi } from 'vitest';
 
 // The preview harness's fake AndroidHost methods for session state, launch commands, custom files, start on boot and
-// the photos folder (mocks/audit.js).
+// the photos folder (mocks/android-host.js).
 // Fake timers before the import: the module waits for window.interopApi with an interval.
 vi.useFakeTimers();
 window.interopApi = { callDotNetMethod: vi.fn(async () => null) };
-const { androidHost, appApi, hostState, wrapInteropForAudit } = await import('../audit.js');
+const { androidHost, appApi, hostState, wrapInteropForHost } = await import('../android-host.js');
 vi.advanceTimersByTime(1);
 
 afterAll(() => {
@@ -22,7 +22,7 @@ function freshState() {
     };
 }
 
-describe('harness AndroidHost (audit)', () => {
+describe('harness AndroidHost', () => {
     test('keeps the session flag and hands out a held launch command once', () => {
         const state = freshState();
         const info = vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -61,7 +61,7 @@ describe('harness AndroidHost (audit)', () => {
 
     test('the interop wrapper answers AndroidHost first and passes everything else on', async () => {
         const api = { callDotNetMethod: vi.fn(async () => 'default') };
-        const wrapped = wrapInteropForAudit(api);
+        const wrapped = wrapInteropForHost(api);
         hostState.startOnBoot = true;
         await expect(wrapped.callDotNetMethod('AndroidHost', 'GetStartOnBoot', [])).resolves.toBe(true);
         await expect(wrapped.callDotNetMethod('AndroidHost', 'CompanionGetState', [])).resolves.toBe('default');

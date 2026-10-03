@@ -1,6 +1,6 @@
 {
     "android": {
-        "views_a": {
+        "main_views": {
             "more_actions": "More actions",
             "date_range": "Date range",
             "search": "Search",

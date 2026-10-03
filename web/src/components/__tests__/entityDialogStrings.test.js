@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
-import strings from '../../platform/android/i18n/en.dialogs-a.json';
+import strings from '../../platform/android/i18n/en.entity-dialogs.json';
 
 import instanceActionBar from '../InstanceActionBar.vue?raw';
 import userActionMenuButton from '../UserActionMenuButton.vue?raw';
 
-// Android-only strings of the entity dialogs live in platform/android/i18n/en.dialogs-a.json.
+// Android-only strings of the entity dialogs live in platform/android/i18n/en.entity-dialogs.json.
 const sources = { instanceActionBar, userActionMenuButton };
 
 /**

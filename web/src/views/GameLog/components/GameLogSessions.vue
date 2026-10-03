@@ -29,14 +29,14 @@
                     <Star fill="currentColor" v-if="sessionsVipFilter" />
                     <Star v-else />
                 </Toggle>
-                <ResponsivePopover v-model:open="datePopoverOpen" :title="t('android.views_a.date_range')">
+                <ResponsivePopover v-model:open="datePopoverOpen" :title="t('android.main_views.date_range')">
                     <template #trigger>
                         <Button
                             variant="outline"
                             size="sm"
                             class="h-8 shrink-0 gap-1 px-2"
                             :class="hasDateFilter && 'bg-accent text-accent-foreground'"
-                            :ariaLabel="t('android.views_a.date_range')">
+                            :ariaLabel="t('android.main_views.date_range')">
                             <CalendarRange class="size-4" />
                             <Badge
                                 v-if="hasDateFilter"

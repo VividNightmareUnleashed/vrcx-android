@@ -128,9 +128,9 @@ describe('Player List in the phone layout', () => {
         const legend = wrapper.find('[data-testid="player-icon-legend"]');
 
         expect(legend.exists()).toBe(true);
-        expect(legend.text()).toContain('android.views_a.player_icons.friend');
-        expect(legend.text()).toContain('android.views_a.player_icons.chatbox_muted');
-        expect(legend.text()).not.toContain('android.views_a.player_icons.master');
+        expect(legend.text()).toContain('android.main_views.player_icons.friend');
+        expect(legend.text()).toContain('android.main_views.player_icons.chatbox_muted');
+        expect(legend.text()).not.toContain('android.main_views.player_icons.master');
     });
 
     test('PC keeps its header, auto-height table and no legend', () => {

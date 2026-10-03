@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { createI18n } from 'vue-i18n';
 
 import en from '../../../localization/en.json';
-import enAudit from '../i18n/en.audit.json';
+import enHost from '../i18n/en.host.json';
 import { getAndroidMessages } from '../i18n/index.js';
 
 import launchCommands from '../launchCommands.js?raw';
@@ -11,7 +11,7 @@ import photosFolderHint from '../components/PhotosFolderHint.vue?raw';
 import tools from '../../../shared/constants/tools.js?raw';
 
 // Strings for launch commands, start on boot, custom files and the photos folder
-// (web/src/platform/android/i18n/en.audit.json).
+// (web/src/platform/android/i18n/en.host.json).
 const sources = { launchCommands, photosFolder, photosFolderHint, tools };
 
 function lookup(messages, path) {
@@ -50,11 +50,11 @@ describe('launch command, boot, custom file and photos folder strings', () => {
     });
 
     test('overrides only replace upstream strings, and are not overridden by another Android file', () => {
-        const overrides = leaves({ view: enAudit.view });
+        const overrides = leaves({ view: enHost.view });
         expect(overrides.length).toBeGreaterThan(0);
         for (const path of overrides) {
             expect(typeof lookup(en, path), path).toBe('string');
-            expect(lookup(enAndroid, path), path).toBe(lookup(enAudit, path));
+            expect(lookup(enAndroid, path), path).toBe(lookup(enHost, path));
         }
     });
 
@@ -82,7 +82,7 @@ describe('launch command, boot, custom file and photos folder strings', () => {
             file: 'custom.css',
             message: 'x'
         };
-        for (const path of leaves(enAudit)) {
+        for (const path of leaves(enHost)) {
             const text = i18n.global.t(path, params);
             expect(text, path).not.toBe(path);
             expect(text, path).not.toMatch(/\{\w+\}/);

@@ -75,7 +75,7 @@ from a hook to fall through to the defaults (the next module's hook, then `mockB
 
 `appApi` answers `AppApiElectron` calls: `method` is the method name (for example `IsGameRunning`), `args` the
 argument array, and the return value is what the call resolves to (a Promise is fine). The mocks document their own
-query parameters in their file header; for example `mocks/fixes.js` has `gamestart=<seconds>`, which reports VRChat
+query parameters in their file header; for example `mocks/late-companion.js` has `gamestart=<seconds>`, which reports VRChat
 running only after that delay, as when the PC companion connects after start-up, and `freshlaunch=1`, which makes the
 VRChat API report the preview user offline, as right after a launch (the start must then leave the Player List empty).
 
