@@ -4,12 +4,16 @@
 
 A native Android companion app for VRChat social tracking, alerts, world browsing, and account utilities.
 
-[![Latest Release](https://img.shields.io/github/v/release/VividNightmareUnleashed/vrcx-android?label=latest)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest)
+[![Release](https://img.shields.io/badge/release-1.7.0-blue)](https://github.com/VividNightmareUnleashed/vrcx-android/releases/tag/v1.7.0)
 [![VirusTotal Scan](https://img.shields.io/badge/VirusTotal-1.7.0%20scan-394EFF?logo=virustotal&logoColor=white)](https://www.virustotal.com/gui/file/1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](https://developer.android.com/compose)
 
 </div>
+
+> [!NOTE]
+> This branch is the 1.x app, kept for reference and no longer updated. VRCX Android 2.0 on the
+> [main branch](https://github.com/VividNightmareUnleashed/vrcx-android) replaces it and installs over 1.7.0.
 
 ## What is this?
 
@@ -46,19 +50,19 @@ This is a companion app, not a replacement for the VRChat game client. It helps 
 
 ## Download
 
-Download the latest APK from [GitHub Releases](https://github.com/VividNightmareUnleashed/vrcx-android/releases/latest).
+The last 1.x APK is attached to the [1.7.0 release](https://github.com/VividNightmareUnleashed/vrcx-android/releases/tag/v1.7.0).
 
 Requirements:
 
 - Android 8.0 or newer, API 26+
 - A VRChat account
 
-Current signed release integrity:
+To check the 1.7.0 download:
 
 - APK: `vrcx-android-1.7.0.apk`
 - SHA-256: `1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1`
 - VirusTotal: [public report](https://www.virustotal.com/gui/file/1c559a6b71ff6c19a6bdf73d5cadba3255b47ca4b481c8e0f3745cb6229e38d1)
-- Last analysis: 2026-08-30, with 0 malicious and 0 suspicious detections in the release evidence
+- Scanned on 2026-08-30: 0 malicious and 0 suspicious detections
 
 ## Build from source
 
@@ -103,15 +107,14 @@ app/build/outputs/versioned-apk/debug/vrcx-android-<version>.apk
 
 Spotless with ktlint enforces formatting, detekt performs Kotlin static analysis,
 Kover enforces a 56% debug line-coverage floor, and Android lint treats
-deterministic warnings as errors. Dependency and target-SDK availability checks
-remain advisory because they change independently of the source tree.
-The checked-in Detekt baselines are a ledger of existing debt; CI rejects new
-findings and baseline-ID additions while allowing debt entries to be removed.
-Regenerate them only after every unbaselined finding has been resolved.
+deterministic warnings as errors. The checks for newer dependencies and target
+SDKs only warn, since new versions come out whatever the code does.
+Both Detekt baselines are empty. CI fails on new findings and on new baseline
+entries; removing entries is allowed.
 
 ### Release builds
 
-Release signing is driven by environment variables. Generate your own local keystore:
+Release signing reads its settings from environment variables. Generate your own keystore:
 
 ```bash
 keytool -genkeypair -v -keystore release-keystore.jks \
@@ -119,27 +122,15 @@ keytool -genkeypair -v -keystore release-keystore.jks \
   -alias vrcx-android -storepass YOUR_PASSWORD -keypass YOUR_PASSWORD
 ```
 
-Create a local `.env` from `.env.example`:
+Then set the password and build the signed release:
 
 ```bash
-VRCX_KEYSTORE_PASSWORD=YOUR_PASSWORD
-VRCX_KEY_ALIAS=vrcx-android
-VIRUSTOTAL_API_KEY=YOUR_VIRUSTOTAL_API_KEY
-```
-
-Then build the signed release:
-
-```bash
+export VRCX_KEYSTORE_PASSWORD=YOUR_PASSWORD
 ./gradlew assembleRelease
 ```
 
-For release publishing evidence, run:
-
-```bash
-python scripts/release_sign_and_scan.py
-```
-
-The script signs the APK, verifies it with `apksigner`, computes SHA-256, queries or uploads to VirusTotal, and writes JSON plus Markdown evidence under `build/release-evidence/`. Do not commit `.env`, keystores, passwords, API keys, or machine-specific paths.
+`VRCX_KEYSTORE_FILE` and `VRCX_KEY_ALIAS` point the build at another keystore or alias than
+`release-keystore.jks` and `vrcx-android`. Do not commit keystores or passwords.
 
 ## Architecture
 
