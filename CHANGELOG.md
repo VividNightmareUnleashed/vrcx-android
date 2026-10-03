@@ -2,104 +2,103 @@
 
 ## [1.7.0] - 2026-08-30
 
-A reliability and maintainability release. There are no new screens or major
-workflows this time; the focus is making login, account switching, background
-sync, uploads, and saved sessions stay correct when several things happen at
-once. The large internal owners behind those flows were also split into smaller,
-testable pieces, and the checked-in Detekt baseline debt was cleared.
+A reliability release. There are no new screens this time; the work went into
+keeping login, account switching, background sync, uploads and saved sessions
+correct when several things happen at once. The largest classes behind those
+flows were also split into smaller ones, and the Detekt baselines are now empty.
 
 ### Fixed
 
-- **Old account work could land in a new session** — A session recheck, cookie
+- **Old account work could land in a new session.** A session recheck, cookie
   response, friend event, notification write, or gallery upload that started
-  before logout or an account switch could finish afterwards and publish into
-  the new account. Session generations and account tokens now cover each whole
-  operation, so stale work is cancelled or discarded before it can change
-  cookies, lists, activity history, or system notifications.
-- **Overlapping sign-ins could share the wrong credentials** — The temporary
-  Basic-auth header used for password login lived on the shared API client. A
-  concurrent request or a second login attempt could therefore borrow or
-  replace it. Credentials now belong only to the individual login request, and
-  auth transitions are serialized so an older result cannot overwrite a newer
-  login, logout, or two-factor challenge.
-- **Saved-login failures could crash startup or erase the recovery path** —
-  Keystore, encrypted-file, and credential-migration failures could escape the
-  login flow, while unreadable data risked being replaced before the app knew
-  whether it was safe. Storage failures are now explicit UI outcomes,
-  authenticated replacements are committed atomically, and logout verifies
-  that every durable copy was removed.
-- **Real-time bursts could consume memory or stop all further updates** — The
-  WebSocket accepted an unlimited frame backlog, and a wrong-shaped event type
-  could terminate its only frame processor outside the existing malformed-JSON
-  guard. Frames are now bounded by both count and bytes; malformed frames are
-  contained, and an oversized or saturated stream requests an ordered state
-  recovery instead of silently losing synchronization.
-- **Friend state could move backwards during refresh and recovery** — A live
-  location, offline, or removal event could race an older friend snapshot and
-  then be undone, or continue writing activity after its account was gone.
-  Snapshots and live transitions now share one ordering policy, and all related
-  cache, history, and notification side effects stop together when their
-  account becomes stale.
-- **Notification repair could restore another account's inbox** — Delayed
-  persistence and resynchronization work could outlive the account that
-  scheduled it. Notification mutations, storage retries, and authoritative
-  repairs are now account-bound; a dropped or failed background mutation write
-  schedules an authoritative repair without displacing newer inbox state.
-- **Refreshes could undo newer group membership events** — An older group
+  before logout or an account switch could finish afterwards and write into
+  the new account. Each of them now checks that its account is still the
+  current one, so late work is cancelled or dropped before it can change
+  cookies, lists, activity history or system notifications.
+- **Overlapping sign-ins could share the wrong credentials.** The temporary
+  Basic-auth header for password login lived on the shared API client, so a
+  concurrent request or a second login attempt could borrow or replace it. The
+  header now belongs to the login request alone, and sign-in, sign-out and
+  two-factor steps run one at a time, so an older result can't overwrite a
+  newer one.
+- **Saved-login failures could crash startup or erase the recovery path.**
+  Keystore, encrypted-file and credential-migration errors could escape the
+  login screen, and data that couldn't be read risked being overwritten before
+  the app knew whether that was safe. The app now shows these errors, replaces
+  saved credentials in one atomic write, and checks on logout that every copy
+  is gone.
+- **Real-time bursts could use up memory or stop all further updates.** The
+  WebSocket queued an unlimited number of frames, and an event of an
+  unexpected type could stop its only frame processor, outside the check for
+  malformed JSON. The queue now has a limit in frames and in bytes, malformed
+  frames are skipped, and a stream that overflows triggers a full refresh
+  instead of silently falling out of sync.
+- **Friend state could move backwards during refresh and recovery.** A live
+  location, offline or removal event could race an older friend list and then
+  be undone, or keep writing activity after its account was gone. Fetched
+  lists and live events now go through one ordering, and the cache, history
+  and notification updates that follow them stop together once their account
+  is no longer current.
+- **Notification repair could restore another account's inbox.** Delayed
+  writes and resyncs could outlive the account that started them. Notification
+  changes, storage retries and full resyncs are now tied to their account, and
+  a background write that was dropped or failed schedules a full resync
+  without replacing newer inbox state.
+- **Refreshes could undo newer group membership events.** An older group
   request could finish after a live join or leave event and put the previous
   membership state back. Group updates are now ordered per group while
   unrelated groups can still update independently.
-- **Screenshot metadata parsing could fail open** — If the platform refused an
-  XML hardening option, parsing continued anyway, and crafted XMP could attempt
-  entity or document-type processing. The reader now uses a hardened pull
-  parser, rejects declarations and entity references, and caps retained PNG
-  metadata before parsing it.
-- **Extreme rate-limit headers could overflow** — An out-of-range
+- **Screenshot metadata parsing could fail open.** If the platform refused one of
+  the XML parser's safety options, parsing continued anyway, and crafted XMP
+  could attempt entity or document-type processing. The reader now uses a
+  locked-down pull parser, rejects declarations and entity references, and
+  caps the PNG metadata it keeps before parsing it.
+- **Extreme rate-limit headers could overflow.** An out-of-range
   `Retry-After` value could wrap while being converted to milliseconds. Invalid
   values now use the normal fallback and valid delays are capped at the app's
   two-second retry ceiling.
-- **Background startup could act on placeholder settings** — Service startup
+- **Background startup could act on placeholder settings.** Service startup
   could decide whether to reconnect before DataStore had answered, briefly
-  treating defaults as the user's real notification and background-service
-  choices. Startup now remains undecided until the persisted policy is known
-  and fails closed if it cannot be read.
+  treating the defaults as your real notification and background-service
+  choices. Startup now waits for the saved settings, and does not reconnect
+  if they can't be read.
 
 ### Improved
 
-- **Safer uploads and protected media** — Upload buffering is bounded even when
-  a content provider reports a false size, decoded content determines the
-  actual upload type, and a file selection or account change invalidates
-  preparation before bytes are sent. A successful upload also remains
-  successful when only its follow-up refresh fails.
-- **More coherent screen state during overlapping work** — Notifications,
-  Group Detail, Search, Friends Roster, and profile actions now publish related
-  filters, rows, counts, dialogs, progress, and errors from cohesive snapshots.
-  A late completion can no longer close a newer dialog, clear a newer error, or
-  leave loading stuck after cancellation.
-- **More predictable real-time recovery** — A detected stream gap checks that
-  the same session still owns the connection, then reconciles independent data
-  owners concurrently with capped backoff. One failed owner no longer prevents
-  the others from becoming current.
+- **Safer uploads.** Upload buffering is limited even when a content provider
+  reports a false size, the upload type comes from the decoded content, and
+  picking another file or switching accounts cancels a prepared upload before
+  anything is sent. A successful upload also stays successful when only the
+  refresh after it fails.
+- **Screens stay consistent during overlapping work.** Notifications, Group
+  Detail, Search, Friends Roster and profile actions now update their filters,
+  rows, counts, dialogs, progress and errors together. A late result can no
+  longer close a newer dialog, clear a newer error, or leave a spinner running
+  after cancellation.
+- **More predictable real-time recovery.** When the app notices it missed
+  real-time messages, it checks that the same session still owns the
+  connection, then refreshes friends, notifications and the other data in
+  parallel with a capped backoff. One failed refresh no longer holds the others
+  back.
 
 ### Under the hood
 
 - **Secure storage now uses platform Keystore and AES-GCM.** The deprecated
-  AndroidX encrypted-file format remains as read-only migration support, and
-  successful reads migrate atomically. Backup and device-transfer rules now
-  exclude the legacy keyset plus every primary, backup, and pending secrets
-  file because those keys cannot be restored on another device.
-- **Large owners were split by responsibility.** Authentication, cookies,
+  AndroidX encrypted-file format is still read, only to migrate it, and a
+  successful read is migrated in one atomic write. Backup and device transfer
+  now leave out the old keyset and every primary, backup and pending secrets
+  file, because those keys can't be restored on another device.
+- **The largest classes were split up.** Authentication, cookies,
   preferences, friend events, notifications, Gallery, groups, the WebSocket
-  service, screenshot parsing, and the largest Compose routes now delegate to
-  focused state, storage, loading, mutation, and presentation collaborators.
-  Shared decisions have one owner instead of being repeated across screens or
-  repositories.
-- **Detekt baseline debt is now zero.** Both production and test baselines are
-  empty. Spotless, Detekt, baseline-growth protection, Android lint with
-  deterministic warnings as errors, and a 56% Kover coverage floor run in CI
-  so new baseline debt cannot quietly replace the old ledger.
-- **The debug unit suite grew from 398 to 589 tests**, with deterministic race
-  coverage for auth transitions, cookie generations, account-scoped friend and
+  service, screenshot parsing and the largest screens now hand their state,
+  storage, loading and updates to smaller classes. Logic that several screens
+  or repositories used to repeat now lives in one place.
+- **The Detekt baselines are empty**, both the production and the test one.
+  CI runs Spotless, Detekt, a check that the baselines don't grow,
+  Android lint with warnings as errors, and a 56% Kover coverage floor, so new
+  findings fail the build instead of joining a baseline.
+- **The debug unit suite grew from 398 to 589 tests**, with tests for races in
+  auth transitions, cookie generations, account-scoped friend and
   notification work, secure-storage recovery, bounded WebSocket input, uploads,
   refresh/action overlap, and cancellation.
 
@@ -107,7 +106,7 @@ testable pieces, and the checked-in Detekt baseline debt was cleared.
 
 ### New
 
-- **Control over uncategorised notifications** — Settings gains an "Other
+- **Control over uncategorised notifications.** Settings gains an "Other
   Notifications" switch alongside Invites and Friend Requests. VRChat
   occasionally sends notification types the app doesn't recognise, and those
   previously reached your notification shade regardless of your preferences,
@@ -116,132 +115,132 @@ testable pieces, and the checked-in Detekt baseline debt was cleared.
 
 ### Improved
 
-- **Smoother lists and less stutter** — Filtering, sorting and merging for the
+- **Smoother lists and less stutter.** Filtering, sorting and merging for the
   friends list, feed, activity history, charts and search all ran on the UI
   thread, so large accounts saw dropped frames while scrolling or typing. That
   work now happens off the UI thread.
-- **Faster image loading** — Every avatar and image request performed a hash,
+- **Faster image loading.** Every avatar and image request performed a hash,
   string formatting and several file checks on the UI thread before the image
   could even start loading. That probe moved off the UI thread and got
   considerably cheaper, so busy screens settle sooner.
-- **Friends Locations scrolls properly** — Each world group was built in full
+- **Friends Locations scrolls properly.** Each world group was built in full
   the moment it came into view, including every avatar in it, and the offline
-  group is unbounded — so opening the screen with a large friends list stalled
+  group is unbounded, so opening the screen with a large friends list stalled
   and fired every image request at once. Rows are now built as you reach them.
-- **Activity history and feed refresh cost less** — Inserting a single row
+- **Activity history and feed refresh cost less.** Inserting a single row
   re-sorted and re-parsed the entire merged feed, several times over, for every
   screen listening to it. The merge now happens once, in the database.
 
 ### Fixed
 
-- **A saved login could be destroyed rather than reused** — If the encrypted
-  credential store couldn't be read on a given launch — a corrupt file, or a
-  key invalidated by a lock-screen change — the app treated it as "nothing
+- **A saved login could be destroyed rather than reused.** If the encrypted
+  credential store couldn't be read on a given launch (a corrupt file, or a
+  key invalidated by a lock-screen change), the app treated it as "nothing
   saved" and the next write erased what was actually there. Separately, a
   failed write was recorded as though it had succeeded, so it was never retried
   and the error surfaced as a failed request instead. Both presented the same
   way: an unexplained sign-out with no way back except signing in again. The
   app now tells "empty" apart from "unreadable" and refuses to overwrite what
   it couldn't read.
-- **Signing out left your password on the device** — Sign out cleared the
+- **Signing out left your password on the device.** Sign out cleared the
   session but never removed saved credentials, despite the Settings screen
-  saying otherwise. It now removes them. An involuntary session end — VRChat
-  rejecting the session while you're away — still keeps them, so "remember me"
+  saying otherwise. It now removes them. An involuntary session end (VRChat
+  rejecting the session while you're away) still keeps them, so "remember me"
   continues to work as intended.
-- **Signing in could return you to the previous account** — Reaching the login
+- **Signing in could return you to the previous account.** Reaching the login
   screen after a failed session and signing in as someone else could leave the
   old account's session cookie in play, so the app signed you back into the
   previous account while storing the new credentials. The stored cookie is now
-  cleared before signing in — and restored if the attempt fails because VRChat
+  cleared before signing in, and restored if the attempt fails because VRChat
   couldn't be reached, so a failed sign-in still can't cost you a good session.
-- **Recovery codes containing letters were rejected** — Two-factor recovery
+- **Recovery codes containing letters were rejected.** Two-factor recovery
   codes are alphanumeric, but the app stripped every letter before checking the
   code, then sent what remained to the wrong endpoint. The keyboard shown for
   the field was numeric, so the letters couldn't be typed in the first place.
   Recovery codes now work as printed.
-- **Background presence could stop for good** — If the app couldn't confirm
-  your session when the background service started — typically a moment without
-  connectivity — the service shut itself down permanently and stayed down until
+- **Background presence could stop for good.** If the app couldn't confirm
+  your session when the background service started (typically a moment without
+  connectivity), the service shut itself down permanently and stayed down until
   you next opened the app, so friend notifications silently stopped arriving.
   It now retries instead of giving up.
-- **An unexpected message from VRChat could close the app** — A real-time
+- **An unexpected message from VRChat could close the app.** A real-time
   message whose contents didn't match the expected shape crashed the app
   outright. Malformed messages are now contained and the connection survives
   them.
-- **Slow reconnect after regaining signal** — Coming back from a tunnel or an
+- **Slow reconnect after regaining signal.** Coming back from a tunnel or an
   airplane-mode toggle, the app often waited out a long back-off before
   reconnecting instead of reconnecting immediately, so events were missed for
   minutes after the network returned.
-- **Your friends list could quietly fail to update** — A refresh that overlapped
+- **Your friends list could quietly fail to update.** A refresh that overlapped
   with any incoming real-time event discarded everything it had just fetched
   and reported success, and also skipped the friend-log and favourites updates
   that follow it. Since ordinary friend activity triggers those events, this
   happened routinely. Fetched data and live updates are now merged per friend.
-- **Phantom "unfriended" entries in Friend Log** — If VRChat returned a short
+- **Phantom "unfriended" entries in Friend Log.** If VRChat returned a short
   friends list, every friend missing from it was recorded as an unfriend, and
   those entries are permanent. Implausibly large removals are now ignored until
   a complete list confirms them; genuine unfriends still record immediately.
-- **Two screens could disagree about where a friend was** — A profile update
+- **Two screens could disagree about where a friend was.** A profile update
   from VRChat overwrote the friend's location with the update's own contents,
   so one screen showed them online in a world and another showed them offline
   until the next location event. Profile updates now keep the presence the
   location events resolved.
-- **Notifications you'd handled elsewhere never cleared** — After the first
+- **Notifications you'd handled elsewhere never cleared.** After the first
   successful sync the inbox only ever fetched new items, so anything accepted or
   declined on another device stayed in your list indefinitely. The app now
   reconciles the full list periodically.
-- **Notification taps always opened the Feed tab** — Every notification opened
+- **Notification taps always opened the Feed tab.** Every notification opened
   the app at the same place regardless of what it was about. Taps now open the
   user, world, group or avatar the notification names.
-- **Tapping a notification could open a second copy of the app** — With the
+- **Tapping a notification could open a second copy of the app.** With the
   background service turned off, the second copy's arrival stopped the
   connection the first one was maintaining. Notifications now reuse the running
   app.
-- **A gallery delete that worked reported "failed"** — Deleting or uploading
+- **A gallery delete that worked reported "failed".** Deleting or uploading
   refreshed the gallery afterwards, and a failure of that refresh was reported
   as the delete or upload having failed, when the file had already gone.
-- **Gallery and avatar messages vanished before you could read them** — The
+- **Gallery and avatar messages vanished before you could read them.** The
   confirmation and error messages on those screens dismissed themselves the
   instant they appeared.
-- **The screenshot tool rejected screenshots the Gallery accepted** — Uploading
+- **The screenshot tool rejected screenshots the Gallery accepted.** Uploading
   from the screenshot metadata tool applied a stricter size limit and skipped
   the resizing the Gallery screen performs, so large VRChat screenshots failed
   there and succeeded elsewhere. Both now share one upload path.
-- **A chosen wallpaper disappeared after restarting the app** — The image
+- **A chosen wallpaper disappeared after restarting the app.** The image
   couldn't be read on the next launch, but the darkening it applies stayed, so
   the app was left dimmed with no wallpaper behind it. Wallpapers now persist.
-- **Charts could mix two different time ranges** — Switching range while the
+- **Charts could mix two different time ranges.** Switching range while the
   previous calculation was still running let parts of the screen settle on
   different ranges at once.
-- **Corrupt cached profile pictures persisted for weeks** — Two downloads of
+- **Corrupt cached profile pictures persisted for weeks.** Two downloads of
   the same image wrote to the same temporary file and could interleave, and the
   damaged result was then served from the cache for up to thirty days.
-- **A malformed PNG could crash the screenshot tool** — A file declaring an
+- **A malformed PNG could crash the screenshot tool.** A file declaring an
   implausible internal size caused the tool to run out of memory rather than
   reporting an unreadable file.
-- **Blocking or muting from a profile didn't reach the Moderation screen** —
+- **Blocking or muting from a profile didn't reach the Moderation screen.**
   The profile screen sent the moderation straight to VRChat without telling
   the rest of the app, so the Moderation screen kept showing the list as it
   was before: a freshly blocked user was missing until you pulled to refresh
   or reopened the screen. Moderations now publish the row VRChat returns, so
-  the list is correct immediately — and because the app no longer re-downloads
+  the list is correct immediately. And because the app no longer re-downloads
   the whole moderation list after every block, the action completes in one
   request instead of two.
-- **A moderation that worked could still report "Failed"** — Blocking, muting
+- **A moderation that worked could still report "Failed".** Blocking, muting
   or hiding an avatar was followed by a second request to re-read the list,
   and a failure of that second request was reported as though the block
   itself had failed, inviting a retry that blocked the person twice. The
   moderation's own result is now what determines success.
-- **Double-tapping a profile action sent it twice** — Request invite, send
+- **Double-tapping a profile action sent it twice.** Request invite, send
   invite, boop, and the friend-request buttons have no confirmation step, so
   an impatient second tap sent a second request. One profile action now runs
   at a time.
-- **Session dropped after the app sat unused** — Leaving the app closed for a
+- **Session dropped after the app sat unused.** Leaving the app closed for a
   while would frequently land you back on the login screen (or a fresh
   two-factor prompt) even though the saved session had weeks of life left. Any
   failure to reach VRChat was treated as proof that the session had expired,
-  so a moment without connectivity — the radio still waking up on a cold
-  start, a Doze window, a Wi-Fi to cellular handover in the background — was
+  so a moment without connectivity (the radio still waking up on a cold
+  start, a Doze window, a Wi-Fi to cellular handover in the background) was
   enough to delete the stored login. The app now distinguishes "VRChat says
   no" from "VRChat didn't answer": only a rejection from the server ends the
   session, resuming retries briefly before giving up, and a session that
@@ -249,11 +248,11 @@ testable pieces, and the checked-in Detekt baseline debt was cleared.
   visible with the background service turned off, because the app is then
   free to be killed while backgrounded and has to restore the session from
   disk on every launch.
-- **Two-factor prompt wiped the credential needed to answer it** — When VRChat
+- **Two-factor prompt wiped the credential needed to answer it.** When VRChat
   asked for the second factor again, the app cleared its cookies first, which
   removed the very session cookie the verification call authenticates with,
   forcing a full username-and-password sign-in. Those cookies are now kept.
-- **Cookies discarded by unrelated requests** — A stored cookie that didn't
+- **Cookies discarded by unrelated requests.** A stored cookie that didn't
   apply to the request being made was evicted from the jar rather than just
   skipped for that one request. Only expired cookies are dropped now.
 
@@ -277,54 +276,54 @@ testable pieces, and the checked-in Detekt baseline debt was cleared.
 
 ## [1.6.0] - 2026-07-12
 
-A large internal quality and performance release. There are no new features
-this time — instead the app got faster in the places you feel most (login,
-refresh, Charts, and searching your activity history), two real bugs got
-fixed, and a substantial amount of duplicated logic was consolidated so future
-changes are less likely to drift or regress. If 1.5.x was about stabilizing
-the app, 1.6.0 is about making it quick and keeping it that way.
+A performance and cleanup release. There are no new features this time.
+Instead the app got faster in the places you feel most (login, refresh, Charts,
+and searching your activity history), two real bugs got fixed, and a lot of
+duplicated logic now lives in one place, so later changes are less likely to
+drift apart. If 1.5.x was about stabilizing the app, 1.6.0 is about making it
+quick.
 
 ### Fixed
 
-- **Launcher icon** — The app icon introduced in 1.5.2 rendered as a broken,
+- **Launcher icon.** The app icon introduced in 1.5.2 rendered as a broken,
   half-dark circle with an oversized "X" on adaptive/round launchers. Its
   foreground artwork wasn't inset into the icon safe zone, so the launcher's
   circular mask clipped it and the flat dark background bled through. The icon
   is back to the clean VRCX speech-bubble mark.
-- **Dropped friend notifications** — Friend "came online", location-change,
+- **Dropped friend notifications.** Friend "came online", location-change,
   and status-change system notifications could silently fail to fire. VRChat
   sometimes sends the friend's id under a lowercase `userid` key, but the
   notification path only read the camelCase `userId`, so those events were
   dropped even though the rest of the app handled them fine. Friend
   transitions are now resolved once in the data layer (which already tolerates
   both spellings) and handed to the notifier as typed events, so these
-  notifications fire reliably.
+  notifications fire again.
 
 ### Improved
 
-- **Faster login and refresh** — The friend list and the notification inbox
+- **Faster login and refresh.** The friend list and the notification inbox
   now fetch their pages in parallel instead of one after the other, and the
   paged sweeps no longer stack their inter-page rate-limit delays. On a large
-  friends list or a full inbox, the initial load after login — and every
-  pull-to-refresh — completes noticeably sooner.
-- **Snappier Charts** — Tapping a range chip (Today / 7 days / 30 days / All)
+  friends list or a full inbox, the initial load after login, and every
+  pull-to-refresh, completes noticeably sooner.
+- **Snappier Charts.** Tapping a range chip (Today / 7 days / 30 days / All)
   used to re-parse every GPS history row dozens of times on the main thread,
   which could hitch the UI on a busy history. The charts now parse each row
   once, bucket the data in a single pass, and do it off the main thread, so
   switching ranges stays smooth.
-- **Smoother Activity History and Feed search** — Typing in the search box no
+- **Smoother Activity History and Feed search.** Typing in the search box no
   longer re-parses the timestamp of every entry on each keystroke, and the
   date-range filter compares precomputed values, so searching a long history
   no longer stutters.
-- **Less redundant work opening the Friends tab** — The Friends tab no longer
+- **Less redundant work opening the Friends tab.** The Friends tab no longer
   re-runs the full friend fetch the background service already performed at
   login (the live websocket keeps it current in between), so it opens faster
   and does fewer database lookups. Pull-to-refresh still forces a full reload
   when you want one.
-- **Faster Gallery load** — Inventory item templates are fetched in parallel
+- **Faster Gallery load.** Inventory item templates are fetched in parallel
   (a few at a time) instead of one-by-one, so the Gallery's inventory section
   populates quicker.
-- **Lighter first render and background writes** — The first image the app
+- **Lighter first render and background writes.** The first image the app
   loads no longer scans the on-disk profile-picture cache on the main thread;
   the high-frequency feed write path prunes on a schedule and caches your
   feed-size setting instead of re-reading it on every insert; the first
@@ -332,48 +331,47 @@ the app, 1.6.0 is about making it quick and keeping it that way.
   row; and the encrypted cookie store skips rewriting itself when nothing
   changed. Together these trim jank and background churn during heavy
   real-time activity.
-- **Consistent activity labels** — The Feed and Dashboard now render friend
+- **Consistent activity labels.** The Feed and Dashboard now render friend
   activity through one shared formatter, so a status change or a world move
   reads the same wherever it appears instead of drifting between screens.
 
 ### Under the hood
 
-This release folds a lot of duplicated, slowly-diverging logic into single
-shared implementations. None of it changes what the app does, but it removes
-whole classes of "fix it in one place, forget the other four" bugs:
+This release folds a lot of duplicated logic, which had started to diverge,
+into single shared implementations. None of it changes what the app does, but
+it ends the "fix it in one place, forget the other four" kind of bug:
 
-- **One home for the fiddly stuff** — VRChat location-string parsing,
+- **One home for the fiddly stuff.** VRChat location-string parsing,
   trust-rank decoding, feed and notification presentation, account-scoped
   database keys, destructive-action confirmation dialogs, ISO-8601 timestamp
   parsing, and bounded upload reads were each implemented several times over
   (and had already started to disagree). Each is now a single shared module.
-- **Unified feed pipeline** — Feed, Dashboard, and Activity History build
+- **Unified feed pipeline.** Feed, Dashboard, and Activity History build
   their lists from one repository-level feed merge and one mapper instead of
   three near-identical copies.
-- **Typed pipeline events** — Friend online/location/status changes are
+- **Typed pipeline events.** Friend online/location/status changes are
   surfaced as typed domain events from the data layer, so the foreground
   service maps them straight to notifications instead of re-parsing raw JSON
   (this is what fixed the dropped-notification bug above). Notification kinds
   and locally-synthesized notifications are now modeled explicitly rather than
   sniffed from type strings and id prefixes, and login-phase API calls are
   marked explicitly so a 2FA error can't be mistaken for a session expiry.
-- **Dead code removal** — Unused database access objects, unread flows, and a
+- **Dead code removal.** Unused database access objects, unread flows, and a
   never-adopted UI-state abstraction were deleted.
-- **Tests** — The unit suite (133 tests, all passing) was updated alongside
-  the refactors, including new coverage for the auth-phase marker and the
-  shared bounded-upload reads.
+- **Tests.** The 133 unit tests were updated along with the code, with new
+  tests for the auth-phase marker and the shared bounded-upload reads.
 
 ## [1.5.2] - 2026-05-12
 
 ### Fixed
 
-- **Session stability** — The app now double-checks cookie-auth 401s before
+- **Session stability.** The app now double-checks cookie-auth 401s before
   clearing your saved VRChat session, so a transient unauthorized response is
   less likely to kick you back to the login screen.
-- **Login retry behavior** — Successful password logins clear the temporary
+- **Login retry behavior.** Successful password logins clear the temporary
   Basic auth header, and failed Basic-auth login attempts no longer trigger the
   global session-expiry path.
-- **Bottom navigation spacing** — The logged-in app shell and bottom bar now
+- **Bottom navigation spacing.** The logged-in app shell and bottom bar now
   respect system navigation insets together, keeping content and navigation
   controls clear on gesture and button navigation devices.
 
@@ -381,35 +379,34 @@ whole classes of "fix it in one place, forget the other four" bugs:
 
 ### Fixed
 
-- **Release token privacy** — Release builds no longer install OkHttp
+- **Release token privacy.** Release builds no longer install OkHttp
   request logging, and the WebSocket connection now uses a dedicated client
   so the pipeline `auth` token cannot be printed through request URLs.
-- **Authenticated image loading** — Coil uses a separate image client that
+- **Authenticated image loading.** Coil uses a separate image client that
   keeps VRChat auth cookies for protected media without routing image 401s
   through the global session-expiry path.
-- **Account-switch teardown** — Logout and account changes now reset
+- **Account-switch teardown.** Logout and account changes now reset
   account-scoped runtime state, cancel in-flight deduplicated requests, and
   guard late repository refreshes so previous-account data cannot reappear in
   the next session.
-- **Login, search, and gallery edge cases** — Email-only 2FA submits through
+- **Login, search, and gallery edge cases.** Email-only 2FA submits through
   the email OTP flow, canceled searches no longer publish stale failed states,
   and large gallery uploads are rejected before the app reads the full file
   into memory.
-- **WebSocket and cookie concurrency** — Reconnect callbacks are guarded by a
+- **WebSocket and cookie concurrency.** Reconnect callbacks are guarded by a
   connection generation, and cookie storage is synchronized across OkHttp
   callbacks and logout.
-- **Notifications, feed, and backup safety** — Invite payloads now match the
+- **Notifications, feed, and backup safety.** Invite payloads now match the
   documented VRChat request bodies, feed lists order by local row id, Android
   15 boot notifications create their channel before posting, and backup rules
   exclude account-scoped database and DataStore files.
-- **Release evidence** — The release scanner verifies explicit APKs with
-  `apksigner` and rejects stale, debug, or unsigned artifacts unless an
-  existing signed APK is intentionally scanned with `--skip-build`.
+- **Release script.** The release script checks the APK it is given with
+  `apksigner` and refuses stale, debug or unsigned builds, unless an existing
+  signed APK is passed on purpose with `--skip-build`.
 
 ## [1.5.0] - 2026-04-17
 
-A broad stability, correctness, and polish pass on top of the 1.4.x feature
-set. If your friends list is busy, you were seeing the bulk of your feed
+Fixes and smaller improvements on top of the 1.4.x features. If your friends list is busy, you were seeing the bulk of your feed
 activity get duplicated; if you opened groups or worlds with a lot of
 instances, you were watching the screen hang; if you were an admin in a
 group, you were seeing Remove buttons that never worked. Those are all
@@ -420,83 +417,83 @@ low-activity ranges.
 
 ### New
 
-- **Friend-request management** — You can now explicitly decline an
+- **Friend-request management.** You can now explicitly decline an
   incoming friend request and cancel an outgoing one from the relevant
   profile screens, instead of having to visit the VRChat website to
   resolve either.
-- **Group member removal** — Admins with the `group-members-manage`
+- **Group member removal.** Admins with the `group-members-manage`
   permission can remove members directly from group detail. The control
   is gated on the permission itself (not just "has a role"), so regular
   members don't see a button that would only return a 403.
-- **Activity History and Friends Roster rebrand** — The two Android-scope
+- **Activity History and Friends Roster rebrand.** The two Android-scope
   utility screens previously labelled "Game Log" and "Player List" are
   now surfaced as "Activity History" and "Friends Roster" across the
   profile shortcuts and Tools quick links. Existing nav routes and
   notification deep links continue to work.
-- **Settings sign-out** — Settings now includes a Privacy section with a
+- **Settings sign-out.** Settings now includes a Privacy section with a
   Sign Out control that cleanly tears down auth state, clears cached
-  favorites, and stops the background websocket service — matching the
+  favorites, and stops the background websocket service, matching the
   profile sign-out path in a more discoverable location.
 
 ### Improved
 
-- **Profile pictures in every list** — Feed, Friends, Friends Locations,
+- **Profile pictures in every list.** Feed, Friends, Friends Locations,
   Favorites, Search, Group Detail, Player List, and Dashboard all honor
   `profilePicOverride` now. Users with a custom profile picture but a
   default VRChat avatar no longer render as the generic robot
   everywhere except their detail screen.
-- **Deep links from VRChat's website** — `https://vrchat.com/home/...`
+- **Deep links from VRChat's website.** `https://vrchat.com/home/...`
   links now land on the correct in-app destination no matter how many
   trailing path segments VRChat adds. That means URLs like
   `/home/world/{id}/info`, `/home/group/{id}/posts/{postId}`, or any
   future subpath route cleanly instead of dumping users on the feed.
-- **Notifications inbox** — Notifications persist to the local database
+- **Notifications inbox.** Notifications persist to the local database
   and render instantly on cold start from cache, so you see the most
   recent inbox state before the network round-trip completes. V1 and V2
   notifications continue to share a unified list.
-- **Failed-request caching** — 404 and 403 responses are now cached
+- **Failed-request caching.** 404 and 403 responses are now cached
   globally through the request deduplication layer, so retries and
   re-renders don't refetch endpoints the server has already told us
   aren't available.
-- **Busy-world loading** — The World Detail screen caps active-instance
+- **Busy-world loading.** The World Detail screen caps active-instance
   detail lookups at 20 and fetches them in parallel, so popular worlds
   with hundreds of advertised instances stop hanging the screen on
   sequential round trips.
-- **Charts screen** — Daily activity now uses a custom bar chart that
-  renders correctly for any data density — sparse days, a full week,
+- **Charts screen.** Daily activity now uses a custom bar chart that
+  renders correctly for any data density: sparse days, a full week,
   or a full 90-day range. The range filter and metric cards stay
   visible on empty ranges with an inline "No activity in this range"
   message, so you can still change the range without backing out of
   the screen. Most Visited Worlds rows now have a visible bar track.
-- **Favorites loading** — The loading spinner stays up through the
+- **Favorites loading.** The loading spinner stays up through the
   initial preload attempt, so you no longer see a false "No favorites"
   flash before the fetches actually complete on a slow or flaky
   network. Adding a favorite from any screen (e.g. Avatar Detail)
   patches the relevant bulk cache in place instead of waiting for the
   next screen entry to refresh.
-- **Avatar and world list lifecycle** — The whole app switched its
+- **Avatar and world list lifecycle.** The whole app switched its
   state collection to `collectAsStateWithLifecycle`, which trims wasted
   work when screens aren't visible and generally makes the app lighter
   on battery in the background.
-- **Network retry behavior** — 429 (rate-limited) responses respect a
+- **Network retry behavior.** 429 (rate-limited) responses respect a
   bounded retry delay instead of letting the server pin the app into a
   multi-minute backoff; 401 (unauthorized) responses route through
   `AuthRepository` so session teardown is centralized.
-- **Dashboard layout** — The top bar stays visible while you scroll;
+- **Dashboard layout.** The top bar stays visible while you scroll;
   it's no longer folded into the scrollable list. The underlying flow
   combine also uses stable composition for less flicker during updates.
-- **Group detail loading** — Group metadata, members, posts, and
+- **Group detail loading.** Group metadata, members, posts, and
   instances now load in parallel rather than sequentially, so opening
   a group feels closer to instant.
-- **Search screen** — The avatar search "VRCHAT" source is now labelled
+- **Search screen.** The avatar search "VRCHAT" source is now labelled
   "My Avatars" to make its scope obvious.
-- **Destructive-action confirmations** — Blocking a user, unfriending a
+- **Destructive-action confirmations.** Blocking a user, unfriending a
   user, and similar irreversible actions from User Detail now ask for
   confirmation before firing, matching desktop VRCX's prompts.
 
 ### Fixed
 
-- **Duplicate feed entries** — This was the big one. Feed rows for the
+- **Duplicate feed entries.** This was the big one. Feed rows for the
   same friend event (typically "Moved to <world>") were sometimes
   appearing twice at near-identical timestamps, especially after
   reconnects, logout/login cycles, or for friends who hop between a
@@ -509,40 +506,40 @@ low-activity ranges.
   state via any of the three pipeline event types so a real
   `wrld_X → private → wrld_X` revisit is distinguished from a
   pipeline re-emit.
-- **Session resume on stale cookies** — Opening the app with a stored
+- **Session resume on stale cookies.** Opening the app with a stored
   but server-side invalidated cookie used to loop between
   `LoggingIn` → `Error` on every launch. The interceptor-driven 401
   handler now tears down the cookie, dedup cache, favorites, and
   background websocket service, so the next launch starts fresh at
   the login screen instead of retrying a dead session.
-- **Sign-out completeness** — The Privacy and Profile sign-out paths
+- **Sign-out completeness.** The Privacy and Profile sign-out paths
   (and the interceptor-driven 401 path) all route through a single
   `AuthRepository.logout()` that invalidates the session server-side,
   clears local state, and stops the websocket foreground service.
   You can no longer end up with a running background notification
   tied to a logged-out account.
-- **Android 15 boot reconnect** — On Android 15, reboot handling
+- **Android 15 boot reconnect.** On Android 15, reboot handling
   surfaces a "tap to reconnect" notification. Previously that
   notification fired unconditionally on every boot for every user.
   It now only fires if you have the background service enabled
   and you're actually logged in, so logged-out users and users who
   disabled the background service stop seeing reboot spam.
-- **Favorite additions and deletions** — Adding a world or avatar
+- **Favorite additions and deletions.** Adding a world or avatar
   favorite from anywhere in the app now immediately shows up in the
   Favorites list with the correct name and thumbnail, even if you're
   already sitting on the Favorites screen when the add happens.
   Deletions drop the entity from the bulk cache in the same step, so
   the list updates without a refresh.
-- **Profile and Tools shortcut labels** — The "Shortcuts" list on
+- **Profile and Tools shortcut labels.** The "Shortcuts" list on
   Profile and the "Quick Links" on Tools now say "Activity History"
   and "Friends Roster" instead of the old "Game Log" / "Player List"
   text, matching the Android-scoped naming used elsewhere in the app.
-- **Group members kick button** — Previously the kick button was
+- **Group members kick button.** Previously the kick button was
   enabled for any member (it used role presence as the admin check),
   and tapping it threw an error snackbar every time for regular
   members. Now it's only shown to users whose role actually carries
   the remove-members permission.
-- **Gallery uploads** — The uploaded filename and extension match the
+- **Gallery uploads.** The uploaded filename and extension match the
   actual MIME type of the picked image, rather than whatever extension
   happened to be on the source URI, which previously caused VRChat to
   reject otherwise-valid images.
@@ -551,82 +548,82 @@ low-activity ranges.
 
 ### Improved
 
-- **Release transparency** — Added a local `.env`-driven release evidence flow that signs the APK, computes its SHA-256, and builds a VirusTotal report bundle for release publishing
-- **Release documentation** — Documented the signed-build and VirusTotal workflow so contributors can publish a verifiable APK hash and linked scan report with each release
+- **Release checks.** Added a local release script, configured through a `.env` file, that signs the APK, computes its SHA-256 and fetches its VirusTotal report
+- **Release documentation.** Documented the signed build and the VirusTotal step, so each release can list its APK hash and a link to its scan
 
 ## [1.4.0] - 2026-04-10
 
 ### New
 
-- **Dashboard** — Added a new dashboard view for checking your recent VRChat activity and friend-related feed data in one place
-- **Game Log** — Added a dedicated game-log screen for browsing feed-backed history with the same account-aware data used elsewhere in the app
-- **Player List** — Added a player-list utility screen from Profile for quickly reaching another common desktop-style workflow on Android
-- **Tools screen** — Added a new tools hub with quick links to utility screens and an ID jump flow for opening users, worlds, avatars, and groups directly
-- **Group posts** — Group detail now shows group posts in addition to core group metadata, making groups feel much more complete in the Android client
+- **Dashboard.** Added a new dashboard view for checking your recent VRChat activity and friend-related feed data in one place
+- **Game Log.** Added a dedicated game-log screen for browsing feed-backed history with the same account-aware data used elsewhere in the app
+- **Player List.** Added a player-list utility screen from Profile for quickly reaching another common desktop-style workflow on Android
+- **Tools screen.** Added a new tools hub with quick links to utility screens and an ID jump flow for opening users, worlds, avatars, and groups directly
+- **Group posts.** Group detail now shows group posts in addition to core group metadata, making groups feel much more complete in the Android client
 
 ### Improved
 
-- **Search** — User search now supports bio-based search and last-login sorting, world search supports mode and tag filtering, and avatar search supports remote provider sources
-- **Remote avatar providers** — Remote avatar searches now deduplicate duplicate provider results and report provider failures more clearly instead of silently behaving like a zero-result search
-- **Favorites** — Favorite loading is more complete and more resilient, with better preferred-tag selection and safer fallback behavior when favorite metadata endpoints are temporarily unavailable
-- **Group membership flows** — Joining and leaving groups is now more reliable when refresh requests fail after the mutation succeeds, so the app no longer gets stuck showing guessed membership state
-- **Feed-backed screens** — Feed and log style views now respect a configurable feed-history limit from Settings, making it easier to trade history depth for a lighter local dataset
-- **Profile shortcuts** — Profile now exposes the new utility screens directly, which makes the expanded app surface much easier to discover
-- **Credits and version display** — The credits screen now reports the real app version from the build instead of a hardcoded string
+- **Search.** User search now supports bio-based search and last-login sorting, world search supports mode and tag filtering, and avatar search supports remote provider sources
+- **Remote avatar providers.** Remote avatar searches now deduplicate duplicate provider results and report provider failures more clearly instead of silently behaving like a zero-result search
+- **Favorites.** Favorite loading is more complete and more resilient, with better preferred-tag selection and safer fallback behavior when favorite metadata endpoints are temporarily unavailable
+- **Group membership flows.** Joining and leaving groups is now more reliable when refresh requests fail after the mutation succeeds, so the app no longer gets stuck showing guessed membership state
+- **Feed-backed screens.** Feed and log style views now respect a configurable feed-history limit from Settings, making it easier to trade history depth for a lighter local dataset
+- **Profile shortcuts.** Profile now exposes the new utility screens directly, which makes the expanded app surface much easier to discover
+- **Credits and version display.** The credits screen now reports the real app version from the build instead of a hardcoded string
 
 ### Fixed
 
-- **Cross-account favorites cache** — In-memory favorites state is cleared correctly across auth session changes, preventing favorite data from bleeding between accounts in the same process
-- **Filtered world pagination** — World filtering no longer strands matching results on later backend pages when browsing non-search world modes
-- **Remote avatar error states** — Invalid provider URLs, empty responses, malformed JSON, and HTTP failures now surface as actionable errors instead of a misleading `No results found`
-- **Group detail cache correctness** — A failed follow-up refresh after join or leave no longer poisons the cached group record, so later visits refetch the authoritative server state
-- **Android 15 reboot behavior** — Reboot handling now favors a clear reopen notification path that better matches current Android background-execution rules
-- **Favorites fallback behavior** — Adding a favorite no longer depends on every metadata lookup succeeding before the request can be sent
-- **Regression coverage** — Added repository-level tests for group membership cache invalidation and remote avatar provider failure handling
+- **Cross-account favorites cache.** In-memory favorites state is cleared correctly across auth session changes, preventing favorite data from bleeding between accounts in the same process
+- **Filtered world pagination.** World filtering no longer strands matching results on later backend pages when browsing non-search world modes
+- **Remote avatar error states.** Invalid provider URLs, empty responses, malformed JSON, and HTTP failures now surface as actionable errors instead of a misleading `No results found`
+- **Group detail cache correctness.** A failed follow-up refresh after join or leave no longer poisons the cached group record, so later visits refetch the authoritative server state
+- **Android 15 reboot behavior.** Reboot handling now favors a clear reopen notification path that better matches current Android background-execution rules
+- **Favorites fallback behavior.** Adding a favorite no longer depends on every metadata lookup succeeding before the request can be sent
+- **Tests.** Added repository tests for group membership cache invalidation and remote avatar provider failure handling
 
 ## [1.3.0] - 2026-04-01
 
 ### Improved
 
-- **Session restore** — Auth cookies and remembered session state now live in secure storage and are restored before background WebSocket startup, making process-death recovery much more reliable
-- **Notifications inbox** — Notification V2 actions, invite/request handling, and inbox loading are more resilient when the app resumes from a cold start or a failed fetch
-- **Request deduplication** — Concurrent GET requests now share a true in-flight result instead of serially rerunning the same network call
-- **Boot reconnect** — Reboot restore now checks both secure and legacy auth state and uses a WorkManager reconnect path on Android 15+ when the background service setting is enabled
-- **Local notifications** — Instance-closed notifications are tracked locally and can be dismissed without calling remote hide endpoints
-- **Regression coverage** — Added tests for recovery-code OTP routing and local instance-closed notifications
+- **Session restore.** Auth cookies and remembered session state now live in secure storage and are restored before background WebSocket startup, so the session survives Android killing the app
+- **Notifications inbox.** Notification V2 actions, invite/request handling, and inbox loading are more resilient when the app resumes from a cold start or a failed fetch
+- **Request deduplication.** Concurrent GET requests now share a true in-flight result instead of serially rerunning the same network call
+- **Boot reconnect.** Reboot restore now checks both secure and legacy auth state and uses a WorkManager reconnect path on Android 15+ when the background service setting is enabled
+- **Local notifications.** Instance-closed notifications are tracked locally and can be dismissed without calling remote hide endpoints
+- **Tests.** Added tests for recovery-code OTP routing and local instance-closed notifications
 
 ### Fixed
 
-- **Recovery code login** — Eight-digit recovery codes now work end to end from the login flow and use the dedicated VRChat OTP verification endpoint instead of the authenticator-code endpoint
-- **Friend Log parity** — Friend Log now backfills current friends on sync and records friend, unfriend, display-name, and trust-level changes as they happen
-- **Friend status alerts** — Status change notifications now compare against the pre-update friend state so they fire reliably again
-- **Notification parity** — Notification V2 events and instance-closed events now surface through the Android notification flow instead of being silently dropped
+- **Recovery code login.** Eight-digit recovery codes now work end to end from the login flow and use the dedicated VRChat OTP verification endpoint instead of the authenticator-code endpoint
+- **Friend Log parity.** Friend Log now backfills current friends on sync and records friend, unfriend, display-name, and trust-level changes as they happen
+- **Friend status alerts.** Status change notifications now compare against the pre-update friend state so they fire reliably again
+- **Notification parity.** Notification V2 events and instance-closed events now surface through the Android notification flow instead of being silently dropped
 
 ## [1.1.0] - 2026-03-15
 
 ### New
 
-- **World Detail screen** — Tap any world in Search or Friends Locations to see full details: banner image, description, capacity, platform support, tags, and active instances
-- **Avatar Detail screen** — Tap any avatar in Search or My Avatars to see details with Select Avatar and Favorite actions
-- **Charts screen** — View your instance activity history with daily visit charts and most-visited worlds (accessible from Profile)
-- **Invite system** — Send invites and request invites directly from User Detail
-- **Profile editing** — Edit your VRChat status and bio from the Profile screen
-- **User notes** — Add and edit personal memos on any user's profile, saved locally
+- **World Detail screen.** Tap any world in Search or Friends Locations to see full details: banner image, description, capacity, platform support, tags, and active instances
+- **Avatar Detail screen.** Tap any avatar in Search or My Avatars to see details with Select Avatar and Favorite actions
+- **Charts screen.** View your instance activity history with daily visit charts and most-visited worlds (accessible from Profile)
+- **Invite system.** Send invites and request invites directly from User Detail
+- **Profile editing.** Edit your VRChat status and bio from the Profile screen
+- **User notes.** Add and edit personal memos on any user's profile, saved locally
 
 ### Improved
 
-- **Friends Locations** — Now shows world names, thumbnails, and capacity instead of raw IDs. Added Online/Favorite/Active segment tabs and search
-- **Notifications** — V1 and V2 notifications merged into one list. Added type filter chips and Accept/Decline actions for invites (not just friend requests)
-- **Search** — Added pagination (Previous/Next) and all result types (worlds, avatars, groups) are now tappable to view details
-- **Feed** — Added search bar, VIP-only filter, and Load More for browsing older entries
-- **Friends** — Added sort options (Name, Last Seen, Trust Rank) and VIP filter
-- **Friend Log** — Added search and type filter chips (Friend, Unfriend, DisplayName, TrustLevel)
-- **User Detail** — Redesigned with Info/Groups/Worlds tabs, favorite star, invite buttons, show/hide avatar moderation, and memo editing
-- **Favorites** — Now shows actual names, avatars, and thumbnails instead of raw IDs. Added unfavorite with confirmation
-- **My Avatars** — Added search, visibility filter (Public/Private), and platform filter (PC/Quest). Tap now opens detail instead of immediately selecting
-- **Moderation** — Expanded from 2 types to 6 (Block, Mute, Hide Avatar, Show Avatar, Interact Off, Interact On) with search and removal confirmation
-- **Settings** — Version number now updates automatically. Added Friend Location and Friend Status notification toggles
-- **Login** — Added password visibility toggle and Remember Me option
+- **Friends Locations.** Now shows world names, thumbnails, and capacity instead of raw IDs. Added Online/Favorite/Active segment tabs and search
+- **Notifications.** V1 and V2 notifications merged into one list. Added type filter chips and Accept/Decline actions for invites (not just friend requests)
+- **Search.** Added pagination (Previous/Next) and all result types (worlds, avatars, groups) are now tappable to view details
+- **Feed.** Added search bar, VIP-only filter, and Load More for browsing older entries
+- **Friends.** Added sort options (Name, Last Seen, Trust Rank) and VIP filter
+- **Friend Log.** Added search and type filter chips (Friend, Unfriend, DisplayName, TrustLevel)
+- **User Detail.** Redesigned with Info/Groups/Worlds tabs, favorite star, invite buttons, show/hide avatar moderation, and memo editing
+- **Favorites.** Now shows actual names, avatars, and thumbnails instead of raw IDs. Added unfavorite with confirmation
+- **My Avatars.** Added search, visibility filter (Public/Private), and platform filter (PC/Quest). Tap now opens detail instead of immediately selecting
+- **Moderation.** Expanded from 2 types to 6 (Block, Mute, Hide Avatar, Show Avatar, Interact Off, Interact On) with search and removal confirmation
+- **Settings.** Version number now updates automatically. Added Friend Location and Friend Status notification toggles
+- **Login.** Added password visibility toggle and Remember Me option
 
 ### Fixed
 
