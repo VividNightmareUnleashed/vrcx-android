@@ -15,7 +15,7 @@ import retrofit2.Invocation
  * request through.
  *
  * This is the only place failures are cached, and it deliberately stops at 404.
- * A 403 says "not yours to read" — a statement about permissions the user can
+ * A 403 says "not yours to read", a statement about permissions the user can
  * change from inside the app (joining a group, being accepted as a friend), and
  * the cache has no invalidation path short of sign-out, so caching one would
  * leave the screen empty for fifteen minutes after the permission was granted.
@@ -23,7 +23,7 @@ import retrofit2.Invocation
  *
  * In-flight burst merging stays in [RequestDeduplicator.dedupGet] because
  * sharing a single OkHttp Response body across multiple coroutine callers is
- * not safe at the interceptor level — the body stream is one-shot.
+ * not safe at the interceptor level; the body stream is one-shot.
  */
 class DedupInterceptor(private val deduplicator: RequestDeduplicator) : Interceptor {
 

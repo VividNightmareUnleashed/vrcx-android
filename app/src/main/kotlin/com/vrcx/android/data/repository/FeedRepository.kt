@@ -67,7 +67,7 @@ data class FeedEntry(
 
     /**
      * Identity across the merged feed. [id] is only unique within its source
-     * table, so a GPS row and a status row can share one — which would collide as
+     * table, so a GPS row and a status row can share one, which would collide as
      * a lazy-list key.
      */
     val key: String get() = "${type.id}_$id"

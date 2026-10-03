@@ -74,7 +74,7 @@ class NotificationHelperTest {
     fun `rolling notification ids start above every fixed id in the app`() {
         // 1 is the foreground service, 98 and 99 the reconnect prompts, and 1001
         // is the id WorkManager owns while BootReconnectWorker holds the
-        // foreground — a rolling id landing on it replaces someone else's.
+        // foreground. A rolling id landing on it replaces someone else's.
         val reserved = setOf(
             NotificationHelper.SERVICE_NOTIFICATION_ID,
             98,

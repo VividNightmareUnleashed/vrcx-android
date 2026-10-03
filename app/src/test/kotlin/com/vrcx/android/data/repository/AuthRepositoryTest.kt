@@ -745,7 +745,7 @@ class AuthRepositoryUnauthorizedTest : AuthRepositoryTestFixture() {
 
             repository.handleUnauthorizedSignal()
 
-            // A connectivity blip is not proof the session died — the stored
+            // A connectivity blip is not proof the session died; the stored
             // cookies have to survive it.
             verify(cookieJar, never()).clearAll()
             assertTrue(repository.authState.value is AuthState.LoggedIn)
@@ -1035,8 +1035,8 @@ class AuthRepositoryResumeAndLogoutTest : AuthRepositoryTestFixture() {
 
             repository.logout()
 
-            // The cookies are revoked server-side, but the password is reusable —
-            // leaving it on the device hands the account to whoever picks it up.
+            // The cookies are revoked server-side, but the password is reusable,
+            // and leaving it on the device hands the account to whoever picks it up.
             verify(secureSecretsStore).clearAll()
             verify(cookieJar).completeLogoutAfterSecretsDeleted()
             verify(preferences).clearLegacySavedCredentials()

@@ -102,7 +102,7 @@ class FavoritesViewModel @Inject constructor(
                     }
                 }
             } finally {
-                // Runs on cancellation too — otherwise the tab stays busy and
+                // Runs on cancellation too; otherwise the tab stays busy and
                 // this method's own guard blocks every later retry.
                 updateTab(tab) { it.settleLoad() }
             }

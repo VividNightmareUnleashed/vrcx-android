@@ -24,8 +24,8 @@ fun List<FeedEntry>.applyFeedFilter(filter: FeedFilter): List<FeedEntry> = filte
 }
 
 /**
- * Search covers everything the row can render — the person, the activity
- * headline, the current and previous detail, and the instance hint — so a world
+ * Search covers everything the row can render (the person, the activity
+ * headline, the current and previous detail, and the instance hint), so a world
  * or instance name typed into either screen's search box matches.
  */
 private fun FeedEntry.matchesQuery(query: String): Boolean =

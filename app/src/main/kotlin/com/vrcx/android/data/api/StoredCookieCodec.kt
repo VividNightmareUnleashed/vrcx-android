@@ -53,7 +53,7 @@ internal object StoredCookieCodec {
 
 /**
  * VRChat's own hosts. A cookie named `auth` only counts as a VRChat session when
- * it came from one of these — the jar is shared with the image client, which can
+ * it came from one of these: the jar is shared with the image client, which can
  * reach whatever host an avatar or gallery image happens to live on.
  */
 internal fun isVrchatCookieHost(host: String): Boolean {

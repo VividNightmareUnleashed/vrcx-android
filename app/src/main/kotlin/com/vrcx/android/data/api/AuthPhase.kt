@@ -4,7 +4,7 @@ package com.vrcx.android.data.api
  * Marks a Retrofit endpoint as part of the pre-session login / 2FA flow.
  *
  * A 401 on such a call is an authentication-phase failure (bad credentials, a
- * wrong or expired 2FA code) — not evidence that an established cookie session
+ * wrong or expired 2FA code), not evidence that an established cookie session
  * expired. [ErrorInterceptor] therefore does **not** emit
  * [AuthEvent.Unauthorized] for these calls, so the login flow can surface the
  * verification error locally without tearing down a session.

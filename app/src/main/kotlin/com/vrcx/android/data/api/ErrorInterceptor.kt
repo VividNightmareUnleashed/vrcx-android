@@ -10,12 +10,12 @@ import retrofit2.Invocation
  * - **401 Unauthorized**: emits AuthEvent.Unauthorized for cookie-auth requests so
  *   AuthRepository can verify whether the session is still valid. Authentication-
  *   phase failures are left to the login caller so they do not clear an existing
- *   cookie session — a request is auth-phase if it carries `Basic` credentials or
+ *   cookie session. A request is auth-phase if it carries `Basic` credentials or
  *   its endpoint is annotated [AuthPhase] (read from the Retrofit [Invocation]
  *   tag, so no endpoint-path knowledge is baked into this shared interceptor).
  * - **429 Too Many Requests**: retries once with a bounded delay. The delay is
  *   capped at [MAX_RETRY_DELAY_MS] (2s) because this interceptor runs on OkHttp
- *   dispatcher threads — blocking one of them for longer starves other in-flight
+ *   dispatcher threads, and blocking one of them for longer starves other in-flight
  *   requests. For sustained rate-limiting, callers should implement their own
  *   coroutine-based backoff.
  */

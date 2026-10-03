@@ -123,7 +123,7 @@ fun VrcxTheme(
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             // ColorScheme has no equals, and MaterialTheme puts it into a static
-            // composition local — a fresh instance per recomposition would
+            // composition local, so a fresh instance per recomposition would
             // invalidate everything below the theme.
             remember(context, darkTheme) {
                 if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)

@@ -301,7 +301,7 @@ enum class DeepLinkSection(val segment: String, val argName: String) {
     GROUP("group", "groupId"),
     ;
 
-    /** `vrcx://user/usr_...` — the form the app's own notifications point at. */
+    /** `vrcx://user/usr_...`, the form the app's own notifications point at. */
     fun appUri(id: String): String = "$APP_SCHEME://$segment/${encodeRouteSegment(id)}"
 
     companion object {

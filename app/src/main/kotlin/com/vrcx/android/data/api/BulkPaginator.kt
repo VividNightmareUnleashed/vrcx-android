@@ -20,7 +20,7 @@ object BulkPaginator {
      *   (default true). Set false for endpoints that return partial pages while more
      *   data remains and instead signal completion via an empty page or [stopWhen].
      * @param stopWhen Optional early-exit predicate given the page just fetched and the
-     *   running item count, for callers whose stop condition depends on either — a page
+     *   running item count, for callers whose stop condition depends on either: a page
      *   overlapping items already held, or a server-reported total being reached. The
      *   matching page is still included.
      * @param fetcher Suspend function that takes (offset, count) and returns a list of items

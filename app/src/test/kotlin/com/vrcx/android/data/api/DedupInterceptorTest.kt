@@ -78,7 +78,7 @@ class DedupInterceptorTest {
         client.newCall(Request.Builder().url(server.url("/forbidden")).build()).execute().close()
         val second = client.newCall(Request.Builder().url(server.url("/forbidden")).build()).execute()
 
-        // A 403 is about a permission the user can change from inside the app —
+        // A 403 is about a permission the user can change from inside the app:
         // joining the group has to be enough to make its posts load.
         assertEquals(403, second.code)
         assertEquals(2, server.requestCount)

@@ -21,8 +21,8 @@ sealed interface LoadState<out T> {
 
     /**
      * There is something to show. [staleError] is the last refresh's failure,
-     * which the data outlived; [warning] is a partial success — some of the data
-     * arrived and some did not — and is not a failure.
+     * which the data outlived; [warning] is a partial success (some of the data
+     * arrived and some did not) and is not a failure.
      */
     data class Loaded<out T>(
         val value: T,
@@ -39,7 +39,7 @@ sealed interface LoadState<out T> {
 val LoadState<*>.isLoaded: Boolean
     get() = this is LoadState.Loaded
 
-/** True while a load is in flight — the guard against starting a second one. */
+/** True while a load is in flight: the guard against starting a second one. */
 val LoadState<*>.isBusy: Boolean
     get() = this is LoadState.Loading || (this is LoadState.Loaded && isRefreshing)
 
@@ -57,7 +57,7 @@ fun <T> LoadState<T>.startLoad(): LoadState<T> = when (this) {
 }
 
 /**
- * A load succeeded, replacing whatever came before — nothing from the previous
+ * A load succeeded, replacing whatever came before; nothing from the previous
  * attempt survives it. [warning] records data that arrived incomplete.
  */
 fun <T> LoadState<T>.completeLoad(value: T, warning: String? = null): LoadState<T> =
@@ -74,7 +74,7 @@ fun <T> LoadState<T>.failLoad(message: String): LoadState<T> = when (this) {
 }
 
 /**
- * Drops the in-flight marker without deciding an outcome — for a `finally`, so a
+ * Drops the in-flight marker without deciding an outcome, for a `finally`, so a
  * cancelled load cannot leave the state busy forever and block every later retry.
  * A no-op on a state that has already settled.
  */

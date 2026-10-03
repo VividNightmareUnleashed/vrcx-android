@@ -33,7 +33,7 @@ class ModerationRepository @Inject constructor(
     /**
      * Applies a moderation and publishes the created row, so screens observing
      * [moderations] see it. Callers must come through here rather than hitting
-     * PlayerModerationApi directly — the profile screen bypassing this left the
+     * PlayerModerationApi directly; the profile screen bypassing this left the
      * Moderation screen showing stale rows after a block.
      *
      * The POST returns the created moderation, so this publishes that rather

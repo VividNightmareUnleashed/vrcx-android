@@ -249,7 +249,7 @@ private fun NavigationPanel(navController: NavHostController) {
  *
  * The service reconciles: re-declaring the mode it is already in is a no-op,
  * the other mode is a transition in place that keeps the socket, and session
- * teardown stops it. Nothing here stops it — the shell's view of the session
+ * teardown stops it. Nothing here stops it, because the shell's view of the session
  * lags the service's (authState starts NotLoggedIn on every launch, and the
  * background-service preference arrives a moment after that), so a stop issued
  * from here lands on a socket that is perfectly healthy, drops whatever VRChat

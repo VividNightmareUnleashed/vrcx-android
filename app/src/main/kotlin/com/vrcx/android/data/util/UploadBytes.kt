@@ -17,7 +17,7 @@ sealed interface UploadBytesResult {
 
 /**
  * Reads [input] fully into memory while refusing anything larger than
- * [maxBytes] — the size is bounded *as* it reads, so an oversized file is
+ * [maxBytes]. The size is bounded *as* it reads, so an oversized file is
  * never buffered in full. The stream is closed on the way out; a null stream
  * is [UploadBytesResult.Unreadable].
  */

@@ -7,7 +7,7 @@ import kotlinx.coroutines.CancellationException
  *
  * `runCatching` and a bare `catch (e: Exception)` both swallow
  * [CancellationException], which leaves a coroutine running past the point it
- * was told to stop — and in this app a cancellation is also how an account
+ * was told to stop, and in this app a cancellation is also how an account
  * change aborts an in-flight load, so swallowing one trades a clean abort for a
  * cross-account write. Every best-effort step needs the same two-clause
  * preamble to avoid that, so it lives here once.

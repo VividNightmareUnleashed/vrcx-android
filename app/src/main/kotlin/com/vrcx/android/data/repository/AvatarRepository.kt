@@ -46,7 +46,7 @@ class AvatarRepository @Inject constructor(
      * call for another user's profile.
      *
      * Pass `"me"` for the logged-in user. For anyone else, what VRChat returns
-     * is unverified — desktop VRCX doesn't use this endpoint for other users at
+     * is unverified. Desktop VRCX doesn't use this endpoint for other users at
      * all, it queries a third-party avatar database by `authorId`. Confirm the
      * live response before relying on the non-self case.
      */

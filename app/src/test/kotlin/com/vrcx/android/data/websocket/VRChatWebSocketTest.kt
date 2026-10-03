@@ -70,7 +70,7 @@ class VRChatWebSocketTest {
     @Test
     fun `parses content delivered as a JSON string requiring double-decode`() {
         // VRChat sends some frames with content as a *string* of JSON rather than
-        // an inline object — the parser must double-decode in that case.
+        // an inline object, so the parser must double-decode in that case.
         val frame = """{"type":"friend-online","content":"{\"userId\":\"usr_xyz\"}"}"""
         val event = parsePipelineMessage(json, frame) as? PipelineEvent.FriendOnline
         assertNotNull(event)

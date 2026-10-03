@@ -13,7 +13,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
- * A titled card of non-interactive chips — the Platforms and Tags cards on the
+ * A titled card of non-interactive chips: the Platforms and Tags cards on the
  * avatar and world detail screens.
  *
  * [labels] are rendered verbatim, so a caller that wants a suffix (the avatar

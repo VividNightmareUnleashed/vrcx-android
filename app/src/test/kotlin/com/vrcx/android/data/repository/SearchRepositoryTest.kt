@@ -92,7 +92,7 @@ class SearchRepositoryTest {
 
             repository.searchRemoteAvatars("test", server.url("/provider").toString())
 
-            // Derived with newBuilder(), not a fresh Builder — otherwise the
+            // Derived with newBuilder(), not a fresh Builder; otherwise the
             // remote client gets its own pool, dispatcher and timeouts.
             assertEquals(1, connectionPool.connectionCount())
         }

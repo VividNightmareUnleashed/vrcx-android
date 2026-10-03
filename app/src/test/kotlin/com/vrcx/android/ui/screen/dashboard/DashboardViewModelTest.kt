@@ -55,7 +55,7 @@ class DashboardViewModelTest {
         val viewModel = buildViewModel(friends = friends)
 
         testDispatcher.scheduler.runCurrent()
-        // No friends yet — counts stay at the initial value.
+        // No friends yet, so counts stay at the initial value.
         assertEquals(emptyMap<FriendState, Int>(), viewModel.state.value.friendCounts)
 
         friends.value = mapOf("x" to FriendContext("x", "X", FriendState.ONLINE))

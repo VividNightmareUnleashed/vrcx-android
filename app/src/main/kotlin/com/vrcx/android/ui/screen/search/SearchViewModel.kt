@@ -32,7 +32,7 @@ enum class WorldSearchMode {
 enum class AvatarSearchSource(val label: String, val hint: String) {
     /**
      * VRChat's `/avatars?search=…` endpoint without `user=me` returns only the
-     * requesting user's own avatars — there is no public-avatar search through
+     * requesting user's own avatars; there is no public-avatar search through
      * the official API. Label this source accurately so users don't expect
      * results from other creators.
      */

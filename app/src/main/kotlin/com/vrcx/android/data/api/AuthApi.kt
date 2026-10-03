@@ -41,7 +41,7 @@ interface AuthApi {
 
     /**
      * Invalidates the current session server-side. Local cookies become unusable.
-     * See https://vrchat.community/reference/logout — `PUT /api/1/logout`.
+     * See https://vrchat.community/reference/logout (`PUT /api/1/logout`).
      */
     @PUT("logout")
     suspend fun logout()

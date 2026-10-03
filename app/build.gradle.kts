@@ -119,7 +119,7 @@ android {
 
     sourceSets {
         // MigrationTestHelper reads the exported schemas as assets and Robolectric
-        // serves the variant's merged assets, so they ride along in debug only —
+        // serves the variant's merged assets, so they ride along in debug only,
         // which is why DatabaseMigrationTest lives in src/testDebug.
         getByName("debug").assets.srcDir("$projectDir/schemas")
     }

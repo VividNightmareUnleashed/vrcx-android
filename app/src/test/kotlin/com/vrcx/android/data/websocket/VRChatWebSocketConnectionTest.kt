@@ -34,7 +34,7 @@ import org.robolectric.RobolectricTestRunner
 /**
  * Drives the real socket against MockWebServer. The pipeline URL is a constant,
  * so the base client carries an interceptor that redirects it at the local
- * server — the socket itself is unmodified.
+ * server. The socket itself is unmodified.
  */
 @RunWith(RobolectricTestRunner::class)
 class VRChatWebSocketConnectionTest {
@@ -400,7 +400,7 @@ class VRChatWebSocketConnectionTest {
         // The socket left over from before a reconnect (or from the previous
         // account) is still on the wire while the replacement comes up. Its
         // frames belong to a session the app has already left, and its close
-        // belongs to a connection nothing is waiting on — the generation gate is
+        // belongs to a connection nothing is waiting on. The generation gate is
         // the only thing keeping either out of the live connection's state.
         val staleClosed = CompletableDeferred<Unit>()
         server.enqueue(
@@ -446,7 +446,7 @@ class VRChatWebSocketConnectionTest {
     @Test
     fun `a refused handshake asks for a new token instead of spinning the backoff`() = runBlocking {
         // The token lives in the connection URL and is captured once per service
-        // start, so retrying it can never succeed — the socket would sit in
+        // start, so retrying it can never succeed: the socket would sit in
         // RECONNECTING against a dead credential with every realtime event gone.
         server.enqueue(MockResponse().setResponseCode(401))
         val rejected = CompletableDeferred<Unit>()

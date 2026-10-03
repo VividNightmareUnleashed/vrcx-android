@@ -54,7 +54,7 @@ class VRChatWebSocket(
     /**
      * Called when VRChat rejects the handshake itself rather than the transport
      * failing. The auth token sits in the connection URL and is captured once,
-     * so retrying it on the backoff can never succeed — only a caller holding
+     * so retrying it on the backoff can never succeed; only a caller holding
      * the session can produce a new one.
      */
     private val onHandshakeRejected: (() -> Unit)? = null,
@@ -423,7 +423,7 @@ internal fun shouldForceReconnect(networkWasReplaced: Boolean, state: WebSocketS
  * Parses a single VRChat pipeline frame into a typed PipelineEvent. Returns
  * null for malformed messages or messages without a `type` field. The frame's
  * `content` field can be either a JSON string (needs double-decoding) or an
- * inline JSON object — both are supported. Extracted as a top-level pure
+ * inline JSON object, and both are supported. Extracted as a top-level pure
  * function so the parser is testable without an OkHttp session.
  */
 internal fun parsePipelineMessage(json: Json, text: String): PipelineEvent? =

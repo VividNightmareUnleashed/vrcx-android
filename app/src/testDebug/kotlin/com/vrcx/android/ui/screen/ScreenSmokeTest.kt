@@ -91,7 +91,7 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * Renders every screen once against empty repository state. These do not assert on
- * content — they exist so that a crash inside a composable (a missing key, an
+ * content. They exist so that a crash inside a composable (a missing key, an
  * out-of-range index, a null dereference on absent data) fails the build instead of
  * shipping.
  */

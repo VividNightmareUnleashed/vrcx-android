@@ -196,7 +196,7 @@ class CookieJarImplTest {
         assertEquals(CookieStorageStatus.READY, jar.storageStatus.value)
 
         // The first write never landed, so it must not be short-circuited away as
-        // "already persisted" — that leaves a healthy-looking session that is gone
+        // "already persisted". That leaves a healthy-looking session that is gone
         // on the next launch.
         verify(secureSecretsStore, times(2))
             .replaceCookiesByHost(

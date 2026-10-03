@@ -5,7 +5,7 @@ package com.vrcx.android.data.db
  * share a single table across every logged-in account and disambiguate with a
  * composite primary key of `ownerUserId:entityId`.
  *
- * The format lives here so no call site hand-assembles or hand-parses it — the
+ * The format lives here so no call site hand-assembles or hand-parses it. The
  * DAO accessors in [com.vrcx.android.data.db.dao] and the friend-log repository
  * build keys through these helpers, and callers pass `(ownerId, entityId)`.
  */

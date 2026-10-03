@@ -10,7 +10,7 @@ class BootReceiver : BroadcastReceiver() {
         // Defer all auth/preference reads to BootReconnectWorker.doWork() so the
         // broadcast main thread is never blocked on disk I/O during boot. The
         // worker checks SecureSecretsStore + backgroundServiceEnabled before
-        // doing anything, so an unconditional enqueue is safe — it short-circuits
+        // doing anything, so an unconditional enqueue is safe: it short-circuits
         // when the user isn't logged in or has the background service disabled.
         BootReconnectWorker.enqueue(context)
     }

@@ -54,7 +54,7 @@ class WorldRepository @Inject constructor(
     /**
      * Fetch instance details for the top [MAX_INSTANCE_DETAILS] instance IDs
      * concurrently. Popular worlds advertise dozens or hundreds of active
-     * instances — doing those requests sequentially would block the World
+     * instances, and doing those requests sequentially would block the World
      * Detail load on every round trip, drain the rate limiter, and make the
      * screen feel broken. The cap keeps the UI cost bounded; parallel fan-out
      * (via `coroutineScope` + `async`) keeps the wall clock close to a single
@@ -76,7 +76,7 @@ class WorldRepository @Inject constructor(
     /**
      * Sends an invite for the given instance to the current user, mirroring the
      * desktop "Invite Yourself" affordance. Useful on Android because the app
-     * cannot launch VRChat directly — accepting the resulting in-app invite is
+     * cannot launch VRChat directly; accepting the resulting in-app invite is
      * how the user joins from a headset session.
      */
     suspend fun selfInvite(worldId: String, instanceId: String) {

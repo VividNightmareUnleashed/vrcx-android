@@ -9,7 +9,7 @@ import kotlinx.coroutines.CancellationException
  * Runtime state that belongs to one signed-in account and must not outlive it.
  *
  * Implementations register through [AccountScope.bindTo], which is also how they
- * obtain the scope their guards read — holding account-scoped state and being
+ * obtain the scope their guards read. Holding account-scoped state and being
  * reset when that account goes away are the same registration, so a repository
  * cannot have one without the other.
  */
@@ -40,7 +40,7 @@ data class AccountScopedEvent<out T>(val origin: AccountScope.Token, val value: 
  * land in the new session.
  *
  * [publishIfCurrent] and [invalidate] take the same lock, and [invalidate]
- * advances the generation before it resets anything — so a publish racing an
+ * advances the generation before it resets anything, so a publish racing an
  * account change either lands first and is then cleared, or sees the new
  * generation and is skipped. There is no window in between, which is what the
  * per-repository copies of this rule could not guarantee.
@@ -83,7 +83,7 @@ class AccountScope @Inject constructor() {
 
     /**
      * The throwing half of the guard, for a multi-step sequence that cannot
-     * express "abandon the rest of this" as a return value — a paginator fetcher
+     * express "abandon the rest of this" as a return value: a paginator fetcher
      * or a several-request write path.
      */
     fun ensureCurrent(token: Token) {

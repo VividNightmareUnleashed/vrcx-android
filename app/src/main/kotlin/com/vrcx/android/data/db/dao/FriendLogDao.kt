@@ -13,7 +13,7 @@ interface FriendLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCurrent(entry: FriendLogCurrentEntity)
 
-    /** Bulk insert in a single transaction — used for first-time friend-log population. */
+    /** Bulk insert in a single transaction, used for first-time friend-log population. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCurrent(entries: List<FriendLogCurrentEntity>)
 

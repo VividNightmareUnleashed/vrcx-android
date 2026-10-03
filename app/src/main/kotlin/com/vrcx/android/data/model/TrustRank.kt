@@ -4,7 +4,7 @@ package com.vrcx.android.data.model
  * VRChat trust ranks, derived from a user's `system_trust_*` tags.
  *
  * [label] is persisted into the friend-log history, so the strings must stay
- * byte-identical — reword them and every friend spuriously logs a
+ * byte-identical: reword them and every friend spuriously logs a
  * "TrustLevel changed" row. [priority] drives sort order (lower = higher
  * trust) and keeps legend/veteran distinct even though they share a label.
  *

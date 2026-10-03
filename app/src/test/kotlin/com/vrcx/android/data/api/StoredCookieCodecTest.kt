@@ -41,7 +41,7 @@ class StoredCookieCodecTest {
         val decoded = StoredCookieCodec.deserialize(StoredCookieCodec.serialize(cookie))!!
 
         // Either sequence used to split the record apart, dropping the cookie on
-        // the next load — a sign-out with no explanation.
+        // the next load: a sign-out with no explanation.
         assertEquals(cookie.value, decoded.value)
         assertEquals(cookie.name, decoded.name)
     }

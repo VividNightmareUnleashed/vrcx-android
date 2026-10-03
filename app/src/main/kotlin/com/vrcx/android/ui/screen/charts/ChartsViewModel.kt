@@ -178,7 +178,7 @@ class ChartsViewModel @Inject constructor(
             epochMs = epochMs ?: Long.MIN_VALUE,
             hour = zoned?.hour ?: -1,
             dayOfWeek = zoned?.dayOfWeek?.value ?: -1,
-            // Same zoned instant as the hour/weekday buckets — `createdAt` is a
+            // Same zoned instant as the hour/weekday buckets. `createdAt` is a
             // UTC ISO-8601 string, so slicing it files evening sessions under
             // the wrong local day for anyone off UTC.
             dateKey = zoned?.toLocalDate()?.toString() ?: createdAt.take(ISO_DATE_LENGTH),

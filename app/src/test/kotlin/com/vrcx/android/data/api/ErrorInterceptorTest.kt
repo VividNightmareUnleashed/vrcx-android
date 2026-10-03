@@ -77,7 +77,7 @@ class ErrorInterceptorTest {
     @Test
     fun `401 from any two factor endpoint does not expire the session`() {
         // A wrong code on any of the three methods is the user's mistake, not an
-        // expired session — the challenge has to survive it.
+        // expired session, and the challenge has to survive it.
         for (methodName in listOf("verifyTotp", "verifyOtp", "verifyEmailOtp")) {
             val collected = collectEvents()
             server.enqueue(MockResponse().setResponseCode(401).setBody("bad code"))
@@ -237,8 +237,8 @@ class ErrorInterceptorTest {
 
     /**
      * Collects events emitted to the bus during a single test. The bus keeps no
-     * replay, so anything emitted before the collector subscribes is gone —
-     * wait for the subscription itself rather than guessing at how long it takes.
+     * replay, so anything emitted before the collector subscribes is gone.
+     * Wait for the subscription itself rather than guessing at how long it takes.
      */
     @OptIn(DelicateCoroutinesApi::class)
     private fun collectEvents(): () -> List<AuthEvent> {

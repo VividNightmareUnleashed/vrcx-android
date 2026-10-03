@@ -49,8 +49,8 @@ fun formatInstanceHint(location: String): String {
 }
 
 /**
- * The world id a user is in — following a `traveling` presence to its
- * destination — or null when the resolved location is a sentinel/non-world.
+ * The world id a user is in (following a `traveling` presence to its
+ * destination), or null when the resolved location is a sentinel/non-world.
  */
 fun resolvedWorldId(location: String?, travelingToLocation: String?): String? = worldIdOrNull(
     if (location == "traveling") {

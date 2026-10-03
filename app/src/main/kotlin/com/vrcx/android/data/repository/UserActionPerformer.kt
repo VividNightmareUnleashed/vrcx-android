@@ -6,11 +6,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Performs the profile screen's write actions — the one-shot things you do
+ * Performs the profile screen's write actions: the one-shot things you do
  * *to* another user from their profile.
  *
  * Split out of [UserDetailRepository] because it is the one place those writes
- * happen and it needs collaborators nothing else there uses — the friend,
+ * happen and it needs collaborators nothing else there uses: the friend,
  * notification and moderation surfaces. Keeping it separate is what stops the
  * profile aggregator from having to know about every write endpoint just to
  * load a user's tabs.

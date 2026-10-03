@@ -51,7 +51,7 @@ class WorldDetailViewModel @Inject constructor(
             _message.value =
                 runCatchingCancellable {
                     worldRepository.selfInvite(worldId, instanceId)
-                    "Invite sent — check your VRChat notifications"
+                    "Invite sent. Check your VRChat notifications."
                 }.getOrElse { failure -> "Self invite failed: ${failure.message}" }
         }
     }

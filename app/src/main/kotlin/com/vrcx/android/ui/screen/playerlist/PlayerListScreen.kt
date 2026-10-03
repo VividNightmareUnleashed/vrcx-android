@@ -113,7 +113,7 @@ private fun helperText(scope: PlayerListScope, location: String): String = when 
         "Current-world matching needs an active world location."
     }
 
-    PlayerListScope.FRIENDS -> "Your full friend roster — pick a sort order."
+    PlayerListScope.FRIENDS -> "Your full friend roster. Pick a sort order."
 }
 
 @HiltViewModel

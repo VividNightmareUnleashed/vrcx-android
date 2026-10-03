@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * The kinds of friend-log event, keyed by the [token] stored in
- * [FriendLogHistoryEntity.type]. Tokens are on disk — rename a constant freely,
+ * [FriendLogHistoryEntity.type]. Tokens are on disk: rename a constant freely,
  * never a token.
  */
 enum class FriendLogEventType(val token: String, val label: String) {
@@ -83,9 +83,9 @@ internal class FriendLogSynchronizer @Inject constructor(
         }
 
         val missing = currentEntries.filter { it.odUserId !in seenIds }
-        // A snapshot that came back short — a truncated sweep, or a friend who
+        // A snapshot that came back short (a truncated sweep, or a friend who
         // moved between the online and offline lists while both were being
-        // paged — looks exactly like a mass unfriend, and the rows below are
+        // paged) looks exactly like a mass unfriend, and the rows below are
         // permanent. Real removals also arrive on the pipeline's friend-delete
         // path, and a later sync over a complete snapshot still catches the
         // rest, so an implausible removal set is left alone.
