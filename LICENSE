@@ -1,0 +1,55 @@
+# License
+
+VRCX Android is source-available, not open source.
+Copyright (c) 2026 VividNightmare. All rights reserved except as granted below.
+
+You may:
+
+- Read the source and build VRCX Android from it for your own use.
+- Modify your own build for your own use.
+
+You may not:
+
+- Redistribute VRCX Android in any form -- source, APKs or packages --
+  modified or unmodified -- without prior permission from the copyright holder.
+- Sell VRCX Android or include it (or any part of its code) in other products,
+  packages, or bundles.
+
+No warranty: the software is provided as is, and no liability is accepted for
+any damages arising from its use.
+
+## Upstream and third-party code
+
+VRCX Android 1.x is modelled on VRCX by pypy and contributors, and its launcher
+icon is VRCX's speech-bubble mark. Any part taken from VRCX was received under
+the MIT License below, which continues to apply to it and must be retained; the
+original project remains available at https://github.com/vrcx-team/VRCX. The
+terms above cover only the code written for VRCX Android: the Android app in
+`app/`, and the build files, scripts and documentation around it.
+
+Other third-party components are used under their own licenses. Nothing in this
+file limits the rights those licenses give you.
+
+---
+
+MIT License
+
+Copyright (c) 2019-2026 pypy and individual contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

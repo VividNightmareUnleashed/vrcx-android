@@ -153,6 +153,11 @@ Developer: [AyaDreamsOfYou](https://x.com/AyaDreamsOfYou)
 
 Inspired by [VRCX](https://github.com/vrcx-team/VRCX), the open-source VRChat companion app for desktop.
 
+## License
+
+VRCX Android is source-available: you can build and change it for your own use, but redistributing it needs
+permission first and selling it isn't allowed. See [LICENSE](LICENSE) for the exact terms.
+
 ## Disclaimer
 
 This is an independent project. It is not affiliated with or endorsed by the [VRCX Team](https://github.com/vrcx-team/VRCX) or VRChat Inc.
