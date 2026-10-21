@@ -27,6 +27,10 @@
     <string name="import_pick_database">Select the VRCX.sqlite3 file from your PC</string>
     <string name="import_pick_json">Optionally select VRCX.json (press back to skip)</string>
 
+    <!-- In-app QR scanner (used when the Google code scanner cannot run) -->
+    <string name="qr_scan_hint">Point the camera at the QR code in VRCX Companion on your PC.</string>
+    <string name="qr_scan_cancel">Cancel</string>
+
     <!-- WebView version gate -->
     <string name="webview_gate_title">Android System WebView needs an update</string>
     <string name="webview_gate_body">VRCX needs Android System WebView %1$d or newer with document-start scripts and web message listeners. This device has %2$s.\n\nUpdate "Android System WebView" (or Chrome, if it provides the WebView on this device) from the Play Store, then open VRCX again.</string>

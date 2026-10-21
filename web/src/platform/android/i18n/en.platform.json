@@ -99,6 +99,7 @@
                 "unreachable": "Can't reach your PC. Check that both devices are on the same network and that VRCX Companion is running.",
                 "not_local": "That address isn't on your local network. VRCX only connects to PCs on your network.",
                 "fingerprint": "This PC's identity has changed. Forget it and pair again.",
+                "camera": "Can't use the camera to scan. Allow camera access for VRCX in Android settings, or use Search or Enter address instead.",
                 "generic": "Something went wrong: {detail}"
             },
             "data_header": "Data",

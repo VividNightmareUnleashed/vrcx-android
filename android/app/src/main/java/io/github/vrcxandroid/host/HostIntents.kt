@@ -1,19 +1,24 @@
 package io.github.vrcxandroid.host
 
+import android.Manifest
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import io.github.vrcxandroid.companion.PairingException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -55,10 +60,36 @@ object ExternalLinks {
     }
 }
 
-/** QR scanning through the Google code scanner (no camera permission needed). */
+/**
+ * QR scanning. The Google code scanner runs in Google Play services and needs no camera permission. Where it fails
+ * (no Play services, or Play services without its scanner module, as on some phones sold in China), [QrScanActivity]
+ * scans in the app with the camera permission instead. Null when the user cancels; [PairingException.CAMERA] when the
+ * camera permission is refused or no camera can be opened.
+ */
 object QrScanner {
-    suspend fun scan(): String? = withContext(Dispatchers.Main) {
-        val context: Context = VrcxHost.activity ?: return@withContext null
+    private const val TAG = "VRCXQr"
+
+    // Set once the Google scanner has failed in this process: later scans go straight to the in-app one.
+    @Volatile
+    private var googleFailed = false
+
+    private sealed interface GoogleScan {
+        data class Done(val value: String?) : GoogleScan
+        data object Failed : GoogleScan
+    }
+
+    suspend fun scan(): String? {
+        if (!googleFailed) {
+            when (val result = scanWithGoogle()) {
+                is GoogleScan.Done -> return result.value
+                GoogleScan.Failed -> googleFailed = true
+            }
+        }
+        return scanInApp()
+    }
+
+    private suspend fun scanWithGoogle(): GoogleScan = withContext(Dispatchers.Main) {
+        val context: Context = VrcxHost.activity ?: return@withContext GoogleScan.Done(null)
         val options = GmsBarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
             .enableAutoZoom()
@@ -66,17 +97,31 @@ object QrScanner {
         val scanner = try {
             GmsBarcodeScanning.getClient(context, options)
         } catch (t: Throwable) {
-            Log.w("VRCXQr", "code scanner unavailable", t)
-            return@withContext null
+            Log.w(TAG, "code scanner unavailable", t)
+            return@withContext GoogleScan.Failed
         }
         suspendCancellableCoroutine { cont ->
             scanner.startScan()
-                .addOnSuccessListener { if (cont.isActive) cont.resume(it.rawValue) }
-                .addOnCanceledListener { if (cont.isActive) cont.resume(null) }
+                .addOnSuccessListener { if (cont.isActive) cont.resume(GoogleScan.Done(it.rawValue)) }
+                .addOnCanceledListener { if (cont.isActive) cont.resume(GoogleScan.Done(null)) }
                 .addOnFailureListener {
-                    Log.w("VRCXQr", "scan failed", it)
-                    if (cont.isActive) cont.resume(null)
+                    Log.w(TAG, "code scanner failed, using the in-app scanner", it)
+                    if (cont.isActive) cont.resume(GoogleScan.Failed)
                 }
+        }
+    }
+
+    private suspend fun scanInApp(): String? {
+        if (ContextCompat.checkSelfPermission(VrcxHost.app, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            val answer = ActivityPickers.requestPermission(Manifest.permission.CAMERA) ?: return null
+            if (!answer.granted) throw PairingException(PairingException.CAMERA)
+        }
+        val context = withContext(Dispatchers.Main) { VrcxHost.activity } ?: return null
+        val result = ActivityPickers.startForResult(Intent(context, QrScanActivity::class.java)) ?: return null
+        return when (result.resultCode) {
+            Activity.RESULT_OK -> result.data?.getStringExtra(QrScanActivity.EXTRA_VALUE)
+            QrScanActivity.RESULT_NO_CAMERA -> throw PairingException(PairingException.CAMERA)
+            else -> null
         }
     }
 }

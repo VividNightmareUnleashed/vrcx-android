@@ -166,7 +166,7 @@ The Kotlin interfaces the packages share live in `bridge/BridgeModule.kt`, `host
 | `TtsCancel()` | `undefined` |
 | `CompanionGetState()` | state object (below) |
 | `CompanionDiscover(timeoutMs)` | `[{id, name, host, port, fp, pairing}]` |
-| `CompanionScanQr()` | state object after pairing; rejects `OperationCanceledException: ...` when the scan is cancelled |
+| `CompanionScanQr()` | state object after pairing; rejects `OperationCanceledException: ...` when the scan is cancelled, the `CompanionPair` errors, or `PairingException: camera` when the in-app scanner has no camera permission or camera. The Google code scanner (Play services, no permission) runs first; when it fails, `host/QrScanActivity.kt` (CameraX + ZXing) scans instead and asks for the camera permission |
 | `CompanionPair({host, port, fp?, id?, name?}, code)` | state object; rejects `PairingException: <code|expired|closed|unreachable|not-local|fingerprint|version|invalid-qr|protocol|storage>` |
 | `CompanionForget(id)` / `CompanionSetActive(id)` | state object |
 | `ImportDatabase()` | `{ok, message}`. Opens SAF pickers for `VRCX.sqlite3`, then optionally `VRCX.json`, and restarts the app on success |

@@ -87,6 +87,9 @@ describe('error and status helpers', () => {
         expect(describeCompanionError(new Error('PairingException: fingerprint')).key).toBe(
             'android.companion.errors.fingerprint'
         );
+        expect(describeCompanionError(new Error('PairingException: camera')).key).toBe(
+            'android.companion.errors.camera'
+        );
     });
 
     test('falls back to the generic message with the native detail', () => {

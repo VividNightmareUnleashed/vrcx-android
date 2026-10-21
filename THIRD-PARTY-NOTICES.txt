@@ -19,10 +19,11 @@ Android app
     and others) ................................... their own licenses, listed in
                                                     the APK notices file above
   AndroidX Core, Activity, Fragment, WebKit,
-    Browser, Security Crypto, SQLite .............. Apache-2.0
+    Browser, Security Crypto, SQLite, CameraX ..... Apache-2.0
   SQLite .......................................... Public domain (blessing)
   OkHttp, OkHttp Brotli, Okio (Square) ............ Apache-2.0
   Brotli decoder (Google) ......................... MIT
+  ZXing core (ZXing authors) ...................... Apache-2.0
   Kotlin standard library, kotlinx.coroutines,
     kotlinx.serialization (JetBrains) ............. Apache-2.0
   Google code scanner (Google Play services) ...... Android Software Development

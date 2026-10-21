@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Start on boot, opt-in (host/BootReceiver.kt): the receiver stays disabled until the user turns it on. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- In-app QR scanner, requested only when the Google code scanner cannot run (host/QrScanActivity.kt). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <!-- Package visibility for canHandle()/resolveActivity checks (Android 11+). -->
     <queries>
@@ -79,6 +82,16 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".host.QrScanActivity"
+            android:exported="false"
+            android:theme="@style/Theme.VRCX.Scanner" />
+
+        <!-- Asks Google Play services to download the code scanner's module when VRCX is installed. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
 
         <service
             android:name=".host.VrcxForegroundService"

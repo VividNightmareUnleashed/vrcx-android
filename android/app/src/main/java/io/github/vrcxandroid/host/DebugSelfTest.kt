@@ -10,7 +10,7 @@ import io.github.vrcxandroid.BuildConfig
  * `--ez vrcx.selftest.notify true` to also post a desktop notification through `electron.desktopNotification`, and
  * `--ez vrcx.selftest.back true` to install a back handler that consumes one back press). `--es vrcx.selftest.action`
  * then runs one of: `permission` (RequestNotificationPermission), `import` (ImportDatabase, while a GetBackgroundMode
- * call every 250 ms shows whether page calls are held), `restart` (RestartApp), after `--ei vrcx.selftest.delay <ms>`
+ * call every 250 ms shows whether page calls are held), `restart` (RestartApp), `scan` (CompanionScanQr), after `--ei vrcx.selftest.delay <ms>`
  * if given (press Home meanwhile to run it in the background). Results are logged by the page as
  * `VRCX_SELFTEST ...` console lines (logcat tag VRCXWeb).
  */
@@ -50,6 +50,7 @@ object DebugSelfTest {
     private fun actionScript(action: String): String = when (action) {
         "permission" -> "log('permission', await call('RequestNotificationPermission'));"
         "restart" -> "log('restart', 'requested'); call('RestartApp');"
+        "scan" -> "try { log('scan', await call('CompanionScanQr')); } catch (e) { log('scan', 'error ' + e.message); }"
         "import" -> """
             const started = Date.now();
             let ticks = 0;

@@ -105,7 +105,8 @@ const PAIRING_ERROR_KEYS = {
     closed: 'android.companion.errors.closed',
     unreachable: 'android.companion.errors.unreachable',
     'not-local': 'android.companion.errors.not_local',
-    fingerprint: 'android.companion.errors.fingerprint'
+    fingerprint: 'android.companion.errors.fingerprint',
+    camera: 'android.companion.errors.camera'
 };
 
 /**
