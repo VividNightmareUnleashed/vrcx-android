@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.1] - 2026-10-21
+
+### Fixed
+
+- **Scan QR code did nothing on some phones.** Where Google Play services
+  can't run its QR scanner (common on phones sold in China), VRCX now scans
+  with its own camera screen instead, after asking for camera access. If
+  camera access is refused, it says so and points you to Search or Enter
+  address.
+- **Empty band at the top of profiles on phones.** User, world, avatar and
+  group dialogs no longer add the status bar height twice.
+
 ## [2.0.0] - 2026-09-26
 
 VRCX Android is rebuilt from scratch. Instead of a separate app that imitates
