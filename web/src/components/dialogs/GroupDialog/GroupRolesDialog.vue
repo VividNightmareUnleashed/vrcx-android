@@ -10,15 +10,17 @@
             {{ canManage ? t('dialog.group_roles.header') : t('dialog.group_roles.view_header') }}
             <span class="text-muted-foreground">- {{ groupRolesDialog.groupRef.name }}</span>
         </h3>
-        <div class="flex-1 min-h-0 flex gap-4 mt-2">
-            <div class="w-80 shrink-0 flex flex-col min-h-0 border-r pr-4">
+        <!-- Phones: the role list stacks above the role form, and both flow in the dialog's page scroller. -->
+        <div class="flex-1 min-h-0 flex gap-4 mt-2 compact:flex-col compact:flex-[1_0_auto]">
+            <div
+                class="w-80 shrink-0 flex flex-col min-h-0 border-r pr-4 compact:w-full compact:border-r-0 compact:border-b compact:pr-0 compact:pb-4">
                 <div class="flex items-center gap-2 mb-2">
                     <Button size="sm" :disabled="!canManage || groupRolesDialog.loading" @click="newRole">
                         <Plus />
                         {{ t('dialog.group_roles.new_role') }}
                     </Button>
                     <Button
-                        class="ml-auto"
+                        class="ml-auto pointer-coarse:size-10"
                         variant="ghost"
                         size="icon-sm"
                         :disabled="groupRolesDialog.loading"
@@ -27,7 +29,9 @@
                     </Button>
                 </div>
                 <DragDropProvider :modifiers="[RestrictToVerticalAxis]" @dragEnd="onDragEnd">
-                    <div :key="listKey" class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5">
+                    <div
+                        :key="listKey"
+                        class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 compact:flex-none compact:overflow-visible">
                         <div
                             v-if="!groupRolesDialog.loading && groupRolesDialog.roles.length === 0"
                             class="text-sm text-muted-foreground p-2">
@@ -102,12 +106,13 @@
                 </DragDropProvider>
             </div>
 
-            <div class="flex-1 min-h-0 flex flex-col">
+            <div class="flex-1 min-h-0 flex flex-col compact:flex-none">
                 <div v-if="!form.mode" class="text-sm text-muted-foreground p-2">
                     {{ t('dialog.group_roles.no_role_selected') }}
                 </div>
                 <template v-else>
-                    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-2">
+                    <div
+                        class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-2 compact:flex-none compact:overflow-visible compact:pr-0">
                         <FieldGroup class="gap-4">
                             <Field>
                                 <FieldLabel>{{ t('dialog.group_roles.name') }}</FieldLabel>
