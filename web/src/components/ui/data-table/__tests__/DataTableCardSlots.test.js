@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, ref } from 'vue';
 import { mount } from '@vue/test-utils';
-import { getCoreRowModel, useVueTable } from '@tanstack/vue-table';
+import { useVrcxVueTable } from '../../../../lib/table/useVrcxVueTable';
 
 vi.mock('@/stores/', () => ({
     useAppearanceSettingsStore: () => ({ isDataTableStriped: ref(false) }),
@@ -60,11 +60,12 @@ function mountCards(options) {
     const columns = buildColumns(options);
     const Host = defineComponent({
         setup() {
-            const table = useVueTable({
+            const { table } = useVrcxVueTable({
                 data: rows,
                 columns,
                 getRowId: (row) => row.id,
-                getCoreRowModel: getCoreRowModel()
+                enablePagination: false,
+                fillRemainingSpace: false
             });
             return () => h(DataTableCardList, { table });
         }
@@ -94,7 +95,12 @@ describe('DataTableCardRow slots', () => {
         delete columns[0].meta.mobile.class;
         const Host = defineComponent({
             setup() {
-                const table = useVueTable({ data: rows, columns, getCoreRowModel: getCoreRowModel() });
+                const { table } = useVrcxVueTable({
+                    data: rows,
+                    columns,
+                    enablePagination: false,
+                    fillRemainingSpace: false
+                });
                 return () => h(DataTableCardList, { table });
             }
         });

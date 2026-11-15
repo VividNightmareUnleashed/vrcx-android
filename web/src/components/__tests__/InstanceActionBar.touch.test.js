@@ -38,7 +38,8 @@ vi.mock('../../composables/useInviteChecks', () => ({
 }));
 vi.mock('../../shared/utils', () => ({
     parseLocation: () => ({ isRealInstance: true, instanceId: 'inst_1', worldId: 'wrld_1', tag: 'wrld_1:inst_1' }),
-    hasGroupPermission: () => false
+    hasGroupPermission: () => false,
+    debounce: (fn) => fn
 }));
 vi.mock('../../api', () => ({
     instanceRequest: { selfInvite: vi.fn(() => Promise.resolve({})), getInstance: vi.fn(() => Promise.resolve({})) },

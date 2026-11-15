@@ -59,10 +59,13 @@ describe('tools on Android', () => {
             'image',
             'group',
             'system',
-            'user',
-            'other'
+            'marketplace',
+            'other',
+            'user'
         ]);
         expect(getToolsByCategory('system').map((tool) => tool.key)).toEqual(['auto-change-status']);
+        // The VRChat store and the purchase history only use the web API, so Android keeps them.
+        expect(getToolsByCategory('marketplace').map((tool) => tool.key)).toEqual(['vrchat-store', 'purchase-history']);
     });
 
     test('shows the VRChat photos folder as Photos folder with the picture tools', () => {

@@ -78,7 +78,7 @@ describe('Android platform strings', () => {
             }
         };
         walk({ view: enPlatform.view, dialog: enPlatform.dialog }, '');
-        const added = new Set(['view.settings.category.companion']);
+        const added = new Set(['view.settings.category.companion', 'view.settings.general.contributors.android_app']);
         const unknown = overrides.filter((path) => !added.has(path) && typeof lookup(en, path) !== 'string');
         expect(unknown).toEqual([]);
     });

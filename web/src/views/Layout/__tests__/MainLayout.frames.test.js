@@ -37,6 +37,15 @@ vi.mock('vue-router', async (importOriginal) => ({
     ...(await importOriginal()),
     useRouter: () => ({ replace: vi.fn() })
 }));
+// shared/utils re-exports formatDateFilter, whose coordinator reaches the stores and, through them, websocket.js;
+// the test loader cannot finish that cycle (websocket.js calls debounce() at load), and nothing here uses the socket.
+vi.mock('../../../services/websocket', () => ({
+    wsState: { connected: false, messageCount: 0, bytesReceived: 0 },
+    initWebsocket: vi.fn(),
+    closeWebSocket: vi.fn(),
+    reconnectWebSocket: vi.fn()
+}));
+vi.mock('vue-i18n', async (importOriginal) => ({ ...(await importOriginal()), useI18n: () => ({ t: (key) => key }) }));
 vi.mock('../../../services/watchState', () => ({ watchState: mocks.watchState }));
 vi.mock('../../../stores', () => ({
     useAppearanceSettingsStore: () => ({
@@ -123,6 +132,9 @@ vi.mock('../../../components/dialogs/InviteGroupDialog.vue', stub);
 vi.mock('../../Settings/dialogs/VRChatConfigDialog.vue', stub);
 vi.mock('../../Settings/dialogs/PrimaryPasswordDialog.vue', stub);
 vi.mock('../../../components/dialogs/SendBoopDialog.vue', stub);
+vi.mock('../../../components/dialogs/FreeStoreItemDialog.vue', stub);
+vi.mock('../../../components/dialogs/InventoryBundleDialog.vue', stub);
+vi.mock('../../../components/dialogs/ModerationReportDialog.vue', stub);
 vi.mock('../../Tools/components/GlobalToolsDialogs.vue', stub);
 vi.mock('../../Settings/dialogs/ChangelogDialog.vue', stub);
 vi.mock('../../../components/onboarding/WhatsNewDialog.vue', stub);

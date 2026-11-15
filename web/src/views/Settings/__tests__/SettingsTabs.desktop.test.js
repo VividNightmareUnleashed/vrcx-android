@@ -14,6 +14,7 @@ vi.mock('@/api', () => ({ authRequest: { getConfig: vi.fn() }, queryRequest: { f
 vi.mock('@/shared/utils', () => ({ openExternalLink: vi.fn() }));
 vi.mock('@/shared/utils/androidCustomFiles', () => ({ reloadCustomCss: vi.fn(), reloadCustomScript: vi.fn() }));
 vi.mock('@/components/ui/dialog', async () => (await import('./settingsTabFixtures.js')).dialogModule);
+vi.mock('@/components/ui/select', async () => (await import('./settingsTabFixtures.js')).selectModule);
 vi.mock('@/coordinators/gameLogCoordinator', () => ({ disableGameLogDialog: vi.fn() }));
 vi.mock('@/coordinators/vrcxCoordinator', () => ({ clearVRCXCache: vi.fn() }));
 vi.mock('../dialogs/FeedFiltersDialog.vue', async () =>

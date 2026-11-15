@@ -32,7 +32,7 @@ vi.mock('@/stores', async () => {
         useUserStore: () => state.user,
         useWorldStore: () => ({ worldDialog: { visible: false } }),
         useAvatarStore: () => ({ avatarDialog: { visible: false } }),
-        useGroupStore: () => ({ groupDialog: { visible: false }, groupMemberModeration: { visible: false } }),
+        useGroupStore: () => ({ groupDialog: { visible: false }, groupMemberModeration: { visible: false }, groupRolesDialog: { visible: false } }),
         useInstanceStore: () => ({
             previousInstancesInfoDialog: vueRef({ visible: false }),
             previousInstancesListDialog: vueRef({ visible: false, variant: 'user' })

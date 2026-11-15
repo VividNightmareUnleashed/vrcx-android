@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, ref } from 'vue';
 import { mount } from '@vue/test-utils';
-import { getCoreRowModel, getExpandedRowModel, getPaginationRowModel, useVueTable } from '@tanstack/vue-table';
 
 vi.mock('@/stores/', () => ({
     useAppearanceSettingsStore: () => ({ isDataTableStriped: ref(true) }),
@@ -12,6 +11,7 @@ vi.mock('pinia', async (importOriginal) => ({ ...(await importOriginal()), store
 import { i18n } from '../../../../plugins/i18n';
 import DataTableCardList from '../DataTableCardList.vue';
 import DataTableLayout from '../DataTableLayout.vue';
+import { useVrcxVueTable } from '../../../../lib/table/useVrcxVueTable';
 
 const rows = [
     { id: 'a', name: 'Alice', type: 'GPS', time: '14:02', detail: 'World A', note: 'first', secret: 'x' },
@@ -86,15 +86,18 @@ function mountWithTable({ component = DataTableCardList, props = {}, tableOption
     let table;
     const Host = defineComponent({
         setup() {
-            table = useVueTable({
+            // The app builds its tables with useVrcxVueTable; without a spacer column and, unless a case asks for
+            // it, without pagination, so every row is a card.
+            ({ table } = useVrcxVueTable({
                 data: rows,
                 columns,
                 getRowId: (row) => row.id,
-                getCoreRowModel: getCoreRowModel(),
-                getExpandedRowModel: getExpandedRowModel(),
+                enableExpanded: true,
                 getRowCanExpand: () => true,
+                enablePagination: false,
+                fillRemainingSpace: false,
                 ...tableOptions
-            });
+            }));
             const expandedRenderer = columns[0].meta.expandedRow;
             return () =>
                 h(
@@ -195,8 +198,8 @@ describe('DataTableCardList (card mode, DESIGN.md §3.1)', () => {
     it('renders only the current page of rows', () => {
         const { wrapper } = mountWithTable({
             tableOptions: {
-                getPaginationRowModel: getPaginationRowModel(),
-                initialState: { pagination: { pageIndex: 1, pageSize: 2 } }
+                enablePagination: true,
+                initialPagination: { pageIndex: 1, pageSize: 2 }
             }
         });
         const names = wrapper.findAll('.cell-name').map((node) => node.text());
@@ -208,7 +211,7 @@ describe('DataTableCardList (card mode, DESIGN.md §3.1)', () => {
         let table;
         const Host = defineComponent({
             setup() {
-                table = useVueTable({ data: [], columns, getCoreRowModel: getCoreRowModel() });
+                ({ table } = useVrcxVueTable({ data: [], columns, fillRemainingSpace: false }));
                 return () => h(DataTableCardList, { table }, { empty: () => h('p', { class: 'empty' }, 'nothing') });
             }
         });

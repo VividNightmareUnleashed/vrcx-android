@@ -5,7 +5,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, reactive, ref } from 'vue';
 import { mount } from '@vue/test-utils';
-import { getCoreRowModel, getPaginationRowModel, useVueTable } from '@tanstack/vue-table';
+import { useVrcxVueTable } from '../../../../lib/table/useVrcxVueTable';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -89,13 +89,12 @@ const stackedToolbar = {
 function mountLayout(props = {}, slots = stackedToolbar) {
     const Host = defineComponent({
         setup() {
-            const table = useVueTable({
+            const { table } = useVrcxVueTable({
                 data: rows,
                 columns,
                 getRowId: (row) => row.id,
-                getCoreRowModel: getCoreRowModel(),
-                getPaginationRowModel: getPaginationRowModel(),
-                initialState: { pagination: { pageIndex: 0, pageSize: 10 } }
+                initialPagination: { pageIndex: 0, pageSize: 10 },
+                fillRemainingSpace: false
             });
             return () =>
                 h(TooltipProvider, null, () =>
