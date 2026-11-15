@@ -491,7 +491,7 @@
     defineConst(window, 'interopApi', Object.freeze({ callDotNetMethod: callDotNetMethod }));
 
     // ---------------------------------------------------------------------------------------------------------------
-    // 5. window.electron (upstream src-electron/preload.js:43-68)
+    // 5. window.electron (upstream src-electron/preload.js:43-71)
     // ---------------------------------------------------------------------------------------------------------------
 
     var managed = new Map();
@@ -510,6 +510,25 @@
 
     function hostCall(methodName, args) {
         return callDotNetMethod('AndroidHost', methodName, args || []);
+    }
+
+    // electron.onSystemThemeChanged: Electron reports nativeTheme changes; the WebView's prefers-color-scheme follows
+    // the system night mode, so its changes are reported instead (one listener, installed on first subscription).
+    var systemThemeQuery = null;
+
+    function watchSystemTheme() {
+        if (systemThemeQuery || typeof window.matchMedia !== 'function') {
+            return;
+        }
+        systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        systemThemeQuery.addEventListener('change', function (event) {
+            var callback = managed.get('systemThemeChanged');
+            if (callback) {
+                guard('systemThemeChanged', function () {
+                    callback(null, event.matches === true);
+                });
+            }
+        });
     }
 
     var pendingLaunchCommand = null;
@@ -537,6 +556,15 @@
         getNoUpdater: function () {
             return Promise.resolve(true);
         },
+        // Electron sets nativeTheme.themeSource; the Android window follows AppApi.ChangeTheme instead.
+        setThemeSource: function () {
+            return Promise.resolve(undefined);
+        },
+        onSystemThemeChanged: function (callback) {
+            var unsubscribe = registerManaged('systemThemeChanged', callback);
+            watchSystemTheme();
+            return unsubscribe;
+        },
         setTrayIconNotification: function (notify) {
             return hostCall('ElectronSetTrayIconNotification', [notify === true]).then(function () {
                 return undefined;
@@ -559,6 +587,9 @@
         },
         onBrowserFocus: function (callback) {
             return registerManaged('onBrowserFocus', callback);
+        },
+        onBrowserBlur: function (callback) {
+            return registerManaged('onBrowserBlur', callback);
         },
         desktopNotification: function (title, body, icon) {
             return hostCall('ElectronDesktopNotification', [
@@ -1304,6 +1335,13 @@
         if (data.visible === false) {
             if (!hiddenAt) {
                 hiddenAt = now();
+            }
+            // electron.onBrowserBlur: the app left the screen (upstream slows its polling and pauses animated images).
+            var blur = managed.get('onBrowserBlur');
+            if (blur) {
+                guard('onBrowserBlur', function () {
+                    blur(null);
+                });
             }
             return;
         }

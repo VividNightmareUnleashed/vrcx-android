@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // electron.onBrowserFocus (refreshes the VRChat status banner when stale).
+        // electron.onBrowserFocus (refreshes the VRChat status banner when stale, resumes animated images).
         VrcxHost.emit("focus")
     }
 

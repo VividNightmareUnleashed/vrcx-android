@@ -250,6 +250,7 @@ function readArgs(args) {
 }
 
 function createSqlite(configs, data) {
+    let lastInsertRowId = 0;
     const feed = feedRows(data);
     return {
         ExecuteJson(sql, rawArgs) {
@@ -296,6 +297,11 @@ function createSqlite(configs, data) {
                 return configs.delete(args.get('@key')) ? 1 : 0;
             }
             return fromPlugins('sqliteNonQuery', sql, args, data) ?? 0;
+        },
+        ExecuteInsert(sql, rawArgs) {
+            // Preview rows are mostly not stored: every INSERT reports a fresh rowid.
+            this.ExecuteNonQuery(sql, rawArgs);
+            return /^\s*INSERT/i.test(sql) ? ++lastInsertRowId : 0;
         }
     };
 }
@@ -689,6 +695,9 @@ export function installMockBridge({ params }) {
         onWindowSizeChanged: () => () => {},
         onWindowStateChange: () => () => {},
         onBrowserFocus: () => () => {},
+        onBrowserBlur: () => () => {},
+        setThemeSource: async () => {},
+        onSystemThemeChanged: () => () => {},
         desktopNotification: async (title, body) => console.info('[preview] notification', title, body),
         restartApp: async () => location.reload(),
         getOverlayWindow: async () => false,

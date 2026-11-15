@@ -109,7 +109,7 @@ docs/                  this file, PROTOCOL.md, DESIGN.md
 ### 4.4 Shim responsibilities (`android/app/src/main/assets/shim/vrcx-android-shim.js`)
 
 1. The globals from §4.1, `window.interopApi.callDotNetMethod(className, methodName, args)` returning a Promise, and
-   `window.electron` exactly as `upstream/VRCX/src-electron/preload.js:43-68`.
+   `window.electron` exactly as `upstream/VRCX/src-electron/preload.js:43-71`.
 2. Resolve locally, without crossing the bridge, calls that are PC-only and frequent: `AppApiElectron.ExecuteVrOverlayFunction`,
    `SetVR`, `XSNotification`, `OVRTNotification`, `SendIpc`, `IPCAnnounceStart`, `SetUserAgent`, `electron.updateVr`,
    `Discord.SetAssets`, and `Discord.SetActive` (resolves `false`).
