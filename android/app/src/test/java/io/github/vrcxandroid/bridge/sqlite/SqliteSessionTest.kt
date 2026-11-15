@@ -105,6 +105,22 @@ class SqliteSessionTest {
     }
 
     @Test
+    fun executeInsertReturnsTheRowIdOnlyWhenRowsChanged() {
+        val conn = FakeConnection(changes = 1, lastInsertRowId = 42)
+        val session = SqliteSession { conn }
+        val args = buildJsonObject { put("@a", 1) }
+        assertEquals(JsonPrimitive(42L), call(session, "ExecuteInsert", "INSERT INTO t (a) VALUES (@a)", args))
+        assertEquals(listOf("SELECT changes()", "SELECT last_insert_rowid()"), conn.prepared.drop(1))
+        assertEquals(1L, conn.statements[0].binds.values.single())
+
+        conn.changes = 0
+        assertEquals(JsonPrimitive(0L), call(session, "ExecuteInsert", "INSERT OR IGNORE INTO t (a) VALUES (1)"))
+        assertEquals(JsonPrimitive(0L), call(session, "ExecuteInsert", "BEGIN"))
+        // The rowid is read only for the insert that changed a row.
+        assertEquals(1, conn.prepared.count { it == "SELECT last_insert_rowid()" })
+    }
+
+    @Test
     fun multiStatementQueryReturnsFirstResultSetAndRunsTheRest() {
         val conn = FakeConnection(
             mapOf(

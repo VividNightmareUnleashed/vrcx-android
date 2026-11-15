@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
  * - `ExecuteJson(sql, args)` → JSON **string** `[[...], ...]` (NULL → `null`, BLOB → base64)
  * - `Execute(sql, args)` → the same rows as a JSON array
  * - `ExecuteNonQuery(sql, args)` → rows changed, or -1
+ * - `ExecuteInsert(sql, args)` → the inserted rowid, or 0 when no row changed
  *
  * `args` is the frontend's `{'@name': value}` object (a JS `Map` the shim encodes as an object) or null.
  * Errors reject as `SQLiteException: <sqlite message>`, e.g. `SQLiteException: database is locked` ([SqliteErrors]).
@@ -34,6 +35,7 @@ internal object SqliteBridge {
             rows.result()
         }
         "ExecuteNonQuery" -> jsonOf(session.executeNonQuery(sql(args), sqlArgs(args)))
+        "ExecuteInsert" -> jsonOf(session.executeInsert(sql(args), sqlArgs(args)))
         // Host-only upstream (Init/Exit); harmless to expose.
         "Init" -> {
             session.connection()
