@@ -1,6 +1,7 @@
 import { getGroupName, getWorldName, isRealInstance, parseLocation } from '../shared/utils';
 import { database } from '../services/database';
 import { useAdvancedSettingsStore } from '../stores/settings/advanced';
+import { useFriendStore } from '../stores/friend';
 import { useGameLogStore } from '../stores/gameLog';
 import { useGameStore } from '../stores/game';
 import { useInstanceStore } from '../stores/instance';
@@ -47,6 +48,7 @@ export function runUpdateCurrentUserLocationFlow() {
 
     ref.$online_for = userStore.currentUser.$online_for;
     ref.$offline_for = userStore.currentUser.$offline_for;
+    ref.$active_for = null;
     ref.$location = parseLocation(currentLocation);
     if (!gameStore.isGameRunning || advancedSettingsStore.gameLogDisabled) {
         ref.$location_at = userStore.currentUser.$location_at;
@@ -104,9 +106,11 @@ export async function runSetCurrentUserLocationFlow(location, travelingToLocatio
             groupName: await getGroupName(L.groupId),
             time: 0
         };
-        database.addGamelogLocationToDatabase(entry);
         notificationStore.queueGameLogNoty(entry);
-        gameLogStore.addGameLog(entry);
+        const persistedEntry = await database.addGamelogLocationToDatabase(entry);
+        if (persistedEntry) {
+            gameLogStore.addGameLog(persistedEntry);
+        }
         instanceStore.addInstanceJoinHistory(location, dt);
 
         userStore.applyUserDialogLocation();
@@ -121,13 +125,14 @@ export async function runSetCurrentUserLocationFlow(location, travelingToLocatio
     }
 }
 
-export function runLastLocationResetFlow(gameLogDate) {
+export async function runLastLocationResetFlow(gameLogDate) {
     const photonStore = usePhotonStore();
     const instanceStore = useInstanceStore();
     const gameLogStore = useGameLogStore();
     const vrStore = useVrStore();
     const userStore = useUserStore();
     const locationStore = useLocationStore();
+    const friendStore = useFriendStore();
 
     let dateTime = gameLogDate;
     if (!gameLogDate) {
@@ -147,9 +152,12 @@ export function runLastLocationResetFlow(gameLogDate) {
             time: dateTimeStamp - ref.joinTime
         };
         dataBaseEntries.unshift(entry);
+        friendStore.updateFriendLastSeen(ref.userId, dateTime);
+    }
+    const persistedEntries = await database.addGamelogJoinLeaveBulk(dataBaseEntries);
+    for (const entry of persistedEntries) {
         gameLogStore.addGameLog(entry);
     }
-    database.addGamelogJoinLeaveBulk(dataBaseEntries);
     if (locationStore.lastLocation.date !== null && locationStore.lastLocation.date > 0) {
         const update = {
             time: dateTimeStamp - locationStore.lastLocation.date,

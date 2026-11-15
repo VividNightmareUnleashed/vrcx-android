@@ -1,4 +1,4 @@
-import { reactive, ref, watch } from 'vue';
+import { reactive, ref, triggerRef, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { toast } from 'vue-sonner';
 import { useI18n } from 'vue-i18n';
@@ -72,6 +72,24 @@ export const useInstanceStore = defineStore('Instance', () => {
     }
 
     const lastInstanceApplied = ref('');
+
+    const instanceCategories = ref([]);
+    const instanceVibes = ref([]);
+
+    async function loadInstanceCategoriesAndVibes() {
+        if (instanceCategories.value.length > 0 && instanceVibes.value.length > 0) {
+            return;
+        }
+        try {
+            const args = await instanceRequest.getInstanceOptions();
+            instanceCategories.value = (args.json?.categories ?? [])
+                .filter((category) => !category.deleted)
+                .sort((a, b) => a.order - b.order);
+            instanceVibes.value = (args.json?.vibes ?? []).filter((vibe) => !vibe.deleted);
+        } catch (err) {
+            console.error(err);
+        }
+    }
 
     const currentInstanceWorld = ref({
         ref: {},
@@ -465,21 +483,32 @@ export const useInstanceStore = defineStore('Instance', () => {
         }
         ref.$location = parseLocation(ref.location);
         if (ref.world?.id) {
-            queryRequest
-                .fetch('world.location', {
-                    worldId: ref.world.id
-                })
-                .then((args) => {
-                    ref.world = args.ref;
-                    return args;
-                });
+            const cachedWorld = worldStore.cachedWorlds.get(ref.world.id);
+            if (cachedWorld) {
+                ref.world = cachedWorld;
+            } else {
+                queryRequest
+                    .fetch('world.location', {
+                        worldId: ref.world.id
+                    })
+                    .then((args) => {
+                        ref.world = args.ref;
+                        return args;
+                    });
+            }
         }
         if (ref?.world?.name) {
             ref.world.name = replaceBioSymbols(ref.world.name);
         }
+        if (ref?.world?.description) {
+            ref.world.description = replaceBioSymbols(ref.world.description);
+        }
         ref.$disabledContentSettings = computeDisabledContentSettings(json.contentSettings, instanceContentSettings);
         if (ref.displayName) {
             ref.displayName = replaceBioSymbols(ref.displayName);
+        }
+        if (ref.description) {
+            ref.description = replaceBioSymbols(ref.description);
         }
         if (userStore.userDialog.visible && userStore.userDialog.ref?.$location?.tag === ref.id) {
             userStore.applyUserDialogLocation();
@@ -496,6 +525,7 @@ export const useInstanceStore = defineStore('Instance', () => {
             }
         }
         lastInstanceApplied.value = ref.id;
+        triggerRef(lastInstanceApplied);
         return ref;
     }
 
@@ -544,6 +574,7 @@ export const useInstanceStore = defineStore('Instance', () => {
             };
         }
 
+        /** @type {import('vrchat').InstanceType} */
         let type = 'public';
         let canRequestInvite = false;
         switch (D.accessType) {
@@ -564,6 +595,7 @@ export const useInstanceStore = defineStore('Instance', () => {
                 type = 'group';
                 break;
         }
+        /** @type {import('vrchat').CreateInstanceRequestRegion} */
         let region = 'us';
         if (D.region === 'US East') {
             region = 'use';
@@ -572,6 +604,7 @@ export const useInstanceStore = defineStore('Instance', () => {
         } else if (D.region === 'Japan') {
             region = 'jp';
         }
+        /** @type {import('../types/vrcx').Json<import('vrchat').CreateInstanceRequest>} */
         const params = {
             type,
             canRequestInvite,
@@ -586,15 +619,31 @@ export const useInstanceStore = defineStore('Instance', () => {
             if (D.groupAccessType === 'members') {
                 params.roleIds = D.roleIds;
             }
-            if (D.minimumAvatarPerformance) {
-                params.minimumAvatarPerformance = D.minimumAvatarPerformance;
-            }
         }
-        if (D.ageGate && type === 'group' && hasGroupPermission(D.groupRef, 'group-instance-age-gated-create')) {
+        if (D.minimumAvatarPerformance) {
+            params.minimumAvatarPerformance = D.minimumAvatarPerformance;
+        }
+        const canAgeGate =
+            type === 'group'
+                ? hasGroupPermission(D.groupRef, 'group-instance-age-gated-create')
+                : userStore.currentUser.ageVerificationStatus === '18+';
+        if (D.ageGate && canAgeGate) {
             params.ageGate = true;
         }
         if (D.displayName) {
             params.displayName = D.displayName;
+        }
+        if (D.description) {
+            params.description = D.description;
+        }
+        if (D.languages?.length) {
+            params.languages = D.languages;
+        }
+        if (D.categoryId) {
+            params.categoryId = D.categoryId;
+        }
+        if (D.vibeIds?.length) {
+            params.vibeIds = D.vibeIds;
         }
         try {
             const args = await instanceRequest.createInstance(params);
@@ -602,6 +651,28 @@ export const useInstanceStore = defineStore('Instance', () => {
         } catch (err) {
             console.error(err);
             return null;
+        }
+    }
+
+    const DIALOG_INSTANCE_STALE_MS = 60_000;
+    const inflightDialogInstances = new Set();
+
+    async function refreshStaleDialogInstance(tag, cachedRef) {
+        if (!isRealInstance(tag) || inflightDialogInstances.has(tag)) {
+            return;
+        }
+        const fetchedAt = Date.parse(cachedRef?.$fetchedAt) || 0;
+        if (Date.now() - fetchedAt < DIALOG_INSTANCE_STALE_MS) {
+            return;
+        }
+        inflightDialogInstances.add(tag);
+        const L = parseLocation(tag);
+        try {
+            await instanceRequest.getInstance({ worldId: L.worldId, instanceId: L.instanceId });
+        } catch {
+            // ignored
+        } finally {
+            inflightDialogInstances.delete(tag);
         }
     }
 
@@ -617,10 +688,9 @@ export const useInstanceStore = defineStore('Instance', () => {
             return;
         }
         const instances = {};
-        if (D.ref.instances) {
-            for (instance of D.ref.instances) {
-                // instance = [ instanceId, occupants ]
-                const instanceId = instance[0];
+        if (D.ref.slimInstances) {
+            for (instance of D.ref.slimInstances) {
+                const { instanceId, n_users } = instance;
                 instances[instanceId] = {
                     id: instanceId,
                     tag: `${D.id}:${instanceId}`,
@@ -628,7 +698,10 @@ export const useInstanceStore = defineStore('Instance', () => {
                     friendCount: 0,
                     users: [],
                     shortName: '',
-                    ref: {}
+                    ref: {
+                        userCount: n_users,
+                        capacity: D.ref.capacity
+                    }
                 };
             }
         }
@@ -734,6 +807,10 @@ export const useInstanceStore = defineStore('Instance', () => {
             }
             instance.$location = L;
             L.user = {};
+            const cachedOwnerId = cachedInstances.get(L.tag)?.ownerId;
+            if (!L.userId && cachedOwnerId && !cachedOwnerId.startsWith('grp_')) {
+                L.userId = cachedOwnerId;
+            }
             if (L.userId) {
                 ref = userStore.cachedUsers.get(L.userId);
                 if (typeof ref === 'undefined') {
@@ -762,12 +839,12 @@ export const useInstanceStore = defineStore('Instance', () => {
             }
             rooms.push(instance);
         }
-        // get instance from cache
         for (const room of rooms) {
             ref = cachedInstances.get(room.tag);
             if (typeof ref !== 'undefined') {
                 Object.assign(room.ref, ref);
             }
+            refreshStaleDialogInstance(room.tag, ref);
         }
         rooms.sort(function (a, b) {
             // sort selected and current instance to top
@@ -932,17 +1009,12 @@ export const useInstanceStore = defineStore('Instance', () => {
             }
             rooms.push(instance);
         }
-        // get instance
         for (const room of rooms) {
             ref = cachedInstances.get(room.tag);
             if (typeof ref !== 'undefined') {
                 Object.assign(room.ref, ref);
-            } else if (isRealInstance(room.tag)) {
-                instanceRequest.getInstance({
-                    worldId: room.$location.worldId,
-                    instanceId: room.$location.instanceId
-                });
             }
+            refreshStaleDialogInstance(room.tag, ref);
         }
         rooms.sort(function (a, b) {
             // sort current instance to top
@@ -1281,8 +1353,11 @@ export const useInstanceStore = defineStore('Instance', () => {
         previousInstancesListState,
         instanceJoinHistory,
         currentInstanceUsersData,
+        instanceCategories,
+        instanceVibes,
 
         applyInstance,
+        loadInstanceCategoriesAndVibes,
         updateCurrentInstanceWorld,
         createNewInstance,
         applyWorldDialogInstances,

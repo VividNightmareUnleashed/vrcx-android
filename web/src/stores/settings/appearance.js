@@ -21,6 +21,7 @@ import {
     changeAppThemeStyle,
     changeHtmlLangAttribute,
     getThemeMode,
+    setSystemIsDarkMode,
     updateTrustColorClasses
 } from '../../shared/utils/base/ui';
 import { computeTrustLevel, getNameColour } from '../../shared/utils';
@@ -67,13 +68,14 @@ export const useAppearanceSettingsStore = defineStore(
         const hideNicknames = ref(false);
         const showInstanceIdInLocation = ref(false);
         const isAgeGatedInstancesVisible = ref(false);
+        const isClosedInstancesVisible = ref(true);
         const sortFavorites = ref(true);
         const instanceUsersSortAlphabetical = ref(false);
         const tablePageSize = ref(15);
         const tablePageSizes = ref([...DEFAULT_TABLE_PAGE_SIZES]);
         const dtHour12 = ref(false);
         const dtIsoFormat = ref(false);
-        const weekStartsOn = ref(1);
+        const weekStartsOn = ref(/** @type {0 | 1 | 6} */ (1));
         const sidebarSortMethod1 = ref('Sort Private to Bottom');
         const sidebarSortMethod2 = ref('Sort by Time in Instance');
         const sidebarSortMethod3 = ref('Sort by Last Active');
@@ -106,7 +108,9 @@ export const useAppearanceSettingsStore = defineStore(
         const isNavCollapsed = ref(true);
         const isSideBarTabShow = computed(() => {
             const currentRouteName = router.currentRoute.value?.name;
-            return !['friend-list', 'charts-instance', 'charts-mutual', 'charts-hot-worlds'].includes(currentRouteName);
+            return !['friend-list', 'charts-instance', 'charts-mutual', 'charts-hot-worlds'].includes(
+                String(currentRouteName)
+            );
         });
 
         const isDataTableStriped = ref(false);
@@ -140,6 +144,7 @@ export const useAppearanceSettingsStore = defineStore(
                 hideNicknamesConfig,
                 showInstanceIdInLocationConfig,
                 isAgeGatedInstancesVisibleConfig,
+                isClosedInstancesVisibleConfig,
                 sortFavoritesConfig,
                 instanceUsersSortAlphabeticalConfig,
                 tablePageSizeConfig,
@@ -181,6 +186,7 @@ export const useAppearanceSettingsStore = defineStore(
                 configRepository.getBool('VRCX_hideNicknames', false),
                 configRepository.getBool('VRCX_showInstanceIdInLocation', false),
                 configRepository.getBool('VRCX_isAgeGatedInstancesVisible', true),
+                configRepository.getBool('VRCX_isClosedInstancesVisible', true),
                 configRepository.getBool('VRCX_sortFavorites', true),
                 configRepository.getBool('VRCX_instanceUsersSortAlphabetical', false),
                 configRepository.getInt('VRCX_tablePageSize', 20),
@@ -249,6 +255,7 @@ export const useAppearanceSettingsStore = defineStore(
             hideNicknames.value = hideNicknamesConfig;
             showInstanceIdInLocation.value = showInstanceIdInLocationConfig;
             isAgeGatedInstancesVisible.value = isAgeGatedInstancesVisibleConfig;
+            isClosedInstancesVisible.value = isClosedInstancesVisibleConfig;
             sortFavorites.value = sortFavoritesConfig;
             instanceUsersSortAlphabetical.value = instanceUsersSortAlphabeticalConfig;
 
@@ -258,7 +265,9 @@ export const useAppearanceSettingsStore = defineStore(
 
             dtHour12.value = dtHour12Config;
             dtIsoFormat.value = dtIsoFormatConfig;
-            weekStartsOn.value = [0, 1, 6].includes(weekStartsOnConfig) ? weekStartsOnConfig : 1;
+            weekStartsOn.value = /** @type {0 | 1 | 6} */ (
+                [0, 1, 6].includes(weekStartsOnConfig) ? weekStartsOnConfig : 1
+            );
 
             currentCulture.value = await AppApi.CurrentCulture();
 
@@ -427,11 +436,20 @@ export const useAppearanceSettingsStore = defineStore(
             }
         }
 
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
-            if (themeMode.value === 'system') {
-                setThemeMode(themeMode.value);
-            }
-        });
+        if (LINUX) {
+            window.electron.onSystemThemeChanged((_event, isDark) => {
+                setSystemIsDarkMode(isDark);
+                if (themeMode.value === 'system' && isDarkMode.value !== isDark) {
+                    setThemeMode(themeMode.value);
+                }
+            });
+        } else {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
+                if (themeMode.value === 'system') {
+                    setThemeMode(themeMode.value);
+                }
+            });
+        }
 
         /**
          * @param {string} mode
@@ -535,6 +553,10 @@ export const useAppearanceSettingsStore = defineStore(
             isAgeGatedInstancesVisible.value = !isAgeGatedInstancesVisible.value;
             configRepository.setBool('VRCX_isAgeGatedInstancesVisible', isAgeGatedInstancesVisible.value);
         }
+        function setIsClosedInstancesVisible() {
+            isClosedInstancesVisible.value = !isClosedInstancesVisible.value;
+            configRepository.setBool('VRCX_isClosedInstancesVisible', isClosedInstancesVisible.value);
+        }
         function setSortFavorites() {
             sortFavorites.value = !sortFavorites.value;
             configRepository.setBool('VRCX_sortFavorites', sortFavorites.value);
@@ -589,7 +611,7 @@ export const useAppearanceSettingsStore = defineStore(
          * @param {number} value - 0 (Sunday), 1 (Monday), or 6 (Saturday)
          */
         function setWeekStartsOn(value) {
-            const v = [0, 1, 6].includes(value) ? value : 1;
+            const v = /** @type {0 | 1 | 6} */ ([0, 1, 6].includes(value) ? value : 1);
             weekStartsOn.value = v;
             configRepository.setInt('VRCX_weekStartsOn', v);
         }
@@ -901,6 +923,7 @@ export const useAppearanceSettingsStore = defineStore(
             hideNicknames,
             showInstanceIdInLocation,
             isAgeGatedInstancesVisible,
+            isClosedInstancesVisible,
             sortFavorites,
             instanceUsersSortAlphabetical,
             tablePageSize,
@@ -947,6 +970,7 @@ export const useAppearanceSettingsStore = defineStore(
             setHideNicknames,
             setShowInstanceIdInLocation,
             setIsAgeGatedInstancesVisible,
+            setIsClosedInstancesVisible,
             setSortFavorites,
             setInstanceUsersSortAlphabetical,
             setTablePageSize,

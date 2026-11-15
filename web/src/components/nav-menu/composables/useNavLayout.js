@@ -16,13 +16,10 @@ import {
 } from '../navConfigUtils';
 import { normalizeHiddenKeys, sanitizeLayout } from '../navMenuUtils';
 
-import { useNotificationsSettingsStore } from '../../../stores/settings/notifications';
-
 export function useNavLayout({ t, locale, router, dashboardStore, dashboards, directAccessPaste, triggerTool }) {
     const navLayout = ref([]);
     const navLayoutReady = ref(false);
     const navHiddenKeys = ref([]);
-    const notificationsSettingsStore = useNotificationsSettingsStore();
 
     const allNavDefinitions = computed(() => [...navDefinitions, ...dashboardStore.getDashboardNavDefinitions()]);
 
@@ -40,16 +37,7 @@ export function useNavLayout({ t, locale, router, dashboardStore, dashboards, di
     const createDefaultNavLayout = () => createBaseDefaultNavLayout(t);
 
     const menuItems = computed(() => {
-        const items = buildMenuItems(navLayout.value, navDefinitionMap.value, t);
-        if (notificationsSettingsStore.notificationLayout === 'notification-center') {
-            return items.filter((item) => {
-                if (item.children) {
-                    return item.children.length > 0;
-                }
-                return true;
-            });
-        }
-        return items;
+        return buildMenuItems(navLayout.value, navDefinitionMap.value, t);
     });
 
     const getFirstNavEntryLocal = (layout) => {

@@ -7,7 +7,6 @@ import {
     evictMapCache,
     getAvailablePlatforms,
     getBundleDateSize,
-    isRealInstance,
     parseLocation,
     sanitizeEntityJson
 } from '../shared/utils';
@@ -83,6 +82,8 @@ export function showWorldDialog(tag, shortName = null, options = {}) {
     D.isQuest = false;
     D.isIos = false;
     D.hasPersistData = false;
+    D.rating = null;
+    D.listings = [];
     D.memo = '';
     const LL = parseLocation(locationStore.lastLocation.location);
     let currentWorldMatch = false;
@@ -125,18 +126,6 @@ export function showWorldDialog(tag, shortName = null, options = {}) {
             if (D.id === args.ref.id) {
                 D.ref = args.ref;
                 uiStore.setDialogCrumbLabel('world', D.id, D.ref?.name || D.id);
-                if (args.ref.instances) {
-                    for (const instance of args.ref.instances) {
-                        const instanceId = instance[0];
-                        const tag = `${D.id}:${instanceId}`;
-                        if (isRealInstance(tag)) {
-                            instanceRequest.getInstance({
-                                worldId: D.id,
-                                instanceId
-                            });
-                        }
-                    }
-                }
                 D.visible = true;
                 D.loading = false;
                 D.isFavorite = favoriteStore.getCachedFavoritesByObjectId(D.id);
@@ -158,6 +147,16 @@ export function showWorldDialog(tag, shortName = null, options = {}) {
                         if (args.params.worldId === worldStore.worldDialog.id && worldStore.worldDialog.visible) {
                             worldStore.worldDialog.hasPersistData = args.json !== false;
                         }
+                    });
+                worldRequest
+                    .getWorldRating({ worldId: D.id })
+                    .then((args) => {
+                        if (args.params.worldId === D.id) {
+                            D.rating = args.json?.value ?? null;
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('Failed to load world rating:', err);
                     });
             }
         });
@@ -196,14 +195,6 @@ export function applyWorld(json) {
         worldDialog.avatarScalingDisabled = ref.tags?.includes('feature_avatar_scaling_disabled');
         worldDialog.focusViewDisabled = ref.tags?.includes('feature_focus_view_disabled');
         instanceStore.applyWorldDialogInstances();
-        for (const room of worldDialog.rooms) {
-            if (isRealInstance(room.tag)) {
-                instanceRequest.getInstance({
-                    worldId: worldDialog.id,
-                    instanceId: room.id
-                });
-            }
-        }
         if (Object.keys(worldDialog.fileAnalysis).length === 0) {
             getBundleDateSize(ref);
         }

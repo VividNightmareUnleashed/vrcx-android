@@ -82,7 +82,8 @@ export const createColumns = ({
     selectedFriends,
     onToggleFriendSelection,
     onConfirmDeleteFriend,
-    userImage
+    userImage,
+    friendProfiles
 }) => {
     const cols = [];
 
@@ -129,7 +130,7 @@ export const createColumns = ({
                 }),
             size: 100,
             meta: { label: () => t('table.friendList.no') },
-            sortingFn: sortByNumber((row) => row?.$friendNumber ?? 0),
+            sortFn: sortByNumber((row) => row?.$friendNumber ?? 0),
             cell: ({ row }) => <span>{row.original?.$friendNumber || ''}</span>
         },
         {
@@ -163,7 +164,7 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.friendList.displayName') },
-            sortingFn: sortByString((row) => row?.displayName ?? ''),
+            sortFn: sortByString((row) => row?.displayName ?? ''),
             cell: ({ row }) => {
                 const style = randomUserColours?.value ? { color: row.original?.$userColour } : null;
                 return (
@@ -183,7 +184,7 @@ export const createColumns = ({
                 }),
             size: 140,
             meta: { label: () => t('table.friendList.rank') },
-            sortingFn: sortByNumber((row) => row?.$trustSortNum ?? 0),
+            sortFn: sortByNumber((row) => row?.$trustSortNum ?? 0),
             cell: ({ row }) => {
                 if (randomUserColours?.value) {
                     return <span class={row.original?.$trustClass}>{row.original?.$trustLevel ?? ''}</span>;
@@ -204,7 +205,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.status')
                 }),
             minSize: 200,
-            sortingFn: sortByStatus,
+            sortFn: sortByStatus,
             meta: {
                 stretch: true,
                 label: () => t('table.friendList.status')
@@ -231,7 +232,7 @@ export const createColumns = ({
                 }),
             size: 130,
             meta: { label: () => t('table.friendList.language') },
-            sortingFn: sortByLanguages,
+            sortFn: sortByLanguages,
             cell: ({ row }) => (
                 <div class="flex items-center">
                     {(row.original?.$languages ?? []).map((item) => (
@@ -250,7 +251,7 @@ export const createColumns = ({
             meta: { label: () => t('table.friendList.bioLink') },
             cell: ({ row }) => (
                 <div class="flex items-center">
-                    {(row.original?.bioLinks ?? []).filter(Boolean).map((link, index) => (
+                    {(friendProfiles.value.get(row.original?.id)?.bioLinks ?? []).filter(Boolean).map((link, index) => (
                         <TooltipWrapper key={index} content={String(link)}>
                             <img
                                 src={getFaviconUrl(link)}
@@ -275,7 +276,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.joinCount')
                 }),
             size: 120,
-            sortingFn: sortByNumber((row) => row?.$joinCount ?? 0),
+            sortFn: sortByNumber((row) => row?.$joinCount ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.joinCount')
@@ -290,7 +291,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.timeTogether')
                 }),
             size: 140,
-            sortingFn: sortByNumber((row) => row?.$timeSpent ?? 0),
+            sortFn: sortByNumber((row) => row?.$timeSpent ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.timeTogether')
@@ -310,7 +311,7 @@ export const createColumns = ({
                 }),
             size: 170,
             meta: { label: () => t('table.friendList.lastSeen') },
-            sortingFn: sortByString((row) => row?.$lastSeen ?? ''),
+            sortFn: sortByString((row) => row?.$lastSeen ?? ''),
             cell: ({ row }) => {
                 const text = formatDateFilter(row.original?.$lastSeen, 'long');
                 return <span>{text === '-' ? '' : text}</span>;
@@ -325,7 +326,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.mutualFriends')
                 }),
             size: 120,
-            sortingFn: sortByNumber((row) => row?.$mutualCount ?? 0),
+            sortFn: sortByNumber((row) => row?.$mutualCount ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.mutualFriends')
@@ -356,7 +357,7 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.friendList.lastActivity') },
-            sortingFn: sortByString((row) => row?.last_activity ?? ''),
+            sortFn: sortByString((row) => row?.last_activity ?? ''),
             cell: ({ row }) => <span>{formatDateFilter(row.original?.last_activity, 'long')}</span>
         },
         {
@@ -369,7 +370,7 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.friendList.lastLogin') },
-            sortingFn: sortByString((row) => row?.last_login ?? ''),
+            sortFn: sortByString((row) => row?.last_login ?? ''),
             cell: ({ row }) => <span>{formatDateFilter(row.original?.last_login, 'long')}</span>
         },
         {
@@ -382,7 +383,7 @@ export const createColumns = ({
                 }),
             size: 120,
             meta: { label: () => t('table.friendList.dateJoined') },
-            sortingFn: sortByString((row) => row?.date_joined ?? ''),
+            sortFn: sortByString((row) => row?.date_joined ?? ''),
             cell: ({ row }) => <span>{row.original?.date_joined ?? ''}</span>
         },
         {

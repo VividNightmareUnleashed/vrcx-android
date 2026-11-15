@@ -7,37 +7,43 @@
             </Button>
             <span class="header">{{ t('dialog.gallery_icons.header') }}</span>
         </div>
-        <TabsUnderline default-value="gallery" :items="galleryTabs" :unmount-on-hide="false">
+        <TabsUnderline v-model="activeTab" :items="galleryTabs" :unmount-on-hide="false">
             <template #label-gallery>
                 <span>
                     {{ t('dialog.gallery_icons.gallery') }}
-                    <span class="text-xs ml-[5px]"> {{ galleryTable.length }}/64 </span>
+                    <span class="text-xs ml-[5px]">
+                        {{ galleryTable.length }}/{{ cachedPermissions.maxUserGallery }}
+                    </span>
                 </span>
             </template>
             <template #label-icons>
                 <span>
                     {{ t('dialog.gallery_icons.icons') }}
-                    <span class="text-xs ml-[5px]"> {{ VRCPlusIconsTable.length }}/64 </span>
+                    <span class="text-xs ml-[5px]">
+                        {{ VRCPlusIconsTable.length }}/{{ cachedPermissions.maxUserIcons }}
+                    </span>
                 </span>
             </template>
             <template #label-emojis>
                 <span>
                     {{ t('dialog.gallery_icons.emojis') }}
-                    <span class="text-xs ml-[5px]"> {{ emojiTable.length }}/{{ cachedConfigTyped.maxUserEmoji }} </span>
+                    <span class="text-xs ml-[5px]"> {{ emojiTable.length }}/{{ cachedPermissions.maxUserEmoji }} </span>
                 </span>
             </template>
             <template #label-stickers>
                 <span>
                     {{ t('dialog.gallery_icons.stickers') }}
                     <span class="text-xs ml-[5px]">
-                        {{ stickerTable.length }}/{{ cachedConfigTyped.maxUserStickers }}
+                        {{ stickerTable.length }}/{{ cachedPermissions.maxUserStickers }}
                     </span>
                 </span>
             </template>
             <template #label-prints>
                 <span>
                     {{ t('dialog.gallery_icons.prints') }}
-                    <span class="text-xs ml-[5px]"> {{ printTable.length }}/64 </span>
+                    <span class="text-xs ml-[5px]">
+                        {{ printTable.length }}/{{ cachedPermissions.maxUserPrints }}
+                    </span>
                 </span>
             </template>
             <template #label-inventory>
@@ -594,7 +600,7 @@
         NumberFieldIncrement,
         NumberFieldInput
     } from '@/components/ui/number-field';
-    import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+    import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
     import { Button } from '@/components/ui/button';
     import { ButtonGroup } from '@/components/ui/button-group';
     import { Checkbox } from '@/components/ui/checkbox';
@@ -614,7 +620,7 @@
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
-    import { useRouter } from 'vue-router';
+    import { useRoute, useRouter } from 'vue-router';
 
     import {
         extractFileId,
@@ -636,6 +642,17 @@
 
     const { t } = useI18n();
     const router = useRouter();
+    const route = useRoute();
+    const activeTab = ref(String(route.query.tab || 'gallery'));
+
+    watch(
+        () => route.query.tab,
+        (tab) => {
+            if (tab) {
+                activeTab.value = String(tab);
+            }
+        }
+    );
     const modalStore = useModalStore();
 
     const {
@@ -666,10 +683,7 @@
     const { currentUserInventory } = storeToRefs(useAdvancedSettingsStore());
     const { showFullscreenImageDialog } = useGalleryStore();
     const { currentUser, isLocalUserVrcPlusSupporter } = storeToRefs(useUserStore());
-    const { cachedConfig } = storeToRefs(useAuthStore());
-    const cachedConfigTyped = computed(
-        () => /** @type {{ maxUserEmoji?: number; maxUserStickers?: number }} */ (cachedConfig.value ?? {})
-    );
+    const { cachedPermissions } = storeToRefs(useAuthStore());
     const galleryTabs = computed(() => [
         { value: 'gallery', label: t('dialog.gallery_icons.gallery') },
         { value: 'icons', label: t('dialog.gallery_icons.icons') },
@@ -987,9 +1001,12 @@
     }
 
     async function uploadEmoji(base64Body) {
+        /** @type {Omit<NonNullable<import('vrchat').UploadImage['body']>, 'file'>} */
         const params = {
             tag: emojiAnimType.value ? 'emojianimated' : 'emoji',
-            animationStyle: emojiAnimationStyle.value.toLowerCase(),
+            animationStyle: /** @type {import('vrchat').ImageAnimationStyle} */ (
+                emojiAnimationStyle.value.toLowerCase()
+            ),
             maskTag: 'square'
         };
         if (emojiAnimType.value) {
@@ -1034,6 +1051,7 @@
     }
 
     async function uploadSticker(base64Body) {
+        /** @type {Omit<NonNullable<import('vrchat').UploadImage['body']>, 'file'>} */
         const params = {
             tag: 'sticker',
             maskTag: 'square'

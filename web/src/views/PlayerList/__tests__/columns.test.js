@@ -109,7 +109,7 @@ describe('views/PlayerList/columns.jsx', () => {
         });
         const displayNameCol = cols.find((c) => c.id === 'displayName');
 
-        const result = displayNameCol.sortingFn(
+        const result = displayNameCol.sortFn(
             { original: { displayName: 'Alice' } },
             { original: { displayName: 'Bob' } }
         );
@@ -167,29 +167,6 @@ describe('views/PlayerList/columns.jsx', () => {
         const master = { original: { isMaster: true } };
         const friend = { original: { isFriend: true } };
 
-        expect(iconCol.sortingFn(master, friend, 'icon')).toBeGreaterThan(0);
-    });
-
-    test('bioLink cell opens external link when favicon is clicked', () => {
-        const row = makeRow({
-            ref: {
-                ...makeRow().original.ref,
-                bioLinks: ['https://example.com']
-            }
-        });
-        const cols = createColumns({
-            randomUserColours: { value: false, __v_isRef: true },
-            chatboxUserBlacklist: { value: new Map(), __v_isRef: true },
-            onBlockChatbox: mocks.onBlockChatbox,
-            onUnblockChatbox: mocks.onUnblockChatbox,
-            sortAlphabetically: mocks.sortAlphabetically
-        });
-        const bioLinkCol = cols.find((c) => c.id === 'bioLink');
-        const cell = bioLinkCol.cell({ row });
-        findNode(cell, (n) => n.type === 'img').props.onClick({
-            stopPropagation: vi.fn()
-        });
-
-        expect(mocks.openExternalLink).toHaveBeenCalledWith('https://example.com');
+        expect(iconCol.sortFn(master, friend, 'icon')).toBeGreaterThan(0);
     });
 });

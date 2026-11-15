@@ -15,6 +15,7 @@
         clearable: { type: Boolean, default: false },
         showCount: { type: Boolean, default: false },
         maxlength: { type: Number, required: false },
+        rows: { type: Number, required: false },
         autosize: { type: [Boolean, Object], default: false }
     });
 
@@ -52,6 +53,7 @@
                         .join('; ');
                 }
                 if (s && typeof s === 'object') {
+                    /** @type {Record<string, any>} */
                     const next = { ...s };
                     delete next.display;
                     return next;
@@ -156,6 +158,7 @@
             ref="textareaRef"
             v-model="modelValue"
             :class="inputClass"
+            :rows="props.rows"
             v-bind="inputAttrs"
             @input="handleInput"
             @change="handleChange" />

@@ -13,6 +13,7 @@ import { useDiscordPresenceSettingsStore } from './settings/discordPresence';
 import { useFriendStore } from './friend';
 import { handleGroupUserInstances } from '../coordinators/groupCoordinator';
 import { getCurrentUser, updateAutoStateChange } from '../coordinators/userCoordinator';
+import { useNotificationStore } from './notification';
 import { useUserStore } from './user';
 import { useVRCXUpdaterStore } from './vrcxUpdater';
 import { useVrStore } from './vr';
@@ -29,6 +30,7 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
     const discordPresenceSettingsStore = useDiscordPresenceSettingsStore();
     const vrcxUpdaterStore = useVRCXUpdaterStore();
     const vrStore = useVrStore();
+    const notificationStore = useNotificationStore();
     const state = {
         nextCurrentUserRefresh: 300,
         nextFriendsRefresh: 3600,
@@ -40,7 +42,8 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
         nextAutoStateChange: 0,
         nextGetLogCheck: 0,
         nextGameRunningCheck: 0,
-        nextDatabaseOptimize: 3600
+        nextDatabaseOptimize: 3600,
+        nextBundleCheck: 60
     };
 
     watch(
@@ -49,6 +52,7 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
             state.nextCurrentUserRefresh = 300;
             state.nextFriendsRefresh = 3600;
             state.nextGroupInstanceRefresh = 0;
+            state.nextBundleCheck = 60;
         },
         { flush: 'sync' }
     );
@@ -77,6 +81,7 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
                         new Date(userStore.currentUser.last_activity) > new Date(Date.now() - 3600 * 1000) // 1hour
                     ) {
                         runRefreshPlayerModerationsFlow();
+                        userStore.getAllProductPurchases();
                     }
                 }
                 if (--state.nextGroupInstanceRefresh <= 0) {
@@ -115,9 +120,7 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
                     state.nextGetLogCheck = 0.5;
                     const logLines = await LogWatcher.GetLogLines();
                     if (logLines) {
-                        logLines.forEach((logLine) => {
-                            addGameLogEvent(logLine);
-                        });
+                        await Promise.all(logLines.map((logLine) => addGameLogEvent(logLine)));
                     }
                 }
                 if (LINUX && --state.nextGameRunningCheck <= 0) {
@@ -128,6 +131,11 @@ export const useUpdateLoopStore = defineStore('UpdateLoop', () => {
                 if (--state.nextDatabaseOptimize <= 0) {
                     state.nextDatabaseOptimize = 86400; // 1 day
                     database.optimize().catch(console.error);
+                }
+                if (--state.nextBundleCheck <= 0) {
+                    state.nextBundleCheck = 10800; // 3hours
+                    notificationStore.checkInventoryBundles();
+                    notificationStore.checkFreeStoreItems();
                 }
             }
         } catch (err) {

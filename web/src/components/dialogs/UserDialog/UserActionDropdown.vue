@@ -104,7 +104,11 @@
                         <DropdownMenuItem @click="onCommand('Request Invite Message')">
                             <Mail class="size-4" />
                             {{ t('dialog.user.actions.request_invite_with_message') }}
-                            <DropdownMenuShortcut v-if="isActionRecent(userDialog.id, 'Request Invite Message')">
+                            <DropdownMenuShortcut
+                                v-if="
+                                    isActionRecent(userDialog.id, 'Request Invite Message') ||
+                                    isActionRecent(userDialog.id, 'Request Invite Photo')
+                                ">
                                 <Clock class="size-3.5 text-muted-foreground" />
                             </DropdownMenuShortcut>
                         </DropdownMenuItem>
@@ -123,7 +127,11 @@
                                 @click="onCommand('Invite Message')">
                                 <MessageSquare class="size-4" />
                                 {{ t('dialog.user.actions.invite_with_message') }}
-                                <DropdownMenuShortcut v-if="isActionRecent(userDialog.id, 'Invite Message')">
+                                <DropdownMenuShortcut
+                                    v-if="
+                                        isActionRecent(userDialog.id, 'Invite Message') ||
+                                        isActionRecent(userDialog.id, 'Invite Photo')
+                                    ">
                                     <Clock class="size-3.5 text-muted-foreground" />
                                 </DropdownMenuShortcut>
                             </DropdownMenuItem>
@@ -166,6 +174,11 @@
                             <span>{{ t('nav_tooltip.moderation') }}</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent side="right" align="start" class="w-56">
+                            <DropdownMenuItem :disabled="userDialog.ref.$isModerator" @click="onCommand('Report User')">
+                                <Flag class="size-4" />
+                                {{ t('dialog.user.actions.report_user') }}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem
                                 v-if="userDialog.isBlock"
                                 variant="destructive"
@@ -225,13 +238,6 @@
                             <DropdownMenuItem v-else @click="onCommand('Moderation Disable Avatar Interaction')">
                                 <XCircle class="size-4" />
                                 {{ t('dialog.user.actions.moderation_disable_avatar_interaction') }}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                :disabled="userDialog.ref.$isModerator"
-                                @click="onCommand('Report Hacking')">
-                                <Flag class="size-4" />
-                                {{ t('dialog.user.actions.report_hacking') }}
                             </DropdownMenuItem>
                         </DropdownMenuSubContent>
                     </DropdownMenuSub>

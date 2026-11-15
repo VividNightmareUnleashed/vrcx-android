@@ -73,8 +73,9 @@ export const createColumns = ({
                             class="h-4 w-4 rounded-sm object-cover"
                             loading="lazy"
                             onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.nextElementSibling.style.display = '';
+                                const img = /** @type {HTMLElement} */ (e.target);
+                                img.style.display = 'none';
+                                /** @type {HTMLElement} */ (img.nextElementSibling).style.display = '';
                             }}
                         />
                         <div class="h-4 w-4 rounded-sm bg-muted flex items-center justify-center" style="display: none">
@@ -94,7 +95,7 @@ export const createColumns = ({
                 }),
             size: 90,
             meta: { label: () => t('table.playerList.timer') },
-            sortingFn: (rowA, rowB) => (rowA.original?.timer ?? 0) - (rowB.original?.timer ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.timer ?? 0) - (rowB.original?.timer ?? 0),
             cell: ({ row }) => <Timer epoch={row.original?.timer} />
         },
         {
@@ -107,11 +108,11 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.playerList.displayName') },
-            sortingFn: (rowA, rowB) => sortAlphabetically(rowA.original, rowB.original, 'displayName'),
+            sortFn: (rowA, rowB) => sortAlphabetically(rowA.original, rowB.original, 'displayName'),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const style = randomUserColours?.value ? { color: userRef?.$userColour } : null;
-                return <span style={style}>{userRef?.displayName ?? ''}</span>;
+                return <span style={style}>{userRef?.displayName || userRef?.id || ''}</span>;
             }
         },
         {
@@ -120,8 +121,7 @@ export const createColumns = ({
             header: ({ column }) => sortButton({ column, label: () => t('table.playerList.rank') }),
             size: 110,
             meta: { label: () => t('table.playerList.rank') },
-            sortingFn: (rowA, rowB) =>
-                (rowA.original?.ref?.$trustSortNum ?? 0) - (rowB.original?.ref?.$trustSortNum ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.ref?.$trustSortNum ?? 0) - (rowB.original?.ref?.$trustSortNum ?? 0),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 return (
@@ -168,7 +168,7 @@ export const createColumns = ({
                 disableVisibilityToggle: true,
                 defaultHidden: true
             },
-            sortingFn: (rowA, rowB) => (rowA.original?.photonId ?? 0) - (rowB.original?.photonId ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.photonId ?? 0) - (rowB.original?.photonId ?? 0),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const userId = userRef?.id;
@@ -214,7 +214,7 @@ export const createColumns = ({
                 class: 'text-center',
                 label: () => t('table.playerList.icon')
             },
-            sortingFn: (rowA, rowB, _columnId) => {
+            sortFn: (rowA, rowB, _columnId) => {
                 const a = rowA.original;
                 const b = rowB.original;
                 return -sortInstanceIcon(a, b);
@@ -387,6 +387,23 @@ export const createColumns = ({
             cell: ({ row }) => {
                 const note = row.original?.ref?.note;
                 const text = typeof note === 'string' || typeof note === 'number' ? String(note) : '';
+                return <span>{text}</span>;
+            }
+        },
+        {
+            id: 'memo',
+            accessorFn: (row) => row?.ref?.$memo,
+            header: () => t('table.playerList.memo'),
+            size: 150,
+            minSize: 20,
+            meta: {
+                stretch: true,
+                label: () => t('table.playerList.memo')
+            },
+            enableSorting: false,
+            cell: ({ row }) => {
+                const memo = row.original?.ref?.$memo;
+                const text = typeof memo === 'string' || typeof memo === 'number' ? String(memo) : '';
                 return <span>{text}</span>;
             }
         }

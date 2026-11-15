@@ -1,5 +1,5 @@
 <template>
-    <div style="margin-top: 8px">
+    <div class="flex h-full min-h-0 flex-col gap-2">
         <div class="flex justify-between">
             <div class="flex gap-2 items-center">
                 <Button
@@ -38,7 +38,7 @@
         </div>
 
         <DataTableLayout
-            style="margin-top: 8px"
+            auto-height
             :table="tanstackTable"
             :loading="loading"
             :page-sizes="pageSizes"
@@ -63,8 +63,11 @@
         loading: { type: Boolean, default: false },
         tableData: { type: Object, required: true },
         groupRef: { type: Object, default: () => ({}) },
-        pageSizes: { type: Array, required: true },
-        columnContext: { type: Object, required: true },
+        pageSizes: { type: /** @type {import('vue').PropType<number[]>} */ (Array), required: true },
+        columnContext: {
+            type: /** @type {import('vue').PropType<Parameters<typeof createColumns>[0]>} */ (Object),
+            required: true
+        },
         handlePageChange: { type: Function, required: true }
     });
 

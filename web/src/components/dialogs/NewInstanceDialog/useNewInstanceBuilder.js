@@ -16,8 +16,10 @@ import configRepository from '../../../services/config';
  */
 export function useNewInstanceBuilder(locationTagRef) {
     const { cachedGroups } = useGroupStore();
-    const { currentUser, isLocalUserVrcPlusSupporter } = storeToRefs(useUserStore());
-    const { createNewInstance } = useInstanceStore();
+    const { currentUser } = storeToRefs(useUserStore());
+    const instanceStore = useInstanceStore();
+    const { createNewInstance, loadInstanceCategoriesAndVibes } = instanceStore;
+    const { instanceCategories, instanceVibes } = storeToRefs(instanceStore);
 
     const newInstanceDialog = ref({
         visible: false,
@@ -46,7 +48,11 @@ export function useNewInstanceBuilder(locationTagRef) {
         selectedGroupRoles: [],
         roleIds: [],
         groupRef: {},
-        minimumAvatarPerformance: ''
+        minimumAvatarPerformance: '',
+        description: '',
+        languages: [],
+        categoryId: '',
+        vibeIds: []
     });
 
     // --- Config persistence ---
@@ -91,6 +97,22 @@ export function useNewInstanceBuilder(locationTagRef) {
         configRepository
             .getString('instanceDialogMinimumAvatarPerformance', '')
             .then((value) => (newInstanceDialog.value.minimumAvatarPerformance = value));
+
+        configRepository
+            .getString('instanceDialogDescription', '')
+            .then((value) => (newInstanceDialog.value.description = value));
+
+        configRepository
+            .getArray('instanceDialogLanguages', [])
+            .then((value) => (newInstanceDialog.value.languages = value ?? []));
+
+        configRepository
+            .getString('instanceDialogCategoryId', '')
+            .then((value) => (newInstanceDialog.value.categoryId = value));
+
+        configRepository
+            .getArray('instanceDialogVibeIds', [])
+            .then((value) => (newInstanceDialog.value.vibeIds = value ?? []));
     }
     function saveNewInstanceDialog() {
         const {
@@ -103,7 +125,11 @@ export function useNewInstanceBuilder(locationTagRef) {
             queueEnabled,
             ageGate,
             displayName,
-            minimumAvatarPerformance
+            minimumAvatarPerformance,
+            description,
+            languages,
+            categoryId,
+            vibeIds
         } = newInstanceDialog.value;
 
         configRepository.setString('instanceDialogAccessType', accessType);
@@ -116,6 +142,10 @@ export function useNewInstanceBuilder(locationTagRef) {
         configRepository.setBool('instanceDialogAgeGate', ageGate);
         configRepository.setString('instanceDialogDisplayName', displayName);
         configRepository.setString('instanceDialogMinimumAvatarPerformance', minimumAvatarPerformance);
+        configRepository.setString('instanceDialogDescription', description);
+        configRepository.setArray('instanceDialogLanguages', languages);
+        configRepository.setString('instanceDialogCategoryId', categoryId);
+        configRepository.setArray('instanceDialogVibeIds', vibeIds);
     }
 
     // --- Group role loading (shared between buildInstance & buildLegacyInstance) ---
@@ -237,9 +267,7 @@ export function useNewInstanceBuilder(locationTagRef) {
         D.strict = false;
         D.shortName = '';
         D.secureOrShortName = '';
-        if (!isLocalUserVrcPlusSupporter.value) {
-            D.displayName = '';
-        }
+        loadInstanceCategoriesAndVibes();
         const args = await groupRequest.getGroupPermissions({
             userId: currentUser.value.id
         });
@@ -281,6 +309,27 @@ export function useNewInstanceBuilder(locationTagRef) {
         newInstanceDialog.value.roleIds = next;
         buildInstance();
     }
+    /**
+     * @param value
+     */
+    function handleLanguagesChange(value) {
+        newInstanceDialog.value.languages = Array.isArray(value) ? value.slice(0, 3) : [];
+        buildInstance();
+    }
+    /**
+     * @param value
+     */
+    function handleVibeIdsChange(value) {
+        newInstanceDialog.value.vibeIds = Array.isArray(value) ? value.slice(0, 3) : [];
+        buildInstance();
+    }
+    /**
+     * @param value
+     */
+    function handleCategoryIdChange(value) {
+        newInstanceDialog.value.categoryId = value === 'none' ? '' : String(value ?? '');
+        buildInstance();
+    }
 
     // --- Init ---
 
@@ -295,12 +344,16 @@ export function useNewInstanceBuilder(locationTagRef) {
 
     return {
         newInstanceDialog,
-        isLocalUserVrcPlusSupporter,
         buildInstance,
         buildLegacyInstance,
         updateNewInstanceDialog,
         handleCreateNewInstance,
         newInstanceTabClick,
-        handleRoleIdsChange
+        handleRoleIdsChange,
+        handleLanguagesChange,
+        handleVibeIdsChange,
+        handleCategoryIdChange,
+        instanceCategories,
+        instanceVibes
     };
 }

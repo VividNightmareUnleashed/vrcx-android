@@ -1,7 +1,7 @@
 <template>
     <div class="flex-1 min-h-0 min-w-0 flex flex-row">
         <DialogHeader class="sr-only">
-            <DialogTitle>{{ avatarDialog.ref?.name || t('dialog.avatar.info.header') }}</DialogTitle>
+            <DialogTitle>{{ avatarDialog.ref?.name || avatarDialog.id || t('dialog.avatar.info.header') }}</DialogTitle>
             <DialogDescription>
                 {{ avatarDialog.ref?.description || avatarDialog.ref?.name || t('dialog.avatar.info.header') }}
             </DialogDescription>
@@ -26,8 +26,8 @@
                             <div class="col-start-1 row-start-1 overflow-hidden">
                                 <span
                                     class="flex flex-wrap font-bold cursor-pointer"
-                                    v-text="avatarDialog.ref.name"
-                                    :title="avatarDialog.ref.name"
+                                    v-text="avatarDialog.ref.name || avatarDialog.id"
+                                    :title="avatarDialog.ref.name || avatarDialog.id"
                                     @click="copyToClipboard(avatarDialog.ref.name)"></span>
                             </div>
                             <div class="col-start-1 row-start-2 flex flex-col gap-1">
@@ -35,7 +35,7 @@
                                     <span
                                         class="flex flex-wrap cursor-pointer x-grey font-mono text-xs max-w-30"
                                         @click="showUserDialog(avatarDialog.ref.authorId)"
-                                        v-text="avatarDialog.ref.authorName" />
+                                        v-text="avatarDialog.ref.authorName || avatarDialog.ref.authorId" />
                                 </div>
                             </div>
                             <div class="col-span-2 flex flex-wrap items-center">
@@ -212,10 +212,26 @@
                                         <RefreshCw class="size-4" />
                                         {{ t('dialog.avatar.actions.refresh') }}
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem @click="avatarDialogCommand('Share')">
-                                        <Share2 class="size-4" />
-                                        {{ t('dialog.avatar.actions.share') }}
-                                    </DropdownMenuItem>
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger @click="avatarDialogCommand('Share')">
+                                            <Share2 class="size-4 mr-2" />
+                                            <span>{{ t('dialog.avatar.actions.share') }}</span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent side="right" align="start" class="w-56">
+                                            <DropdownMenuItem @click="avatarDialogCommand('Share')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.avatar.info.copy_url') }}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem @click="avatarDialogCommand('Copy Avatar Name')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.avatar.info.copy_name') }}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem @click="avatarDialogCommand('Copy Avatar ID')">
+                                                <Copy class="size-4" />
+                                                {{ t('dialog.avatar.info.copy_id') }}
+                                            </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                         v-if="avatarDialog.isBlocked"
@@ -386,6 +402,17 @@
                                 </span>
                             </div>
                         </TooltipWrapper>
+                        <div class="flex justify-between items-center gap-2 text-xs">
+                            <span class="text-muted-foreground">{{ t('dialog.avatar.info.id') }}</span>
+                            <Button
+                                class="-mr-1.5 h-5 gap-1 px-1.5 text-xs font-normal text-muted-foreground has-[>svg]:px-1.5"
+                                size="sm"
+                                variant="ghost"
+                                @click="copyAvatarId(avatarDialog.id)">
+                                <Copy class="size-3" />
+                                {{ t('dialog.avatar.info.copy_id') }}
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
@@ -437,15 +464,13 @@
                             <div
                                 class="h-full min-h-0 overflow-y-auto flex flex-wrap content-start items-start rounded-xl bg-(--profile-card) p-3"
                                 style="max-height: unset"
-                                v-if="
-                                    avatarDialog.galleryImages.length || avatarDialog.ref.authorId === currentUser.id
-                                ">
+                                v-if="avatarDialog.galleryImages.length || isAvatarOwner">
                                 <div class="w-full">
                                     <div
                                         class="flex justify-between text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2 pb-2 border-b border-border">
                                         <span>{{ t('dialog.avatar.info.gallery') }}</span>
                                         <Button
-                                            v-if="avatarDialog.ref.authorId === currentUser.id"
+                                            v-if="isAvatarOwner"
                                             size="sm"
                                             variant="outline"
                                             class="h-6"
@@ -466,22 +491,56 @@
                                         @change="onFileChangeAvatarGallery" />
 
                                     <div class="mt-2 w-[80%] ml-20">
-                                        <Carousel v-if="avatarDialog.galleryImages.length" class="w-full">
+                                        <Carousel
+                                            v-if="avatarDialog.galleryImages.length"
+                                            class="w-full"
+                                            @init-api="onGalleryCarouselInit">
                                             <CarouselContent class="h-50">
                                                 <CarouselItem
-                                                    v-for="imageUrl in avatarDialog.galleryImages"
-                                                    :key="imageUrl">
+                                                    v-for="(image, index) in avatarDialog.galleryImages"
+                                                    :key="image.id">
                                                     <div class="relative h-50 w-full">
                                                         <img
-                                                            :src="imageUrl"
+                                                            :src="image.url"
                                                             style="
                                                                 width: 100%;
                                                                 height: 100%;
                                                                 object-fit: contain;
                                                                 cursor: pointer;
                                                             "
-                                                            @click="showFullscreenImageDialog(imageUrl)"
+                                                            @click="showFullscreenImageDialog(image.url)"
                                                             loading="lazy" />
+                                                        <div
+                                                            v-if="isAvatarOwner"
+                                                            class="absolute top-1 right-1 flex gap-1">
+                                                            <Button
+                                                                size="icon-sm"
+                                                                variant="outline"
+                                                                :disabled="avatarDialog.galleryLoading || index === 0"
+                                                                :ariaLabel="t('dialog.avatar.info.gallery_move_left')"
+                                                                @click="moveGalleryImage(index, -1)">
+                                                                <ChevronLeft />
+                                                            </Button>
+                                                            <Button
+                                                                size="icon-sm"
+                                                                variant="outline"
+                                                                :disabled="
+                                                                    avatarDialog.galleryLoading ||
+                                                                    index === avatarDialog.galleryImages.length - 1
+                                                                "
+                                                                :ariaLabel="t('dialog.avatar.info.gallery_move_right')"
+                                                                @click="moveGalleryImage(index, 1)">
+                                                                <ChevronRight />
+                                                            </Button>
+                                                            <Button
+                                                                size="icon-sm"
+                                                                variant="outline"
+                                                                :disabled="avatarDialog.galleryLoading"
+                                                                :ariaLabel="t('dialog.avatar.info.gallery_delete')"
+                                                                @click="deleteGalleryImage(image)">
+                                                                <Trash2 />
+                                                            </Button>
+                                                        </div>
                                                         <div
                                                             class="absolute inset-0 items-center justify-center bg-muted"
                                                             style="display: none">
@@ -492,6 +551,9 @@
                                             </CarouselContent>
                                             <CarouselPrevious />
                                             <CarouselNext />
+                                            <div class="mt-1 text-center text-xs text-muted-foreground">
+                                                {{ galleryCarouselIndex + 1 }}/{{ avatarDialog.galleryImages.length }}
+                                            </div>
                                         </Carousel>
                                         <div v-else>
                                             <DataTableEmpty type="nodata" />
@@ -508,7 +570,7 @@
                                 </div>
                                 <div
                                     v-for="listing in avatarDialog.ref.publishedListings"
-                                    :key="listing.id"
+                                    :key="listing.listingId"
                                     class="box-border flex items-center p-1.5 text-[13px] w-full cursor-default">
                                     <div class="relative inline-block flex-none size-24 mr-2.5">
                                         <img
@@ -531,6 +593,18 @@
                                             style="text-overflow: ellipsis; text-wrap: auto"
                                             v-text="listing.description"></span>
                                     </div>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        class="flex-none ml-2"
+                                        :disabled="isListingOwned(listing) || !canPurchaseListing(listing)"
+                                        @click="purchaseListing(listing)">
+                                        {{
+                                            isListingOwned(listing)
+                                                ? t('view.tools.marketplace.owned')
+                                                : t('view.tools.marketplace.buy')
+                                        }}
+                                    </Button>
                                 </div>
                             </div>
                             <div class="my-2 text-xs rounded-xl bg-(--profile-card) p-3">
@@ -577,6 +651,13 @@
                     :file="cropDialogFile"
                     @update:open="cropDialogOpen = $event"
                     @confirm="onCropConfirmAvatar" />
+                <ImageCropDialog
+                    :open="galleryCropDialogOpen"
+                    :title="t('dialog.avatar.info.gallery')"
+                    :aspect-ratio="4 / 3"
+                    :file="galleryCropDialogFile"
+                    @update:open="galleryCropDialogOpen = $event"
+                    @confirm="onCropConfirmAvatarGallery" />
             </template>
         </div>
     </div>
@@ -587,6 +668,8 @@
         Apple,
         Check,
         CheckCircle,
+        ChevronLeft,
+        ChevronRight,
         Copy,
         Download,
         Ellipsis,
@@ -638,13 +721,17 @@
         DropdownMenuContent,
         DropdownMenuItem,
         DropdownMenuSeparator,
+        DropdownMenuSub,
+        DropdownMenuSubContent,
+        DropdownMenuSubTrigger,
         DropdownMenuTrigger
     } from '../../ui/dropdown-menu';
     import { Badge } from '../../ui/badge';
-    import { avatarRequest } from '../../../api';
+    import { avatarRequest, marketplaceRequest, miscRequest } from '../../../api';
     import { database } from '../../../services/database';
     import { formatJsonVars } from '../../../shared/utils/base/ui';
-    import { handleImageUploadInput } from '../../../coordinators/imageUploadCoordinator';
+    import { handleImageUploadInput, resizeImageToFitLimits } from '../../../coordinators/imageUploadCoordinator';
+    import { readFileAsBase64 } from '../../../shared/utils/imageUpload';
     import { runDeleteVRChatCacheFlow as deleteVRChatCache } from '../../../coordinators/gameCoordinator';
     import {
         showAvatarDialog,
@@ -661,8 +748,9 @@
     import SetAvatarTagsDialog from './SetAvatarTagsDialog.vue';
     import { AppDebug } from '@/services/appConfig';
 
-    const { sortUserDialogAvatars } = useUserStore();
-    const { userDialog, currentUser } = storeToRefs(useUserStore());
+    const { sortUserDialogAvatars, getAllProductPurchases } = useUserStore();
+    const { userDialog, currentUser, currentUserCredits, ownedListingIds, ownedProductIds } =
+        storeToRefs(useUserStore());
     const avatarStore = useAvatarStore();
     const { cachedAvatarModerations, cachedAvatars } = avatarStore;
     const { avatarDialog } = storeToRefs(avatarStore);
@@ -689,7 +777,6 @@
         toast,
         modalStore,
         userDialog,
-        currentUser,
         cachedAvatars,
         cachedAvatarModerations,
         showAvatarDialog,
@@ -699,6 +786,39 @@
         sortUserDialogAvatars,
         uiStore
     });
+
+    const isAvatarOwner = computed(() => avatarDialog.value.ref.authorId === currentUser.value.id);
+    const galleryCropDialogOpen = ref(false);
+    const galleryCropDialogFile = ref(null);
+    const galleryCarouselApi = ref(null);
+    const galleryCarouselIndex = ref(0);
+
+    function onGalleryCarouselInit(api) {
+        galleryCarouselApi.value = api;
+        const updateIndex = () => {
+            galleryCarouselIndex.value = api.selectedScrollSnap();
+        };
+        updateIndex();
+        api.on('select', updateIndex);
+        api.on('reInit', updateIndex);
+    }
+
+    /**
+     * @param {string} imageId
+     */
+    async function scrollGalleryToImage(imageId) {
+        await nextTick();
+        const api = galleryCarouselApi.value;
+        if (!api) {
+            return;
+        }
+        let index = avatarDialog.value.galleryImages.findIndex((image) => image.id === imageId);
+        if (index === -1) {
+            index = avatarDialog.value.galleryImages.length - 1;
+        }
+        api.reInit();
+        api.scrollTo(index, true);
+    }
 
     const avatarDialogTabs = computed(() => [
         { value: 'Info', label: t('dialog.avatar.info.header') },
@@ -834,6 +954,16 @@
         treeData.value = {};
         getAvatarTimeSpent();
         getAvatarMemo();
+    }
+
+    function isListingOwned(listing) {
+        return (
+            ownedListingIds.value.has(listing.listingId) || ownedProductIds.value.has(avatarDialog.value.ref.productId)
+        );
+    }
+
+    function canPurchaseListing(listing) {
+        return currentUserCredits.value !== null && currentUserCredits.value >= listing.priceTokens;
     }
 
     function getAvatarTimeSpent() {
@@ -981,42 +1111,111 @@
         if (!file) {
             return;
         }
-        const r = new FileReader();
-        const resetLoading = () => {
-            avatarDialog.value.galleryLoading = false;
-            clearInput();
-        };
-        r.onerror = resetLoading;
-        r.onabort = resetLoading;
-        r.onload = function () {
-            try {
-                avatarDialog.value.galleryLoading = true;
-                const base64Body = btoa(r.result.toString());
-                const uploadPromise = (async () => {
-                    const args = await avatarRequest.uploadAvatarGalleryImage(base64Body, avatarDialog.value.id);
-                    avatarDialog.value.galleryImages = await getAvatarGallery(avatarDialog.value.id);
-                    return args;
-                })();
-                toast.promise(uploadPromise, {
-                    loading: t('message.upload.loading'),
-                    success: t('message.upload.success'),
-                    error: t('message.upload.error')
-                });
-                uploadPromise
-                    .catch((error) => {
-                        console.error('Failed to upload image', error);
-                    })
-                    .finally(resetLoading);
-            } catch (error) {
-                console.error('Failed to process image', error);
-                resetLoading();
-            }
-        };
+        clearInput();
+        galleryCropDialogFile.value = file;
+        galleryCropDialogOpen.value = true;
+    }
+
+    /**
+     * @param {Blob} blob
+     */
+    async function onCropConfirmAvatarGallery(blob) {
+        const avatarId = avatarDialog.value.id;
+        avatarDialog.value.galleryLoading = true;
+        const uploadPromise = (async () => {
+            const base64Body = await readFileAsBase64(blob);
+            const base64File = await resizeImageToFitLimits(base64Body);
+            const args = await avatarRequest.uploadAvatarGalleryImage(base64File, avatarId);
+            await getAvatarGallery(avatarId);
+            return args;
+        })();
+        toast.promise(uploadPromise, {
+            loading: t('message.upload.loading'),
+            success: t('message.upload.success'),
+            error: t('message.upload.error')
+        });
         try {
-            r.readAsBinaryString(file);
+            const args = await uploadPromise;
+            await scrollGalleryToImage(args.json?.id);
         } catch (error) {
-            console.error('Failed to read file', error);
-            resetLoading();
+            console.error('Failed to upload image', error);
+        } finally {
+            avatarDialog.value.galleryLoading = false;
+            galleryCropDialogOpen.value = false;
+        }
+    }
+
+    /**
+     * @param {number} index
+     * @param {number} direction
+     */
+    async function moveGalleryImage(index, direction) {
+        const avatarId = avatarDialog.value.id;
+        const images = [...avatarDialog.value.galleryImages];
+        const target = index + direction;
+        if (target < 0 || target >= images.length) {
+            return;
+        }
+        [images[index], images[target]] = [images[target], images[index]];
+        avatarDialog.value.galleryLoading = true;
+        try {
+            await avatarRequest.setAvatarGalleryOrder(
+                images.map((image) => image.id),
+                avatarId
+            );
+        } catch (error) {
+            console.error('Failed to reorder gallery', error);
+            toast.error(t('message.upload.error'));
+        }
+        await getAvatarGallery(avatarId);
+        await scrollGalleryToImage(images[target].id);
+    }
+
+    /**
+     * @param {{ id: string; url: string }} image
+     */
+    async function deleteGalleryImage(image) {
+        const avatarId = avatarDialog.value.id;
+        const { ok } = await modalStore.confirm({
+            title: t('confirm.title'),
+            description: t('confirm.command_question', {
+                command: t('dialog.avatar.info.gallery_delete')
+            })
+        });
+        if (!ok) {
+            return;
+        }
+        avatarDialog.value.galleryLoading = true;
+        try {
+            await miscRequest.deleteFile(image.id);
+        } catch (error) {
+            console.error('Failed to delete gallery image', error);
+        }
+        await getAvatarGallery(avatarId);
+    }
+
+    async function purchaseListing(listing) {
+        const { ok } = await modalStore.confirm({
+            title: t('confirm.title'),
+            description: t('dialog.avatar.info.purchase_confirm', {
+                name: listing.displayName,
+                price: commaNumber(listing.priceTokens)
+            })
+        });
+        if (!ok) {
+            return;
+        }
+        try {
+            await marketplaceRequest.purchaseListing({
+                listingId: listing.listingId,
+                totalPrice: listing.priceTokens,
+                quantity: 1
+            });
+            toast.success(t('dialog.avatar.info.purchase_success'));
+        } catch (error) {
+            console.error('Failed to purchase listing', error);
+        } finally {
+            getAllProductPurchases();
         }
     }
 </script>

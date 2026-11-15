@@ -54,12 +54,13 @@ import { removeAvatarFromCache } from './avatarCoordinator';
 import { useSharedFeedStore } from '../stores/sharedFeed';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
+import { useFeedStore } from '../stores/feed';
 
 const getRobotUrl = () => `${AppDebug.endpointDomain}/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file`;
 
 /**
- * @param {import('../types/api/profile').publicProfile & { $lastFetch?: number }} json
- * @returns {import('../types/api/profile').publicProfile & { $lastFetch?: number }}
+ * @param {import('@/types/vrcx').Json<import('vrchat').PublicProfile> & { $lastFetch?: number }} json
+ * @returns {import('@/types/vrcx').Json<import('vrchat').PublicProfile> & { $lastFetch?: number }}
  */
 export function applyPublicProfile(json) {
     const { cachedProfiles } = useUserStore();
@@ -74,12 +75,82 @@ export function applyPublicProfile(json) {
             }
         }
     }
+    // this is dumb
+    if (
+        ref.hasVrcPlus &&
+        ref.badges &&
+        ref.badges.every((x) => x.badgeId !== 'bdg_754f9935-0f97-49d8-b857-95afb9b673fa')
+    ) {
+        ref.badges.unshift({
+            badgeId: 'bdg_754f9935-0f97-49d8-b857-95afb9b673fa',
+            badgeName: 'Supporter',
+            badgeDescription: 'Supports VRChat through VRC+',
+            badgeImageUrl: 'https://assets.vrchat.com/badges/fa/bdgai_583f6b13-91ab-4e1b-974e-ab91600b06cb.png',
+            hidden: true,
+            showcased: false
+        });
+    }
+    if (useFriendStore().friends.has(ref.id)) {
+        updateUserProfile(ref);
+    }
     return ref;
 }
 
+async function updateUserProfile(ref) {
+    if (!ref.id || typeof ref.bio !== 'string') {
+        return;
+    }
+    const existing = await database.getUserProfile(ref.id);
+    if (!existing) {
+        database.setUserProfile(ref);
+        return;
+    }
+    if (existing.bio === ref.bio && arraysMatch(existing.bioLinks, ref.bioLinks)) {
+        return;
+    }
+    const feed = {
+        created_at: new Date().toJSON(),
+        type: 'Bio',
+        userId: ref.id,
+        displayName: ref.displayName,
+        bio: ref.bio,
+        previousBio: existing.bio,
+        bioLinks: ref.bioLinks,
+        previousBioLinks: existing.bioLinks
+    };
+    useNotificationStore().queueFeedNoty(feed);
+    useSharedFeedStore().addEntry(feed);
+    const persistedFeed = await database.addBioToDatabase(feed);
+    if (persistedFeed) {
+        useFeedStore().addFeedEntry(persistedFeed);
+    }
+    database.setUserProfile(ref);
+}
+
+const PROFILE_REFRESH_INTERVAL = 7 * 24 * 60 * 60 * 1000;
+const pendingProfileRefresh = new Set();
+
+async function refreshStaleUserProfile(userId) {
+    if (pendingProfileRefresh.has(userId)) {
+        return;
+    }
+    pendingProfileRefresh.add(userId);
+    try {
+        const existing = await database.getUserProfile(userId);
+        if (existing && Date.now() - Date.parse(existing.updatedAt) < PROFILE_REFRESH_INTERVAL) {
+            return;
+        }
+        await userRequest.getPublicProfile({ userId });
+    } catch (err) {
+        console.error('Failed to refresh public profile', err);
+    } finally {
+        pendingProfileRefresh.delete(userId);
+    }
+}
+
 /**
- * @param {import('../types/api/user').GetUserResponse} json
- * @returns {import('../types/api/user').VrcxUser}
+ * @param {import('@/types/vrcx').Json<import('vrchat').User>} json
+ * @returns {import('@/types/vrcx').VrcxUser}
  */
 export function applyUser(json) {
     const userStore = useUserStore();
@@ -141,6 +212,7 @@ export function applyUser(json) {
         } else {
             setCachedUser(ref);
         }
+        getUserMemo(ref.id);
         runUpdateFriendFlow(ref.id);
     } else {
         if (json.state !== 'online') {
@@ -185,20 +257,6 @@ export function applyUser(json) {
         instanceRequest.getInstance({
             worldId: ref.$location.worldId,
             instanceId: ref.$location.instanceId
-        });
-    }
-    if (
-        ref.$isVRCPlus &&
-        ref.badges &&
-        ref.badges.every((x) => x.badgeId !== 'bdg_754f9935-0f97-49d8-b857-95afb9b673fa')
-    ) {
-        ref.badges.unshift({
-            badgeId: 'bdg_754f9935-0f97-49d8-b857-95afb9b673fa',
-            badgeName: 'Supporter',
-            badgeDescription: 'Supports VRChat through VRC+',
-            badgeImageUrl: 'https://assets.vrchat.com/badges/fa/bdgai_583f6b13-91ab-4e1b-974e-ab91600b06cb.png',
-            hidden: true,
-            showcased: false
         });
     }
     const friendCtx = friendStore.friends.get(ref.id);
@@ -315,16 +373,6 @@ export function showUserDialog(userId) {
     getUserMemo(userId).then((memo) => {
         if (memo.userId === userId) {
             D.memo = memo.memo;
-            const ref = friendStore.friends.get(userId);
-            if (ref) {
-                ref.memo = String(memo.memo || '');
-                if (memo.memo) {
-                    ref.$nickName = memo.memo.split('\n')[0];
-                } else {
-                    ref.$nickName = '';
-                }
-                syncFriendSearchIndex(ref);
-            }
         }
     });
 
@@ -517,8 +565,10 @@ export function showUserDialog(userId) {
 }
 
 export function updateUserDialogProfile() {
-    const D = useUserStore().userDialog;
+    const userStore = useUserStore();
+    const D = userStore.userDialog;
     const appearanceSettingsStore = useAppearanceSettingsStore();
+    D.publicProfileRef = userStore.cachedProfiles.get(D.id);
     userRequest
         .getPublicProfile({ userId: D.id })
         .then((args1) => {
@@ -585,6 +635,7 @@ function onPlayerTraveling(ref) {
  * @param {object} props
  */
 async function handleUserUpdate(ref, props) {
+    refreshStaleUserProfile(ref.id);
     await runHandleUserUpdateFlow(ref, props);
 }
 
@@ -618,34 +669,51 @@ export async function refreshUserDialogAvatars(fileId) {
         }
     }
     const map = new Map();
-    await processBulk({
-        fn: avatarRequest.getAvatars,
-        N: -1,
-        params,
-        handle: (args) => {
-            for (const json of args.json) {
-                const ref = applyAvatar(json);
-                map.set(ref.id, ref);
-            }
-        },
-        done: () => {
-            const array = Array.from(map.values());
-            if (userId === D.id) {
-                userStore.sortUserDialogAvatars(array);
-            }
-            D.isAvatarsLoading = false;
-            if (fileId) {
-                D.loading = false;
-                for (const ref of array) {
-                    if (extractFileId(ref.imageUrl) === fileId) {
-                        showAvatarDialog(ref.id);
-                        return;
-                    }
+    const licensedMap = new Map();
+    await Promise.all([
+        processBulk({
+            fn: avatarRequest.getAvatars,
+            N: -1,
+            params,
+            handle: (args) => {
+                for (const json of args.json) {
+                    const ref = applyAvatar(json);
+                    map.set(ref.id, ref);
                 }
-                toast.error('Own avatar not found');
+            }
+        }),
+        processBulk({
+            fn: avatarRequest.getLicensedAvatars,
+            N: -1,
+            params: { n: 100, offset: 0 },
+            handle: (args) => {
+                for (const json of args.json) {
+                    const ref = applyAvatar(json);
+                    licensedMap.set(ref.id, ref);
+                }
+            },
+            done: (success) => {
+                if (success && userId === D.id) {
+                    userStore.sortUserDialogLicensedAvatars(Array.from(licensedMap.values()));
+                }
+            }
+        })
+    ]);
+    const array = Array.from(map.values());
+    if (userId === D.id) {
+        userStore.sortUserDialogAvatars(array);
+    }
+    D.isAvatarsLoading = false;
+    if (fileId) {
+        D.loading = false;
+        for (const ref of array) {
+            if (extractFileId(ref.imageUrl) === fileId) {
+                showAvatarDialog(ref.id);
+                return;
             }
         }
-    });
+        toast.error('Own avatar not found');
+    }
 }
 
 /**
@@ -704,8 +772,8 @@ export function handleConfig(args) {
 }
 
 /**
- * @param {import('../types/api/user').GetCurrentUserResponse} json
- * @returns {import('../types/api/user').VrcxCurrentUser}
+ * @param {import('@/types/vrcx').Json<import('vrchat').CurrentUser>} json
+ * @returns {import('@/types/vrcx').VrcxCurrentUser}
  */
 export function applyCurrentUser(json) {
     const userStore = useUserStore();
@@ -715,7 +783,7 @@ export function applyCurrentUser(json) {
     const locationStore = useLocationStore();
 
     authStore.setAttemptingAutoLogin(false);
-    let ref = /** @type {import('../types/api/user').VrcxCurrentUser} */ (userStore.currentUser);
+    let ref = /** @type {import('@/types/vrcx').VrcxCurrentUser} */ (userStore.currentUser);
     runAvatarSwapFlow({
         json,
         ref,
@@ -728,11 +796,12 @@ export function applyCurrentUser(json) {
             }
         }
     } else {
-        ref = /** @type {import('../types/api/user').VrcxCurrentUser} */ ({
+        ref = /** @type {import('@/types/vrcx').VrcxCurrentUser} */ ({
             acceptedPrivacyVersion: 0,
             acceptedTOSVersion: 0,
             accountDeletionDate: null,
             accountDeletionLog: null,
+            accountStanding: '',
             activeFriends: [],
             ageVerificationStatus: '',
             ageVerified: false,
@@ -940,6 +1009,7 @@ export function applyCurrentUser(json) {
     // set VRCX online/offline timers
     userRef.$online_for = userStore.currentUser.$online_for;
     userRef.$offline_for = userStore.currentUser.$offline_for;
+    userRef.$active_for = null;
     userRef.$location_at = userStore.currentUser.$location_at;
     userRef.$travelingToTime = userStore.currentUser.$travelingToTime;
     if (json.presence?.platform) {
@@ -1059,9 +1129,11 @@ export function updateAutoStateChange() {
     }
 
     const currentStatus = userStore.currentUser.status;
-    const newStatus = withCompany
-        ? generalSettingsStore.autoStateChangeCompanyStatus
-        : generalSettingsStore.autoStateChangeAloneStatus;
+    const newStatus = /** @type {import('vrchat').UserStatus} */ (
+        withCompany
+            ? generalSettingsStore.autoStateChangeCompanyStatus
+            : generalSettingsStore.autoStateChangeAloneStatus
+    );
 
     if (currentStatus === newStatus) {
         return;

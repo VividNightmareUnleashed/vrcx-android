@@ -132,48 +132,144 @@
                                 <Checkbox v-model="newInstanceDialog.queueEnabled" @update:modelValue="buildInstance" />
                             </FieldContent>
                         </Field>
-                        <Field v-if="newInstanceDialog.accessType === 'group'">
+                        <Field v-if="canAgeGate">
                             <FieldLabel>{{ t('dialog.new_instance.ageGate') }}</FieldLabel>
                             <FieldContent>
-                                <Checkbox
-                                    v-model="newInstanceDialog.ageGate"
-                                    :disabled="
-                                        !hasGroupPermission(
-                                            newInstanceDialog.groupRef,
-                                            'group-instance-age-gated-create'
-                                        )
-                                    "
-                                    @update:modelValue="buildInstance" />
+                                <Checkbox v-model="newInstanceDialog.ageGate" @update:modelValue="buildInstance" />
                             </FieldContent>
                         </Field>
                         <Field>
                             <FieldLabel>{{ t('dialog.new_instance.display_name') }}</FieldLabel>
                             <FieldContent>
                                 <InputGroupField
-                                    :disabled="!isLocalUserVrcPlusSupporter"
                                     v-model="newInstanceDialog.displayName"
                                     size="sm"
+                                    :maxlength="128"
+                                    show-count
                                     @click="$event.target.tagName === 'INPUT' && $event.target.select()"
                                     @change="buildInstance" />
                             </FieldContent>
                         </Field>
-                        <Field v-if="newInstanceDialog.accessType === 'group'">
+                        <Field>
+                            <FieldLabel>{{ t('dialog.new_instance.description') }}</FieldLabel>
+                            <FieldContent>
+                                <InputGroupTextareaField
+                                    v-model="newInstanceDialog.description"
+                                    :rows="3"
+                                    :maxlength="256"
+                                    show-count
+                                    @change="buildInstance" />
+                            </FieldContent>
+                        </Field>
+                        <Field>
+                            <FieldLabel>{{ t('dialog.new_instance.category') }}</FieldLabel>
+                            <FieldContent>
+                                <Select
+                                    :model-value="newInstanceDialog.categoryId || 'none'"
+                                    @update:modelValue="handleCategoryIdChange">
+                                    <SelectTrigger size="sm" class="w-full">
+                                        <SelectValue>
+                                            <span class="truncate">
+                                                {{ selectedCategoryName || t('dialog.new_instance.none') }}
+                                            </span>
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value="none">{{ t('dialog.new_instance.none') }}</SelectItem>
+                                            <SelectItem
+                                                v-for="category in instanceCategories"
+                                                :key="category.id"
+                                                :value="category.id">
+                                                <i
+                                                    v-if="instanceCategoryIcons[category.iconUrl]"
+                                                    :class="instanceCategoryIcons[category.iconUrl]" />
+                                                {{ category.name }}
+                                            </SelectItem>
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FieldContent>
+                        </Field>
+                        <Field>
+                            <FieldLabel>{{ t('dialog.new_instance.vibes') }}</FieldLabel>
+                            <FieldContent>
+                                <Select
+                                    multiple
+                                    :model-value="newInstanceDialog.vibeIds"
+                                    @update:modelValue="handleVibeIdsChange">
+                                    <SelectTrigger size="sm" class="w-full">
+                                        <SelectValue>
+                                            <span class="truncate">
+                                                {{ selectedVibeSummary || t('dialog.new_instance.none') }}
+                                            </span>
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem v-for="vibe in instanceVibes" :key="vibe.id" :value="vibe.id">
+                                                {{ vibe.title }}
+                                            </SelectItem>
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FieldContent>
+                        </Field>
+                        <Field>
+                            <FieldLabel>{{ t('dialog.new_instance.languages') }}</FieldLabel>
+                            <FieldContent>
+                                <Select
+                                    multiple
+                                    :model-value="newInstanceDialog.languages"
+                                    @update:modelValue="handleLanguagesChange">
+                                    <SelectTrigger size="sm" class="w-full">
+                                        <SelectValue>
+                                            <span class="truncate">
+                                                {{ selectedLanguageSummary || t('dialog.group_edit.no_language') }}
+                                            </span>
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem
+                                                v-for="language in languageOptions"
+                                                :key="language.value"
+                                                :value="language.value">
+                                                {{ language.label }}
+                                            </SelectItem>
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FieldContent>
+                        </Field>
+                        <Field>
                             <FieldLabel>{{ t('dialog.new_instance.minimum_avatar_performance') }}</FieldLabel>
                             <FieldContent>
                                 <Select v-model="newInstanceDialog.minimumAvatarPerformance" @change="buildInstance">
                                     <SelectTrigger size="sm" class="w-full">
                                         <SelectValue>
                                             <span>
-                                                {{ newInstanceDialog.minimumAvatarPerformance || 'None' }}
+                                                {{
+                                                    newInstanceDialog.minimumAvatarPerformance ||
+                                                    t('dialog.avatar.tags.performanceRating.None')
+                                                }}
                                             </span>
                                         </SelectValue>
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectGroup>
-                                            <SelectItem value="None">None</SelectItem>
-                                            <SelectItem value="Poor">Poor</SelectItem>
-                                            <SelectItem value="Medium">Medium</SelectItem>
-                                            <SelectItem value="Good">Good</SelectItem>
+                                            <SelectItem value="None">{{
+                                                t('dialog.avatar.tags.performanceRating.None')
+                                            }}</SelectItem>
+                                            <SelectItem value="Poor">{{
+                                                t('dialog.avatar.tags.performanceRating.Poor')
+                                            }}</SelectItem>
+                                            <SelectItem value="Medium">{{
+                                                t('dialog.avatar.tags.performanceRating.Medium')
+                                            }}</SelectItem>
+                                            <SelectItem value="Good">{{
+                                                t('dialog.avatar.tags.performanceRating.Good')
+                                            }}</SelectItem>
                                         </SelectGroup>
                                     </SelectContent>
                                 </Select>
@@ -576,7 +672,7 @@
     import { Button } from '@/components/ui/button';
     import { Check as CheckIcon } from 'lucide-vue-next';
     import { Checkbox } from '@/components/ui/checkbox';
-    import { InputGroupField } from '@/components/ui/input-group';
+    import { InputGroupField, InputGroupTextareaField } from '@/components/ui/input-group';
     import { TabsUnderline } from '@/components/ui/tabs';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
@@ -589,6 +685,7 @@
         isRealInstance,
         parseLocation
     } from '../../../shared/utils';
+    import { instanceCategoryIcons } from '../../../shared/constants';
     import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
     import {
         useFriendStore,
@@ -625,19 +722,52 @@
     const { currentUserGroups } = storeToRefs(useGroupStore());
     const { lastLocation } = storeToRefs(useLocationStore());
     const { showLaunchDialog, tryOpenInstanceInVrc } = useLaunchStore();
-    const { currentUser } = storeToRefs(useUserStore());
+    const { currentUser, subsetOfLanguages } = storeToRefs(useUserStore());
     const { canOpenInstanceInGame } = useInviteStore();
 
     const {
         newInstanceDialog,
-        isLocalUserVrcPlusSupporter,
         buildInstance,
         buildLegacyInstance,
         updateNewInstanceDialog,
         handleCreateNewInstance,
         newInstanceTabClick,
-        handleRoleIdsChange
+        handleRoleIdsChange,
+        handleLanguagesChange,
+        handleVibeIdsChange,
+        handleCategoryIdChange,
+        instanceCategories,
+        instanceVibes
     } = useNewInstanceBuilder(toRef(props, 'newInstanceDialogLocationTag'));
+
+    const canAgeGate = computed(() => {
+        if (newInstanceDialog.value.accessType === 'group') {
+            return hasGroupPermission(newInstanceDialog.value.groupRef, 'group-instance-age-gated-create');
+        }
+        return currentUser.value?.ageVerificationStatus === '18+';
+    });
+
+    const languageOptions = computed(() =>
+        Object.entries(subsetOfLanguages.value ?? {}).map(([value, label]) => ({
+            value,
+            label
+        }))
+    );
+
+    const selectedLanguageSummary = computed(() =>
+        (newInstanceDialog.value.languages ?? [])
+            .map((language) => subsetOfLanguages.value?.[language] ?? language)
+            .join(', ')
+    );
+
+    const selectedCategoryName = computed(
+        () => instanceCategories.value.find((category) => category.id === newInstanceDialog.value.categoryId)?.name
+    );
+
+    const selectedVibeSummary = computed(() => {
+        const vibeById = new Map(instanceVibes.value.map((vibe) => [vibe.id, vibe.title]));
+        return (newInstanceDialog.value.vibeIds ?? []).map((id) => vibeById.get(id) ?? id).join(', ');
+    });
 
     const inviteDialog = ref({
         visible: false,

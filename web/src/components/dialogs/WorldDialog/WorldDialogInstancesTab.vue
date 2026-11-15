@@ -21,7 +21,7 @@
                 </div>
             </div>
             <div v-for="room in worldDialog.rooms" :key="room.id">
-                <template v-if="isAgeGatedInstancesVisible || !(room.ageGate || room.location?.includes('~ageGate'))">
+                <template v-if="isRoomVisible(room)">
                     <div style="margin: 6px 0">
                         <div class="flex flex-wrap gap-2 whitespace-nowrap overflow-hidden text-ellipsis">
                             <LocationWorld
@@ -70,7 +70,7 @@
                                         <span
                                             class="block truncate font-medium leading-[18px]"
                                             :style="{ color: room.$location.user.$userColour }"
-                                            v-text="room.$location.user.displayName" />
+                                            v-text="room.$location.user.displayName || room.$location.userId" />
                                         <span class="block truncate text-xs">
                                             {{ t('dialog.world.instances.instance_creator') }}
                                         </span>
@@ -98,7 +98,7 @@
                                     <span
                                         class="block truncate font-medium leading-[18px]"
                                         :style="{ color: user.$userColour }"
-                                        v-text="user.displayName" />
+                                        v-text="user.displayName || user.id" />
                                     <span v-if="user.location === 'traveling'" class="block truncate text-xs">
                                         <Spinner class="inline-block mr-1" />
                                         <Timer :epoch="user.$travelingToTime" />
@@ -182,7 +182,14 @@
     const { t } = useI18n();
     const { userImage, userStatusClass } = useUserDisplay();
 
-    const { isAgeGatedInstancesVisible } = storeToRefs(useAppearanceSettingsStore());
+    const { isAgeGatedInstancesVisible, isClosedInstancesVisible } = storeToRefs(useAppearanceSettingsStore());
+
+    function isRoomVisible(room) {
+        const isAgeGated = room.ageGate || room.location?.includes('~ageGate');
+        if (!isAgeGatedInstancesVisible.value && isAgeGated) return false;
+        if (!isClosedInstancesVisible.value && room.ref?.closedAt) return false;
+        return true;
+    }
 
     const { bioLanguage, translationApi } = storeToRefs(useAdvancedSettingsStore());
     const { translateText } = useAdvancedSettingsStore();

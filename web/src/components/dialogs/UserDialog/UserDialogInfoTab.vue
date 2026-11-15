@@ -37,8 +37,8 @@
                             <span
                                 class="text-md text-foreground cursor-pointer block truncate"
                                 @click="showWorldDialog(userDialog.$location.tag)"
-                                :title="userDialog.instance?.ref?.world?.name"
-                                >{{ userDialog.instance?.ref?.world?.name }}</span
+                                :title="userDialog.instance?.ref?.world?.name || userDialog.$location.worldId"
+                                >{{ userDialog.instance?.ref?.world?.name || userDialog.$location.worldId }}</span
                             >
                             <div class="flex min-w-0 flex-wrap items-start gap-1.5">
                                 <LocationWorld
@@ -89,7 +89,9 @@
                                     <span
                                         class="block truncate font-medium leading-[18px]"
                                         :style="{ color: userDialog.$location.user.$userColour }"
-                                        v-text="userDialog.$location.user.displayName"></span>
+                                        v-text="
+                                            userDialog.$location.user.displayName || userDialog.$location.userId
+                                        "></span>
                                     <span class="block truncate text-xs">{{
                                         t('dialog.user.info.instance_creator')
                                     }}</span>
@@ -115,7 +117,7 @@
                                 <span
                                     class="block truncate font-medium leading-[18px]"
                                     :style="{ color: user.$userColour }"
-                                    v-text="user.displayName"></span>
+                                    v-text="user.displayName || user.id"></span>
                                 <span v-if="user.location === 'traveling'" class="block truncate text-xs">
                                     <Spinner class="inline-block mr-1" />
                                     <Timer :epoch="user.$travelingToTime" />
@@ -164,7 +166,7 @@
                     <pre
                         class="text-xs font-[inherit]"
                         style="white-space: pre-wrap; max-height: 210px; overflow-y: auto"
-                        >{{ bioCache.translated || userDialog.publicProfileRef?.bio || '—' }}</pre>
+                        >{{ bioCache.translated || replaceBioSymbols(userDialog.publicProfileRef?.bio) || '—' }}</pre>
                     <div
                         v-if="userDialog.publicProfileRef?.bioLinks && userDialog.publicProfileRef?.bioLinks.length"
                         class="flex flex-wrap items-center gap-1.5 mt-2">
@@ -400,7 +402,7 @@
                                         t('view.profile.profile.vrchat_credits')
                                     }}</span>
                                     <span class="text-right text-muted-foreground">{{
-                                        vrchatCredit ?? t('view.profile.profile.refresh')
+                                        currentUserCredits ?? t('view.profile.profile.refresh')
                                     }}</span>
                                 </div>
                             </TooltipWrapper>
@@ -413,6 +415,18 @@
                                     ? t('dialog.user.info.avatar_cloning_allow')
                                     : t('dialog.user.info.avatar_cloning_deny')
                             }}</span>
+                        </div>
+
+                        <div class="flex justify-between items-center gap-2 text-xs">
+                            <span class="text-muted-foreground">{{ t('dialog.user.info.id') }}</span>
+                            <Button
+                                class="-mr-1.5 h-5 gap-1 px-1.5 text-xs font-normal text-muted-foreground has-[>svg]:px-1.5"
+                                size="sm"
+                                variant="ghost"
+                                @click="copyToClipboard(userDialog.id, t('message.user.id_copied'))">
+                                <Copy class="size-3" />
+                                {{ t('dialog.user.info.copy_id') }}
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -445,7 +459,7 @@
 </template>
 
 <script setup>
-    import { Info, Languages, Pencil, Trash2, User } from 'lucide-vue-next';
+    import { Copy, Info, Languages, Pencil, Trash2, User } from 'lucide-vue-next';
     import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
     import IconFrame from '@/components/IconFrame.vue';
     import { ref, watch } from 'vue';
@@ -456,11 +470,13 @@
     import { useI18n } from 'vue-i18n';
 
     import {
+        copyToClipboard,
         formatDateFilter,
         getFaviconUrl,
         isFriendOnline,
         isRealInstance,
         openExternalLink,
+        replaceBioSymbols,
         timeToText,
         userOnlineForTimestamp,
         timeAgo
@@ -492,7 +508,7 @@
     const { hideUserNotes, hideUserMemos } = storeToRefs(useAppearanceSettingsStore());
     const { bioLanguage, translationApi, translationApiType } = storeToRefs(useAdvancedSettingsStore());
     const { translateText } = useAdvancedSettingsStore();
-    const { userDialog, currentUser } = storeToRefs(useUserStore());
+    const { userDialog, currentUser, currentUserCredits } = storeToRefs(useUserStore());
     const { showEditProfileDialog } = useUserStore();
     const { fullscreenImageDialog } = storeToRefs(useGalleryStore());
 
@@ -505,7 +521,6 @@
     });
 
     const isEditNoteAndMemoDialogVisible = ref(false);
-    const vrchatCredit = ref(null);
     const translateLoading = ref(false);
 
     watch(
@@ -523,7 +538,7 @@
     );
 
     function onTabActivated() {
-        if (currentUser.value.id === userDialog.value.id && vrchatCredit.value === null) {
+        if (currentUser.value.id === userDialog.value.id && currentUserCredits.value === null) {
             getVRChatCredits();
         }
     }
@@ -536,7 +551,7 @@
         if (translateLoading.value) {
             return;
         }
-        const bio = userDialog.value.ref.bio;
+        const bio = replaceBioSymbols(userDialog.value.ref.bio);
         if (!bio) {
             return;
         }
@@ -599,7 +614,7 @@
     }
 
     function getVRChatCredits() {
-        queryRequest.fetch('vrchatCredits').then((args) => (vrchatCredit.value = args.json?.balance));
+        queryRequest.fetch('vrchatCredits').then((args) => (currentUserCredits.value = args.json?.balance));
     }
 
     /**
