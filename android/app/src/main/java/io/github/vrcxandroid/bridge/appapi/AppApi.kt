@@ -92,6 +92,10 @@ class AppApi(
             openDiscordProfile(a.str(0))
             JsonNull
         }
+        "OpenSteamStorePage" -> {
+            openSteamStorePage(a.int(0))
+            JsonNull
+        }
         "OpenCalendarFile" -> {
             openCalendarFile(a.str(0))
             JsonNull
@@ -203,6 +207,15 @@ class AppApi(
         } catch (e: Exception) {
             platform.log("Failed to open a link", e)
         }
+    }
+
+    /**
+     * Upstream `OpenSteamStorePage` opens the store page in the Steam client (`steam://openurl/...`). Android opens the
+     * same page as a web link, which the Steam app takes over when it is installed and handles store links.
+     */
+    fun openSteamStorePage(appId: Int?) {
+        if (appId == null || appId <= 0) return
+        openLink("https://store.steampowered.com/app/$appId/")
     }
 
     /** Upstream `OpenDiscordProfile`: rejects ids that are not a long; Discord app first, then the web profile. */

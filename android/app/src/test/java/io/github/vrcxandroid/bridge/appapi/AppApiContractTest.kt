@@ -216,6 +216,14 @@ class AppApiContractTest {
     }
 
     @Test
+    fun steamStorePageOpensTheStoreLink() {
+        call("OpenSteamStorePage", 4296960)
+        call("OpenSteamStorePage", null)
+        call("OpenSteamStorePage", 0)
+        assertEquals(listOf("https://store.steampowered.com/app/4296960/"), platform.openedUrls)
+    }
+
+    @Test
     fun discordProfileValidatesAndFallsBackToTheWeb() {
         assertEquals("Exception: Invalid user ID", rejection("OpenDiscordProfile", "not-a-number"))
         assertEquals("Exception: Invalid user ID", rejection("OpenDiscordProfile", null))
