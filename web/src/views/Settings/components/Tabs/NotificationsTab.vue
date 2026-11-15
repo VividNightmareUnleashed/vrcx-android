@@ -43,6 +43,7 @@
             </SettingsItem>
 
             <SettingsItem
+                v-if="hasPurchasing"
                 :label="
                     t('view.settings.notifications.notifications.inventory_notifications.free_store_item_notifications')
                 "
@@ -217,7 +218,7 @@
     import { useI18n } from 'vue-i18n';
 
     import { useNotificationStore, useNotificationsSettingsStore, useUserStore } from '@/stores';
-    import { hasVrOverlay, isAndroid } from '@/shared/utils/platform';
+    import { hasPurchasing, hasVrOverlay, isAndroid } from '@/shared/utils/platform';
     import { useCompanionStore } from '@/platform/android/companionStore';
 
     import FeedFiltersDialog from '../../dialogs/FeedFiltersDialog.vue';

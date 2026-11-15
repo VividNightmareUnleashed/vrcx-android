@@ -3,6 +3,8 @@ import { defineStore } from 'pinia';
 import { toast } from 'vue-sonner';
 import { useI18n } from 'vue-i18n';
 
+import { hasPurchasing } from '../../shared/utils/platform';
+
 import dayjs from 'dayjs';
 
 import {
@@ -1189,7 +1191,8 @@ export const useNotificationStore = defineStore('Notification', () => {
     }
 
     async function checkFreeStoreItems() {
-        if (!notificationsSettingsStore.freeStoreItemNotifications) {
+        // Android: claiming store items is a purchase, which Android does not offer (docs/ARCHITECTURE.md §9).
+        if (!hasPurchasing || !notificationsSettingsStore.freeStoreItemNotifications) {
             return;
         }
         let shelves;

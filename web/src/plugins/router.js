@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 
+import { hasPurchasing } from '../shared/utils/platform';
 import { watchState } from '../services/watchState';
 
 import FavoritesAvatar from './../views/Favorites/FavoritesAvatar.vue';
@@ -155,6 +156,11 @@ export function initRouter(app) {
 router.beforeEach((to) => {
     if (to.path === '/social') {
         return false;
+    }
+
+    // Android: no purchasing (docs/ARCHITECTURE.md §9), so the VRChat store page cannot be opened by URL either.
+    if (to.name === 'vrchat-store' && !hasPurchasing) {
+        return { name: 'tools' };
     }
 
     if (to.name === 'login' && watchState.isLoggedIn) {

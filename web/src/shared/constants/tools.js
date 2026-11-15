@@ -1,4 +1,4 @@
-import { isAndroid } from '../utils/platform';
+import { hasPurchasing, isAndroid } from '../utils/platform';
 
 const toolCategories = [
     { key: 'image', labelKey: 'view.tools.pictures.header' },
@@ -251,6 +251,7 @@ const allToolDefinitions = [
         navIcon: 'ri-store-2-line',
         titleKey: 'view.tools.marketplace.vrchat_store',
         descriptionKey: 'view.tools.marketplace.vrchat_store_description',
+        purchasing: true,
         navEligible: true,
         action: { type: 'route', routeName: 'vrchat-store' }
     },
@@ -261,6 +262,7 @@ const allToolDefinitions = [
         navIcon: 'ri-shopping-bag-line',
         titleKey: 'view.tools.other.purchase_history',
         descriptionKey: 'view.tools.other.purchase_history_description',
+        purchasing: true,
         navEligible: true,
         action: { type: 'dialog', dialogKey: 'purchase-history' }
     },
@@ -297,20 +299,22 @@ const allToolDefinitions = [
 ];
 
 /**
- * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) on Android
- * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav. A PC tool with an
- * `android` entry is kept on Android with those fields instead (the VRChat photos folder).
+ * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) and the purchasing
+ * tools (`purchasing`: VRChat store, purchase history) on Android (docs/ARCHITECTURE.md §9). Hidden tools can then
+ * neither be opened nor pinned to the nav. A PC tool with an `android` entry is kept on Android with those fields
+ * instead (the VRChat photos folder).
  *
- * @param {{ pcOnly?: boolean; android?: object }[]} tools
+ * @param {{ pcOnly?: boolean; purchasing?: boolean; android?: object }[]} tools
  * @param {boolean} [android]
+ * @param {boolean} [purchasing]
  * @returns {object[]}
  */
-function filterToolsForPlatform(tools, android = isAndroid) {
+function filterToolsForPlatform(tools, android = isAndroid, purchasing = hasPurchasing) {
     if (!android) {
         return tools;
     }
     return tools
-        .filter((tool) => !tool.pcOnly || tool.android)
+        .filter((tool) => (!tool.pcOnly || tool.android) && (purchasing || !tool.purchasing))
         .map((tool) => (tool.android ? { ...tool, ...tool.android } : tool));
 }
 

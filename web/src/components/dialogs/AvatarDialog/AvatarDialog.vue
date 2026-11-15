@@ -611,6 +611,7 @@
                                             v-text="listing.description"></span>
                                     </div>
                                     <Button
+                                        v-if="hasPurchasing"
                                         size="sm"
                                         variant="outline"
                                         class="flex-none ml-2"
@@ -713,6 +714,8 @@
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
+
+    import { hasPurchasing } from '../../../shared/utils/platform';
 
     import {
         useAuthStore,

@@ -673,6 +673,8 @@
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
 
+    import { hasPurchasing } from '../../../shared/utils/platform';
+
     import {
         DropdownMenu,
         DropdownMenuContent,
@@ -735,7 +737,10 @@
         { value: 'Posts', label: t('dialog.group.posts.header') },
         { value: 'Members', label: t('dialog.group.members.header') },
         { value: 'Photos', label: t('dialog.group.gallery.header') },
-        ...(groupDialog.value.ref.storeId ? [{ value: 'Store', label: t('dialog.group.store.header') }] : []),
+        // Android: no purchasing, so no store tab (docs/ARCHITECTURE.md §9).
+        ...(hasPurchasing && groupDialog.value.ref.storeId
+            ? [{ value: 'Store', label: t('dialog.group.store.header') }]
+            : []),
         { value: 'JSON', label: t('dialog.group.json.header') }
     ]);
 
@@ -956,7 +961,7 @@
     }
 
     function loadLastActiveTab() {
-        if (groupDialog.value.lastActiveTab === 'Store' && !groupDialog.value.ref.storeId) {
+        if (groupDialog.value.lastActiveTab === 'Store' && !(hasPurchasing && groupDialog.value.ref.storeId)) {
             groupDialog.value.activeTab = 'Info';
             groupDialogTabCurrentName.value = 'Info';
             groupDialog.value.lastActiveTab = 'Info';

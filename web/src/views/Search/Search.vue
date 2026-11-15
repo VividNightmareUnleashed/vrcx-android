@@ -11,15 +11,16 @@
                  search button (a soft keyboard's Enter is easy to miss); one row in landscape. -->
             <div
                 class="mt-0 mx-0 mb-2 flex items-center gap-5 compact:flex-col compact:items-stretch compact:gap-2 compact-landscape:flex-row compact-landscape:items-center compact-landscape:gap-3">
-                <!-- Phones: five tabs do not fit a portrait phone in every language, so the strip scrolls sideways
-                     (the tabs share the width equally when they fit). -->
                 <TabsList
-                    class="compact:flex compact:w-full compact:justify-start compact:overflow-x-auto compact:[scrollbar-width:none] compact-landscape:w-auto compact-landscape:shrink-0">
+                    class="compact:grid compact:w-full compact:grid-cols-4 compact-landscape:w-auto compact-landscape:shrink-0">
                     <TabsTrigger value="user">{{ t('view.search.user.header') }}</TabsTrigger>
                     <TabsTrigger value="world">{{ t('view.search.world.header') }}</TabsTrigger>
                     <TabsTrigger value="avatar">{{ t('view.search.avatar.header') }}</TabsTrigger>
                     <TabsTrigger value="group">{{ t('view.search.group.header') }}</TabsTrigger>
-                    <TabsTrigger value="marketplace">{{ t('view.search.marketplace.header') }}</TabsTrigger>
+                    <!-- Android: no purchasing, so no marketplace search (docs/ARCHITECTURE.md §9). -->
+                    <TabsTrigger v-if="hasPurchasing" value="marketplace">{{
+                        t('view.search.marketplace.header')
+                    }}</TabsTrigger>
                 </TabsList>
                 <div class="flex min-w-0 flex-1 items-center">
                     <InputGroupField
@@ -291,7 +292,10 @@
                     @prev="paginationConfig.onPrev"
                     @next="paginationConfig.onNext" />
             </TabsContent>
-            <TabsContent value="marketplace" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+            <TabsContent
+                v-if="hasPurchasing"
+                value="marketplace"
+                class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
                 <div
                     class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none! compact-landscape:overflow-visible"
                     style="flex: 9">
@@ -422,6 +426,8 @@
     import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
+
+    import { hasPurchasing } from '../../shared/utils/platform';
 
     import { useAppearanceSettingsStore, useAuthStore, useAvatarProviderStore, useSearchStore } from '../../stores';
     import { commaNumber, convertFileUrlToImageUrl, languageClass, replaceBioSymbols } from '../../shared/utils';

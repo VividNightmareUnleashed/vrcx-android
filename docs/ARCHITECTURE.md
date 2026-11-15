@@ -313,6 +313,7 @@ Other events: `game-state` `{isGameRunning, isSteamVRRunning}`; `log-available` 
 | Custom CSS/JS | `filesDir/custom/custom.css` and `custom.js`, imported with `AndroidHost.ImportCustomFile` (a custom.css in the old `getExternalFilesDir(null)` location is copied over once); a Settings action reloads them |
 | Import PC data | Settings → PC companion → "Import VRCX database": SAF pick `VRCX.sqlite3` (and optionally `VRCX.json`), integrity check, restart. "Export database" checkpoints WAL first. Backups exclude the database (it holds saved credentials) |
 | Request-invite platform | Unchanged (`standalonewindows`): the user joins on PC |
+| Purchasing (avatar marketplace Buy, VRChat store, world and group store tabs, marketplace search, purchase history, free store item claims) | Hidden (`hasPurchasing`): Android offers no purchasing. Listings on avatars stay visible without the Buy button, and owned avatars still show as purchased |
 
 ## 10. Build
 

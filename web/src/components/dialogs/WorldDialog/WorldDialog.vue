@@ -434,6 +434,8 @@
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
 
+    import { hasPurchasing } from '../../../shared/utils/platform';
+
     import {
         useFavoriteStore,
         useGalleryStore,
@@ -540,7 +542,10 @@
 
     const worldDialogTabs = computed(() => [
         { value: 'Instances', label: t('dialog.world.instances.header') },
-        ...(worldDialog.value.ref.storeId ? [{ value: 'Store', label: t('dialog.world.store.header') }] : []),
+        // Android: no purchasing, so no store tab (docs/ARCHITECTURE.md §9).
+        ...(hasPurchasing && worldDialog.value.ref.storeId
+            ? [{ value: 'Store', label: t('dialog.world.store.header') }]
+            : []),
         { value: 'JSON', label: t('dialog.world.json.header') }
     ]);
 
@@ -588,7 +593,7 @@
     }
 
     function loadLastActiveTab() {
-        if (worldDialog.value.lastActiveTab === 'Store' && !worldDialog.value.ref.storeId) {
+        if (worldDialog.value.lastActiveTab === 'Store' && !(hasPurchasing && worldDialog.value.ref.storeId)) {
             worldDialog.value.activeTab = 'Instances';
             worldDialog.value.lastActiveTab = 'Instances';
         }
