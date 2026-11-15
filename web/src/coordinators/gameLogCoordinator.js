@@ -219,9 +219,7 @@ export async function runAndroidGameLogFlow() {
     }
     const logLines = await LogWatcher.GetLogLines();
     if (logLines) {
-        logLines.forEach((logLine) => {
-            addGameLogEvent(logLine);
-        });
+        await Promise.all(logLines.map((logLine) => addGameLogEvent(logLine)));
     }
     if (!started) {
         await runUpdateIsGameRunningFlow(isGameRunning, isSteamVRRunning);
