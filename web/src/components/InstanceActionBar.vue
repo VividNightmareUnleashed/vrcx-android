@@ -65,6 +65,48 @@
                     <Megaphone class="h-4 w-4" />
                 </Button>
             </TooltipWrapper>
+            <TooltipWrapper
+                v-if="instanceInfoState.canLinkCalendarEvent"
+                side="top"
+                :content="t('dialog.user.info.instance_calendar_link_tooltip')">
+                <Button
+                    class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
+                    :style="buttonStyle"
+                    size="icon-sm"
+                    variant="outline"
+                    :ariaLabel="t('dialog.user.info.instance_calendar_link_tooltip')"
+                    @click="instanceCalendarLinkDialogVisible = true">
+                    <CalendarPlus class="h-4 w-4" />
+                </Button>
+            </TooltipWrapper>
+            <TooltipWrapper
+                v-if="instanceInfoState.canRenameInstance"
+                side="top"
+                :content="t('dialog.user.info.rename_instance')">
+                <Button
+                    class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
+                    :style="buttonStyle"
+                    size="icon-sm"
+                    variant="outline"
+                    :ariaLabel="t('dialog.user.info.rename_instance')"
+                    @click="renameInstance(resolvedInstanceLocation)">
+                    <Pencil class="h-4 w-4" />
+                </Button>
+            </TooltipWrapper>
+            <TooltipWrapper
+                v-if="!instance?.closedAt && instanceInfoState.canCloseInstance"
+                side="top"
+                :content="t('dialog.user.info.close_instance')">
+                <Button
+                    class="rounded-full h-6 w-6 text-xs text-muted-foreground hover:text-red-500 pointer-coarse:size-10"
+                    :style="buttonStyle"
+                    size="icon-sm"
+                    variant="outline"
+                    :ariaLabel="t('dialog.user.info.close_instance')"
+                    @click="closeInstance(resolvedInstanceLocation)">
+                    <PowerIcon class="h-4 w-4" />
+                </Button>
+            </TooltipWrapper>
             <TooltipWrapper v-if="showRefreshButton" side="top" :content="refreshTooltip">
                 <Button
                     class="rounded-full w-6 h-6 text-xs text-muted-foreground hover:text-foreground pointer-coarse:size-10"
@@ -97,8 +139,8 @@
                     props.class
                 )
             ">
-            <!-- Touch: the details (and Close instance) open in a popover on tap; a tooltip cannot hold a button. -->
-            <Popover v-if="instanceInfoState.isValidInstance && isCoarsePointer">
+            <!-- Touch: the details open in a popover on tap; a tooltip has no tap gesture. -->
+            <Popover v-if="instanceInfoState.isValidInstance && isCoarsePointer && hasInstanceDetails">
                 <PopoverTrigger as-child>
                     <button
                         type="button"
@@ -107,7 +149,7 @@
                         :class="
                             cn(
                                 'relative flex items-center gap-0.5 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-x-1 after:-inset-y-2',
-                                !instance?.hasCapacityForYou ? 'text-red-500' : null
+                                instance?.hasCapacityForYou === false ? 'text-red-500' : null
                             )
                         ">
                         <UsersRound class="h-4 w-4" />
@@ -119,22 +161,21 @@
                 </PopoverTrigger>
                 <PopoverContent side="top" class="w-auto max-w-[calc(100vw-2rem)] p-3 text-xs">
                     <InstanceInfoDetails
-                        labelled
                         :instance="instance"
-                        :disabled-content-settings="instanceInfoState.disabledContentSettings"
-                        :can-close-instance="instanceInfoState.canCloseInstance"
-                        @close-instance="closeInstance(resolvedInstanceLocation)" />
+                        :description="instanceDescription"
+                        :languages="instanceLanguages"
+                        :disabled-content-settings="instanceInfoState.disabledContentSettings" />
                 </PopoverContent>
             </Popover>
-            <TooltipWrapper v-else-if="instanceInfoState.isValidInstance" side="top">
+            <TooltipWrapper v-else-if="instanceInfoState.isValidInstance" side="top" :disabled="!hasInstanceDetails">
                 <template #content>
                     <InstanceInfoDetails
                         :instance="instance"
-                        :disabled-content-settings="instanceInfoState.disabledContentSettings"
-                        :can-close-instance="instanceInfoState.canCloseInstance"
-                        @close-instance="closeInstance(resolvedInstanceLocation)" />
+                        :description="instanceDescription"
+                        :languages="instanceLanguages"
+                        :disabled-content-settings="instanceInfoState.disabledContentSettings" />
                 </template>
-                <div :class="cn('flex items-center gap-0.5', !instance?.hasCapacityForYou ? 'text-red-500' : null)">
+                <div :class="cn('flex items-center gap-0.5', instance?.hasCapacityForYou === false ? 'text-red-500' : null)">
                     <UsersRound class="h-4 w-4" />
                     <span v-if="resolvedInstanceLocation === locationStore.lastLocation.location">
                         {{ locationStore.lastLocation.playerList.size }}/{{ instance?.capacity }}
@@ -186,6 +227,63 @@
                     </span>
                 </TooltipWrapper>
                 <TooltipWrapper
+                    v-if="instance?.calendarEntryId && !isInGroup"
+                    side="top"
+                    :content="t('dialog.user.info.instance_calendar_event')">
+                    <span class="flex items-center gap-0.5">
+                        <CalendarDays class="h-4 w-4" />
+                    </span>
+                </TooltipWrapper>
+                <Popover v-else-if="instance?.calendarEntryId" :open="calendarPopoverOpen">
+                    <PopoverTrigger as-child>
+                        <span
+                            class="flex items-center gap-0.5"
+                            @mouseenter="openCalendarPopover"
+                            @mouseleave="scheduleCloseCalendarPopover">
+                            <CalendarDays class="h-4 w-4" />
+                        </span>
+                    </PopoverTrigger>
+                    <PopoverContent
+                        side="top"
+                        class="w-125 p-3"
+                        @mouseenter="openCalendarPopover"
+                        @mouseleave="scheduleCloseCalendarPopover">
+                        <GroupCalendarEventDetails v-if="calendarEvent" :event="calendarEvent" relative-time />
+                        <span v-else-if="calendarEventFailed" class="text-xs">
+                            {{ t('dialog.user.info.instance_calendar_event') }}
+                        </span>
+                        <div v-else class="flex justify-center">
+                            <Loader2 class="h-4 w-4 animate-spin" />
+                        </div>
+                    </PopoverContent>
+                </Popover>
+                <TooltipWrapper v-if="currentHypeTrain" side="top">
+                    <template #content>
+                        <div class="flex flex-col gap-1">
+                            <span class="font-medium">{{ t('dialog.user.info.instance_hype_train') }}</span>
+                            <span>
+                                {{ t('dialog.user.info.instance_hype_train_gifts') }}
+                                {{ currentHypeTrain.currentGiftCount }}/{{ currentHypeTrain.totalGiftGoal }}
+                            </span>
+                            <span>
+                                {{ t('dialog.user.info.instance_hype_train_contributors') }}
+                                {{ currentHypeTrain.totalGiftContributors }}
+                            </span>
+                            <span v-if="hypeTrainTimeRemaining">
+                                {{ t('dialog.user.info.instance_hype_train_time_remaining') }}
+                                {{ hypeTrainTimeRemaining }}
+                            </span>
+                            <span v-if="hypeTrainStartEpoch">
+                                {{ t('dialog.user.info.instance_hype_train_started') }}
+                                <Timer :epoch="hypeTrainStartEpoch" />
+                            </span>
+                        </div>
+                    </template>
+                    <span class="flex items-center gap-0.5">
+                        <TrainFront class="h-4 w-4" />
+                    </span>
+                </TooltipWrapper>
+                <TooltipWrapper
                     v-if="instance?.minimumAvatarPerformance && instance.minimumAvatarPerformance !== 'None'"
                     side="top"
                     :content="
@@ -201,26 +299,38 @@
             v-if="instanceAnnouncementDialogVisible"
             v-model:open="instanceAnnouncementDialogVisible"
             :location="resolvedInstanceLocation" />
+        <InstanceCalendarLinkDialog
+            v-if="instanceCalendarLinkDialogVisible"
+            v-model:open="instanceCalendarLinkDialogVisible"
+            :location="resolvedInstanceLocation"
+            :current-event-id="instance?.calendarEntryId ?? ''" />
     </div>
 </template>
 
 <script lang="ts" setup>
     import {
+        CalendarDays,
+        CalendarPlus,
         History,
         Loader2,
         LogIn,
         Mail,
         MapPin,
         Megaphone,
+        Pencil,
+        PowerIcon,
         RefreshCw,
         UsersRound,
         SquareStack,
         IdCard,
+        TrainFront,
         UserLock,
         UserPlus2
     } from 'lucide-vue-next';
-    import { computed, reactive, ref, watch } from 'vue';
+    import { computed, ref, watch } from 'vue';
+    import { useIntervalFn } from '@vueuse/core';
     import { Button } from '@/components/ui/button';
+    import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
     import { storeToRefs } from 'pinia';
     import { toast } from 'vue-sonner';
     import { useI18n } from 'vue-i18n';
@@ -235,12 +345,13 @@
         useModalStore,
         useUserStore
     } from '../stores';
-    import { hasGroupPermission, parseLocation } from '../shared/utils';
+    import { formatSeconds, hasGroupPermission, parseLocation, replaceBioSymbols } from '../shared/utils';
     import { useInviteChecks } from '../composables/useInviteChecks';
-    import { instanceRequest, miscRequest } from '../api';
+    import { instanceRequest, miscRequest, queryRequest } from '../api';
     import InstanceAnnouncementDialog from './dialogs/InstanceAnnouncementDialog.vue';
+    import InstanceCalendarLinkDialog from './dialogs/InstanceCalendarLinkDialog.vue';
+    import GroupCalendarEventDetails from '../views/Tools/components/GroupCalendarEventDetails.vue';
     import InstanceInfoDetails from './InstanceInfoDetails.vue';
-    import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
     import { useCompactLayout } from '../composables/useCompactLayout';
 
     defineOptions({
@@ -365,12 +476,15 @@
 
     const lastJoin = ref(null);
     const instanceAnnouncementDialogVisible = ref(false);
+    const instanceCalendarLinkDialogVisible = ref(false);
     const showLastJoinIndicator = computed(() => props.showLastJoin && lastJoin.value);
     const hasInstanceMetadata = computed(() => {
         return !!(
             props.instance?.queueSize ||
-            instanceInfoState.isAgeGated ||
-            instanceInfoState.isRoleRestricted ||
+            instanceInfoState.value.isAgeGated ||
+            instanceInfoState.value.isRoleRestricted ||
+            props.instance?.calendarEntryId ||
+            props.instance?.hypeTrain?.current ||
             (props.instance.minimumAvatarPerformance && props.instance.minimumAvatarPerformance !== 'None')
         );
     });
@@ -381,13 +495,112 @@
         return `/images/performance_ranks/${rank}.png`;
     });
 
-    const instanceInfoState = reactive({
-        isValidInstance: false,
-        canCloseInstance: false,
-        canSendAnnouncement: false,
-        isAgeGated: false,
-        isRoleRestricted: false,
-        disabledContentSettings: ''
+    const instanceInfoState = computed(() => {
+        const state = {
+            isValidInstance: false,
+            canCloseInstance: false,
+            canRenameInstance: false,
+            canSendAnnouncement: false,
+            canLinkCalendarEvent: false,
+            isAgeGated: false,
+            isRoleRestricted: false,
+            disabledContentSettings: ''
+        };
+        const instance = props.instance;
+        const location = resolvedInstanceLocation.value;
+        if (!location || !instance || Object.keys(instance).length === 0) return state;
+
+        state.isValidInstance = true;
+        if (instance.ownerId === userStore.currentUser.id) {
+            state.canCloseInstance = true;
+            state.canRenameInstance = true;
+        } else if (instance.ownerId?.startsWith('grp_')) {
+            const group = groupStore.cachedGroups.get(instance.ownerId);
+            state.canCloseInstance = hasGroupPermission(group, 'group-instance-moderate');
+            state.canRenameInstance = hasGroupPermission(group, 'group-instance-manage');
+            state.canSendAnnouncement =
+                hasGroupPermission(group, 'group-instance-announcement-create') &&
+                location === locationStore.lastLocation.location;
+            state.canLinkCalendarEvent =
+                hasGroupPermission(group, 'group-instance-manage') &&
+                hasGroupPermission(group, 'group-instance-calendar-link');
+        }
+        state.isAgeGated = instance.ageGate === true || location.includes('~ageGate');
+        state.isRoleRestricted = instance.roleRestricted === true;
+        state.disabledContentSettings = instance.$disabledContentSettings?.join(', ') ?? '';
+        return state;
+    });
+
+    const instanceLanguages = computed(() => {
+        const languages = Array.isArray(props.instance?.languages) ? props.instance.languages : [];
+        const iso639 = props.instance?.languagesIso639 ?? [];
+        const ratio = props.instance?.languageRatio ?? {};
+        const creationLanguages = new Set<string>(props.instance?.creationLanguages ?? []);
+        const baseOf = (code) => code.split('-')[0];
+        const uniqueBases = [...new Set(languages.map(baseOf))];
+        const iso639ByBase = Object.fromEntries(uniqueBases.map((base, i) => [base, iso639[i]]));
+        const list = languages.map((code) => {
+            const key = iso639ByBase[baseOf(code)] ?? code;
+            const region = code.split('-')[1];
+            const name = userStore.subsetOfLanguages?.[key] ?? code;
+            return {
+                key: code,
+                flagKey: key,
+                name: region ? `${name} (${region.toUpperCase()})` : name,
+                percent: Math.round((ratio[code] ?? 0) * 100),
+                isCreationLanguage: creationLanguages.has(key) || creationLanguages.has(code)
+            };
+        });
+        const listedKeys = new Set(list.flatMap((lang) => [lang.key, lang.flagKey]));
+        for (const key of creationLanguages) {
+            if (listedKeys.has(key)) continue;
+            list.push({
+                key,
+                flagKey: key,
+                name: userStore.subsetOfLanguages?.[key] ?? key,
+                percent: null,
+                isCreationLanguage: true
+            });
+        }
+        return list.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1));
+    });
+
+    const instanceDescription = computed(() => {
+        const description = props.instance?.description?.trim();
+        const worldDescription = props.instance?.world?.description?.trim();
+        if (!description || worldDescription?.startsWith(description)) return '';
+        return description;
+    });
+
+    const hasInstanceDetails = computed(() => {
+        const instance = props.instance;
+        return Boolean(
+            instanceDescription.value ||
+            instance?.platforms?.standalonewindows ||
+            instance?.platforms?.android ||
+            instance?.platforms?.ios ||
+            instanceLanguages.value.length ||
+            instance?.gameServerVersion ||
+            instance?.queueEnabled ||
+            instanceInfoState.value.disabledContentSettings
+        );
+    });
+
+    const currentHypeTrain = computed(() => props.instance?.hypeTrain?.current ?? null);
+    const hypeTrainStartEpoch = computed(() => {
+        const startDate = currentHypeTrain.value?.startDate;
+        return startDate ? Date.parse(startDate) || 0 : 0;
+    });
+    const now = ref(Date.now());
+    const { pause: pauseNow, resume: resumeNow } = useIntervalFn(() => (now.value = Date.now()), 1000, {
+        immediate: false,
+        immediateCallback: true
+    });
+    watch(currentHypeTrain, (train) => (train ? resumeNow() : pauseNow()), { immediate: true });
+    const hypeTrainTimeRemaining = computed(() => {
+        const endEpoch = Date.parse(currentHypeTrain.value?.endDate);
+        if (!endEpoch) return '';
+        return formatSeconds(Math.max(0, (endEpoch - now.value) / 1000));
     });
 
     const handleRefresh = () => {
@@ -437,34 +650,9 @@
         lastJoin.value = instanceJoinHistory.value.get(resolvedLastJoinLocation.value);
     };
 
-    const parseInstanceInfo = () => {
-        Object.assign(instanceInfoState, {
-            isValidInstance: false,
-            canCloseInstance: false,
-            canSendAnnouncement: false,
-            isAgeGated: false,
-            isRoleRestricted: false,
-            disabledContentSettings: ''
-        });
-
-        if (!resolvedInstanceLocation.value || !props.instance || Object.keys(props.instance).length === 0) return;
-
-        instanceInfoState.isValidInstance = true;
-        if (props.instance.ownerId === userStore.currentUser.id) {
-            instanceInfoState.canCloseInstance = true;
-        } else if (props.instance.ownerId?.startsWith('grp_')) {
-            const group = groupStore.cachedGroups.get(props.instance.ownerId);
-            instanceInfoState.canCloseInstance = hasGroupPermission(group, 'group-instance-moderate');
-            instanceInfoState.canSendAnnouncement =
-                hasGroupPermission(group, 'group-instance-announcement-create') &&
-                resolvedInstanceLocation.value === locationStore.lastLocation.location;
-        }
-        instanceInfoState.isAgeGated = props.instance.ageGate === true;
-        if (resolvedInstanceLocation.value?.includes('~ageGate')) instanceInfoState.isAgeGated = true;
-        instanceInfoState.isRoleRestricted = props.instance.roleRestricted === true;
-        if (props.instance.$disabledContentSettings?.length) {
-            instanceInfoState.disabledContentSettings = props.instance.$disabledContentSettings.join(', ');
-        }
+    const refreshInstance = (location) => {
+        const L = parseLocation(location);
+        return instanceRequest.getInstance({ worldId: L.worldId, instanceId: L.instanceId });
     };
 
     const closeInstance = (location) => {
@@ -479,14 +667,73 @@
                 if (args.json) {
                     toast.success(t('message.instance.closed'));
                     instanceStore.applyInstance(args.json);
+                    await refreshInstance(location);
                 }
             })
             .catch(() => {});
     };
 
+    const renameInstance = (location) => {
+        modalStore
+            .prompt({
+                title: t('prompt.rename_instance.header'),
+                description: t('prompt.rename_instance.description'),
+                inputValue: props.instance?.displayName ?? ''
+            })
+            .then(async ({ ok, value }) => {
+                if (!ok) return;
+                const displayName = value.trim() || null;
+                if (displayName === (props.instance?.displayName ?? null)) return;
+                await instanceRequest.updateInstance({ location, displayName });
+                toast.success(t('message.instance.renamed'));
+                await refreshInstance(location);
+            })
+            .catch(() => {});
+    };
+
+    const calendarPopoverOpen = ref(false);
+    const calendarEvent = ref(null);
+    const calendarEventFailed = ref(false);
+    let calendarPopoverCloseTimer = null;
+
+    const isInGroup = computed(() => groupStore.currentUserGroups.has(props.instance?.ownerId));
+
+    const fetchCalendarEvent = async () => {
+        const groupId = props.instance?.ownerId;
+        const eventId = props.instance?.calendarEntryId;
+        if (!groupId || !eventId || !isInGroup.value || calendarEvent.value?.id === eventId) return;
+        try {
+            const args = await queryRequest.fetch<{ json: any }>('groupCalendarEvent', { groupId, eventId });
+            if (props.instance?.calendarEntryId === eventId) {
+                calendarEvent.value = groupStore.applyGroupEvent(args.json);
+            }
+        } catch (error) {
+            console.error('Failed to load calendar event:', error);
+            calendarEventFailed.value = true;
+        }
+    };
+
+    const openCalendarPopover = () => {
+        clearTimeout(calendarPopoverCloseTimer);
+        calendarPopoverOpen.value = true;
+        fetchCalendarEvent();
+    };
+
+    const scheduleCloseCalendarPopover = () => {
+        clearTimeout(calendarPopoverCloseTimer);
+        calendarPopoverCloseTimer = setTimeout(() => {
+            calendarPopoverOpen.value = false;
+        }, 100);
+    };
+
+    watch(
+        () => props.instance?.calendarEntryId,
+        () => {
+            calendarEvent.value = null;
+            calendarEventFailed.value = false;
+        }
+    );
+
     watch(() => resolvedLastJoinLocation.value, parseLastJoin, { immediate: true });
     watch(() => props.currentlocation, parseLastJoin);
-    watch([resolvedInstanceLocation, () => props.instance, () => props.friendcount], parseInstanceInfo, {
-        immediate: true
-    });
 </script>

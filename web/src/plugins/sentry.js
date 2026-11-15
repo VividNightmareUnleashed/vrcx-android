@@ -9,11 +9,16 @@ export async function isSentryOptedIn() {
 
 /**
  * Guarded import, prevents leaking Sentry into non-nightly bundles.
+ *
+ * @returns {Promise<typeof import('@sentry/vue')> | null}
  */
 export function getSentry() {
     return NIGHTLY ? import('@sentry/vue') : null;
 }
 
+/**
+ * @param {import('vue').App} app
+ */
 export async function initSentry(app) {
     if (!NIGHTLY) return;
 
@@ -44,7 +49,7 @@ export async function initSentry(app) {
             replaysOnErrorSampleRate: 1.0,
             tracesSampleRate: 0.0001,
             beforeSend(event, hint) {
-                const error = hint.originalException;
+                const error = /** @type {any} */ (hint.originalException);
                 if (error && typeof error.message === 'string') {
                     if (
                         error.message.includes('401') ||

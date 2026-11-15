@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick, ref } from 'vue';
 
-// Touch screens: the player-count tooltip holds the only "Close instance"
-// button, and tooltips cannot hold a button on touch, so the details open in a popover on tap instead.
+// Touch screens: tooltips have no tap gesture, so the player-count details open in a popover on tap instead.
 
 const mocks = vi.hoisted(() => ({
     isCoarsePointer: null,
@@ -42,7 +41,7 @@ vi.mock('../../shared/utils', () => ({
     hasGroupPermission: () => false
 }));
 vi.mock('../../api', () => ({
-    instanceRequest: { selfInvite: vi.fn(() => Promise.resolve({})) },
+    instanceRequest: { selfInvite: vi.fn(() => Promise.resolve({})), getInstance: vi.fn(() => Promise.resolve({})) },
     miscRequest: { closeInstance: (...args) => mocks.closeInstance(...args) }
 }));
 vi.mock('../dialogs/InstanceAnnouncementDialog.vue', () => ({ default: { template: '<div />' } }));
@@ -93,7 +92,7 @@ describe('InstanceActionBar.vue on touch screens', () => {
         vi.clearAllMocks();
     });
 
-    it('opens the instance details in a popover with a labelled Close instance button', async () => {
+    it('opens the instance details in a popover', () => {
         mocks.isCoarsePointer = ref(true);
         const wrapper = mountBar();
 
@@ -105,8 +104,17 @@ describe('InstanceActionBar.vue on touch screens', () => {
 
         const content = wrapper.find('[data-testid="popover-content"]');
         expect(content.text()).toContain('dialog.user.info.instance_game_version');
-        const close = content.findAll('button').find((b) => b.text().includes('dialog.user.info.close_instance'));
+    });
+
+    it('closes the instance from the action bar button', async () => {
+        mocks.isCoarsePointer = ref(true);
+        const wrapper = mountBar();
+
+        const close = wrapper
+            .findAll('[data-slot="button"]')
+            .find((b) => b.attributes('aria-label') === 'dialog.user.info.close_instance');
         expect(close).toBeTruthy();
+        expect(close.classes()).toContain('pointer-coarse:size-10');
 
         await close.trigger('click');
         await Promise.resolve();

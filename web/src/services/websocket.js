@@ -4,7 +4,6 @@ import { toast } from 'vue-sonner';
 import {
     useFriendStore,
     useGalleryStore,
-    useGroupStore,
     useInstanceStore,
     useNotificationStore,
     useSharedFeedStore,
@@ -12,9 +11,9 @@ import {
     useUserStore
 } from '../stores';
 import { applyUser, applyCurrentUser } from '../coordinators/userCoordinator';
-import { onGroupLeft, applyGroup, getGroupDialogGroup, handleGroupMember } from '../coordinators/groupCoordinator';
+import { onGroupLeft, applyGroup, handleGroupMember } from '../coordinators/groupCoordinator';
 import { handleFriendAdd, handleFriendDelete } from '../coordinators/friendRelationshipCoordinator';
-import { parseLocation } from '../shared/utils';
+import { debounce, parseLocation } from '../shared/utils';
 import { AppDebug } from './appConfig';
 import { groupRequest } from '../api';
 import { request } from './request';
@@ -27,6 +26,8 @@ import * as workerTimers from 'worker-timers';
 let webSocket = null;
 let lastWebSocketMessage = '';
 let webSocketClosedGracefully = true;
+
+const refreshOwnedItems = debounce(() => useUserStore().getAllProductPurchases(), 5000);
 
 /**
  * Reactive WebSocket state for status bar telemetry.
@@ -189,7 +190,6 @@ function handlePipeline(args) {
     const notificationStore = useNotificationStore();
     const sharedFeedStore = useSharedFeedStore();
 
-    const groupStore = useGroupStore();
     const uiStore = useUiStore();
     const instanceStore = useInstanceStore();
     const { type, content, err } = args.json;
@@ -348,6 +348,7 @@ function handlePipeline(args) {
                 travelingToWorld: 'offline',
                 travelingToInstance: 'offline'
             };
+            // @ts-ignore
             applyUser(offlineJson);
             break;
 
@@ -369,6 +370,7 @@ function handlePipeline(args) {
                     travelingToWorld: $travelingToLocation1.worldId,
                     travelingToInstance: $travelingToLocation1.instanceId
                 };
+                // @ts-ignore
                 applyUser(jankLocationJson);
                 break;
             }
@@ -440,14 +442,10 @@ function handlePipeline(args) {
                 console.error('group-member-updated missing member', content);
                 break;
             }
-            const groupId1 = member.groupId;
-            if (groupStore.groupDialog.visible && groupStore.groupDialog.id === groupId1) {
-                getGroupDialogGroup(groupId1);
-            }
             handleGroupMember({
                 json: member,
                 params: {
-                    groupId: groupId1
+                    groupId: member.groupId
                 }
             });
             console.log('group-member-updated', member);
@@ -510,6 +508,7 @@ function handlePipeline(args) {
                 if (galleryStore.galleryDialogVisible && !galleryStore.galleryDialogInventoryLoading) {
                     galleryStore.getInventory();
                 }
+                refreshOwnedItems();
                 // on consuming a bundle
                 // {contentType: 'inventory', itemId: 'inv_', itemType: 'prop', actionType: 'add'}
             } else if (!contentType) {
@@ -536,6 +535,10 @@ function handlePipeline(args) {
             notificationStore.queueNotificationNoty(noty);
             notificationStore.appendNotificationTableEntry(noty);
             sharedFeedStore.addEntry(noty);
+            break;
+
+        case 'economy-update':
+            userStore.setCurrentUserCredits(content?.walletBalance);
             break;
 
         default:

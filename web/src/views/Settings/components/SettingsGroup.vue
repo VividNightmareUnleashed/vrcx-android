@@ -10,7 +10,7 @@
             <!-- Phones: narrower padding. Android (phones and the narrow tablet page card): wide toggle groups scroll
                  sideways instead of spilling out of the card. -->
             <CardContent
-                class="flex flex-col gap-1 py-4.5 px-5.5 compact:gap-3 compact:px-4 [.is-android_&_[data-slot=toggle-group]]:max-w-full [.is-android_&_[data-slot=toggle-group]]:overflow-x-auto [.is-android_&_[data-slot=toggle-group]]:[scrollbar-width:none]">
+                class="flex flex-col gap-0 py-3 px-5.5 compact:px-4 [.is-android_&_[data-slot=toggle-group]]:max-w-full [.is-android_&_[data-slot=toggle-group]]:overflow-x-auto [.is-android_&_[data-slot=toggle-group]]:[scrollbar-width:none]">
                 <slot />
             </CardContent>
         </Card>

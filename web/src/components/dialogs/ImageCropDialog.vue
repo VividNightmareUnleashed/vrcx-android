@@ -11,12 +11,21 @@
                 <DialogTitle>{{ title }}</DialogTitle>
             </DialogHeader>
 
-            <!-- Phone landscape: the cropper takes every pixel between the header and the footer, with the tools in
-                 a narrow column beside it, so the stencil handles and every tool stay on screen without scrolling.
+            <!-- Phone landscape: the preview or cropper takes every pixel between the header and the footer (the
+                 cropper with its tools in a narrow column beside it), so the stencil handles and every tool stay on
+                 screen without scrolling.
                  Android: min-w-0 lets the dialog's grid column shrink after a rotation instead of keeping the width the
                  cropper was sized for, so the cropper can measure its new box. -->
             <div
-                v-if="cropperImageSrc"
+                v-if="cropperImageSrc && autoResize"
+                class="mt-4 compact-landscape:mt-0 compact-landscape:flex compact-landscape:min-h-0 compact-landscape:flex-1"
+                :class="{ 'min-w-0': isAndroid }">
+                <img
+                    :src="cropperImageSrc"
+                    class="h-100 max-h-full w-full object-contain compact:h-[min(60dvh,100vw)] compact-landscape:h-auto compact-landscape:min-h-0 compact-landscape:min-w-0 compact-landscape:flex-1" />
+            </div>
+            <div
+                v-else-if="cropperImageSrc"
                 class="mt-4 compact-landscape:mt-0 compact-landscape:flex compact-landscape:min-h-0 compact-landscape:flex-1 compact-landscape:gap-3"
                 :class="{ 'min-w-0': isAndroid }">
                 <Cropper
@@ -154,12 +163,16 @@
             <!-- Phones: the footer buttons get the --touch-min height of the tools above. -->
             <DialogFooter>
                 <template v-if="cropperImageSrc">
+                    <label class="inline-flex items-center gap-2 mr-auto pointer-coarse:min-h-10">
+                        <Checkbox v-model="autoResize" :disabled="loading" />
+                        <span class="text-sm">{{ t('dialog.image_crop.auto_resize') }}</span>
+                    </label>
                     <Button variant="secondary" size="sm" class="compact:h-10" :disabled="loading" @click="cancelCrop">
                         {{ t('dialog.change_content_image.cancel') }}
                     </Button>
                     <Button size="sm" class="compact:h-10" :disabled="loading" @click="onConfirmCrop">
                         <Spinner v-if="loading" />
-                        {{ loading ? t('message.upload.loading') : t('dialog.gallery_icons.crop_image') }}
+                        {{ loading ? t('message.upload.loading') : t('dialog.change_content_image.upload') }}
                     </Button>
                 </template>
             </DialogFooter>
@@ -180,8 +193,9 @@
         ZoomOut
     } from 'lucide-vue-next';
     import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-    import { nextTick, ref, watch } from 'vue';
+    import { nextTick, onMounted, ref, watch } from 'vue';
     import { Button } from '@/components/ui/button';
+    import { Checkbox } from '@/components/ui/checkbox';
     import { Cropper } from 'vue-advanced-cropper';
     import { Slider } from '@/components/ui/slider';
     import { Spinner } from '@/components/ui/spinner';
@@ -191,6 +205,7 @@
 
     import { isAndroid } from '../../shared/utils/platform';
     import { useImageCropper } from '../../composables/useImageCropper';
+    import configRepository from '../../services/config';
 
     import 'vue-advanced-cropper/dist/style.css';
 
@@ -261,6 +276,15 @@
             { flush: 'post' }
         );
     }
+
+    const autoResize = ref(false);
+    onMounted(async () => {
+        autoResize.value = await configRepository.getBool('VRCX_imageCropAutoResize', false);
+    });
+
+    watch(autoResize, (value) => {
+        configRepository.setBool('VRCX_imageCropAutoResize', value);
+    });
 
     watch(
         () => props.file,
@@ -364,6 +388,10 @@
 
     async function onConfirmCrop() {
         loading.value = true;
+        if (autoResize.value) {
+            emit('confirm', props.file);
+            return;
+        }
         try {
             const blob = await getCroppedBlob(props.file);
             if (!blob) {

@@ -1,44 +1,39 @@
 <template>
-    <div style="margin-top: 8px">
-        <Button
-            class="rounded-full pointer-coarse:size-10"
-            variant="outline"
-            size="icon-sm"
-            :disabled="loading"
-            @click="$emit('refresh')">
-            <Spinner v-if="loading" />
-            <RefreshCw v-else />
-        </Button>
-        <span class="text-sm mx-1.5">{{ tableData.data.length }}</span>
-        <br />
-        <div class="flex items-center justify-between compact:flex-wrap compact:gap-x-2">
-            <div class="compact:min-w-0 compact:flex-1">
-                <Select v-model="selectedAuditLogTypes" multiple>
-                    <SelectTrigger class="compact:w-full!" style="margin: 8px 0; width: 250px">
-                        <SelectValue :placeholder="t('dialog.group_member_moderation.filter_type')" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem v-for="type in auditLogTypes" :key="type" :value="type">
-                            {{ getAuditLogTypeName(type) }}
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            <div>
-                <Button variant="outline" @click="$emit('export')">{{
-                    t('dialog.group_member_moderation.export_logs')
-                }}</Button>
-            </div>
+    <div class="flex h-full min-h-0 flex-col gap-2">
+        <!-- Phones: the search field wraps onto its own full-width line under the filter and the export button. -->
+        <div class="flex items-center gap-2 compact:flex-wrap">
+            <Button
+                class="rounded-full pointer-coarse:size-10"
+                variant="outline"
+                size="icon-sm"
+                :disabled="loading"
+                @click="$emit('refresh')">
+                <Spinner v-if="loading" />
+                <RefreshCw v-else />
+            </Button>
+            <span class="text-sm tabular-nums shrink-0">{{ tableData.data.length }}</span>
+            <Select v-model="selectedAuditLogTypes" multiple>
+                <SelectTrigger size="sm" class="w-64 shrink-0 compact:min-w-0 compact:flex-1">
+                    <SelectValue :placeholder="t('dialog.group_member_moderation.filter_type')" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem v-for="type in auditLogTypes" :key="type" :value="type">
+                        {{ getAuditLogTypeName(type) }}
+                    </SelectItem>
+                </SelectContent>
+            </Select>
+            <InputGroupField
+                v-model="tableData.filters[0].value"
+                clearable
+                size="sm"
+                class="flex-1 compact:order-last compact:basis-full"
+                :placeholder="t('dialog.group.members.search')" />
+            <Button size="sm" variant="outline" @click="$emit('export')">{{
+                t('dialog.group_member_moderation.export_logs')
+            }}</Button>
         </div>
-        <InputGroupField
-            v-model="tableData.filters[0].value"
-            clearable
-            size="sm"
-            :placeholder="t('dialog.group.members.search')"
-            style="margin-top: 8px; margin-bottom: 8px" />
-        <br />
         <DataTableLayout
-            style="margin-top: 8px"
+            :auto-height="!isCompact"
             :table="tanstackTable"
             :loading="loading"
             :page-sizes="pageSizes"
@@ -59,15 +54,22 @@
     import { getAuditLogTypeName } from './groupModerationUtils';
     import { createColumns } from './groupMemberModerationLogsColumns.jsx';
     import { useVrcxVueTable } from '@/lib/table/useVrcxVueTable';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     const props = defineProps({
         loading: { type: Boolean, default: false },
         tableData: { type: Object, required: true },
-        auditLogTypes: { type: Array, default: () => [] },
-        pageSizes: { type: Array, required: true },
-        columnContext: { type: Object, required: true },
+        auditLogTypes: { type: /** @type {import('vue').PropType<string[]>} */ (Array), default: () => [] },
+        pageSizes: { type: /** @type {import('vue').PropType<number[]>} */ (Array), required: true },
+        columnContext: {
+            type: /** @type {import('vue').PropType<Parameters<typeof createColumns>[0]>} */ (Object),
+            required: true
+        },
         handlePageChange: { type: Function, required: true }
     });
+
+    // Phones: the moderation dialog scrolls as one page, so the tables keep their natural height there.
+    const { isCompact } = useCompactLayout();
 
     const emit = defineEmits(['refresh', 'export']);
 

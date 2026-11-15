@@ -16,6 +16,7 @@ import { copyToClipboard } from '../../../shared/utils';
  * @param deps.setGroupEventAnnouncements
  * @param deps.showPreviousInstancesListDialog
  * @param deps.showGroupMemberModerationDialog
+ * @param deps.showGroupRolesDialog
  * @param deps.showInviteGroupDialog
  * @param deps.showGroupTransferDialog
  * @param deps.showGroupPostEditDialog
@@ -35,6 +36,7 @@ export function useGroupDialogCommands(
         setGroupEventAnnouncements,
         showPreviousInstancesListDialog,
         showGroupMemberModerationDialog,
+        showGroupRolesDialog,
         showInviteGroupDialog,
         showGroupTransferDialog,
         showGroupPostEditDialog,
@@ -51,7 +53,7 @@ export function useGroupDialogCommands(
         return {
             // --- Direct commands ---
             Share: () => {
-                copyToClipboard(D().ref.$url);
+                copyToClipboard(`https://vrc.group/${D().ref.shortCode}.${D().ref.discriminator}`);
             },
             'Copy Group Name': () => {
                 copyToClipboard(D().ref.name);
@@ -64,6 +66,9 @@ export function useGroupDialogCommands(
             },
             'Moderation Tools': () => {
                 showGroupMemberModerationDialog(D().id);
+            },
+            'Manage Roles': () => {
+                showGroupRolesDialog(D().id);
             },
             'Invite To Group': () => {
                 showInviteGroupDialog(D().id, '');

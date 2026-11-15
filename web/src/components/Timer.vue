@@ -2,7 +2,7 @@
     <span>{{ text }}</span>
 </template>
 <script setup>
-    import { useNow } from '@vueuse/core';
+    import { useIntervalFn, useNow } from '@vueuse/core';
     import { computed } from 'vue';
 
     import { timeToText } from '../shared/utils';
@@ -14,8 +14,8 @@
         }
     });
 
-    const now = useNow({ interval: 15000 });
+    const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 15000) });
     const text = computed(() => {
-        return props.epoch ? timeToText(now.value - props.epoch) : '-';
+        return props.epoch ? timeToText(now.value.getTime() - props.epoch) : '-';
     });
 </script>

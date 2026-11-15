@@ -16,7 +16,8 @@
                         </TooltipWrapper>
                     </template>
                     <template v-else>
-                        <div v-if="region" :class="cn('flags shrink-0', region)"></div>
+                        <InstanceCategory :location="currentInstanceId()" />
+                        <div v-if="region" :class="cn('flags shrink-0', region)" :title="regionTitle"></div>
                         <TooltipWrapper
                             :content="tooltipContent"
                             :disabled="tooltipDisabled"
@@ -95,8 +96,9 @@
     import { showWorldDialog } from '../coordinators/worldCoordinator';
     import { runNewInstanceSelfInviteFlow } from '../coordinators/inviteCoordinator';
     import { Spinner } from './ui/spinner';
+    import InstanceCategory from './InstanceCategory.vue';
     import WorldActionMenuItems from './WorldActionMenuItems.vue';
-    import { accessTypeLocaleKeyMap } from '../shared/constants';
+    import { accessTypeLocaleKeyMap, regionLocaleKeyMap } from '../shared/constants';
     import { cn } from '@/lib/utils';
 
     defineOptions({
@@ -150,6 +152,7 @@
 
     const text = ref('');
     const region = ref('');
+    const regionTitle = computed(() => (regionLocaleKeyMap[region.value] ? t(regionLocaleKeyMap[region.value]) : ''));
     const strict = ref(false);
     const ageGate = ref(false);
     const isTraveling = ref(false);
@@ -187,7 +190,8 @@
             if (instanceId === currentInstanceId()) {
                 parse();
             }
-        }
+        },
+        { deep: true }
     );
 
     function currentInstanceId() {

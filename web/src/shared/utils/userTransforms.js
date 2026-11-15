@@ -15,9 +15,6 @@ export function sanitizeUserJson(json, robotUrl) {
         json.statusDescription = replaceBioSymbols(json.statusDescription);
         json.statusDescription = removeEmojis(json.statusDescription);
     }
-    if (json.bio) {
-        json.bio = replaceBioSymbols(json.bio);
-    }
     if (json.note) {
         json.note = replaceBioSymbols(json.note);
     }
@@ -175,15 +172,23 @@ export function diffObjectProps(ref, json, arraysMatchFn) {
  * Create a default user ref object with all expected fields.
  * Returns a plain object (caller wraps in reactive() if needed).
  *
- * @param {object} json - API response to merge
- * @returns {object} Default user object with json spread on top
+ * @param {Partial<import('@/types/vrcx').VrcxUser>} json - API response to merge
+ * @returns {import('@/types/vrcx').VrcxUser} Default user object with json spread on top
  */
 export function createDefaultUserRef(json) {
-    return {
+    return /** @type {import('@/types/vrcx').VrcxUser} */ ({
+        acceptedPrivacyVersion: 0,
+        acceptedTOSVersion: 0,
+        accountDeletionDate: null,
+        accountDeletionLog: null,
         ageVerificationStatus: '',
         ageVerified: false,
         allowAvatarCopying: false,
+        appleDetails: {},
         badges: [],
+        bannerColor: '',
+        bannerType: '',
+        bannerUrl: '',
         bio: '',
         bioLinks: [],
         currentAvatarImageUrl: '',
@@ -195,16 +200,21 @@ export function createDefaultUserRef(json) {
         displayName: '',
         friendKey: '',
         friendRequestStatus: '',
+        iconFrame: '',
+        iconUrl: '',
         id: '',
         instanceId: '',
+        isEconomyCreator: false,
         isFriend: false,
         last_activity: '',
         last_login: '',
         last_mobile: null,
         last_platform: '',
         location: '',
+        nameplateEffect: '',
         platform: '',
         note: null,
+        profileEffect: '',
         profilePicOverride: '',
         profilePicOverrideThumbnail: '',
         pronouns: '',
@@ -241,6 +251,7 @@ export function createDefaultUserRef(json) {
         $mutualCount: 0,
         $mutualOptedOut: false,
         $nickName: '',
+        $memo: '',
         $previousLocation: '',
         $customTag: '',
         $customTagColour: '',
@@ -249,5 +260,5 @@ export function createDefaultUserRef(json) {
         $moderations: {},
         //
         ...json
-    };
+    });
 }

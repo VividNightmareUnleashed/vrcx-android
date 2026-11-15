@@ -30,7 +30,9 @@ export const useWorldStore = defineStore('World', () => {
         isPC: false,
         isQuest: false,
         isIos: false,
-        hasPersistData: false
+        hasPersistData: false,
+        rating: null,
+        listings: []
     });
 
     const cachedWorlds = shallowReactive(new Map());

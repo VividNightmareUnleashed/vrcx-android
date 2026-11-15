@@ -130,8 +130,10 @@ export async function runHandleUserUpdateFlow(ref, props, { now = Date.now, nowI
             };
             notificationStore.queueFeedNoty(feed);
             sharedFeedStore.addEntry(feed);
-            feedStore.addFeedEntry(feed);
-            database.addGPSToDatabase(feed);
+            const persistedFeed = await database.addGPSToDatabase(feed);
+            if (persistedFeed) {
+                feedStore.addFeedEntry(persistedFeed);
+            }
             // clear previousLocation after GPS
             ref.$previousLocation = '';
             ref.$travelingToTime = now();
@@ -180,8 +182,10 @@ export async function runHandleUserUpdateFlow(ref, props, { now = Date.now, nowI
             };
             notificationStore.queueFeedNoty(feed);
             sharedFeedStore.addEntry(feed);
-            feedStore.addFeedEntry(feed);
-            database.addAvatarToDatabase(feed);
+            const persistedFeed = await database.addAvatarToDatabase(feed);
+            if (persistedFeed) {
+                feedStore.addFeedEntry(persistedFeed);
+            }
         }
     } else if (props.iconUrl && props.iconUrl[0]) {
         const currentIconUrl = props.iconUrl[0];
@@ -221,8 +225,10 @@ export async function runHandleUserUpdateFlow(ref, props, { now = Date.now, nowI
             };
             notificationStore.queueFeedNoty(feed);
             sharedFeedStore.addEntry(feed);
-            feedStore.addFeedEntry(feed);
-            database.addAvatarToDatabase(feed);
+            const persistedFeed = await database.addAvatarToDatabase(feed);
+            if (persistedFeed) {
+                feedStore.addFeedEntry(persistedFeed);
+            }
         }
     }
     // if status is offline, ignore status and statusDescription
@@ -268,30 +274,10 @@ export async function runHandleUserUpdateFlow(ref, props, { now = Date.now, nowI
         };
         notificationStore.queueFeedNoty(feed);
         sharedFeedStore.addEntry(feed);
-        feedStore.addFeedEntry(feed);
-        database.addStatusToDatabase(feed);
-    }
-    if (props.bio && props.bio[0] && props.bio[1]) {
-        let bio = '';
-        let previousBio = '';
-        if (props.bio[0]) {
-            bio = props.bio[0];
+        const persistedFeed = await database.addStatusToDatabase(feed);
+        if (persistedFeed) {
+            feedStore.addFeedEntry(persistedFeed);
         }
-        if (props.bio[1]) {
-            previousBio = props.bio[1];
-        }
-        feed = {
-            created_at: nowIso(),
-            type: 'Bio',
-            userId: ref.id,
-            displayName: ref.displayName,
-            bio,
-            previousBio
-        };
-        notificationStore.queueFeedNoty(feed);
-        sharedFeedStore.addEntry(feed);
-        feedStore.addFeedEntry(feed);
-        database.addBioToDatabase(feed);
     }
     if (props.note && props.note[0] !== null && props.note[0] !== props.note[1]) {
         checkNote(ref.id, props.note[0]);

@@ -73,7 +73,8 @@
 
         <NameplateEffect :nameplate-effect="userDialog.ref.nameplateEffect" />
 
-        <div class="relative isolate flex flex-col gap-2 px-3 pb-3 pt-15 z-10">
+        <div
+            class="relative isolate flex flex-col gap-2 px-3 pb-3 pt-15 z-40 pointer-events-none *:pointer-events-auto">
             <div class="flex gap-1.5 items-center">
                 <div class="flex-1 min-w-0">
                     <div class="flex flex-wrap items-center gap-x-1 leading-snug">
@@ -96,7 +97,8 @@
                         </template>
                         <span
                             class="font-bold cursor-pointer flex flex-wrap"
-                            v-text="userDialog.ref.displayName"
+                            v-text="userDialog.ref.displayName || userDialog.id"
+                            :title="userDialog.ref.displayName || userDialog.id"
                             @click="copyUserDisplayName(userDialog.ref.displayName)"></span>
                         <TooltipWrapper
                             v-if="userDialog.publicProfileRef?.isEconomyCreator"
@@ -106,7 +108,9 @@
                         </TooltipWrapper>
                         <span v-if="userDialog.ref.pronouns" class="basis-full h-0"></span>
                         <TooltipWrapper v-if="userDialog.ref.pronouns" side="top" :content="t('dialog.user.pronouns')">
-                            <span class="x-grey font-mono text-xs" v-text="userDialog.ref.pronouns"></span>
+                            <span
+                                class="x-grey font-mono text-xs"
+                                v-text="replaceBioSymbols(userDialog.ref.pronouns)"></span>
                         </TooltipWrapper>
                     </div>
                     <template v-if="userDialog.ref.id === currentUser.id">
@@ -150,6 +154,23 @@
                     </Badge>
                 </TooltipWrapper>
                 <TooltipWrapper
+                    v-if="userDialog.id === currentUser.id && currentUser.accountStanding"
+                    side="top"
+                    :content="t('dialog.user.tags.account_standing')">
+                    <Badge
+                        variant="outline"
+                        class="h-5 px-1.5 text-[11px] leading-none capitalize"
+                        :class="
+                            currentUser.accountStanding === 'good'
+                                ? 'text-green-500 border-green-500!'
+                                : 'text-red-500 border-red-500!'
+                        ">
+                        <ShieldCheck v-if="currentUser.accountStanding === 'good'" class="h-2.5 w-2.5" />
+                        <ShieldAlert v-else class="h-2.5 w-2.5" />
+                        {{ currentUser.accountStanding }}
+                    </Badge>
+                </TooltipWrapper>
+                <TooltipWrapper
                     v-if="userDialog.ref.ageVerified && userDialog.ref.ageVerificationStatus"
                     side="top"
                     :content="t('dialog.user.tags.age_verified')">
@@ -184,6 +205,17 @@
                         class="h-5 px-1.5 text-[11px] leading-none border-zinc-500/50! dark:border-zinc-400!">
                         <Users class="h-2.5 w-2.5" />
                         {{ userDialog.mutualFriendCount }}
+                    </Badge>
+                </TooltipWrapper>
+                <TooltipWrapper
+                    v-if="userDialog.mutualGroupCount"
+                    side="top"
+                    :content="t('dialog.user.tags.mutual_groups')">
+                    <Badge
+                        variant="outline"
+                        class="h-5 px-1.5 text-[11px] leading-none border-zinc-500/50! dark:border-zinc-400!">
+                        <Network class="h-2.5 w-2.5" />
+                        {{ userDialog.mutualGroupCount }}
                     </Badge>
                 </TooltipWrapper>
                 <TooltipWrapper
@@ -371,6 +403,16 @@
                             : t('dialog.user.info.avatar_cloning_deny')
                     }}</span>
                 </div>
+                <div
+                    class="flex justify-between items-center text-xs cursor-pointer hover:text-foreground"
+                    @click="toggleReducedProfileAnimations">
+                    <span class="text-muted-foreground">{{ t('dialog.user.info.reduced_profile_animations') }}</span>
+                    <span class="text-muted-foreground">{{
+                        currentUserClientConfig.accessReduceDecorAnim
+                            ? t('dialog.user.info.avatar_cloning_allow')
+                            : t('dialog.user.info.avatar_cloning_deny')
+                    }}</span>
+                </div>
             </div>
         </div>
     </div>
@@ -463,7 +505,10 @@
         Image,
         Info,
         Monitor,
+        Network,
         Shield,
+        ShieldAlert,
+        ShieldCheck,
         Smartphone,
         Hand,
         UserPlus,
@@ -478,7 +523,14 @@
     import { useI18n } from 'vue-i18n';
 
     import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-    import { copyToClipboard, formatDateFilter, languageClass, openDiscordProfile } from '../../../shared/utils';
+    import {
+        convertFileUrlToImageUrl,
+        copyToClipboard,
+        formatDateFilter,
+        languageClass,
+        openDiscordProfile,
+        replaceBioSymbols
+    } from '../../../shared/utils';
     import { useUserDisplay } from '../../../composables/useUserDisplay';
     import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
     import { useGalleryStore, useUserStore } from '../../../stores';
@@ -520,9 +572,14 @@
     // Phones: the badge card opens below the badge; there is no room to its right.
     const { isCompact } = useCompactLayout();
 
-    const { userDialog, currentUser } = storeToRefs(useUserStore());
-    const { toggleSharedConnectionsOptOut, toggleDiscordFriendsOptOut, toggleAvatarCopying, toggleAllowBooping } =
-        useUserStore();
+    const { userDialog, currentUser, currentUserClientConfig } = storeToRefs(useUserStore());
+    const {
+        toggleSharedConnectionsOptOut,
+        toggleDiscordFriendsOptOut,
+        toggleAvatarCopying,
+        toggleAllowBooping,
+        toggleReducedProfileAnimations
+    } = useUserStore();
 
     const { showFullscreenImageDialog } = useGalleryStore();
     const { userStatusClass } = useUserDisplay();

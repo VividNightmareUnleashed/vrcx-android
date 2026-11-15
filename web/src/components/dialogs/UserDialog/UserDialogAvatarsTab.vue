@@ -60,6 +60,7 @@
                             <SelectItem value="all">{{ t('dialog.user.avatars.all') }}</SelectItem>
                             <SelectItem value="public">{{ t('dialog.user.avatars.public') }}</SelectItem>
                             <SelectItem value="private">{{ t('dialog.user.avatars.private') }}</SelectItem>
+                            <SelectItem value="licensed">{{ t('dialog.user.avatars.purchased') }}</SelectItem>
                         </SelectContent>
                     </Select>
                 </template>
@@ -129,7 +130,7 @@
 
     const userStore = useUserStore();
     const { userDialog, currentUser } = storeToRefs(userStore);
-    const { sortUserDialogAvatars } = userStore;
+    const { sortUserDialogAvatars, sortUserDialogLicensedAvatars } = userStore;
 
     import { showAvatarDialog, lookupAvatars } from '../../../coordinators/avatarCoordinator';
     const { cachedAvatars } = useAvatarStore();
@@ -137,9 +138,12 @@
     const { avatarRemoteDatabase } = storeToRefs(useAdvancedSettingsStore());
 
     const userDialogAvatars = computed(() => {
-        const { avatars, avatarReleaseStatus } = userDialog.value;
+        const { avatars, licensedAvatars, avatarReleaseStatus } = userDialog.value;
         const isCurrentUser = userDialog.value.ref.id === currentUser.value.id;
         const releaseStatus = isCurrentUser ? avatarReleaseStatus : 'all';
+        if (releaseStatus === 'licensed') {
+            return licensedAvatars;
+        }
         if (releaseStatus === 'public' || releaseStatus === 'private') {
             return avatars.filter((avatar) => avatar.releaseStatus === avatarReleaseStatus);
         }
@@ -212,6 +216,7 @@
         const D = userDialog.value;
         D.avatarSorting = sortOption;
         sortUserDialogAvatars(D.avatars);
+        sortUserDialogLicensedAvatars(D.licensedAvatars);
     }
 
     defineExpose({ setUserDialogAvatars, setUserDialogAvatarsRemote });

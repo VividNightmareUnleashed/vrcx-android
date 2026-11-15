@@ -40,6 +40,10 @@ vi.mock('@/components/ui/button', () => ({
     Button: { emits: ['click'], template: '<button @click="$emit(\'click\')"><slot /></button>' }
 }));
 vi.mock('@/components/ui/slider', () => ({ Slider: { template: '<div />' } }));
+vi.mock('@/components/ui/checkbox', () => ({ Checkbox: { template: '<input type="checkbox" />' } }));
+vi.mock('../../../services/config', () => ({
+    default: { getBool: vi.fn(() => Promise.resolve(false)), setBool: vi.fn() }
+}));
 vi.mock('@/components/ui/spinner', () => ({ Spinner: { template: '<div />' } }));
 vi.mock('@/components/ui/tooltip/TooltipWrapper.vue', () => ({ default: { template: '<div><slot /></div>' } }));
 vi.mock('vue-advanced-cropper', () => ({

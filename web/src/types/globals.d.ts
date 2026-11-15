@@ -12,6 +12,8 @@ declare global {
 
     interface Window {
         $pinia: any;
+        $coordinators: any;
+        $bridge: any;
         $vr: any;
         $debug: AppDebug;
         AppApi: AppApi;
@@ -40,6 +42,8 @@ declare global {
             getClipboardText: () => Promise<string>;
             getNoUpdater: () => Promise<boolean>;
             setTrayIconNotification: (notify: boolean) => Promise<void>;
+            setThemeSource: (source: 'system' | 'light' | 'dark') => Promise<void>;
+            onSystemThemeChanged: (Function: (event: any, isDark: boolean) => void) => () => void;
             openFileDialog: () => Promise<string>;
             openDirectoryDialog: () => Promise<string>;
             desktopNotification: (displayName: string, body?: string, image?: string) => Promise<void>;
@@ -49,6 +53,7 @@ declare global {
             ) => () => void;
             onWindowStateChange: (Function: (event: any, state: { windowState: any }) => void) => () => void;
             onBrowserFocus: (Function: (event: any) => void) => () => void;
+            onBrowserBlur: (Function: (event: any) => void) => () => void;
             restartApp: () => Promise<void>;
             getOverlayWindow: () => Promise<boolean>;
             updateVr: (
@@ -111,6 +116,7 @@ declare global {
         Execute: (sql: string, args: string) => Promise<any[]>;
         ExecuteJson: (sql: string, args: string) => Promise<string>;
         ExecuteNonQuery: (sql: string, args: string) => Promise<Number>;
+        ExecuteInsert: (sql: string, args: string) => Promise<Number>;
     };
 
     const LogWatcher: {
@@ -174,6 +180,7 @@ declare global {
         GetColourFromUserID(userId: string): Promise<number>;
         OpenLink(url: string): Promise<void>;
         OpenDiscordProfile(discordId: string): Promise<void>;
+        OpenSteamStorePage(appId: number): Promise<void>;
         GetLaunchCommand(): Promise<string>;
         IPCAnnounceStart(): Promise<void>;
         SendIpc(type: string, data: string): Promise<void>;

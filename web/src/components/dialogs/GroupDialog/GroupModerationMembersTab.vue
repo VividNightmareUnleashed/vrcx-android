@@ -1,23 +1,32 @@
 <template>
-    <div class="mt-2">
-        <Button
-            class="rounded-full pointer-coarse:size-10"
-            variant="outline"
-            size="icon-sm"
-            :disabled="loading"
-            @click="$emit('refresh')">
-            <Spinner v-if="loading" />
-            <RefreshCw v-else />
-        </Button>
-        <span class="ml-1.5 mr-1.5 text-sm"> {{ tableData.data.length }}/{{ groupRef.memberCount }} </span>
-        <div
-            class="mt-1.5 float-right compact:float-none compact:mt-2 compact:flex compact:flex-wrap compact:items-center compact:gap-x-1.5 compact:gap-y-2">
-            <span class="mr-1.5">{{ t('dialog.group.members.sort_by') }}</span>
+    <div class="flex h-full min-h-0 flex-col gap-2">
+        <!-- Phones: the toolbar wraps, with the search field on its own full-width line under the buttons. -->
+        <div class="flex items-center gap-2 compact:flex-wrap">
+            <Button
+                class="rounded-full pointer-coarse:size-10"
+                variant="outline"
+                size="icon-sm"
+                :disabled="loading"
+                @click="$emit('refresh')">
+                <Spinner v-if="loading" />
+                <RefreshCw v-else />
+            </Button>
+            <span class="text-sm tabular-nums shrink-0">{{ tableData.data.length }}/{{ groupRef.memberCount }}</span>
+            <InputGroupField
+                :model-value="memberSearch"
+                :disabled="!hasGroupPermission(groupRef, 'group-bans-manage')"
+                clearable
+                size="sm"
+                class="flex-1 compact:order-last compact:basis-full"
+                :placeholder="t('dialog.group.members.search')"
+                @update:model-value="$emit('update:memberSearch', $event)"
+                @input="$emit('search')" />
             <DropdownMenu>
                 <DropdownMenuTrigger as-child :disabled="sortFilterDisabled">
                     <Button size="sm" variant="outline" :disabled="sortFilterDisabled" @click.stop>
+                        <span class="text-muted-foreground">{{ t('dialog.group.members.sort_by') }}</span>
                         {{ t(memberSortOrder.name) }}
-                        <ArrowDown class="ml-1.5" />
+                        <ArrowDown />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
@@ -29,12 +38,12 @@
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-            <span class="ml-2 mr-1.5 compact:ml-0">{{ t('dialog.group.members.filter') }}</span>
             <DropdownMenu>
                 <DropdownMenuTrigger as-child :disabled="sortFilterDisabled">
                     <Button size="sm" variant="outline" :disabled="sortFilterDisabled" @click.stop>
+                        <span class="text-muted-foreground">{{ t('dialog.group.members.filter') }}</span>
                         {{ t(memberFilter.name) }}
-                        <ArrowDown class="ml-1.5" />
+                        <ArrowDown />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
@@ -51,22 +60,13 @@
                     </template>
                 </DropdownMenuContent>
             </DropdownMenu>
+            <Button size="sm" variant="outline" @click="$emit('select-all', tableData.data)">{{
+                t('dialog.group_member_moderation.select_all')
+            }}</Button>
         </div>
-        <InputGroupField
-            :model-value="memberSearch"
-            :disabled="!hasGroupPermission(groupRef, 'group-bans-manage')"
-            clearable
-            size="sm"
-            :placeholder="t('dialog.group.members.search')"
-            style="margin-top: 8px; margin-bottom: 8px"
-            @update:model-value="$emit('update:memberSearch', $event)"
-            @input="$emit('search')" />
-        <Button size="sm" variant="outline" @click="$emit('select-all', tableData.data)">{{
-            t('dialog.group_member_moderation.select_all')
-        }}</Button>
         <DataTableLayout
             v-if="tableData.data.length"
-            style="margin-top: 8px"
+            :auto-height="!isCompact"
             :on-page-change="handlePageChange"
             :table="tanstackTable"
             :loading="loading"
@@ -92,6 +92,7 @@
     import { hasGroupPermission } from '@/shared/utils';
     import { createColumns } from './groupMemberModerationMembersColumns.jsx';
     import { useVrcxVueTable } from '@/lib/table/useVrcxVueTable';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     const props = defineProps({
         loading: { type: Boolean, default: false },
@@ -100,12 +101,18 @@
         memberSortOrder: { type: Object, required: true },
         memberFilter: { type: Object, required: true },
         memberSearch: { type: String, default: '' },
-        sortingOptions: { type: Array, required: true },
-        filterOptions: { type: Array, required: true },
-        pageSizes: { type: Array, required: true },
-        columnContext: { type: Object, required: true },
+        sortingOptions: { type: /** @type {import('vue').PropType<{ name: string }[]>} */ (Array), required: true },
+        filterOptions: { type: /** @type {import('vue').PropType<{ name: string }[]>} */ (Array), required: true },
+        pageSizes: { type: /** @type {import('vue').PropType<number[]>} */ (Array), required: true },
+        columnContext: {
+            type: /** @type {import('vue').PropType<Parameters<typeof createColumns>[0]>} */ (Object),
+            required: true
+        },
         handlePageChange: { type: Function, required: true }
     });
+
+    // Phones: the moderation dialog scrolls as one page, so the tables keep their natural height there.
+    const { isCompact } = useCompactLayout();
 
     defineEmits(['refresh', 'update:memberSearch', 'search', 'sort-change', 'filter-change', 'select-all']);
 
