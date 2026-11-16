@@ -15,6 +15,10 @@
                 "timeout": "Timeout",
                 "age_verified": "18+ Verified"
             }
+        },
+        "login": {
+            "qr_open_link": "Open link on this phone",
+            "qr_open_link_hint": "Approve the login in the browser where you are signed in to VRChat, then come back here."
         }
     }
 }
