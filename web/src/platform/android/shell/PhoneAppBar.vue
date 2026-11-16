@@ -25,7 +25,7 @@
             <Search class="size-[18px]" />
         </Button>
 
-        <ContextMenu v-if="hasUnseen && notificationLayout !== 'table'">
+        <ContextMenu v-if="hasUnseenNotifications">
             <ContextMenuTrigger as-child>
                 <Button
                     variant="ghost"
@@ -51,10 +51,6 @@
             :aria-label="t('side_panel.notification_center.title')"
             @click="handleBellClick">
             <Bell class="size-[18px]" />
-            <span
-                v-if="hasUnseen"
-                class="absolute top-2 right-2.5 size-1.5 rounded-full bg-red-500"
-                aria-hidden="true" />
         </Button>
     </header>
 </template>
@@ -66,7 +62,7 @@
     import { Bell, Search } from 'lucide-vue-next';
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
-    import { useRoute, useRouter } from 'vue-router';
+    import { useRoute } from 'vue-router';
 
     import { Button } from '../../../components/ui/button';
     import {
@@ -77,7 +73,7 @@
     } from '../../../components/ui/context-menu';
     import { useNavMenuModel } from '../../../components/nav-menu/navMenuModel';
     import { navDefinitions } from '../../../shared/constants/ui';
-    import { useNotificationStore, useNotificationsSettingsStore, useUiStore } from '../../../stores';
+    import { useNotificationStore } from '../../../stores';
     import { useQuickSearchStore } from '../../../stores/quickSearch';
     import { resolveRouteTitle } from './shellNav';
     import { shellState } from './shellState';
@@ -89,14 +85,11 @@
 
     const { t } = useI18n();
     const route = useRoute();
-    const router = useRouter();
     const navModel = useNavMenuModel();
     const { isCompactLandscape } = useCompactLayout();
     const quickSearchStore = useQuickSearchStore();
     const notificationStore = useNotificationStore();
     const { isNotificationCenterOpen, hasUnseenNotifications } = storeToRefs(notificationStore);
-    const { notificationLayout } = storeToRefs(useNotificationsSettingsStore());
-    const { notifiedMenus } = storeToRefs(useUiStore());
 
     const title = computed(() => {
         // Portrait: the friends panel covers the page, so the bar names it. Landscape shows both side by side.
@@ -107,18 +100,8 @@
         return resolveRouteTitle(route, definitions, t) ?? { icon: '', label: 'VRCX' };
     });
 
-    // The same unseen marker as on PC: the bell dot for the notification center, the nav dot for the table layout.
-    const hasUnseen = computed(() =>
-        notificationLayout.value === 'table'
-            ? notifiedMenus.value.includes('notification')
-            : hasUnseenNotifications.value
-    );
-
+    // The bell opens the notification center, as on PC; its dot marks unseen notifications.
     function handleBellClick() {
-        if (notificationLayout.value === 'table') {
-            router.push({ name: 'notification' });
-            return;
-        }
         isNotificationCenterOpen.value = !isNotificationCenterOpen.value;
     }
 </script>
