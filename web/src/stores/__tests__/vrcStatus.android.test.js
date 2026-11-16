@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({ execute: vi.fn(), interval: null, hidden: fals
 vi.mock('../../shared/utils/platform', async (importOriginal) => ({ ...(await importOriginal()), isAndroid: true }));
 vi.mock('../../services/webapi', () => ({ default: { execute: (...args) => mocks.execute(...args) } }));
 vi.mock('../../shared/utils', () => ({ openExternalLink: vi.fn() }));
+// Upstream picks the polling interval by window focus; the Android background gate sits in front of it.
+vi.mock('../vrcx', async () => {
+    const { reactive } = await import('vue');
+    const store = reactive({ isBrowserFocused: true });
+    return { useVrcxStore: () => store };
+});
 vi.mock('worker-timers', () => ({
     setInterval: vi.fn((callback) => {
         mocks.interval = callback;

@@ -36,9 +36,24 @@ const mocks = vi.hoisted(() => {
         rows,
         getGamelogDatabase: vi.fn(),
         readRows: async () => rows.map((row) => ({ ...row })).sort(byCreatedAt),
-        addGamelogLocationToDatabase: vi.fn((entry) => rows.push({ time: 0, ...entry })),
-        addGamelogJoinLeaveToDatabase: vi.fn((entry) => rows.push({ ...entry })),
-        addGamelogJoinLeaveBulk: vi.fn((entries) => rows.push(...entries.map((entry) => ({ ...entry })))),
+        // Like the database service: inserts resolve to the entry with its rowId (the bulk insert to all of them).
+        addGamelogLocationToDatabase: vi.fn(async (entry) => {
+            const row = { time: 0, ...entry, rowId: rows.length + 1 };
+            rows.push(row);
+            return { ...entry, rowId: row.rowId };
+        }),
+        addGamelogJoinLeaveToDatabase: vi.fn(async (entry) => {
+            const row = { ...entry, rowId: rows.length + 1 };
+            rows.push(row);
+            return { ...entry, rowId: row.rowId };
+        }),
+        addGamelogJoinLeaveBulk: vi.fn(async (entries) =>
+            entries.map((entry) => {
+                const row = { ...entry, rowId: rows.length + 1 };
+                rows.push(row);
+                return { ...entry, rowId: row.rowId };
+            })
+        ),
         updateGamelogLocationTimeToDatabase: vi.fn(({ created_at, time }) => {
             for (const row of rows) {
                 if (row.type === 'Location' && row.created_at === created_at) {
@@ -511,8 +526,8 @@ describe('log lines while the rows are read (Android)', () => {
         await flush();
 
         // Live lines on the post-start (empty) lastLocation: a new player, and one the rows already hold.
-        addGameLogEntry(joinEntry(P3, 'Three'), '');
-        addGameLogEntry(joinEntry(P2, 'Two'), '');
+        await addGameLogEntry(joinEntry(P3, 'Three'), '');
+        await addGameLogEntry(joinEntry(P2, 'Two'), '');
         release();
         await flow;
 
@@ -525,8 +540,8 @@ describe('log lines while the rows are read (Android)', () => {
         const flow = runAndroidGameLogFlow();
         await flush();
 
-        addGameLogEntry({ type: 'location', dt: '2026-01-01T11:00:00.000Z', location: LOCATION_B, worldName: 'B' }, '');
-        addGameLogEntry(joinEntry(P3, 'Three'), LOCATION_B);
+        await addGameLogEntry({ type: 'location', dt: '2026-01-01T11:00:00.000Z', location: LOCATION_B, worldName: 'B' }, '');
+        await addGameLogEntry(joinEntry(P3, 'Three'), LOCATION_B);
         release();
         await flow;
 
@@ -557,7 +572,7 @@ describe('log lines while the rows are read (Android)', () => {
         const release = deferRows();
         const reload = tryLoadPlayerList();
         await flush();
-        addGameLogEntry({ type: 'location', dt: '2026-01-01T11:00:00.000Z', location: LOCATION_B, worldName: 'B' }, '');
+        await addGameLogEntry({ type: 'location', dt: '2026-01-01T11:00:00.000Z', location: LOCATION_B, worldName: 'B' }, '');
         release();
         await reload;
         expect(mocks.stores.location.lastLocation.location).toBe(LOCATION_A);

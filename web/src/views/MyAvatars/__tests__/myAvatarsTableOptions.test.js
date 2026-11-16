@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../../plugins', () => ({
     i18n: { global: { t: (key) => key } }
 }));
+// shared/utils re-exports formatDateFilter, whose coordinator reaches the stores and, through them, websocket.js;
+// the test loader cannot finish that cycle (websocket.js calls debounce() at load), and nothing here uses the socket.
+vi.mock('../../../services/websocket', () => ({
+    wsState: { connected: false, messageCount: 0, bytesReceived: 0 },
+    initWebsocket: vi.fn(),
+    closeWebSocket: vi.fn(),
+    reconnectWebSocket: vi.fn()
+}));
 
 import { MY_AVATARS_PHONE_HIDDEN_COLUMNS, getMyAvatarsTableOptions } from '../myAvatarsTableOptions';
 import { getColumns } from '../columns';

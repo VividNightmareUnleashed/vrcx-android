@@ -21,6 +21,12 @@ export const hasLocalVrchatFiles = !isAndroid;
 /** Discord Rich Presence through a local Discord client. */
 export const hasDiscordPresence = !isAndroid;
 
+/**
+ * Spending VRChat credits: buying marketplace listings, the VRChat store and its shelves, store tabs, free store item
+ * claims and the purchase history. Not offered on Android (docs/ARCHITECTURE.md §9).
+ */
+export const hasPurchasing = !isAndroid;
+
 /** Windows CEF host (VRCX for Windows). */
 export function isCefHost() {
     return typeof WINDOWS !== 'undefined' && WINDOWS === true;

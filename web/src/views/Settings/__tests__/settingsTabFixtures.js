@@ -146,3 +146,16 @@ export const dialogModule = {
     DialogDescription: { template: '<div><slot /></div>' },
     DialogFooter: { template: '<div><slot /></div>' }
 };
+
+/**
+ * `@/components/ui/select` without portals: every option renders in place, so a tab's text lists the options its
+ * gates leave in each Select (the closed reka-ui content keeps them out of the DOM).
+ */
+export const selectModule = {
+    Select: { props: ['modelValue'], template: '<div data-testid="select"><slot /></div>' },
+    SelectTrigger: { template: '<div />' },
+    SelectValue: { template: '<span />' },
+    SelectContent: { template: '<div><slot /></div>' },
+    SelectGroup: { template: '<div><slot /></div>' },
+    SelectItem: { props: ['value'], template: '<div data-testid="select-item" :data-value="value"><slot /></div>' }
+};

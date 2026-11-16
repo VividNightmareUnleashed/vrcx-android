@@ -149,7 +149,7 @@
         props.enableColumnVisibility ? getToggleableColumns(allColumns.value) : []
     );
 
-    const sorting = computed(() => props.table?.getState?.().sorting ?? []);
+    const sorting = computed(() => props.table?.atoms?.sorting?.get?.() ?? []);
     const sortColumnId = computed(() => sorting.value[0]?.id ?? NO_SORT);
     const sortDesc = computed(() => Boolean(sorting.value[0]?.desc));
 

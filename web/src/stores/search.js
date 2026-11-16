@@ -77,6 +77,7 @@ export const useSearchStore = defineStore('Search', () => {
                     console.error('getUsers gave us garbage', json);
                     continue;
                 }
+                // @ts-ignore
                 applyUser(json);
             }
 
@@ -168,7 +169,7 @@ export const useSearchStore = defineStore('Search', () => {
         }
         if (input.length === 8) {
             return verifyShortName('', input);
-        } else if (input.startsWith('https://vrch.at/')) {
+        } else if (/^https:\/\/vrch\.at\/[A-Za-z0-9]{8}$/.test(input)) {
             shortName = input.substring(16, 24);
             return verifyShortName('', shortName);
         } else if (input.startsWith('https://vrchat.') || input.startsWith('/home/')) {

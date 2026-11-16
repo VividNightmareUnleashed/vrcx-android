@@ -117,7 +117,8 @@ export const createColumns = ({
     selectedFriends,
     onToggleFriendSelection,
     onConfirmDeleteFriend,
-    userImage
+    userImage,
+    friendProfiles
 }) => {
     const cols = [];
 
@@ -183,7 +184,7 @@ export const createColumns = ({
                 }),
             size: 100,
             meta: { label: () => t('table.friendList.no'), mobile: { slot: 'trailing' } },
-            sortingFn: sortByNumber((row) => row?.$friendNumber ?? 0),
+            sortFn: sortByNumber((row) => row?.$friendNumber ?? 0),
             cell: ({ row }) =>
                 isCompactLayout() ? (
                     <span>{row.original?.$friendNumber ? `#${row.original.$friendNumber}` : ''}</span>
@@ -222,7 +223,7 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.friendList.displayName'), mobile: { slot: 'title' } },
-            sortingFn: sortByString((row) => row?.displayName ?? ''),
+            sortFn: sortByString((row) => row?.displayName ?? ''),
             cell: ({ row }) => {
                 const style = randomUserColours?.value ? { color: row.original?.$userColour } : null;
                 return (
@@ -242,7 +243,7 @@ export const createColumns = ({
                 }),
             size: 140,
             meta: { label: () => t('table.friendList.rank'), mobile: { slot: 'badge' } },
-            sortingFn: sortByNumber((row) => row?.$trustSortNum ?? 0),
+            sortFn: sortByNumber((row) => row?.$trustSortNum ?? 0),
             cell: ({ row }) => {
                 if (randomUserColours?.value) {
                     return <span class={row.original?.$trustClass}>{row.original?.$trustLevel ?? ''}</span>;
@@ -263,7 +264,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.status')
                 }),
             minSize: 200,
-            sortingFn: sortByStatus,
+            sortFn: sortByStatus,
             meta: {
                 stretch: true,
                 label: () => t('table.friendList.status'),
@@ -291,7 +292,7 @@ export const createColumns = ({
                 }),
             size: 130,
             meta: { label: () => t('table.friendList.language'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
-            sortingFn: sortByLanguages,
+            sortFn: sortByLanguages,
             cell: ({ row }) =>
                 isCompactLayout() && !row.original?.$languages?.length ? null : (
                     <div class="flex items-center">
@@ -309,10 +310,11 @@ export const createColumns = ({
             size: 130,
             enableSorting: false,
             meta: { label: () => t('table.friendList.bioLink'), mobile: { slot: 'footer', class: FOOTER_HIDE_EMPTY } },
-            cell: ({ row }) =>
-                isCompactLayout() && !(row.original?.bioLinks ?? []).filter(Boolean).length ? null : (
+            cell: ({ row }) => {
+                const bioLinks = (friendProfiles.value.get(row.original?.id)?.bioLinks ?? []).filter(Boolean);
+                return isCompactLayout() && !bioLinks.length ? null : (
                     <div class="flex items-center">
-                        {(row.original?.bioLinks ?? []).filter(Boolean).map((link, index) => (
+                        {bioLinks.map((link, index) => (
                             <TooltipWrapper key={index} content={String(link)}>
                                 <img
                                     src={getFaviconUrl(link)}
@@ -326,7 +328,8 @@ export const createColumns = ({
                             </TooltipWrapper>
                         ))}
                     </div>
-                )
+                );
+            }
         },
         {
             id: 'joinCount',
@@ -337,7 +340,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.joinCount')
                 }),
             size: 120,
-            sortingFn: sortByNumber((row) => row?.$joinCount ?? 0),
+            sortFn: sortByNumber((row) => row?.$joinCount ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.joinCount'),
@@ -358,7 +361,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.timeTogether')
                 }),
             size: 140,
-            sortingFn: sortByNumber((row) => row?.$timeSpent ?? 0),
+            sortFn: sortByNumber((row) => row?.$timeSpent ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.timeTogether'),
@@ -382,7 +385,7 @@ export const createColumns = ({
                 }),
             size: 170,
             meta: { label: () => t('table.friendList.lastSeen'), mobile: { slot: 'footer', class: FOOTER_STAT } },
-            sortingFn: sortByString((row) => row?.$lastSeen ?? ''),
+            sortFn: sortByString((row) => row?.$lastSeen ?? ''),
             cell: ({ row }) => {
                 const text = formatDateFilter(row.original?.$lastSeen, 'long');
                 if (isCompactLayout()) {
@@ -400,7 +403,7 @@ export const createColumns = ({
                     label: () => t('table.friendList.mutualFriends')
                 }),
             size: 120,
-            sortingFn: sortByNumber((row) => row?.$mutualCount ?? 0),
+            sortFn: sortByNumber((row) => row?.$mutualCount ?? 0),
             meta: {
                 class: 'text-right',
                 label: () => t('table.friendList.mutualFriends'),
@@ -443,7 +446,7 @@ export const createColumns = ({
                 label: () => t('table.friendList.lastActivity'),
                 mobile: { slot: 'footer', class: FOOTER_STAT }
             },
-            sortingFn: sortByString((row) => row?.last_activity ?? ''),
+            sortFn: sortByString((row) => row?.last_activity ?? ''),
             cell: ({ row }) =>
                 isCompactLayout() ? (
                     compactStat(() => t('table.friendList.lastActivity'), compactDate(row.original?.last_activity))
@@ -464,7 +467,7 @@ export const createColumns = ({
                 label: () => t('table.friendList.lastLogin'),
                 mobile: { slot: 'footer', class: FOOTER_STAT }
             },
-            sortingFn: sortByString((row) => row?.last_login ?? ''),
+            sortFn: sortByString((row) => row?.last_login ?? ''),
             cell: ({ row }) =>
                 isCompactLayout() ? (
                     compactStat(() => t('table.friendList.lastLogin'), compactDate(row.original?.last_login))
@@ -485,7 +488,7 @@ export const createColumns = ({
                 label: () => t('table.friendList.dateJoined'),
                 mobile: { slot: 'footer', class: FOOTER_STAT }
             },
-            sortingFn: sortByString((row) => row?.date_joined ?? ''),
+            sortFn: sortByString((row) => row?.date_joined ?? ''),
             cell: ({ row }) =>
                 isCompactLayout() ? (
                     compactStat(() => t('table.friendList.dateJoined'), row.original?.date_joined || null)

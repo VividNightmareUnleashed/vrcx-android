@@ -1,0 +1,13 @@
+--- get
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:00.000Z","nowplaying","{\u0022id\u0022:\u0022Main-1\u0022,\u0022type\u0022:\u0022mediaPlay\u0022,\u0022mediaTime\u0022:12.5}"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:01.000Z","nowplaying","{\u0022id\u0022:\u0022Main-1\u0022,\u0022media\u0022:{\u0022title\u0022:\u0022\u00C9t\u00E9 \u65E5\u672C\u0022}}"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:04.000Z","nowplaying","{\u0022id\u0022:\u0022Main-2\u0022,\u0022type\u0022:\u0022mediaEnd\u0022} }"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:06.000Z","nowplaying","{\u0022id\u0022:\u0022first\u0022}"]
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:00:07.000Z","event","Shader Keyword Limit has been reached"]
+--- end get calls=2
+--- lines count=0
+--- get
+["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:01:00.000Z","nowplaying","{\u0022id\u0022:\u0022Main-1\u0022,\u0022type\u0022:\u0022mediaStop\u0022}"]
+--- end get calls=2
+--- lines count=1
+Q ["output_log_2024-05-10_12-59-00.txt","2024-05-10T11:01:00.000Z","nowplaying","{\u0022id\u0022:\u0022Main-1\u0022,\u0022type\u0022:\u0022mediaStop\u0022}"]

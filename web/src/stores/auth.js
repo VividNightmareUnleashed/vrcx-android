@@ -48,7 +48,7 @@ export const useAuthStore = defineStore('Auth', () => {
         password: '',
         endpoint: '',
         websocket: '',
-        saveCredentials: false,
+        saveCredentials: true,
         lastUserLoggedIn: ''
     });
 
@@ -68,6 +68,15 @@ export const useAuthStore = defineStore('Auth', () => {
 
     /** @type {import('vue').Ref<any>} */
     const cachedConfig = ref({});
+
+    // fallback defaults
+    const cachedPermissions = ref({
+        maxUserStickers: 18,
+        maxUserEmoji: 18,
+        maxUserGallery: 64,
+        maxUserIcons: 18,
+        maxUserPrints: 64
+    });
 
     const enableCustomEndpoint = ref(false);
 
@@ -330,6 +339,7 @@ export const useAuthStore = defineStore('Auth', () => {
 
                     const savedCredentials = JSON.parse(await configRepository.getString('savedCredentials', '{}'));
                     for (const userId in savedCredentials) {
+                        if (!savedCredentials[userId].loginParams.password) continue;
                         security
                             .decrypt(savedCredentials[userId].loginParams.password, value)
                             .then(async (pt) => {
@@ -360,6 +370,7 @@ export const useAuthStore = defineStore('Auth', () => {
             const key = enablePrimaryPasswordDialog.value.password;
             const savedCredentials = await getAllSavedCredentials();
             for (const userId in savedCredentials) {
+                if (!savedCredentials[userId].loginParams.password) continue;
                 security.encrypt(savedCredentials[userId].loginParams.password, key).then((ct) => {
                     credentialsToSave.value = {
                         username: savedCredentials[userId].loginParams.username,
@@ -384,6 +395,7 @@ export const useAuthStore = defineStore('Auth', () => {
                     password: '',
                     endpoint: '',
                     websocket: '',
+                    ...savedCredentials[user.id]?.loginParams,
                     ...credentialsToSave.value
                 }
             };
@@ -396,6 +408,12 @@ export const useAuthStore = defineStore('Auth', () => {
         await configRepository.setString('savedCredentials', jsonCredentialsArray);
         loginForm.value.lastUserLoggedIn = user.id;
         await configRepository.setString('lastUserLoggedIn', user.id);
+    }
+
+    function queueSaveCredentials() {
+        if (loginForm.value.saveCredentials) {
+            credentialsToSave.value = {};
+        }
     }
 
     async function migrateStoredUsers() {
@@ -488,7 +506,7 @@ export const useAuthStore = defineStore('Auth', () => {
                     websocket: loginParams.websocket
                 });
             }
-            if (advancedSettingsStore.enablePrimaryPassword) {
+            if (advancedSettingsStore.enablePrimaryPassword && password) {
                 try {
                     password = await checkPrimaryPassword(loginParams);
                 } catch (err) {
@@ -499,21 +517,35 @@ export const useAuthStore = defineStore('Auth', () => {
 
             await authRequest.getConfig();
             try {
-                await authLogin({
-                    username: loginParams.username,
-                    password,
-                    endpoint: loginParams.endpoint,
-                    websocket: loginParams.websocket
-                });
+                if (password) {
+                    await authLogin({
+                        username: loginParams.username,
+                        password,
+                        endpoint: loginParams.endpoint,
+                        websocket: loginParams.websocket
+                    });
+                } else {
+                    // stops the 401 from starting a second auto login
+                    attemptingAutoLogin.value = true;
+                    try {
+                        await getCurrentUser();
+                    } finally {
+                        attemptingAutoLogin.value = false;
+                    }
+                }
             } catch (err) {
                 if (shouldTrackLoginNetworkIssueHint && shouldCountLoginFailureForNetworkHint(err)) {
                     maybeShowLoginNetworkIssueHint();
+                }
+                if (err.message.includes('Check your email')) {
+                    toast.error(t('message.auth.check_your_email'));
                 }
                 await handleLogoutEvent();
                 throw err;
             }
         } catch (err) {
-            if (err.message.includes('Invalid Username/Email or Password')) {
+            const sessionExpired = !loginParams.password && err.status === 401;
+            if (sessionExpired || err.message.includes('Invalid Username/Email or Password')) {
                 toast.error(t('message.auth.saved_credentials_invalid'));
                 await deleteSavedLogin(user.user.id);
             }
@@ -568,8 +600,12 @@ export const useAuthStore = defineStore('Auth', () => {
                         });
                         if (ok) {
                             const savedCredentials = JSON.parse(await configRepository.getString('savedCredentials'));
-                            const saveCredential = savedCredentials[Object.keys(savedCredentials)[0]];
-                            await security.decrypt(saveCredential.loginParams.password, value);
+                            const saveCredential = Object.values(savedCredentials).find(
+                                (credential) => credential.loginParams.password
+                            );
+                            if (saveCredential) {
+                                await security.decrypt(saveCredential.loginParams.password, value);
+                            }
                             const pwd = await security.encrypt(loginForm.value.password, value);
                             try {
                                 await authLogin({
@@ -602,6 +638,9 @@ export const useAuthStore = defineStore('Auth', () => {
                     } catch (err) {
                         if (shouldCountLoginFailureForNetworkHint(err)) {
                             maybeShowLoginNetworkIssueHint();
+                        }
+                        if (err.message.includes('Check your email')) {
+                            toast.error(t('message.auth.check_your_email'));
                         }
                         throw err;
                     }
@@ -850,6 +889,25 @@ export const useAuthStore = defineStore('Auth', () => {
         attemptingAutoLogin.value = value;
     }
 
+    async function getPermissions() {
+        const permissions = await authRequest.getPermissions();
+        if (permissions['permission-user-stickers']?.max) {
+            cachedPermissions.value.maxUserStickers = permissions['permission-user-stickers'].max;
+        }
+        if (permissions['permission-user-emoji']?.max) {
+            cachedPermissions.value.maxUserEmoji = permissions['permission-user-emoji'].max;
+        }
+        if (permissions['permission-user-gallery']?.max) {
+            cachedPermissions.value.maxUserGallery = permissions['permission-user-gallery'].max;
+        }
+        if (permissions['permission-user-icons']?.max) {
+            cachedPermissions.value.maxUserIcons = permissions['permission-user-icons'].max;
+        }
+        if (permissions['permission-user-prints']?.max) {
+            cachedPermissions.value.maxUserPrints = permissions['permission-user-prints'].max;
+        }
+    }
+
     return {
         autoLoginAttempts,
         loginForm,
@@ -857,6 +915,7 @@ export const useAuthStore = defineStore('Auth', () => {
         credentialsToSave,
         twoFactorAuthDialogVisible,
         cachedConfig,
+        cachedPermissions,
         enableCustomEndpoint,
         attemptingAutoLogin,
 
@@ -865,6 +924,7 @@ export const useAuthStore = defineStore('Auth', () => {
         enablePrimaryPasswordChange,
         setPrimaryPassword,
         updateStoredUser,
+        queueSaveCredentials,
         migrateStoredUsers,
         checkPrimaryPassword,
         autoLoginAfterMounted,
@@ -880,6 +940,7 @@ export const useAuthStore = defineStore('Auth', () => {
         getAllSavedCredentials,
         getSavedCredentials,
         setCachedConfig,
-        setAttemptingAutoLogin
+        setAttemptingAutoLogin,
+        getPermissions
     };
 });

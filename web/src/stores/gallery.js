@@ -3,12 +3,19 @@ import { defineStore } from 'pinia';
 import { toast } from 'vue-sonner';
 import { useI18n } from 'vue-i18n';
 
-import { getEmojiFileName, getPrintFileName, getPrintLocalDate, openExternalLink } from '../shared/utils';
+import {
+    convertFileUrlToImageUrl,
+    getEmojiFileName,
+    getPrintFileName,
+    getPrintLocalDate,
+    openExternalLink
+} from '../shared/utils';
 import { inventoryRequest, queryRequest, vrcPlusIconRequest, vrcPlusImageRequest } from '../api';
 import { AppDebug } from '../services/appConfig';
 import { handleImageUploadInput } from '../coordinators/imageUploadCoordinator';
 import { router } from '../plugins/router';
 import { useAdvancedSettingsStore } from './settings/advanced';
+import { useAuthStore } from './auth';
 import { useModalStore } from './modal';
 import { watchState } from '../services/watchState';
 import { database } from '../services/database';
@@ -17,6 +24,7 @@ import * as workerTimers from 'worker-timers';
 
 export const useGalleryStore = defineStore('Gallery', () => {
     const advancedSettingsStore = useAdvancedSettingsStore();
+    const authStore = useAuthStore();
     const { t } = useI18n();
     const modalStore = useModalStore();
 
@@ -120,13 +128,18 @@ export const useGalleryStore = defineStore('Gallery', () => {
         }
     }
 
-    function showGalleryPage() {
+    /**
+     * @param {string} [tab]
+     */
+    function showGalleryPage(tab) {
         galleryDialogVisible.value = true;
+        const query = typeof tab === 'string' ? { tab } : {};
         if (router.currentRoute.value?.name === 'gallery') {
             loadGalleryData();
+            router.replace({ name: 'gallery', query });
             return;
         }
-        router.push({ name: 'gallery' });
+        router.push({ name: 'gallery', query });
     }
 
     function loadGalleryData() {
@@ -187,13 +200,15 @@ export const useGalleryStore = defineStore('Gallery', () => {
         }
         const r = new FileReader();
         r.onload = function () {
-            uploadImage.value = btoa(r.result);
+            uploadImage.value = btoa(/** @type {string} */ (r.result));
         };
         r.readAsBinaryString(file);
     }
 
     function clearInviteImageUpload() {
-        const buttonList = document.querySelectorAll('.inviteImageUploadButton');
+        const buttonList = /** @type {NodeListOf<HTMLInputElement>} */ (
+            document.querySelectorAll('.inviteImageUploadButton')
+        );
         buttonList.forEach((button) => (button.value = ''));
         uploadImage.value = '';
     }
@@ -251,15 +266,40 @@ export const useGalleryStore = defineStore('Gallery', () => {
         const monthFolder = createdAt.slice(0, 7);
         const fileNameDate = createdAt.replace(/:/g, '-').replace(/T/g, '_').replace(/Z/g, '');
         const fileName = `${displayName}_${fileNameDate}_${inventoryId}.png`;
-        const filePath = await AppApi.SaveStickerToFile(
-            imageUrl,
-            advancedSettingsStore.ugcFolderPath,
-            monthFolder,
-            fileName
-        );
-        if (filePath) {
-            console.log(`Sticker saved to file: ${monthFolder}\\${fileName}`);
+        try {
+            const filePath = await AppApi.SaveStickerToFile(
+                imageUrl,
+                advancedSettingsStore.ugcFolderPath,
+                monthFolder,
+                fileName
+            );
+            if (filePath) {
+                console.log(`Sticker saved to file: ${monthFolder}\\${fileName}`);
+            }
+        } catch (e) {
+            handleFileSaveError(e, 'sticker');
         }
+    }
+
+    /**
+     * @param {Error} error
+     * @param {string} itemType
+     */
+    function handleFileSaveError(error, itemType) {
+        if (error?.message?.includes('Could not find file')) {
+            modalStore
+                .confirm({
+                    description: `Windows has blocked VRCX from creating files on your system. Please allow VRCX to create files to save ${itemType}s, would you like to see instructions on how to fix this?`,
+                    title: `Failed to create ${itemType} folder`,
+                    cancelText: 'Ignore'
+                })
+                .then(({ ok }) => {
+                    if (!ok) return;
+                    openExternalLink('https://www.youtube.com/watch?v=1mwmmCdA4D8&t=213s');
+                })
+                .catch(() => {});
+        }
+        console.error(`Failed to save ${itemType} to file:`, error);
     }
 
     async function refreshPrintTable() {
@@ -334,19 +374,23 @@ export const useGalleryStore = defineStore('Gallery', () => {
         }
         const monthFolder = createdAt.toISOString().slice(0, 7);
         const fileName = getPrintFileName(print);
-        const filePath = await AppApi.SavePrintToFile(
-            imageUrl,
-            advancedSettingsStore.ugcFolderPath,
-            monthFolder,
-            fileName
-        );
-        if (filePath) {
-            console.log(`Print saved to file: ${monthFolder}\\${fileName}`);
-            if (advancedSettingsStore.cropInstancePrints) {
-                if (!(await AppApi.CropPrintImage(filePath))) {
-                    console.error('Failed to crop print image');
+        try {
+            const filePath = await AppApi.SavePrintToFile(
+                imageUrl,
+                advancedSettingsStore.ugcFolderPath,
+                monthFolder,
+                fileName
+            );
+            if (filePath) {
+                console.log(`Print saved to file: ${monthFolder}\\${fileName}`);
+                if (advancedSettingsStore.cropInstancePrints) {
+                    if (!(await AppApi.CropPrintImage(filePath))) {
+                        console.error('Failed to crop print image');
+                    }
                 }
             }
+        } catch (e) {
+            handleFileSaveError(e, 'print');
         }
 
         if (state.printQueue.length === 0) {
@@ -378,6 +422,7 @@ export const useGalleryStore = defineStore('Gallery', () => {
     async function getInventory() {
         inventoryTable.value = [];
         advancedSettingsStore.currentUserInventory.clear();
+        /** @type {import('vrchat').GetInventory['query']} */
         const params = {
             n: 100,
             offset: 0,
@@ -414,7 +459,7 @@ export const useGalleryStore = defineStore('Gallery', () => {
         }
         await refreshPrintTable();
         await refreshPrintFavorites();
-        const printLimit = 64 - 2; // 2 reserved for new prints
+        const printLimit = authStore.cachedPermissions.maxUserPrints - 2; // 2 reserved for new prints
         const printCount = printTable.value.length;
         if (printCount <= printLimit) {
             return;
@@ -461,7 +506,7 @@ export const useGalleryStore = defineStore('Gallery', () => {
             return;
         }
         const D = fullscreenImageDialog.value;
-        D.imageUrl = imageUrl;
+        D.imageUrl = convertFileUrlToImageUrl(imageUrl, 10_000);
         D.fileName = fileName;
         D.visible = true;
     }
@@ -530,21 +575,7 @@ export const useGalleryStore = defineStore('Gallery', () => {
                 console.log(`Emoji saved to file: ${monthFolder}\\${emojiFileName}`);
             }
         } catch (e) {
-            if (e.message.includes('Could not find file')) {
-                modalStore
-                    .confirm({
-                        description:
-                            'Windows has blocked VRCX from creating files on your system. Please allow VRCX to create files to save emojis, would you like to see instructions on how to fix this?',
-                        title: 'Failed to create emoji folder',
-                        cancelText: 'Ignore'
-                    })
-                    .then(({ ok }) => {
-                        if (!ok) return;
-                        openExternalLink('https://www.youtube.com/watch?v=1mwmmCdA4D8&t=213s');
-                    })
-                    .catch(() => {});
-            }
-            console.error('Failed to save emoji to file:', e);
+            handleFileSaveError(e, 'emoji');
         }
 
         if (state.instanceInventoryQueue.length === 0) {

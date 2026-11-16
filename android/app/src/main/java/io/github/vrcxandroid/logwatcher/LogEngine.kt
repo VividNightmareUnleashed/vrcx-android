@@ -21,7 +21,7 @@ internal class LogFileView(
     val open: () -> RandomAccessFile,
 )
 
-/** Per-file `LogContext` (`LogWatcher.cs:1430-1440`), plus the port's held-tail marker. */
+/** Per-file `LogContext` (`LogWatcher.cs:1437-1447`), plus the port's held-tail marker. */
 internal class LogContext {
     var audioDeviceChanged = false
     var lastAudioDevice: String? = null
@@ -133,7 +133,7 @@ internal class LogEngine(
         if (endFirstRun) firstRun = false
     }
 
-    /** `Get()` after its `Update()` (`LogWatcher.cs:1378-1406`): up to 1000 rows, oldest first. */
+    /** `Get()` after its `Update()` (`LogWatcher.cs:1385-1413`): up to 1000 rows, oldest first. */
     fun takeBatch(): List<Array<String?>> {
         if (resetLog || logList.isEmpty()) return emptyList()
         val n = minOf(1000, logList.size)
@@ -150,7 +150,7 @@ internal class LogEngine(
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // ParseLog (LogWatcher.cs:171-283)
+    // ParseLog (LogWatcher.cs:171-284)
 
     private fun parseLog(file: LogFileView, context: LogContext) {
         var current = ""
@@ -230,7 +230,8 @@ internal class LogEngine(
             }
         } else {
             @Suppress("ControlFlowWithEmptyBody")
-            if (parseLogShaderKeywordsLimit(file, context, line) ||
+            if (parseLogNowPlaying(file, line, offset) ||
+                parseLogShaderKeywordsLimit(file, context, line) ||
                 parseLogSdk2VideoPlay(file, line, offset) ||
                 parseApplicationQuit(file, line, offset) ||
                 parseOpenVrInit(file, line, offset) ||
@@ -267,14 +268,14 @@ internal class LogEngine(
         appendLog(item)
     }
 
-    /** `ConvertLogTimeToISO8601` (`LogWatcher.cs:319-340`); PC-equivalent UtcNow when the stamp does not parse. */
+    /** `ConvertLogTimeToISO8601` (`LogWatcher.cs:320-341`); PC-equivalent UtcNow when the stamp does not parse. */
     private fun convertLogTimeToIso8601(line: String): String {
         val ticks = zone.lineStampToUtcTicks(line) ?: Ticks.fromEpochMs(pcNowMs())
         return Ticks.formatIso(ticks)
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // Parsers (LogWatcher.cs:342-1372), in source order of the dispatch chains
+    // Parsers (LogWatcher.cs:343-1379), in source order of the dispatch chains
 
     private fun parseLogLocation(file: LogFileView, context: LogContext, line: String): Boolean {
         if (line.contains("[Behaviour] Entering Room: ")) {
@@ -402,17 +403,15 @@ internal class LogEngine(
 
     private fun parseLogVideoError(file: LogFileView, context: LogContext, line: String, offset: Int): Boolean {
         if (line.contains("[Video Playback] ERROR: ")) {
-            var data = sub(line, offset + 24)
+            val data = sub(line, offset + 24)
             if (!context.videoPlaybackErrors.add(data)) return true
-            if (data.contains(YOUTUBE_BOT_ERROR)) data = "$YOUTUBE_BOT_ERROR_FIX_URL\n$data"
             append(file, line, "event", "VideoError: $data")
             return true
         }
 
         if (line.contains("[AVProVideo] Error: ")) {
-            var data = sub(line, offset + 20)
+            val data = sub(line, offset + 20)
             if (!context.videoPlaybackErrors.add(data)) return true
-            if (data.contains(YOUTUBE_BOT_ERROR)) data = "$YOUTUBE_BOT_ERROR_FIX_URL\n$data"
             append(file, line, "event", "VideoError: $data")
             return true
         }
@@ -433,6 +432,21 @@ internal class LogEngine(
     private fun parseLogWorldVrcx(file: LogFileView, line: String, offset: Int): Boolean {
         if (!compareAt(line, offset, "[VRCX] ", 7)) return false
         append(file, line, "vrcx", sub(line, offset + 7))
+        return true
+    }
+
+    /**
+     * `ParseLogNowPlaying`: the ProTV "now playing" log spec (https://protv.dev/guides/nowplaying), e.g.
+     * `nowplaying {"id":"Main-1","type":"mediaPlay","mediaTime":12.5}`. Passes the JSON object on unparsed.
+     */
+    private fun parseLogNowPlaying(file: LogFileView, line: String, offset: Int): Boolean {
+        val marker = "nowplaying {"
+        val markerPos = line.indexOf(marker, offset)
+        if (markerPos < 0) return false
+        val jsonStart = markerPos + marker.length - 1
+        val jsonEnd = line.lastIndexOf('}')
+        if (jsonEnd < jsonStart) return false
+        append(file, line, "nowplaying", sub(line, jsonStart, jsonEnd - jsonStart + 1))
         return true
     }
 
@@ -543,12 +557,8 @@ internal class LogEngine(
         return false
     }
 
-    /** Pre-filter P0 (`LogWatcher.cs:1084-1116`), run before the length, date and tillDate checks. */
+    /** Pre-filter P0 (`LogWatcher.cs:1103-1123`), run before the length, date and tillDate checks. */
     private fun parseLogUdonException(file: LogFileView, line: String): Boolean {
-        if (line.contains("[PyPyDance]")) {
-            append(file, line, "udon-exception", line)
-            return true
-        }
         val lineOffset = line.indexOf(" ---> VRC.Udon.VM.UdonVMException: ")
         if (lineOffset < 0) return false
         append(file, line, "udon-exception", sub(line, lineOffset))
@@ -623,7 +633,7 @@ internal class LogEngine(
         return true
     }
 
-    /** ParseInstanceResetWarning, ParseVoteKickInitiation and ParseVoteKickSuccess (`LogWatcher.cs:1284-1339`). */
+    /** ParseInstanceResetWarning, ParseVoteKickInitiation and ParseVoteKickSuccess (`LogWatcher.cs:1291-1346`). */
     private fun parseModerationEvent(file: LogFileView, line: String, marker: String): Boolean {
         if (!line.contains(marker)) return false
         val index = line.indexOf(marker) + 20
@@ -649,11 +659,7 @@ internal class LogEngine(
     }
 
     companion object {
-        private const val YOUTUBE_BOT_ERROR = "Sign in to confirm"
-        private const val YOUTUBE_BOT_ERROR_FIX_URL =
-            "[VRCX] Fix error with this: https://github.com/EllyVR/VRCVideoCacher"
-
-        /** `ParseUserInfo` (`LogWatcher.cs:1409-1428`). */
+        /** `ParseUserInfo` (`LogWatcher.cs:1416-1435`). */
         fun parseUserInfo(userInfo: String): Pair<String, String> {
             val pos = userInfo.lastIndexOf(" (")
             return if (pos >= 0) {

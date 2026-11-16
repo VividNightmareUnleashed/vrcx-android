@@ -13,9 +13,10 @@ import {
     replaceBioSymbols
 } from '../shared/utils';
 import { getAllUserMemos } from '../coordinators/memoCoordinator';
-import { instanceRequest, userRequest, cosmeticsRequest } from '../api';
+import { instanceRequest, userRequest, cosmeticsRequest, marketplaceRequest } from '../api';
 import { AppDebug } from '../services/appConfig';
 import { database } from '../services/database';
+import { processBulk } from '../services/request';
 import { runUpdateCurrentUserLocationFlow } from '../coordinators/locationCoordinator';
 import { useAppearanceSettingsStore } from './settings/appearance';
 import { useFriendStore } from './friend';
@@ -38,11 +39,12 @@ export const useUserStore = defineStore('User', () => {
     const { t } = useI18n();
 
     const currentUser = ref(
-        /** @type {import('../types/api/user').VrcxCurrentUser} */ ({
+        /** @type {import('@/types/vrcx').VrcxCurrentUser} */ {
             acceptedPrivacyVersion: 0,
             acceptedTOSVersion: 0,
             accountDeletionDate: null,
             accountDeletionLog: null,
+            accountStanding: '',
             activeFriends: [],
             ageVerificationStatus: '',
             ageVerified: false,
@@ -173,8 +175,10 @@ export const useUserStore = defineStore('User', () => {
             $languages: [],
             $locationTag: '',
             $travelingToLocation: ''
-        })
+        }
     );
+
+    const currentUserCredits = ref(null);
 
     const userDialog = ref({
         visible: false,
@@ -215,6 +219,7 @@ export const useUserStore = defineStore('User', () => {
         },
         worlds: [],
         avatars: [],
+        licensedAvatars: [],
         isWorldsLoading: false,
         isFavoriteWorldsLoading: false,
         isAvatarsLoading: false,
@@ -339,6 +344,23 @@ export const useUserStore = defineStore('User', () => {
     const cachedIconFrames = shallowReactive(new Map());
     const cachedNameplateEffects = shallowReactive(new Map());
 
+    const cachedPurchases = ref(new Map());
+    const activePurchases = computed(() =>
+        Array.from(cachedPurchases.value.values()).filter(
+            (purchase) => purchase.purchaseActive && purchase.buyerId === currentUser.value.id
+        )
+    );
+    const ownedListingIds = computed(() => new Set(activePurchases.value.map((purchase) => purchase.listingId)));
+    const ownedProductIds = computed(
+        () =>
+            new Set(activePurchases.value.flatMap((purchase) => (purchase.products ?? []).map((product) => product.id)))
+    );
+
+    const currentUserClientConfig = ref({
+        accessReduceDecorAnim: false,
+        configString: ''
+    });
+
     function addCachedUserDisplayNameEntry(displayName, userId) {
         if (!displayName || !userId) {
             return;
@@ -406,6 +428,27 @@ export const useUserStore = defineStore('User', () => {
         cachedUsers.clear();
         cachedProfiles.value.clear();
         cachedUserIdsByDisplayName.clear();
+        cachedPurchases.value.clear();
+    }
+
+    function setCachedPurchases(purchases) {
+        for (const purchase of purchases) {
+            cachedPurchases.value.set(purchase.purchaseId, purchase);
+        }
+    }
+
+    async function getAllProductPurchases() {
+        await processBulk({
+            fn: marketplaceRequest.getProductPurchases,
+            N: 0,
+            params: {
+                buyerId: currentUser.value.id,
+                order: 'desc',
+                sort: 'purchaseDate',
+                n: 50,
+                offset: 0
+            }
+        });
     }
 
     function rebuildCachedUserDisplayNameIndex() {
@@ -506,6 +549,10 @@ export const useUserStore = defineStore('User', () => {
         }
         D.$location = L;
         L.user = {};
+        const cachedOwnerId = instanceStore.cachedInstances.get(L.tag)?.ownerId;
+        if (!L.userId && cachedOwnerId && !cachedOwnerId.startsWith('grp_')) {
+            L.userId = cachedOwnerId;
+        }
         if (L.userId) {
             ref = cachedUsers.get(L.userId);
             if (typeof ref === 'undefined') {
@@ -602,16 +649,23 @@ export const useUserStore = defineStore('User', () => {
     /**
      * @param array
      */
-    function sortUserDialogAvatars(array) {
-        const D = userDialog.value;
-        if (D.avatarSorting === 'update') {
-            array.sort(compareByUpdatedAt);
-        } else if (D.avatarSorting === 'createdAt') {
-            array.sort(compareByCreatedAt);
-        } else {
-            array.sort(compareByName);
+    function getUserDialogAvatarComparator() {
+        const { avatarSorting } = userDialog.value;
+        if (avatarSorting === 'update') {
+            return compareByUpdatedAt;
         }
-        D.avatars = array;
+        if (avatarSorting === 'createdAt') {
+            return compareByCreatedAt;
+        }
+        return compareByName;
+    }
+
+    function sortUserDialogAvatars(array) {
+        userDialog.value.avatars = array.sort(getUserDialogAvatarComparator());
+    }
+
+    function sortUserDialogLicensedAvatars(array) {
+        userDialog.value.licensedAvatars = array.sort(getUserDialogAvatarComparator());
     }
 
     async function initUserNotes() {
@@ -780,6 +834,13 @@ export const useUserStore = defineStore('User', () => {
     }
 
     /**
+     * @param {number | null} value
+     */
+    function setCurrentUserCredits(value) {
+        currentUserCredits.value = value;
+    }
+
+    /**
      * @param {object} value
      */
     function setSubsetOfLanguages(value) {
@@ -924,6 +985,23 @@ export const useUserStore = defineStore('User', () => {
         });
     }
 
+    async function toggleReducedProfileAnimations() {
+        const accessReduceDecorAnim = !currentUserClientConfig.value.accessReduceDecorAnim;
+        if (
+            !(await confirmCurrentUserToggle(t('dialog.user.info.reduced_profile_animations'), accessReduceDecorAnim))
+        ) {
+            return;
+        }
+        const { json } = await userRequest.saveClientConfig({ accessReduceDecorAnim });
+        currentUserClientConfig.value = json;
+    }
+
+    function getClientConfig() {
+        userRequest.getClientConfig().then(({ json }) => {
+            currentUserClientConfig.value = json;
+        });
+    }
+
     function changePassword(currentPassword, password) {
         return userRequest.saveCurrentUser({
             currentPassword,
@@ -943,6 +1021,8 @@ export const useUserStore = defineStore('User', () => {
         (isLoggedIn) => {
             if (isLoggedIn) {
                 getCosmetics();
+                getClientConfig();
+                getAllProductPurchases();
             }
         },
         { flush: 'sync' }
@@ -959,7 +1039,7 @@ export const useUserStore = defineStore('User', () => {
                 cachedIconFrames.set(frame.id, frame);
             });
         });
-        cosmeticsRequest.gatNameplateEffects().then(({ json }) => {
+        cosmeticsRequest.getNameplateEffects().then(({ json }) => {
             json.forEach((effect) => {
                 cachedNameplateEffects.set(effect.id, effect);
             });
@@ -970,6 +1050,7 @@ export const useUserStore = defineStore('User', () => {
         state,
 
         currentUser,
+        currentUserCredits,
         currentTravelers,
         userDialog,
         editProfileDialog,
@@ -984,16 +1065,23 @@ export const useUserStore = defineStore('User', () => {
         cachedProfileEffects,
         cachedIconFrames,
         cachedNameplateEffects,
+        cachedPurchases,
+        ownedListingIds,
+        ownedProductIds,
+        currentUserClientConfig,
         applyUserLanguage,
         applyPresenceLocation,
         applyUserDialogLocation,
         setCachedUser,
+        setCachedPurchases,
+        getAllProductPurchases,
         syncCachedUserDisplayName,
         deleteCachedUser,
         deleteCachedProfile,
         clearCachedUsers,
         rebuildCachedUserDisplayNameIndex,
         sortUserDialogAvatars,
+        sortUserDialogLicensedAvatars,
         initUserNotes,
         showSendBoopDialog,
         showEditProfileDialog,
@@ -1005,12 +1093,14 @@ export const useUserStore = defineStore('User', () => {
         setCurrentUserTravelingToTime,
         setCurrentUser,
         setSubsetOfLanguages,
+        setCurrentUserCredits,
         markCurrentUserGameStarted,
         markCurrentUserGameStopped,
         checkNote,
         toggleSharedConnectionsOptOut,
         toggleDiscordFriendsOptOut,
         toggleAllowBooping,
+        toggleReducedProfileAnimations,
         toggleAvatarCopying,
         changePassword,
         changeContentFilterSettings,

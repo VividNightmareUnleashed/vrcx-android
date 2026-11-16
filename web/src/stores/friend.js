@@ -14,7 +14,6 @@ import { getUserMemo } from '../coordinators/memoCoordinator';
 import { friendRequest, userRequest } from '../api';
 import { runInitFriendsListFlow } from '../coordinators/friendSyncCoordinator';
 import { runPendingOfflineTickFlow, runUpdateFriendFlow } from '../coordinators/friendPresenceCoordinator';
-import { syncFriendSearchIndex } from '../coordinators/searchIndexCoordinator';
 import { updateFriendship, runUpdateFriendshipsFlow } from '../coordinators/friendRelationshipCoordinator';
 import { applyUser } from '../coordinators/userCoordinator';
 import { AppDebug } from '../services/appConfig';
@@ -111,15 +110,16 @@ export const useFriendStore = defineStore('Friend', () => {
 
     const allFavoriteFriendIds = computed(() => {
         const favoriteStore = useFavoriteStore();
+        const groups = generalSettingsStore.localFavoriteFriendsGroups;
         const set = new Set();
         for (const ref of favoriteStore.cachedFavorites.values()) {
-            if (ref.type === 'friend') {
+            if (ref.type === 'friend' && (groups.length === 0 || groups.includes(ref.$groupKey))) {
                 set.add(ref.favoriteId);
             }
         }
-        const groups = generalSettingsStore.localFavoriteFriendsGroups;
         let localGroups = groups.filter((key) => key.startsWith('local:')).map((key) => key.replace('local:', ''));
-        if (localGroups.length === 0) {
+        if (groups.length === 0) {
+            // Use all groups when no groups are selected
             localGroups = Object.keys(favoriteStore.localFriendFavorites);
         }
         for (const groupName of localGroups) {
@@ -247,7 +247,7 @@ export const useFriendStore = defineStore('Friend', () => {
 
     const friendLogTable = ref({
         data: [],
-        filters: [
+        filters: /** @type {import('@/types/vrcx').TableFilter[]} */ ([
             {
                 prop: 'type',
                 value: []
@@ -261,7 +261,7 @@ export const useFriendStore = defineStore('Friend', () => {
                 value: false,
                 filterFn: (row, filter) => !(filter.value && row.type === 'Unfriend')
             }
-        ],
+        ]),
         pageSizeLinked: true,
         loading: false
     });
@@ -396,28 +396,9 @@ export const useFriendStore = defineStore('Friend', () => {
     init();
 
     function updateLocalFavoriteFriends() {
-        const favoriteStore = useFavoriteStore();
         localFavoriteFriends.clear();
-        const groups = generalSettingsStore.localFavoriteFriendsGroups;
-        const hasRemoteGroupFilter = groups.some((key) => !key.startsWith('local:'));
-        // Remote favorites: filter by selected remote groups
-        for (const ref of favoriteStore.cachedFavorites.values()) {
-            if (ref.type === 'friend' && (!hasRemoteGroupFilter || groups.includes(ref.$groupKey))) {
-                localFavoriteFriends.add(ref.favoriteId);
-            }
-        }
-        // Local favorites
-        let localGroups = groups.filter((key) => key.startsWith('local:')).map((key) => key.replace('local:', ''));
-        if (localGroups.length === 0) {
-            localGroups = Object.keys(favoriteStore.localFriendFavorites);
-        }
-        for (const groupName of localGroups) {
-            const userIds = favoriteStore.localFriendFavorites[groupName];
-            if (userIds) {
-                for (let i = 0; i < userIds.length; ++i) {
-                    localFavoriteFriends.add(userIds[i]);
-                }
-            }
+        for (const id of allFavoriteFriendIds.value) {
+            localFavoriteFriends.add(id);
         }
         updateSidebarFavorites();
     }
@@ -514,22 +495,11 @@ export const useFriendStore = defineStore('Friend', () => {
             isVIP,
             ref,
             name,
-            memo: '',
             pendingOffline: false,
             $nickName: ''
         });
         if (watchState.isFriendsLoaded) {
-            getUserMemo(id).then((memo) => {
-                if (memo.userId === id) {
-                    ctx.memo = memo.memo;
-                    ctx.$nickName = '';
-                    if (memo.memo) {
-                        const array = memo.memo.split('\n');
-                        ctx.$nickName = array[0];
-                    }
-                    syncFriendSearchIndex(ctx);
-                }
-            });
+            getUserMemo(id);
         }
         if (typeof ref === 'undefined') {
             const friendLogRef = friendLog.get(id);
@@ -825,6 +795,19 @@ export const useFriendStore = defineStore('Friend', () => {
                 }
             }
         });
+    }
+
+    /**
+     * @param {string} userId
+     * @param {string} lastSeen
+     */
+    function updateFriendLastSeen(userId, lastSeen) {
+        const ctx = friends.get(userId);
+        if (!ctx?.ref || !lastSeen) {
+            return;
+        }
+        ctx.ref.$lastSeen = lastSeen;
+        reindexSortedFriend(ctx);
     }
 
     async function getAllUserMutualCount() {
@@ -1307,6 +1290,7 @@ export const useFriendStore = defineStore('Friend', () => {
         refreshFriends,
         updateOnlineFriendCounter,
         getAllUserStats,
+        updateFriendLastSeen,
         getAllUserMutualCount,
         getAllUserMutualOptedOut,
         initFriendLog,

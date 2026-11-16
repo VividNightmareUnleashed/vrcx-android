@@ -219,9 +219,7 @@ export async function runAndroidGameLogFlow() {
     }
     const logLines = await LogWatcher.GetLogLines();
     if (logLines) {
-        logLines.forEach((logLine) => {
-            addGameLogEvent(logLine);
-        });
+        await Promise.all(logLines.map((logLine) => addGameLogEvent(logLine)));
     }
     if (!started) {
         await runUpdateIsGameRunningFlow(isGameRunning, isSteamVRRunning);
@@ -264,7 +262,7 @@ async function applyAndroidGameStart(isSteamVRRunning) {
  * @param {object} gameLog
  * @param {string} location
  */
-export function addGameLogEntry(gameLog, location) {
+export async function addGameLogEntry(gameLog, location) {
     const gameLogStore = useGameLogStore();
     const locationStore = useLocationStore();
     const instanceStore = useInstanceStore();
@@ -281,6 +279,7 @@ export function addGameLogEntry(gameLog, location) {
     const notificationStore = useNotificationStore();
 
     let entry = undefined;
+    let persistedEntryPromise;
     if (advancedSettingsStore.gameLogDisabled) {
         return;
     }
@@ -298,7 +297,7 @@ export function addGameLogEntry(gameLog, location) {
                     type: 'LocationDestination',
                     location: gameLog.location
                 });
-                runLastLocationResetFlow(gameLog.dt);
+                await runLastLocationResetFlow(gameLog.dt);
                 locationStore.setLastLocationLocation('traveling');
                 locationStore.setLastLocationDestination(gameLog.location);
                 locationStore.setLastLocationDestinationTime(Date.parse(gameLog.dt));
@@ -306,6 +305,7 @@ export function addGameLogEntry(gameLog, location) {
                 instanceStore.removeQueuedInstance(gameLog.location);
                 runUpdateCurrentUserLocationFlow();
                 gameLogStore.clearNowPlaying();
+                gameLogStore.resetNowPlayingProducers();
                 instanceStore.updateCurrentInstanceWorld();
                 userStore.applyUserDialogLocation();
                 instanceStore.applyWorldDialogInstances();
@@ -316,8 +316,9 @@ export function addGameLogEntry(gameLog, location) {
             instanceStore.addInstanceJoinHistory(locationStore.lastLocation.location, gameLog.dt);
             const worldName = replaceBioSymbols(gameLog.worldName);
             if (gameStore.isGameRunning) {
-                runLastLocationResetFlow(gameLog.dt);
+                await runLastLocationResetFlow(gameLog.dt);
                 gameLogStore.clearNowPlaying();
+                gameLogStore.resetNowPlayingProducers();
                 locationStore.setLastLocation({
                     date: Date.parse(gameLog.dt),
                     location: gameLog.location,
@@ -339,7 +340,7 @@ export function addGameLogEntry(gameLog, location) {
             getGroupName(gameLog.location).then((groupName) => {
                 entry.groupName = groupName;
             });
-            gameLogStore.addGamelogLocationToDatabase(entry);
+            persistedEntryPromise = gameLogStore.addGamelogLocationToDatabase(entry);
             break;
         case 'player-joined':
             const joinTime = Date.parse(gameLog.dt);
@@ -357,6 +358,7 @@ export function addGameLogEntry(gameLog, location) {
                 // skip
             } else if (friendStore.friends.has(userId) && typeof ref !== 'undefined') {
                 locationStore.lastLocation.friendList.set(userId, userMap);
+                friendStore.updateFriendLastSeen(userId, gameLog.dt);
                 if (
                     ref.location !== locationStore.lastLocation.location &&
                     ref.travelingToLocation !== locationStore.lastLocation.location
@@ -375,37 +377,44 @@ export function addGameLogEntry(gameLog, location) {
             vrStore.updateVRLastLocation();
             instanceStore.getCurrentInstanceUserList();
             entry = createJoinLeaveEntry('OnPlayerJoined', gameLog.dt, gameLog.displayName, location, userId);
-            database.addGamelogJoinLeaveToDatabase(entry);
+            persistedEntryPromise = database.addGamelogJoinLeaveToDatabase(entry);
             break;
         case 'player-left':
             const ref1 = locationStore.lastLocation.playerList.get(userId);
             if (typeof ref1 === 'undefined') {
                 break;
             }
-            const time = dayjs(gameLog.dt) - ref1.joinTime;
+            const time = dayjs(gameLog.dt).valueOf() - ref1.joinTime;
             locationStore.lastLocation.playerList.delete(userId);
             locationStore.lastLocation.friendList.delete(userId);
+            friendStore.updateFriendLastSeen(userId, gameLog.dt);
             gameLogStore.state.lastLocationAvatarList.delete(gameLog.displayName);
             photonStore.photonLobbyAvatars.delete(userId);
             vrStore.updateVRLastLocation();
             instanceStore.getCurrentInstanceUserList();
             entry = createJoinLeaveEntry('OnPlayerLeft', gameLog.dt, gameLog.displayName, location, userId, time);
-            database.addGamelogJoinLeaveToDatabase(entry);
+            persistedEntryPromise = database.addGamelogJoinLeaveToDatabase(entry);
             break;
         case 'portal-spawn':
             if (vrcxStore.ipcEnabled && gameStore.isGameRunning) {
                 break;
             }
             entry = createPortalSpawnEntry(gameLog.dt, location);
-            database.addGamelogPortalSpawnToDatabase(entry);
+            persistedEntryPromise = database.addGamelogPortalSpawnToDatabase(entry);
+            break;
+        case 'nowplaying':
+            await gameLogStore.handleNowPlayingEvent(gameLog, location);
             break;
         case 'video-play':
+            if (gameLogStore.hasNowPlayingProducer()) {
+                break;
+            }
             gameLog.videoUrl = decodeURI(gameLog.videoUrl);
             if (gameLogStore.lastVideoUrl === gameLog.videoUrl) {
                 break;
             }
             gameLogStore.setLastVideoUrl(gameLog.videoUrl);
-            gameLogStore.addGameLogVideo(gameLog, location, userId);
+            await gameLogStore.addGameLogVideo(gameLog, location, userId);
             break;
         case 'video-sync':
             const timestamp = gameLog.timestamp.replace(/,/g, '');
@@ -420,7 +429,7 @@ export function addGameLogEntry(gameLog, location) {
             }
             gameLogStore.setLastResourceloadUrl(gameLog.resourceUrl);
             entry = createResourceLoadEntry(gameLog.type, gameLog.dt, gameLog.resourceUrl, location);
-            database.addGamelogResourceLoadToDatabase(entry);
+            persistedEntryPromise = database.addGamelogResourceLoadToDatabase(entry);
             break;
         case 'screenshot':
             vrcxStore.processScreenshot(gameLog.screenshotPath);
@@ -465,16 +474,12 @@ export function addGameLogEntry(gameLog, location) {
             break;
         case 'vrcx':
             const type = gameLog.data.substr(0, gameLog.data.indexOf(' '));
-            if (type === 'VideoPlay(PyPyDance)') {
-                gameLogStore.addGameLogPyPyDance(gameLog, location);
-            } else if (type === 'VideoPlay(VRDancing)') {
-                gameLogStore.addGameLogVRDancing(gameLog, location);
-            } else if (type === 'VideoPlay(ZuwaZuwaDance)') {
-                gameLogStore.addGameLogZuwaZuwaDance(gameLog, location);
+            if (type === 'VideoPlay(VRDancing)') {
+                await gameLogStore.addGameLogVRDancing(gameLog, location);
             } else if (type === 'LSMedia') {
-                gameLogStore.addGameLogLSMedia(gameLog, location);
+                await gameLogStore.addGameLogLSMedia(gameLog, location);
             } else if (type === 'VideoPlay(PopcornPalace)') {
-                gameLogStore.addGameLogPopcornPalace(gameLog, location);
+                await gameLogStore.addGameLogPopcornPalace(gameLog, location);
             }
             break;
         case 'photon-id':
@@ -509,7 +514,10 @@ export function addGameLogEntry(gameLog, location) {
                 type: 'Event',
                 data: gameLog.event
             };
-            database.addGamelogEventToDatabase(entry);
+            persistedEntryPromise = database.addGamelogEventToDatabase(entry);
+            if (gameStore.isGameRunning && gameLog.event.startsWith('VideoError: ')) {
+                checkYoutubeBotError(gameLog.event);
+            }
             break;
         case 'vrc-quit':
             if (!gameStore.isGameRunning) {
@@ -558,17 +566,74 @@ export function addGameLogEntry(gameLog, location) {
     if (typeof entry !== 'undefined') {
         sharedFeedStore.addEntry(entry);
         notificationStore.queueGameLogNoty(entry);
-        gameLogStore.addGameLog(entry);
+        if (persistedEntryPromise) {
+            const persistedEntry = await persistedEntryPromise;
+            if (persistedEntry) {
+                gameLogStore.addGameLog(persistedEntry);
+            }
+        } else {
+            gameLogStore.addGameLog(entry);
+        }
     }
+}
+
+let youtubeBotErrorPrompted = false;
+
+/**
+ * @param {string} videoError
+ */
+async function checkYoutubeBotError(videoError) {
+    if (youtubeBotErrorPrompted || !videoError.includes('Sign in to confirm')) {
+        return;
+    }
+    youtubeBotErrorPrompted = true;
+    if (await configRepository.getBool('VRCX_hideYoutubeBotErrorPrompt', false)) {
+        return;
+    }
+    const t = i18n.global.t;
+    const { ok, checked } = await useModalStore().confirm({
+        description: t('confirm.youtube_bot_error'),
+        title: t('confirm.youtube_bot_error_title'),
+        checkboxLabel: t('dialog.alertdialog.dont_show_again')
+    });
+    if (checked) {
+        configRepository.setBool('VRCX_hideYoutubeBotErrorPrompt', true);
+    }
+    if (ok) {
+        AppApi.OpenSteamStorePage(4296960);
+    }
+}
+
+let gameLogQueue = Promise.resolve();
+
+/**
+ * Runs game log work one task at a time, in call order.
+ *
+ * @param {() => Promise<void>} task
+ * @returns {Promise<void>}
+ */
+function enqueueGameLogTask(task) {
+    gameLogQueue = gameLogQueue.then(task).catch(console.error);
+    return gameLogQueue;
+}
+
+/**
+ * Queues raw game log JSON so entries are processed in order.
+ * Called from C# / updateLoop.
+ *
+ * @param {string} json
+ * @returns {Promise<void>}
+ */
+export function addGameLogEvent(json) {
+    return enqueueGameLogTask(() => processGameLogEvent(json));
 }
 
 /**
  * Parses raw game log JSON and delegates to addGameLogEntry.
- * Called from C# / updateLoop.
  *
  * @param {string} json
  */
-export function addGameLogEvent(json) {
+async function processGameLogEvent(json) {
     const locationStore = useLocationStore();
 
     const rawLogs = JSON.parse(json);
@@ -581,7 +646,7 @@ export function addGameLogEvent(json) {
     ) {
         console.log('gameLog:', gameLog);
     }
-    addGameLogEntry(gameLog, locationStore.lastLocation.location);
+    await addGameLogEntry(gameLog, locationStore.lastLocation.location);
 }
 
 /**
@@ -602,13 +667,15 @@ async function updateGameLog(dateTill) {
     await new Promise((resolve) => {
         workerTimers.setTimeout(resolve, 10000);
     });
-    let location = '';
-    for (const gameLog of await gameLogService.getAll()) {
-        if (gameLog.type === 'location') {
-            location = gameLog.location;
+    await enqueueGameLogTask(async () => {
+        let location = '';
+        for (const gameLog of await gameLogService.getAll()) {
+            if (gameLog.type === 'location') {
+                location = gameLog.location;
+            }
+            await addGameLogEntry(gameLog, location);
         }
-        addGameLogEntry(gameLog, location);
-    }
+    });
 }
 
 /**

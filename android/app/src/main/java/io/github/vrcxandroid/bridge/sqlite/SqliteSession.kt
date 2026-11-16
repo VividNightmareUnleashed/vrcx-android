@@ -62,6 +62,15 @@ internal class SqliteSession(private val opener: () -> SQLiteConnection) {
         return changed
     }
 
+    /**
+     * `ExecuteInsert`: runs every statement like [executeNonQuery], then returns the connection's last inserted rowid
+     * when rows changed, otherwise 0 (an `INSERT OR IGNORE` that skipped, an UPDATE that matched nothing).
+     */
+    fun executeInsert(sql: String, args: JsonObject?): Long {
+        val changed = executeNonQuery(sql, args)
+        return if (changed > 0) lastInsertRowId() else 0
+    }
+
     /** First column of the first row, or null (native helper). */
     fun queryScalar(sql: String, args: JsonObject? = null): Any? {
         val rows = ListRows()
@@ -70,6 +79,10 @@ internal class SqliteSession(private val opener: () -> SQLiteConnection) {
     }
 
     fun queryRows(sql: String, args: JsonObject? = null): List<List<Any?>> = ListRows().also { query(sql, args, it) }.rows
+
+    private fun lastInsertRowId(): Long = connection().prepare("SELECT last_insert_rowid()").use { s ->
+        if (s.step()) s.getLong(0) else 0
+    }
 
     private fun changes(): Int = connection().prepare("SELECT changes()").use { s ->
         if (s.step()) s.getLong(0).toInt() else 0

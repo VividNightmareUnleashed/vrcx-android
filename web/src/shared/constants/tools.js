@@ -1,12 +1,13 @@
-import { isAndroid } from '../utils/platform';
+import { hasPurchasing, isAndroid } from '../utils/platform';
 
 const toolCategories = [
     { key: 'image', labelKey: 'view.tools.pictures.header' },
     { key: 'shortcuts', labelKey: 'view.tools.shortcuts.header' },
     { key: 'group', labelKey: 'view.tools.group.header' },
     { key: 'system', labelKey: 'view.tools.system_tools.header' },
-    { key: 'user', labelKey: 'view.tools.export.header' },
-    { key: 'other', labelKey: 'view.tools.other.header' }
+    { key: 'marketplace', labelKey: 'view.tools.marketplace.header' },
+    { key: 'other', labelKey: 'view.tools.other.header' },
+    { key: 'user', labelKey: 'view.tools.export.header' }
 ];
 
 const allToolDefinitions = [
@@ -184,6 +185,26 @@ const allToolDefinitions = [
         action: { type: 'dialog', dialogKey: 'group-calendar' }
     },
     {
+        key: 'blocked-groups',
+        category: 'group',
+        iconKey: 'ban',
+        navIcon: 'ri-forbid-line',
+        titleKey: 'view.tools.group.blocked_groups',
+        descriptionKey: 'view.tools.group.blocked_groups_description',
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'blocked-groups' }
+    },
+    {
+        key: 'group-invites',
+        category: 'group',
+        iconKey: 'mail',
+        navIcon: 'ri-mail-line',
+        titleKey: 'view.tools.group.group_invites',
+        descriptionKey: 'view.tools.group.group_invites_description',
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'group-invites' }
+    },
+    {
         key: 'discord-names',
         category: 'user',
         iconKey: 'users',
@@ -224,6 +245,28 @@ const allToolDefinitions = [
         action: { type: 'dialog', dialogKey: 'export-avatars-list' }
     },
     {
+        key: 'vrchat-store',
+        category: 'marketplace',
+        iconKey: 'store',
+        navIcon: 'ri-store-2-line',
+        titleKey: 'view.tools.marketplace.vrchat_store',
+        descriptionKey: 'view.tools.marketplace.vrchat_store_description',
+        purchasing: true,
+        navEligible: true,
+        action: { type: 'route', routeName: 'vrchat-store' }
+    },
+    {
+        key: 'purchase-history',
+        category: 'marketplace',
+        iconKey: 'shopping-bag',
+        navIcon: 'ri-shopping-bag-line',
+        titleKey: 'view.tools.other.purchase_history',
+        descriptionKey: 'view.tools.other.purchase_history_description',
+        purchasing: true,
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'purchase-history' }
+    },
+    {
         key: 'edit-invite-message',
         category: 'other',
         iconKey: 'pencil',
@@ -232,24 +275,46 @@ const allToolDefinitions = [
         descriptionKey: 'view.tools.other.edit_invite_message_description',
         navEligible: true,
         action: { type: 'dialog', dialogKey: 'edit-invite-messages' }
+    },
+    {
+        key: 'moderation-reports',
+        category: 'other',
+        iconKey: 'flag',
+        navIcon: 'ri-flag-line',
+        titleKey: 'view.tools.other.moderation_reports',
+        descriptionKey: 'view.tools.other.moderation_reports_description',
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'moderation-reports' }
+    },
+    {
+        key: 'info-push',
+        category: 'other',
+        iconKey: 'megaphone',
+        navIcon: 'ri-megaphone-line',
+        titleKey: 'view.tools.other.info_push',
+        descriptionKey: 'view.tools.other.info_push_description',
+        navEligible: true,
+        action: { type: 'dialog', dialogKey: 'info-push' }
     }
 ];
 
 /**
- * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) on Android
- * (docs/ARCHITECTURE.md §9). Hidden tools can then neither be opened nor pinned to the nav. A PC tool with an
- * `android` entry is kept on Android with those fields instead (the VRChat photos folder).
+ * Drops tools that need the PC (`pcOnly`: VRChat folders, config.json, launch options, registry) and the purchasing
+ * tools (`purchasing`: VRChat store, purchase history) on Android (docs/ARCHITECTURE.md §9). Hidden tools can then
+ * neither be opened nor pinned to the nav. A PC tool with an `android` entry is kept on Android with those fields
+ * instead (the VRChat photos folder).
  *
- * @param {{ pcOnly?: boolean; android?: object }[]} tools
+ * @param {{ pcOnly?: boolean; purchasing?: boolean; android?: object }[]} tools
  * @param {boolean} [android]
+ * @param {boolean} [purchasing]
  * @returns {object[]}
  */
-function filterToolsForPlatform(tools, android = isAndroid) {
+function filterToolsForPlatform(tools, android = isAndroid, purchasing = hasPurchasing) {
     if (!android) {
         return tools;
     }
     return tools
-        .filter((tool) => !tool.pcOnly || tool.android)
+        .filter((tool) => (!tool.pcOnly || tool.android) && (purchasing || !tool.purchasing))
         .map((tool) => (tool.android ? { ...tool, ...tool.android } : tool));
 }
 

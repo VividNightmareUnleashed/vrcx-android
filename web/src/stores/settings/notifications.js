@@ -26,6 +26,8 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
     const afkDesktopToast = ref(false);
     const notificationTTS = ref('Never');
     const notificationTTSNickName = ref(false);
+    const inventoryBundleNotifications = ref(true);
+    const freeStoreItemNotifications = ref(true);
     const sharedFeedFilters = ref({
         noty: {
             Location: 'Off',
@@ -122,7 +124,6 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
     const notificationTTSTest = ref('');
     const notificationPosition = ref('topCenter');
     const notificationTimeout = ref(3000);
-    const notificationLayout = ref('notification-center');
 
     async function initNotificationsSettings() {
         const [
@@ -137,11 +138,12 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
             afkDesktopToastConfig,
             notificationTTSConfig,
             notificationTTSNickNameConfig,
+            inventoryBundleNotificationsConfig,
+            freeStoreItemNotificationsConfig,
             sharedFeedFiltersConfig,
             notificationTTSVoiceConfig,
             notificationPositionConfig,
-            notificationTimeoutConfig,
-            notificationLayoutConfig
+            notificationTimeoutConfig
         ] = await Promise.all([
             configRepository.getString('VRCX_overlayToast', 'Game Running'),
             configRepository.getBool('VRCX_overlayNotifications', true),
@@ -154,11 +156,12 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
             configRepository.getBool('VRCX_afkDesktopToast', false),
             configRepository.getString('VRCX_notificationTTS', 'Never'),
             configRepository.getBool('VRCX_notificationTTSNickName', false),
+            configRepository.getBool('VRCX_inventoryBundleNotifications', true),
+            configRepository.getBool('VRCX_freeStoreItemNotifications', true),
             configRepository.getString('sharedFeedFilters', JSON.stringify(sharedFeedFiltersDefaults)),
             configRepository.getString('VRCX_notificationTTSVoice', '0'),
             configRepository.getString('VRCX_notificationPosition', 'topCenter'),
-            configRepository.getString('VRCX_notificationTimeout', '3000'),
-            configRepository.getString('VRCX_notificationLayout', 'notification-center')
+            configRepository.getString('VRCX_notificationTimeout', '3000')
         ]);
 
         overlayToast.value = overlayToastConfig;
@@ -183,12 +186,13 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
             afkDesktopToast.value = false;
         }
         notificationTTSNickName.value = notificationTTSNickNameConfig;
+        inventoryBundleNotifications.value = inventoryBundleNotificationsConfig;
+        freeStoreItemNotifications.value = freeStoreItemNotificationsConfig;
         sharedFeedFilters.value = JSON.parse(sharedFeedFiltersConfig);
         notificationTTSVoice.value = Number(notificationTTSVoiceConfig);
         TTSvoices.value = speechSynthesis.getVoices();
         notificationPosition.value = notificationPositionConfig;
         notificationTimeout.value = Number(notificationTimeoutConfig);
-        notificationLayout.value = notificationLayoutConfig;
 
         initSharedFeedFilters();
 
@@ -255,6 +259,14 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
     function setNotificationTTSNickName() {
         notificationTTSNickName.value = !notificationTTSNickName.value;
         configRepository.setBool('VRCX_notificationTTSNickName', notificationTTSNickName.value);
+    }
+    function setInventoryBundleNotifications() {
+        inventoryBundleNotifications.value = !inventoryBundleNotifications.value;
+        configRepository.setBool('VRCX_inventoryBundleNotifications', inventoryBundleNotifications.value);
+    }
+    function setFreeStoreItemNotifications() {
+        freeStoreItemNotifications.value = !freeStoreItemNotifications.value;
+        configRepository.setBool('VRCX_freeStoreItemNotifications', freeStoreItemNotifications.value);
     }
     function initSharedFeedFilters() {
         if (!sharedFeedFilters.value.noty.Blocked) {
@@ -402,14 +414,6 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         vrStore.updateVRConfigVars();
     }
 
-    /**
-     * @param {string} value
-     */
-    function setNotificationLayout(value) {
-        notificationLayout.value = value;
-        configRepository.setString('VRCX_notificationLayout', value);
-    }
-
     function promptNotificationTimeout() {
         modalStore
             .prompt({
@@ -417,13 +421,13 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
                 description: t('prompt.notification_timeout.description'),
                 confirmText: t('prompt.notification_timeout.ok'),
                 cancelText: t('prompt.notification_timeout.cancel'),
-                inputValue: notificationTimeout.value / 1000,
+                inputValue: String(notificationTimeout.value / 1000),
                 pattern: /\d+$/,
                 errorMessage: t('prompt.notification_timeout.input_error')
             })
             .then(async ({ ok, value }) => {
                 if (!ok) return;
-                if (value && !isNaN(value)) {
+                if (value && !isNaN(Number(value))) {
                     notificationTimeout.value = Math.trunc(Number(value) * 1000);
                     await configRepository.setString('VRCX_notificationTimeout', notificationTimeout.value.toString());
                     vrStore.updateVRConfigVars();
@@ -444,6 +448,8 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         afkDesktopToast,
         notificationTTS,
         notificationTTSNickName,
+        inventoryBundleNotifications,
+        freeStoreItemNotifications,
         sharedFeedFilters,
         isTestTTSVisible,
         notificationTTSVoice,
@@ -451,7 +457,6 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         notificationTTSTest,
         notificationPosition,
         notificationTimeout,
-        notificationLayout,
 
         setOverlayToast,
         setOpenVR,
@@ -464,13 +469,14 @@ export const useNotificationsSettingsStore = defineStore('NotificationsSettings'
         setAfkDesktopToast,
         setNotificationTTS,
         setNotificationTTSNickName,
+        setInventoryBundleNotifications,
+        setFreeStoreItemNotifications,
         getTTSVoiceName,
         changeTTSVoice,
         saveNotificationTTS,
         testNotificationTTS,
         speak,
         changeNotificationPosition,
-        setNotificationLayout,
         setNotificationTimeout,
         promptNotificationTimeout
     };

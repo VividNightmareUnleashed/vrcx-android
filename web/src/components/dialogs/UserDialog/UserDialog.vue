@@ -198,7 +198,7 @@
     const { friendLogTable } = storeToRefs(useFriendStore());
     const { clearInviteImageUpload, showGalleryPage } = useGalleryStore();
 
-    const { applyPlayerModeration, handlePlayerModerationDelete } = useModerationStore();
+    const { applyPlayerModeration, handlePlayerModerationDelete, showModerationReportDialog } = useModerationStore();
 
     const {
         sendInviteDialogVisible,
@@ -222,6 +222,7 @@
         showAvatarAuthorDialog,
         showModerateGroupDialog,
         showSendBoopDialog,
+        showModerationReportDialog,
         showGalleryPage,
         getFriendRequest,
         handleFriendDelete,
@@ -252,6 +253,7 @@
         }
     );
 
+    /** @type {import('vue').Ref<any>} */
     const treeData = ref({});
 
     /**

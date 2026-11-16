@@ -1,0 +1,11 @@
+# ParseLogNowPlaying (ProTV "now playing" spec): the JSON object up to the last closing brace of the line; only on
+# lines whose text does not start with '['; checked before the other branch B parsers.
+tz W. Europe Standard Time|Europe/Berlin
+till 2024-05-01T00:00:00.000Z
+file output_log_2024-05-10_12-59-00.txt 2024-05-10T10:59:00Z
+text output_log_2024-05-10_12-59-00.txt 2024-05-10T11:01:00Z 2024.05.10 13:00:00 Debug      -  nowplaying {"id":"Main-1","type":"mediaPlay","mediaTime":12.5}\n2024.05.10 13:00:01 Debug      -  nowplaying {"id":"Main-1","media":{"title":"Été 日本"}} trailing text\n2024.05.10 13:00:02 Debug      -  nowplaying {"id":"Main-1","type":"mediaPause"\n2024.05.10 13:00:03 Log        -  [Behaviour] nowplaying {"id":"bracket"}\n2024.05.10 13:00:04 Debug      -  ProTV nowplaying {"id":"Main-2","type":"mediaEnd"} }\n2024.05.10 13:00:05 Debug      -  nowplaying{"id":"no-space"}\n2024.05.10 13:00:06 Error      -  Maximum number (384) of shader global keywords exceeded nowplaying {"id":"first"}\n2024.05.10 13:00:07 Error      -  Maximum number (384) of shader global keywords exceeded, keyword _FOG_EXP2 will be ignored.\n
+get
+lines
+text output_log_2024-05-10_12-59-00.txt 2024-05-10T11:02:00Z 2024.05.10 13:01:00 Debug      -  nowplaying {"id":"Main-1","type":"mediaStop"}\n
+get
+lines

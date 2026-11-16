@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 
+import { hasPurchasing } from '../shared/utils/platform';
 import { watchState } from '../services/watchState';
 
 import FavoritesAvatar from './../views/Favorites/FavoritesAvatar.vue';
@@ -22,6 +23,7 @@ import ScreenshotMetadata from './../views/Tools/ScreenshotMetadata.vue';
 import Search from './../views/Search/Search.vue';
 import Settings from './../views/Settings/Settings.vue';
 import Tools from './../views/Tools/Tools.vue';
+import VRChatStore from './../views/Tools/VRChatStore.vue';
 
 const routes = [
     {
@@ -126,6 +128,12 @@ const routes = [
                 meta: { navKeys: ['tool-screenshot-metadata', 'tools'] }
             },
             {
+                path: 'tools/vrchat-store',
+                name: 'vrchat-store',
+                component: VRChatStore,
+                meta: { navKeys: ['tool-vrchat-store', 'tools'] }
+            },
+            {
                 path: 'settings',
                 name: 'settings',
                 component: Settings,
@@ -148,6 +156,11 @@ export function initRouter(app) {
 router.beforeEach((to) => {
     if (to.path === '/social') {
         return false;
+    }
+
+    // Android: no purchasing (docs/ARCHITECTURE.md §9), so the VRChat store page cannot be opened by URL either.
+    if (to.name === 'vrchat-store' && !hasPurchasing) {
+        return { name: 'tools' };
     }
 
     if (to.name === 'login' && watchState.isLoggedIn) {

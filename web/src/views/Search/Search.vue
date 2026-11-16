@@ -17,6 +17,10 @@
                     <TabsTrigger value="world">{{ t('view.search.world.header') }}</TabsTrigger>
                     <TabsTrigger value="avatar">{{ t('view.search.avatar.header') }}</TabsTrigger>
                     <TabsTrigger value="group">{{ t('view.search.group.header') }}</TabsTrigger>
+                    <!-- Android: no purchasing, so no marketplace search (docs/ARCHITECTURE.md §9). -->
+                    <TabsTrigger v-if="hasPurchasing" value="marketplace">{{
+                        t('view.search.marketplace.header')
+                    }}</TabsTrigger>
                 </TabsList>
                 <div class="flex min-w-0 flex-1 items-center">
                     <InputGroupField
@@ -67,7 +71,8 @@
                             <Item
                                 v-for="user in searchUserResults"
                                 :key="user.id"
-                                class="cursor-pointer hover:bg-muted x-hover-list rounded-none"
+                                size="sm"
+                                class="cursor-pointer gap-2 px-3 py-2 hover:bg-muted x-hover-list rounded-none"
                                 @click="showUserDialog(user.id)">
                                 <ItemMedia class="relative size-10">
                                     <Avatar class="size-full">
@@ -101,7 +106,7 @@
                                             :title="item.value" />
                                     </ItemTitle>
                                     <ItemDescription v-if="user.bio" class="line-clamp-1 text-xs!">
-                                        {{ user.bio }}
+                                        {{ replaceBioSymbols(user.bio) }}
                                     </ItemDescription>
                                 </ItemContent>
                             </Item>
@@ -287,6 +292,60 @@
                     @prev="paginationConfig.onPrev"
                     @next="paginationConfig.onNext" />
             </TabsContent>
+            <TabsContent
+                v-if="hasPurchasing"
+                value="marketplace"
+                class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
+                <div
+                    class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none! compact-landscape:overflow-visible"
+                    style="flex: 9">
+                    <div v-if="isSearchMarketplaceLoading" class="flex items-center justify-center h-full">
+                        <Spinner class="text-2xl" />
+                    </div>
+                    <template v-else-if="searchMarketplaceResults.length > 0">
+                        <ItemGroup class="grid gap-3 compact:gap-2" :style="{ gridTemplateColumns: resultGridColumns }">
+                            <Item
+                                v-for="avatar in searchMarketplaceResults"
+                                :key="avatar.id"
+                                variant="outline"
+                                size="sm"
+                                class="cursor-pointer p-3"
+                                as-child>
+                                <div class="overflow-hidden" @click="showAvatarDialog(avatar.id)">
+                                    <ItemHeader>
+                                        <img
+                                            :src="avatar.thumbnailImageUrl || avatar.imageUrl"
+                                            :alt="avatar.name"
+                                            loading="lazy"
+                                            class="aspect-[16/10] w-full rounded-lg object-cover" />
+                                    </ItemHeader>
+                                    <ItemContent class="min-w-0">
+                                        <TooltipWrapper side="top" :content="avatar.name">
+                                            <ItemTitle
+                                                class="truncate w-auto compact:line-clamp-2 compact:whitespace-normal"
+                                                >{{ avatar.name }}</ItemTitle
+                                            >
+                                        </TooltipWrapper>
+                                        <ItemDescription class="line-clamp-1 text-xs">
+                                            {{ avatar.authorName }}
+                                        </ItemDescription>
+                                        <ItemDescription class="line-clamp-1 text-xs">
+                                            {{ formatMarketplacePrice(avatar) }}
+                                        </ItemDescription>
+                                    </ItemContent>
+                                </div>
+                            </Item>
+                        </ItemGroup>
+                    </template>
+                    <DataTableEmpty v-else type="nodata" />
+                </div>
+                <SearchPagination
+                    :show="paginationConfig.show"
+                    :prev-disabled="paginationConfig.prevDisabled"
+                    :next-disabled="paginationConfig.nextDisabled"
+                    @prev="paginationConfig.onPrev"
+                    @next="paginationConfig.onNext" />
+            </TabsContent>
             <TabsContent value="group" class="flex flex-col min-h-0 flex-1 compact-landscape:flex-none">
                 <div
                     class="flex-1 overflow-y-auto min-h-0 compact-landscape:flex-none! compact-landscape:overflow-visible"
@@ -298,7 +357,8 @@
                         <Item
                             v-for="group in searchGroupResults"
                             :key="group.id"
-                            class="cursor-pointer hover:bg-muted x-hover-list rounded-none"
+                            size="sm"
+                            class="cursor-pointer gap-2 px-3 py-2 hover:bg-muted x-hover-list rounded-none"
                             @click="showGroupDialog(group.id)">
                             <ItemMedia variant="image">
                                 <Avatar class="rounded-sm">
@@ -367,8 +427,10 @@
     import { storeToRefs } from 'pinia';
     import { useI18n } from 'vue-i18n';
 
+    import { hasPurchasing } from '../../shared/utils/platform';
+
     import { useAppearanceSettingsStore, useAuthStore, useAvatarProviderStore, useSearchStore } from '../../stores';
-    import { convertFileUrlToImageUrl, languageClass } from '../../shared/utils';
+    import { commaNumber, convertFileUrlToImageUrl, languageClass, replaceBioSymbols } from '../../shared/utils';
     import { useUserDisplay } from '../../composables/useUserDisplay';
     import { showAvatarDialog } from '../../coordinators/avatarCoordinator';
     import { showGroupDialog } from '../../coordinators/groupCoordinator';
@@ -378,6 +440,7 @@
     import { useSearchWorld } from './composables/useSearchWorld';
     import { useSearchUser } from './composables/useSearchUser';
     import { useSearchGroup } from './composables/useSearchGroup';
+    import { useSearchMarketplace } from './composables/useSearchMarketplace';
     import { getSearchResultGridColumns } from './searchResultGrid';
 
     const { randomUserColours } = storeToRefs(useAppearanceSettingsStore());
@@ -461,13 +524,24 @@
         clearGroupSearch
     } = useSearchGroup();
 
+    const {
+        searchMarketplaceParams,
+        searchMarketplaceResults,
+        searchMarketplaceHasNext,
+        isSearchMarketplaceLoading,
+        searchMarketplace,
+        moreSearchMarketplace,
+        clearMarketplaceSearch
+    } = useSearchMarketplace();
+
+    const pageSize = 60;
     const paginationConfig = computed(() => {
         switch (activeSearchTab.value) {
             case 'user':
                 return {
                     show: searchUserResults.value.length > 0 && !isSearchUserLoading.value,
                     prevDisabled: !searchUserParams.value.offset,
-                    nextDisabled: searchUserResults.value.length < 10,
+                    nextDisabled: searchUserResults.value.length < pageSize,
                     onPrev: () => handleMoreSearchUser(-1),
                     onNext: () => handleMoreSearchUser(1)
                 };
@@ -475,7 +549,7 @@
                 return {
                     show: searchWorldResults.value.length > 0 && !isSearchWorldLoading.value,
                     prevDisabled: !searchWorldParams.value.offset,
-                    nextDisabled: searchWorldResults.value.length < 10,
+                    nextDisabled: searchWorldResults.value.length < pageSize,
                     onPrev: () => moreSearchWorld(-1),
                     onNext: () => moreSearchWorld(1)
                 };
@@ -489,11 +563,19 @@
                     onPrev: () => moreSearchAvatar(-1),
                     onNext: () => moreSearchAvatar(1)
                 };
+            case 'marketplace':
+                return {
+                    show: searchMarketplaceResults.value.length > 0 && !isSearchMarketplaceLoading.value,
+                    prevDisabled: !searchMarketplaceParams.value.offset,
+                    nextDisabled: !searchMarketplaceHasNext.value,
+                    onPrev: () => moreSearchMarketplace(-1),
+                    onNext: () => moreSearchMarketplace(1)
+                };
             case 'group':
                 return {
                     show: searchGroupResults.value.length > 0 && !isSearchGroupLoading.value,
                     prevDisabled: !searchGroupParams.value.offset,
-                    nextDisabled: searchGroupResults.value.length < 10,
+                    nextDisabled: searchGroupResults.value.length < pageSize,
                     onPrev: () => moreSearchGroup(-1),
                     onNext: () => moreSearchGroup(1)
                 };
@@ -506,11 +588,27 @@
         return convertFileUrlToImageUrl(url);
     }
 
+    function formatMarketplacePrice(avatar) {
+        const prices = (avatar.publishedListings ?? [])
+            .map((listing) => listing.priceTokens)
+            .filter((price) => typeof price === 'number');
+        const lowestPrice = prices.length ? Math.min(...prices) : avatar.lowestPrice;
+        const highestPrice = prices.length ? Math.max(...prices) : avatar.highestPrice;
+        if (lowestPrice == null) {
+            return '';
+        }
+        if (highestPrice == null || highestPrice === lowestPrice) {
+            return `${commaNumber(lowestPrice)}V`;
+        }
+        return `${commaNumber(lowestPrice)}V – ${commaNumber(highestPrice)}V`;
+    }
+
     function handleClearSearch() {
         clearUserSearch();
         clearWorldSearch();
         clearAvatarSearch();
         clearGroupSearch();
+        clearMarketplaceSearch();
         clearSearch();
     }
 
@@ -535,6 +633,9 @@
                 break;
             case 'avatar':
                 searchAvatar();
+                break;
+            case 'marketplace':
+                searchMarketplace();
                 break;
             case 'group':
                 searchGroup();

@@ -4,7 +4,14 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { TooltipWrapper } from '../../components/ui/tooltip';
 import { ArrowDown, ArrowRight, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-vue-next';
-import { formatDateFilter, statusClass, timeToText } from '../../shared/utils';
+import {
+    formatDateFilter,
+    getFaviconUrl,
+    openExternalLink,
+    replaceBioSymbols,
+    statusClass,
+    timeToText
+} from '../../shared/utils';
 import { i18n } from '../../plugins/i18n';
 import { useGalleryStore, useFriendStore } from '../../stores';
 import { showUserDialog } from '../../coordinators/userCoordinator';
@@ -149,12 +156,26 @@ const expandedRow = ({ row }) => {
     }
 
     if (type === 'Bio') {
+        const links = getBioLinksDifference(original.previousBioLinks, original.bioLinks);
         return (
             <div class="pl-5 text-sm">
                 <pre
                     class="text-xs leading-5.5 whitespace-pre-wrap font-[inherit]"
-                    innerHTML={formatDifference(original.previousBio, original.bio)}
+                    innerHTML={formatDifference(
+                        replaceBioSymbols(original.previousBio),
+                        replaceBioSymbols(original.bio)
+                    )}
                 ></pre>
+                {links.length ? (
+                    <div class="mt-1 flex flex-col gap-0.5 text-xs">
+                        {links.map(({ link, className }) => (
+                            <span class="flex items-center gap-1 cursor-pointer" onClick={() => openExternalLink(link)}>
+                                <img src={getFaviconUrl(link)} class="size-4" loading="lazy" />
+                                <span class={className}>{link}</span>
+                            </span>
+                        ))}
+                    </div>
+                ) : null}
             </div>
         );
     }
@@ -356,7 +377,7 @@ export const columns = [
             }
 
             if (type === 'Bio') {
-                return <span class="block w-full min-w-0 truncate">{original.bio}</span>;
+                return <span class="block w-full min-w-0 truncate">{replaceBioSymbols(original.bio)}</span>;
             }
 
             return null;
@@ -364,18 +385,25 @@ export const columns = [
     }
 ];
 
-/**
- * Function that format the differences between two strings with HTML tags markerStartTag and markerEndTag are optional,
- * if emitted, the differences will be highlighted with yellow and underlined.
- *
- * @param {any} s1
- * @param {any} s2
- * @param {any} markerStartTag
- * @param {any} markerEndTag
- * @returns An array that contains both the string 1 and string 2, which the differences are formatted with HTML tags
- */
+function getBioLinksDifference(previousLinks = [], links = []) {
+    return [
+        ...links.map((link) => ({
+            link,
+            className: previousLinks.includes(link) ? '' : 'x-text-added'
+        })),
+        ...previousLinks.filter((link) => !links.includes(link)).map((link) => ({ link, className: 'x-text-removed' }))
+    ];
+}
 
-//function getWordDifferences
+/**
+ * Builds an HTML-escaped word diff of two strings, wrapping removed and added words in the given markers.
+ *
+ * @param {any} oldString
+ * @param {any} newString
+ * @param {string} [markerAddition] HTML template for added words; `{{text}}` is replaced with the words
+ * @param {string} [markerDeletion] HTML template for removed words; `{{text}}` is replaced with the words
+ * @returns {string} HTML string with newlines converted to `<br>`
+ */
 function formatDifference(
     oldString,
     newString,

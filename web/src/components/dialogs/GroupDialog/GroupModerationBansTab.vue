@@ -1,5 +1,5 @@
 <template>
-    <div style="margin-top: 8px">
+    <div class="flex h-full min-h-0 flex-col gap-2">
         <!-- Phones, and touch tablets (the PC layout is 12px too wide for the 800px portrait tablet): wrap. -->
         <div class="flex justify-between compact:flex-wrap compact:gap-2 pointer-coarse:flex-wrap pointer-coarse:gap-2">
             <div class="flex gap-2 items-center">
@@ -39,7 +39,7 @@
         </div>
 
         <DataTableLayout
-            style="margin-top: 8px"
+            :auto-height="!isCompact"
             :table="tanstackTable"
             :loading="loading"
             :page-sizes="pageSizes"
@@ -59,15 +59,22 @@
     import { hasGroupPermission } from '@/shared/utils';
     import { createColumns } from './groupMemberModerationBansColumns.jsx';
     import { useVrcxVueTable } from '@/lib/table/useVrcxVueTable';
+    import { useCompactLayout } from '@/composables/useCompactLayout';
 
     const props = defineProps({
         loading: { type: Boolean, default: false },
         tableData: { type: Object, required: true },
         groupRef: { type: Object, default: () => ({}) },
-        pageSizes: { type: Array, required: true },
-        columnContext: { type: Object, required: true },
+        pageSizes: { type: /** @type {import('vue').PropType<number[]>} */ (Array), required: true },
+        columnContext: {
+            type: /** @type {import('vue').PropType<Parameters<typeof createColumns>[0]>} */ (Object),
+            required: true
+        },
         handlePageChange: { type: Function, required: true }
     });
+
+    // Phones: the moderation dialog scrolls as one page, so the tables keep their natural height there.
+    const { isCompact } = useCompactLayout();
 
     defineEmits(['refresh', 'select-all', 'export', 'import']);
 

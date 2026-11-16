@@ -394,6 +394,57 @@ test('focus fires onBrowserFocus with a null event', () => {
     assert.deepEqual(calls, [null]);
 });
 
+test('hiding the app fires onBrowserBlur with a null event, showing it does not', () => {
+    const env = createEnv();
+    const calls = [];
+    env.win.electron.onBrowserBlur((event) => calls.push(event));
+    env.event('visibility', { visible: true, paused: false });
+    assert.deepEqual(calls, []);
+    env.event('visibility', { visible: false });
+    assert.deepEqual(calls, [null]);
+});
+
+test('system theme changes reach the last onSystemThemeChanged subscriber; setThemeSource resolves', async () => {
+    const env = createEnv();
+    const queries = [];
+    env.win.matchMedia = (query) => {
+        const target = new EventTarget();
+        target.media = query;
+        queries.push(target);
+        return target;
+    };
+    const first = [];
+    const second = [];
+    env.win.electron.onSystemThemeChanged((event, isDark) => first.push([event, isDark]));
+    const off = env.win.electron.onSystemThemeChanged((event, isDark) => second.push([event, isDark]));
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].media, '(prefers-color-scheme: dark)');
+
+    const change = (matches) => {
+        const event = new Event('change');
+        event.matches = matches;
+        queries[0].dispatchEvent(event);
+    };
+    change(true);
+    change(false);
+    assert.deepEqual(first, []);
+    assert.deepEqual(second, [
+        [null, true],
+        [null, false]
+    ]);
+    off();
+    change(true);
+    assert.equal(second.length, 2);
+    assert.equal(await env.win.electron.setThemeSource('dark'), undefined);
+});
+
+test('onSystemThemeChanged without matchMedia is a no-op', () => {
+    const env = createEnv();
+    const off = env.win.electron.onSystemThemeChanged(() => {});
+    assert.equal(typeof off, 'function');
+    off();
+});
+
 test('events reach __vrcxAndroid.on subscribers and window CustomEvents', () => {
     const env = createEnv();
     const seen = [];

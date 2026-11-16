@@ -793,6 +793,9 @@ export function webApi(path, query, method, options, data) {
     }
 
     // --- groups
+    match = path.match(/^groups\/(grp_[^/]+)\/roles$/);
+    if (match && method === 'GET' && GROUP_BASE[match[1]]) return GROUP_BASE[match[1]].roles;
+
     match = path.match(/^users\/usr_[^/]+\/instances\/groups\/(grp_[^/]+)$/);
     if (match && GROUP_BASE[match[1]]) {
         return { instances: groupInstances(match[1], data), fetchedAt: new Date().toISOString() };

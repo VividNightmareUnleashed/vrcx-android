@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
-import { getCoreRowModel, getPaginationRowModel, getSortedRowModel, useVueTable } from '@tanstack/vue-table';
 
 const layout = vi.hoisted(() => ({ compact: null, coarse: null }));
 vi.mock('@/composables/useCompactLayout', async () => {
@@ -34,6 +33,7 @@ vi.mock('@/shared/utils/platform', () => ({ isAndroid: true }));
 import { i18n } from '../../../../plugins/i18n';
 import { TooltipProvider } from '../../tooltip';
 import DataTableLayout from '../DataTableLayout.vue';
+import { useVrcxVueTable } from '../../../../lib/table/useVrcxVueTable';
 
 const rows = [
     { id: 'a', name: 'Alice', type: 'GPS' },
@@ -62,16 +62,14 @@ function mountLayout({ columns = buildColumns(), props = {}, tableOptions = {}, 
     let table;
     const Host = defineComponent({
         setup() {
-            table = useVueTable({
+            ({ table } = useVrcxVueTable({
                 data: rows,
                 columns,
                 getRowId: (row) => row.id,
-                getCoreRowModel: getCoreRowModel(),
-                getSortedRowModel: getSortedRowModel(),
-                getPaginationRowModel: getPaginationRowModel(),
-                meta,
-                ...tableOptions
-            });
+                fillRemainingSpace: false,
+                ...tableOptions,
+                tableOptions: { meta }
+            }));
             // App.vue provides the tooltip context in the app.
             return () =>
                 h(TooltipProvider, null, () =>
@@ -168,7 +166,7 @@ describe('DataTableLayout on phones', () => {
         );
         direction.click();
         await nextTick();
-        expect(getTable().getState().sorting).toEqual([{ id: 'name', desc: true }]);
+        expect(getTable().atoms.sorting.get()).toEqual([{ id: 'name', desc: true }]);
         expect(wrapper.findAll('.cell-name').map((n) => n.text())).toEqual(['Cleo', 'Bob', 'Alice']);
 
         const reset = [...sheet.querySelectorAll('button')].find((b) => b.textContent.includes('Reset'));

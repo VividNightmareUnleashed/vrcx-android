@@ -54,7 +54,7 @@
                             </TableCell>
 
                             <TableCell class="truncate font-medium" :class="player.ref?.$trustClass">
-                                {{ player.displayName }}
+                                {{ player.displayName || player.ref?.id }}
                             </TableCell>
 
                             <TableCell

@@ -65,19 +65,9 @@ describe('GroupModerationBulkActions.vue', () => {
     });
 
     describe('rendering', () => {
-        test('renders user ID input field', () => {
-            const wrapper = mountComponent();
-            expect(wrapper.text()).toContain('dialog.group_member_moderation.user_id');
-        });
-
         test('renders selected users section', () => {
             const wrapper = mountComponent();
             expect(wrapper.text()).toContain('dialog.group_member_moderation.selected_users');
-        });
-
-        test('renders roles dropdown with available roles', () => {
-            const wrapper = mountComponent();
-            expect(wrapper.text()).toContain('dialog.group_member_moderation.selected_roles');
         });
 
         test('renders action buttons', () => {
@@ -174,14 +164,6 @@ describe('GroupModerationBulkActions.vue', () => {
             expect(addBtn.attributes('disabled')).toBeDefined();
         });
 
-        test('add/remove roles enabled when roles are selected', () => {
-            const wrapper = mountComponent({ selectedRoles: ['role_1'] });
-            const addBtn = wrapper
-                .findAll('button')
-                .find((b) => b.text().includes('dialog.group_member_moderation.add_roles'));
-            expect(addBtn.attributes('disabled')).toBeUndefined();
-        });
-
         test('action buttons disabled during progress', () => {
             const wrapper = mountComponent({
                 selectedRoles: ['role_1'],
@@ -192,22 +174,6 @@ describe('GroupModerationBulkActions.vue', () => {
                 .findAll('button')
                 .find((b) => b.text().includes('dialog.group_member_moderation.kick'));
             expect(kickBtn.attributes('disabled')).toBeDefined();
-        });
-
-        test('select user button disabled when no user ID entered', () => {
-            const wrapper = mountComponent({ selectUserId: '' });
-            const selectBtn = wrapper
-                .findAll('button')
-                .find((b) => b.text().includes('dialog.group_member_moderation.select_user'));
-            expect(selectBtn.attributes('disabled')).toBeDefined();
-        });
-
-        test('select user button enabled when user ID is entered', () => {
-            const wrapper = mountComponent({ selectUserId: 'usr_test' });
-            const selectBtn = wrapper
-                .findAll('button')
-                .find((b) => b.text().includes('dialog.group_member_moderation.select_user'));
-            expect(selectBtn.attributes('disabled')).toBeUndefined();
         });
     });
 
@@ -244,27 +210,6 @@ describe('GroupModerationBulkActions.vue', () => {
     });
 
     describe('events', () => {
-        test('emits select-user on select button click', async () => {
-            const wrapper = mountComponent({ selectUserId: 'usr_test' });
-            const selectBtn = wrapper
-                .findAll('button')
-                .find((b) => b.text().includes('dialog.group_member_moderation.select_user'));
-            await selectBtn.trigger('click');
-            expect(wrapper.emitted('select-user')).toBeTruthy();
-        });
-
-        test('emits clear-all on trash button click', async () => {
-            const wrapper = mountComponent();
-            // The trash button is the rounded-full icon-sm button after "selected_users" label
-            const buttons = wrapper.findAll('button');
-            const trashBtn = buttons.find((b) => {
-                const classes = b.classes();
-                return classes.includes('rounded-full');
-            });
-            await trashBtn.trigger('click');
-            expect(wrapper.emitted('clear-all')).toBeTruthy();
-        });
-
         test('emits delete-user when removing a selected user', async () => {
             const user = {
                 id: 'usr_1',
@@ -277,15 +222,6 @@ describe('GroupModerationBulkActions.vue', () => {
             const deleteBtn = wrapper.find('button[type="button"]');
             await deleteBtn.trigger('click');
             expect(wrapper.emitted('delete-user')?.[0]?.[0]).toEqual(user);
-        });
-
-        test('emits ban on ban button click', async () => {
-            const wrapper = mountComponent();
-            const banBtn = wrapper
-                .findAll('button')
-                .find((b) => b.text().includes('dialog.group_member_moderation.ban'));
-            await banBtn.trigger('click');
-            expect(wrapper.emitted('ban')).toBeTruthy();
         });
 
         test('emits cancel-progress on cancel click', async () => {

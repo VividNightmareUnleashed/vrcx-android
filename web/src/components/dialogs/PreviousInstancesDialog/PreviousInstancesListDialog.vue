@@ -65,7 +65,7 @@
         variant: {
             type: String,
             required: true,
-            validator: (value) => ['user', 'world', 'group'].includes(value)
+            validator: (value) => ['user', 'world', 'group'].includes(String(value))
         }
     });
 
@@ -206,7 +206,6 @@
         createPreviousInstancesColumns(props.variant, {
             shiftHeld,
             currentUserId: currentUser.value?.id,
-            forceUpdateKey: previousInstancesListDialog.value?.forceUpdate,
             onLaunch: showLaunchDialog,
             onShowInfo: handleShowInfo,
             onDelete: deleteGameLogInstance,

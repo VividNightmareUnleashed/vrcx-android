@@ -40,7 +40,10 @@ vi.mock('../../coordinators/userCoordinator', () => ({ getCurrentUser: vi.fn(), 
 vi.mock('../auth', () => ({ useAuthStore: () => ({ updateStoredUser: vi.fn() }) }));
 vi.mock('../settings/discordPresence', () => ({ useDiscordPresenceSettingsStore: () => ({ discordActive: false }) }));
 vi.mock('../friend', () => ({ useFriendStore: () => ({ setIsRefreshFriendsLoading: vi.fn() }) }));
-vi.mock('../user', () => ({ useUserStore: () => ({ currentUser: {} }) }));
+vi.mock('../user', () => ({ useUserStore: () => ({ currentUser: {}, getAllProductPurchases: vi.fn() }) }));
+vi.mock('../notification', () => ({
+    useNotificationStore: () => ({ checkInventoryBundles: vi.fn(), checkFreeStoreItems: vi.fn() })
+}));
 vi.mock('../vrcxUpdater', () => ({ useVRCXUpdaterStore: () => ({ autoUpdateVRCX: 'Off' }) }));
 vi.mock('../vr', () => ({ useVrStore: () => ({ vrInit: vi.fn() }) }));
 vi.mock('../vrcx', () => ({

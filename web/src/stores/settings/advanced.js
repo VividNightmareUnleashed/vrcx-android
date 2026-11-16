@@ -59,7 +59,21 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
     const progressPieFilter = ref(true);
     const showConfirmationOnSwitchAvatar = ref(false);
     const gameLogDisabled = ref(false);
-    const sqliteTableSizes = ref({});
+    const sqliteTableSizes = ref({
+        gps: 0,
+        status: 0,
+        bio: 0,
+        avatar: 0,
+        onlineOffline: 0,
+        friendLogHistory: 0,
+        notification: 0,
+        location: 0,
+        joinLeave: 0,
+        portalSpawn: 0,
+        videoPlay: 0,
+        event: 0,
+        external: 0
+    });
     const avatarAutoCleanup = ref('Off');
     const purgeInProgress = ref(false);
     const ugcFolderPath = ref('');
@@ -360,6 +374,7 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
             }
         }
 
+        /** @type {Record<string, string>} */
         const headers = {};
         const keyToUse = overrides.key ?? translationApiKey.value;
         if (keyToUse) {
@@ -478,7 +493,7 @@ export const useAdvancedSettingsStore = defineStore('AdvancedSettings', () => {
 
         if (lastCleanupStr) {
             const lastCleanup = new Date(lastCleanupStr);
-            const daysSinceLastCleanup = (now - lastCleanup) / (1000 * 60 * 60 * 24);
+            const daysSinceLastCleanup = (now.getTime() - lastCleanup.getTime()) / (1000 * 60 * 60 * 24);
             if (daysSinceLastCleanup < 7) return;
         }
 

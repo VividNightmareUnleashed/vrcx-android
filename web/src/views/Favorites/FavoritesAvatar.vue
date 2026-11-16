@@ -107,7 +107,7 @@
                 </div>
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center justify-between font-semibold text-sm mb-[9px]">
-                        <span>{{ t('view.favorite.avatars.local_favorites') }}</span>
+                        <span>{{ t('view.favorite.worlds.local_favorites') }}</span>
                         <template v-if="!refreshingLocalFavorites">
                             <Button
                                 class="rounded-full"
@@ -173,15 +173,13 @@
                         </div>
                         <TooltipWrapper
                             v-if="!isCreatingLocalGroup"
-                            :disabled="isLocalUserVrcPlusSupporter"
-                            :content="t('view.favorite.avatars.local_favorites')">
+                            :content="t('view.favorite.worlds.local_favorites')">
                             <div
                                 :class="[
                                     'group-item x-hover-card hover:shadow-sm',
-                                    'border-dashed flex items-center justify-center gap-2 text-sm',
-                                    { 'opacity-50 cursor-not-allowed': !isLocalUserVrcPlusSupporter }
+                                    'border-dashed flex items-center justify-center gap-2 text-sm'
                                 ]"
-                                @click="handleNewLocalGroupClick">
+                                @click="startLocalGroupCreation">
                                 <Plus />
                                 <span>{{ t('view.favorite.avatars.new_group') }}</span>
                             </div>
@@ -470,13 +468,7 @@
         DropdownMenuSubTrigger,
         DropdownMenuTrigger
     } from '../../components/ui/dropdown-menu';
-    import {
-        useAppearanceSettingsStore,
-        useAvatarStore,
-        useFavoriteStore,
-        useModalStore,
-        useUserStore
-    } from '../../stores';
+    import { useAppearanceSettingsStore, useAvatarStore, useFavoriteStore, useModalStore } from '../../stores';
     import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../../components/ui/resizable';
     import { avatarRequest, favoriteRequest } from '../../api';
     import { debounce } from '../../shared/utils';
@@ -537,14 +529,13 @@
         favoriteStore;
     const { avatarHistory } = storeToRefs(useAvatarStore());
     import { promptClearAvatarHistory, showAvatarDialog, applyAvatar } from '../../coordinators/avatarCoordinator';
-    const { isLocalUserVrcPlusSupporter } = storeToRefs(useUserStore());
     const { t } = useI18n();
 
     // Phones: the group list opens as a left sheet instead of the splitter panel, and the cards sit two per row
     // (docs/DESIGN.md §3.4). The panels are defined once in the template and placed by layout.
     const [DefineGroupPanel, ReuseGroupPanel] = createReusableTemplate();
     const [DefineContentPanel, ReuseContentPanel] = createReusableTemplate();
-    const { isCompact, isCompactLandscape, isCoarsePointer } = useCompactLayout();
+    const { isCompact, isCompactLandscape } = useCompactLayout();
     const groupSheetOpen = ref(false);
     // The sheet is teleported to <body>: close it when the page is left, so it never covers another page.
     onDeactivated(() => {
@@ -762,18 +753,8 @@
         handleLocalGroupCreationConfirm
     } = useFavoritesLocalGroups({
         createGroup: newLocalAvatarFavoriteGroup,
-        selectGroup,
-        canCreate: () => isLocalUserVrcPlusSupporter.value
+        selectGroup
     });
-
-    function handleNewLocalGroupClick() {
-        // Touch: the VRC+ explanation is a hover tooltip on PC, so a tap on the disabled button shows it as a toast.
-        if (isCoarsePointer.value && !isLocalUserVrcPlusSupporter.value) {
-            toast.info(t('view.favorite.avatars.local_favorites'));
-            return;
-        }
-        startLocalGroupCreation();
-    }
 
     /**
      * @param id

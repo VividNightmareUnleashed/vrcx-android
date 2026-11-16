@@ -34,6 +34,14 @@ vi.mock('../../services/config', () => ({
         getString: vi.fn(async (key) => (key === 'launchArguments' ? '--fps=144' : null))
     }
 }));
+// shared/utils re-exports formatDateFilter, whose coordinator reaches the stores and, through them, websocket.js;
+// the test loader cannot finish that cycle (websocket.js calls debounce() at load), and nothing here uses the socket.
+vi.mock('../../services/websocket', () => ({
+    wsState: { connected: false, messageCount: 0, bytesReceived: 0 },
+    initWebsocket: vi.fn(),
+    closeWebSocket: vi.fn(),
+    reconnectWebSocket: vi.fn()
+}));
 vi.mock('../../services/watchState', () => ({ watchState: { isLoggedIn: false } }));
 vi.mock('../../api', () => ({
     instanceRequest: { getInstanceShortName: vi.fn(), selfInvite: vi.fn() }

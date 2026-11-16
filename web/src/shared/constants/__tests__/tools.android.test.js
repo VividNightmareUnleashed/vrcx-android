@@ -1,6 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('../../utils/platform', async (importOriginal) => ({ ...(await importOriginal()), isAndroid: true }));
+vi.mock('../../utils/platform', async (importOriginal) => ({
+    ...(await importOriginal()),
+    isAndroid: true,
+    hasPurchasing: false
+}));
 
 import {
     allToolDefinitions,
@@ -59,10 +63,24 @@ describe('tools on Android', () => {
             'image',
             'group',
             'system',
-            'user',
-            'other'
+            'other',
+            'user'
         ]);
         expect(getToolsByCategory('system').map((tool) => tool.key)).toEqual(['auto-change-status']);
+    });
+
+    test('offers no purchasing: the VRChat store and the purchase history are hidden with their category', () => {
+        const purchasing = allToolDefinitions.filter((tool) => tool.purchasing).map((tool) => tool.key);
+        expect(purchasing).toEqual(['vrchat-store', 'purchase-history']);
+        for (const key of purchasing) {
+            expect(toolDefinitionMap.has(key)).toBe(false);
+            expect(toolNavDefinitions.map((item) => item.key)).not.toContain(`tool-${key}`);
+        }
+        expect(getToolsByCategory('marketplace')).toEqual([]);
+        // Desktop keeps them.
+        expect(filterToolsForPlatform(allToolDefinitions, false).map((tool) => tool.key)).toEqual(
+            expect.arrayContaining(purchasing)
+        );
     });
 
     test('shows the VRChat photos folder as Photos folder with the picture tools', () => {

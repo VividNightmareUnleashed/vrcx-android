@@ -26,8 +26,10 @@ vi.mock('../../../shared/utils/platform', async (importOriginal) => ({
     hasLocalVrchatFiles: false
 }));
 
-Object.assign(globalThis, {
-    navigator: { clipboard: { writeText: (...a) => mocks.writeText(...a) } }
+// jsdom's window.navigator is a getter: replace only the clipboard on it.
+Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: (...a) => mocks.writeText(...a) }
 });
 
 vi.mock('pinia', async (i) => ({ ...(await i()), storeToRefs: (s) => s }));

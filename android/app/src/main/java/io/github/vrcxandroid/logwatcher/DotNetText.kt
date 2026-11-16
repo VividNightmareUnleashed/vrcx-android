@@ -81,7 +81,7 @@ internal object DotNetUtf8 {
 
 /**
  * `System.Text.Json.JsonSerializer.Serialize(string[])` with the default options (`JavaScriptEncoder.Default`), which
- * is how upstream builds the `GetLogLines()` strings (`LogWatcher.cs:292`). Rules, as observed on .NET 10:
+ * is how upstream builds the `GetLogLines()` strings (`LogWatcher.cs:293`). Rules, as observed on .NET 10:
  * backslash as `\\`; backspace, tab, LF, form feed and CR as the short escapes `\b \t \n \f \r`; the double quote,
  * `& ' + < >`, backquote, the other C0 controls, DEL and every non-ASCII UTF-16 code unit as a six-character
  * `\uXXXX` escape (uppercase hex); a surrogate that is not part of a high-low pair as `�`; `null` elements as

@@ -42,7 +42,7 @@
 
     const props = defineProps({
         activityDetailData: {
-            type: Array,
+            type: /** @type {import('vue').PropType<any[]>} */ (Array),
             required: true
         },
         barWidth: {

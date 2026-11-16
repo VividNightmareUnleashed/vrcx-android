@@ -1,6 +1,5 @@
 LocalTZ=W. Europe Standard Time
 --- phase1 (first run): Get()
-["output_log_2024-01-01_09-59-00.txt","2023-06-01T08:00:01.000Z","udon-exception","2023.06.01 10:00:01 Log        -  [PyPyDance] old line before tillDate"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:00.000Z","location","wrld_aaa:1~region(eu)",null]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:01.000Z","location-destination",null]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:03.000Z","location-destination","wrld_4432ea9b-729c-46e3-8eaf-846aa0a37fddx"]
@@ -16,7 +15,7 @@ LocalTZ=W. Europe Standard Time
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:16.000Z","event","Joining instance blocked by master"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:17.000Z","event","User changed avatar pedestal"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:18.000Z","event","VideoError: Video unavailable"]
-["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:19.000Z","event","VideoError: [VRCX] Fix error with this: https://github.com/EllyVR/VRCVideoCacher\nSign in to confirm you\u0027re not a bot"]
+["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:19.000Z","event","VideoError: Sign in to confirm you\u0027re not a bot"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:20.000Z","event","VideoError: Loading failed.  File not found."]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:21.000Z","event","VideoError: Attempted to play an untrusted URL (Domain: localhost) that is not allowlisted for public instances."]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:22.000Z","vrcx","VideoPlay(PyPyDance) \u0022https://jd.pypy.moe/api/v1/videos/-Q3pdlsQxOk.mp4\u0022,0.5338666,260.6938,\u00221339 : Le Freak (Random)\u0022"]
@@ -43,7 +42,6 @@ LocalTZ=W. Europe Standard Time
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:48.000Z","desktop-mode"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:49.000Z","vrc-quit"]
 ["output_log_2024-01-01_09-59-00.txt","<NOW: DateTime.UtcNow at parse time>","udon-exception"," ---\u003E VRC.Udon.VM.UdonVMException: An exception occurred during EXTERN to \u0027X\u0027."]
-["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:51.000Z","udon-exception","2024.01.01 10:00:51 Log        -  [PyPyDance] something"]
 ["output_log_2024-01-01_09-59-00.txt","2024-01-01T09:00:54.000Z","player-joined","CRLF","usr_crlf"]
 --- phase1 (first run): GetLogLines() count=0
 --- VrcClosedGracefully=True

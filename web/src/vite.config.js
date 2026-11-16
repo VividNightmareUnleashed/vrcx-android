@@ -65,7 +65,7 @@ function androidFontAliases() {
 }
 
 /**
- * @param assetId
+ * @param {string | undefined} assetId
  */
 function getAssetLanguage(assetId) {
     if (!assetId) return null;
@@ -78,18 +78,18 @@ function getAssetLanguage(assetId) {
 
     const language =
         // Font assets, e.g., noto-sans-jp-regular.woff2 mapped to language code.
-        {
+        /** @type {Record<string, string>} */ ({
             jp: 'ja',
             sc: 'zh-CN',
             tc: 'zh-TW',
             kr: 'ko'
-        }[assetId.split('noto-sans-')[1]?.split('-')[0]];
+        })[assetId.split('noto-sans-')[1]?.split('-')[0]];
 
     return language || null;
 }
 
 /**
- * @param moduleId
+ * @param {string} moduleId
  */
 function getManualChunk(moduleId) {
     const basename = moduleId.split('/').pop();
@@ -113,7 +113,7 @@ function isFont(name) {
  */
 function getAssetFilename({ name }) {
     const language = getAssetLanguage(name);
-    if (!language) return `assets/${defaultAssetName}`;
+    if (!name || !language) return `assets/${defaultAssetName}`;
 
     if (isFont(name)) return 'assets/fonts/[name][extname]';
     return 'assets/i18n/[name][extname]';
@@ -130,7 +130,7 @@ export default defineConfig(({ mode }) => {
 
     const version = fs.readFileSync(new URL('../Version', import.meta.url), 'utf-8').trim();
 
-    const nightly = mode === 'development' || version.split('-').at(-1).length === 7;
+    const nightly = mode === 'development' || version.split('-').at(-1)?.length === 7;
 
     // Android build (`npm run build:android`): see docs/ARCHITECTURE.md §10.
     const android = process.env.VRCX_TARGET === 'android';
@@ -228,7 +228,8 @@ export default defineConfig(({ mode }) => {
                 input: buildInputs,
                 output: {
                     assetFileNames: getAssetFilename,
-                    manualChunks: getManualChunk
+                    manualChunks: getManualChunk,
+                    strictExecutionOrder: true
                 }
             }
         }

@@ -68,20 +68,43 @@ describe('GroupModerationBulkActions.vue on phones', () => {
         global: { stubs: { TooltipWrapper: { template: '<span><slot /></span>' } } }
     });
 
-    it('wraps the action buttons so Kick, Ban and Unban stay on screen', () => {
-        const row = wrapper
-            .findAll('div.flex')
+    it('keeps Kick, Ban and Unban on screen in a fixed three-column grid', () => {
+        // Equal columns share the width, so no action is pushed past the edge of a phone-wide panel.
+        const actions = wrapper
+            .findAll('div.grid')
             .find((el) => el.text().includes('dialog.group_member_moderation.unban'));
-        expect(row.classes()).toContain('compact:flex-wrap');
-        for (const label of ['add_roles', 'remove_roles', 'save_note', 'kick', 'ban', 'unban']) {
-            expect(row.text()).toContain(`dialog.group_member_moderation.${label}`);
-        }
+        expect(actions.classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-3']));
+        expect(actions.findAll(':scope > button').map((button) => button.text())).toEqual([
+            'dialog.group_member_moderation.kick',
+            'dialog.group_member_moderation.ban',
+            'dialog.group_member_moderation.unban'
+        ]);
+
+        const roles = wrapper
+            .findAll('div.grid')
+            .find((el) => el.text().includes('dialog.group_member_moderation.add_roles'));
+        expect(roles.classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-2']));
+        expect(roles.text()).toContain('dialog.group_member_moderation.remove_roles');
     });
 
     it('gives the remove-user button of a selected user a touch-sized hit area', () => {
-        const badge = wrapper.findAll('[data-slot="badge"]').find((el) => el.text().includes('A'));
-        const remove = badge.find('button[type="button"]');
+        const row = wrapper.findAll('div.flex.items-center').find((el) => el.text() === 'A');
+        const remove = row.find('button[type="button"]');
         expect(remove.exists()).toBe(true);
-        expect(remove.classes()).toEqual(expect.arrayContaining(['pointer-coarse:size-8']));
+        // 32px on touch, pulled into the row's padding so the row keeps its height.
+        expect(remove.classes()).toEqual(
+            expect.arrayContaining(['pointer-coarse:size-8', 'pointer-coarse:-my-2', 'pointer-coarse:-mr-2'])
+        );
+    });
+
+    it('gives the clear-all and select-user icon buttons a 40px touch target', () => {
+        const buttons = wrapper.findAll('button').filter((el) => el.classes().includes('pointer-coarse:size-10'));
+        expect(buttons).toHaveLength(2);
+        // Clear all sits beside the selected-users count, select user beside the user ID field.
+        expect(buttons[0].classes()).toContain('rounded-full');
+        expect(buttons[0].element.closest('div').textContent).toContain(
+            'dialog.group_member_moderation.selected_users'
+        );
+        expect(buttons[1].classes()).not.toContain('rounded-full');
     });
 });

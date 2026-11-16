@@ -43,7 +43,7 @@ vi.mock('../../services/database', () => ({ database: { addGamelogEventToDatabas
 vi.mock('../../stores/settings/advanced', () => ({ useAdvancedSettingsStore: () => mocks.advancedSettingsStore }));
 vi.mock('../../stores/avatar', () => ({ useAvatarStore: () => ({}) }));
 vi.mock('../avatarCoordinator', () => ({ addAvatarWearTime: vi.fn() }));
-vi.mock('../../stores/gameLog', () => ({ useGameLogStore: () => ({ clearNowPlaying: vi.fn(), addGameLog: vi.fn() }) }));
+vi.mock('../../stores/gameLog', () => ({ useGameLogStore: () => ({ clearNowPlaying: vi.fn(), resetNowPlayingProducers: vi.fn(), addGameLog: vi.fn() }) }));
 vi.mock('../../stores/game', () => ({ useGameStore: () => mocks.gameStore }));
 vi.mock('../../stores/instance', () => ({ useInstanceStore: () => ({ removeAllQueuedInstances: vi.fn() }) }));
 vi.mock('../../stores/launch', () => ({ useLaunchStore: () => mocks.launchStore }));

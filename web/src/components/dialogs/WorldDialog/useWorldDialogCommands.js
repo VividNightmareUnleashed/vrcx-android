@@ -16,7 +16,7 @@ import { removeWorldFromCache } from '../../../coordinators/worldCoordinator';
  * @param {import('vue').Ref} worldDialog - Reactive ref to the world dialog state
  * @param {object} deps - External dependencies
  * @param {Function} deps.t - I18n translation function
- * @param {Function} deps.toast - Toast notification function
+ * @param {{ success: Function; error: Function }} deps.toast - Toast notification API
  * @param {object} deps.modalStore - Modal store for confirm/prompt dialogs
  * @param {import('vue').Ref} deps.userDialog - Reactive ref to the user dialog state
  * @param {Map} deps.cachedWorlds - Cached worlds map
@@ -297,7 +297,9 @@ export function useWorldDialogCommands(
             })
             .then(({ ok, value }) => {
                 if (!ok) return;
-                if (value && value !== world.ref.previewYoutubeId) {
+                value = value.trim();
+                const currentId = world.ref.previewYoutubeId || '';
+                if (value !== currentId) {
                     let processedValue = value;
                     if (value.length > 11) {
                         try {
@@ -315,7 +317,7 @@ export function useWorldDialogCommands(
                             return;
                         }
                     }
-                    if (processedValue !== world.ref.previewYoutubeId) {
+                    if (processedValue !== currentId) {
                         worldRequest
                             .saveWorld({
                                 id: world.id,

@@ -26,7 +26,7 @@
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:46.000Z","event","User changed avatar pedestal"]
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:47.000Z","event"," changed avatar pedestal"]
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:48.000Z","event","VideoError: Video unavailable"]
-["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:50.000Z","event","VideoError: [VRCX] Fix error with this: https://github.com/EllyVR/VRCVideoCacher\nSign in to confirm you\u0027re not a bot"]
+["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:50.000Z","event","VideoError: Sign in to confirm you\u0027re not a bot"]
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:51.000Z","event","VideoError: Loading failed.  File not found."]
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:53.000Z","event","VideoError: OR: shifted tag text here"]
 ["output_log_2024-05-10_11-59-00.txt","2024-05-10T10:00:54.000Z","event","VideoError: "]

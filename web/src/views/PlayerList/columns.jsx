@@ -80,8 +80,9 @@ export const createColumns = ({
                             class="h-4 w-4 rounded-sm object-cover compact:size-8 compact:rounded"
                             loading="lazy"
                             onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.nextElementSibling.style.display = '';
+                                const img = /** @type {HTMLElement} */ (e.target);
+                                img.style.display = 'none';
+                                /** @type {HTMLElement} */ (img.nextElementSibling).style.display = '';
                             }}
                         />
                         <div
@@ -104,7 +105,7 @@ export const createColumns = ({
                 }),
             size: 90,
             meta: { label: () => t('table.playerList.timer'), mobile: { slot: 'trailing', order: 2 } },
-            sortingFn: (rowA, rowB) => (rowA.original?.timer ?? 0) - (rowB.original?.timer ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.timer ?? 0) - (rowB.original?.timer ?? 0),
             cell: ({ row }) => <Timer epoch={row.original?.timer} />
         },
         {
@@ -117,11 +118,11 @@ export const createColumns = ({
                 }),
             size: 200,
             meta: { label: () => t('table.playerList.displayName'), mobile: { slot: 'title' } },
-            sortingFn: (rowA, rowB) => sortAlphabetically(rowA.original, rowB.original, 'displayName'),
+            sortFn: (rowA, rowB) => sortAlphabetically(rowA.original, rowB.original, 'displayName'),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const style = randomUserColours?.value ? { color: userRef?.$userColour } : null;
-                return <span style={style}>{userRef?.displayName ?? ''}</span>;
+                return <span style={style}>{userRef?.displayName || userRef?.id || ''}</span>;
             }
         },
         {
@@ -130,8 +131,7 @@ export const createColumns = ({
             header: ({ column }) => sortButton({ column, label: () => t('table.playerList.rank') }),
             size: 110,
             meta: { label: () => t('table.playerList.rank'), mobile: { slot: 'trailing', order: 1 } },
-            sortingFn: (rowA, rowB) =>
-                (rowA.original?.ref?.$trustSortNum ?? 0) - (rowB.original?.ref?.$trustSortNum ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.ref?.$trustSortNum ?? 0) - (rowB.original?.ref?.$trustSortNum ?? 0),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 return (
@@ -180,7 +180,7 @@ export const createColumns = ({
                 defaultHidden: true,
                 mobile: { slot: 'hidden' }
             },
-            sortingFn: (rowA, rowB) => (rowA.original?.photonId ?? 0) - (rowB.original?.photonId ?? 0),
+            sortFn: (rowA, rowB) => (rowA.original?.photonId ?? 0) - (rowB.original?.photonId ?? 0),
             cell: ({ row }) => {
                 const userRef = row.original?.ref;
                 const userId = userRef?.id;
@@ -227,7 +227,7 @@ export const createColumns = ({
                 label: () => t('table.playerList.icon'),
                 mobile: { slot: 'titleSuffix' }
             },
-            sortingFn: (rowA, rowB, _columnId) => {
+            sortFn: (rowA, rowB, _columnId) => {
                 const a = rowA.original;
                 const b = rowB.original;
                 return -sortInstanceIcon(a, b);
@@ -404,6 +404,26 @@ export const createColumns = ({
             cell: ({ row }) => {
                 const note = row.original?.ref?.note;
                 const text = typeof note === 'string' || typeof note === 'number' ? String(note) : '';
+                if (isCompactLayout() && !text) return null;
+                return <span>{text}</span>;
+            }
+        },
+        {
+            id: 'memo',
+            accessorFn: (row) => row?.ref?.$memo,
+            header: () => t('table.playerList.memo'),
+            size: 150,
+            minSize: 20,
+            meta: {
+                stretch: true,
+                label: () => t('table.playerList.memo'),
+                // Own line under the note, like it.
+                mobile: { slot: 'footer', class: `basis-full ${FOOTER_HIDE_EMPTY}` }
+            },
+            enableSorting: false,
+            cell: ({ row }) => {
+                const memo = row.original?.ref?.$memo;
+                const text = typeof memo === 'string' || typeof memo === 'number' ? String(memo) : '';
                 if (isCompactLayout() && !text) return null;
                 return <span>{text}</span>;
             }

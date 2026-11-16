@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, reactive, ref } from 'vue';
 import { mount } from '@vue/test-utils';
-import { getCoreRowModel, getPaginationRowModel, useVueTable } from '@tanstack/vue-table';
+import { useVrcxVueTable } from '../../../../lib/table/useVrcxVueTable';
 
 const layout = vi.hoisted(() => ({ compact: null, landscape: null, coarse: null }));
 vi.mock('@/composables/useCompactLayout', async () => {
@@ -62,13 +62,12 @@ const columns = [
 function mountLayout(props = {}, slots) {
     const Host = defineComponent({
         setup() {
-            const table = useVueTable({
+            const { table } = useVrcxVueTable({
                 data: rows,
                 columns,
                 getRowId: (row) => row.id,
-                getCoreRowModel: getCoreRowModel(),
-                getPaginationRowModel: getPaginationRowModel(),
-                initialState: { pagination: { pageIndex: 0, pageSize: 10 } }
+                initialPagination: { pageIndex: 0, pageSize: 10 },
+                fillRemainingSpace: false
             });
             return () =>
                 h(TooltipProvider, null, () =>

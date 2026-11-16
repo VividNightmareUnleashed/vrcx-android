@@ -10,7 +10,8 @@
 
             <SettingsItem
                 :label="t('view.settings.advanced.advanced.screenshot_helper.enable')"
-                :description="t('view.settings.advanced.advanced.screenshot_helper.description_tooltip')">
+                :description="t('view.settings.advanced.advanced.screenshot_helper.description_tooltip')"
+                toggle>
                 <Switch
                     :model-value="screenshotHelper"
                     :ariaLabel="t('view.settings.advanced.advanced.screenshot_helper.enable')"
@@ -19,7 +20,8 @@
 
             <SettingsItem
                 :label="t('view.settings.advanced.advanced.screenshot_helper.modify_filename')"
-                :description="t('view.settings.advanced.advanced.screenshot_helper.modify_filename_tooltip')">
+                :description="t('view.settings.advanced.advanced.screenshot_helper.modify_filename_tooltip')"
+                toggle>
                 <Switch
                     :model-value="screenshotHelperModifyFilename"
                     :disabled="!screenshotHelper"
@@ -27,7 +29,7 @@
                     @update:modelValue="setScreenshotHelperModifyFilename()" />
             </SettingsItem>
 
-            <SettingsItem :label="t('view.settings.advanced.advanced.screenshot_helper.copy_to_clipboard')">
+            <SettingsItem :label="t('view.settings.advanced.advanced.screenshot_helper.copy_to_clipboard')" toggle>
                 <Switch
                     :model-value="screenshotHelperCopyToClipboard"
                     :ariaLabel="t('view.settings.advanced.advanced.screenshot_helper.copy_to_clipboard')"
@@ -46,7 +48,7 @@
         </SettingsGroup>
 
         <SettingsGroup :title="t('view.settings.pictures.pictures.auto_delete_old_prints')">
-            <SettingsItem :label="t('view.settings.pictures.pictures.auto_delete_prints_from_vrc')">
+            <SettingsItem :label="t('view.settings.pictures.pictures.auto_delete_prints_from_vrc')" toggle>
                 <Switch
                     :model-value="autoDeleteOldPrints"
                     :ariaLabel="t('view.settings.pictures.pictures.auto_delete_prints_from_vrc')"
@@ -81,14 +83,14 @@
                 {{ t('view.settings.advanced.advanced.save_instance_prints_to_file.header_tooltip') }}
             </template>
 
-            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_prints_to_file.description')">
+            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_prints_to_file.description')" toggle>
                 <Switch
                     :model-value="saveInstancePrints"
                     :ariaLabel="t('view.settings.advanced.advanced.save_instance_prints_to_file.description')"
                     @update:modelValue="setSaveInstancePrints()" />
             </SettingsItem>
 
-            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_prints_to_file.crop')">
+            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_prints_to_file.crop')" toggle>
                 <Switch
                     :model-value="cropInstancePrints"
                     :ariaLabel="t('view.settings.advanced.advanced.save_instance_prints_to_file.crop')"
@@ -97,7 +99,9 @@
         </SettingsGroup>
 
         <SettingsGroup :title="t('view.settings.advanced.advanced.save_instance_stickers_to_file.header')">
-            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_stickers_to_file.description')">
+            <SettingsItem
+                :label="t('view.settings.advanced.advanced.save_instance_stickers_to_file.description')"
+                toggle>
                 <Switch
                     :model-value="saveInstanceStickers"
                     :ariaLabel="t('view.settings.advanced.advanced.save_instance_stickers_to_file.description')"
@@ -110,7 +114,7 @@
                 {{ t('view.settings.advanced.advanced.save_instance_prints_to_file.header_tooltip') }}
             </template>
 
-            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_emoji_to_file.description')">
+            <SettingsItem :label="t('view.settings.advanced.advanced.save_instance_emoji_to_file.description')" toggle>
                 <Switch
                     :model-value="saveInstanceEmoji"
                     :ariaLabel="t('view.settings.advanced.advanced.save_instance_emoji_to_file.description')"

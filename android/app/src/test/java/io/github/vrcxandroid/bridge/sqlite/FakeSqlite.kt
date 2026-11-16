@@ -20,6 +20,7 @@ class Script(
 class FakeConnection(
     private val scripts: Map<String, Script> = emptyMap(),
     var changes: Long = 0,
+    var lastInsertRowId: Long = 0,
     /** SQL texts whose prepare() fails, with the driver's message. */
     private val prepareErrors: Map<String, String> = emptyMap(),
 ) : SQLiteConnection {
@@ -31,7 +32,11 @@ class FakeConnection(
         check(!closed) { "closed" }
         prepared.add(sql)
         prepareErrors[sql]?.let { throw RuntimeException(it) }
-        val script = if (sql == "SELECT changes()") Script(listOf("changes()"), listOf(listOf(changes))) else scripts[sql] ?: Script()
+        val script = when (sql) {
+            "SELECT changes()" -> Script(listOf("changes()"), listOf(listOf(changes)))
+            "SELECT last_insert_rowid()" -> Script(listOf("last_insert_rowid()"), listOf(listOf(lastInsertRowId)))
+            else -> scripts[sql] ?: Script()
+        }
         return FakeStatement(sql, script).also { statements.add(it) }
     }
 

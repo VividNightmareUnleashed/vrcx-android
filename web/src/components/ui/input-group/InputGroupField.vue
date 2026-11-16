@@ -54,6 +54,7 @@
                         .join('; ');
                 }
                 if (s && typeof s === 'object') {
+                    /** @type {Record<string, any>} */
                     const next = { ...s };
                     delete next.display;
                     return next;
@@ -70,7 +71,7 @@
     });
 
     const inputType = computed(() => {
-        const rawType = props.type ?? attrs.type;
+        const rawType = /** @type {string | undefined} */ (props.type ?? attrs.type);
         if (props.showPassword) {
             return reveal.value ? 'text' : rawType || 'password';
         }
