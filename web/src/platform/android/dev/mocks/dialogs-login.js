@@ -7,8 +7,9 @@
 //   launch=1     a VRChat app on the device can be launched (AndroidHost.CanLaunchVRChat answers true), so the
 //                Launch and New Instance dialogs show their Launch button as on a phone with VRChat installed
 //
-// Always on: the invite message slots (SendInviteDialog and its confirm/edit dialogs) and instance short names
-// (LaunchDialog's short URL field).
+// Always on: the invite message slots (SendInviteDialog and its confirm/edit dialogs), instance short names
+// (LaunchDialog's short URL field) and a QR login device code that is never approved, so the Login page's QR code
+// and its Android "Open link on this phone" action stay up.
 
 const MINUTE = 60 * 1000;
 
@@ -220,6 +221,19 @@ export function inviteMessageSlots(messageType) {
 }
 
 export function webApi(path, query, method) {
+    if (path === 'auth/device/code' && method === 'POST') {
+        return {
+            deviceCode: 'preview-device-code',
+            userCode: 'PREV-IEW0',
+            verificationUrl: 'https://vrchat.com/home/device',
+            verificationUrlComplete: 'https://vrchat.com/home/device?code=PREV-IEW0',
+            interval: 5,
+            expiresIn: 600
+        };
+    }
+    if (path === 'auth/device/status') {
+        return {};
+    }
     let match = path.match(/^message\/usr_[^/]+\/(message|response|request|requestResponse)(?:\/\d+)?$/);
     if (match) {
         return inviteMessageSlots(match[1]);
