@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.1.0] - 2026-11-17
+
+Brings VRCX up to its v2026.11.14 release.
+
+### Added
+
+- **What's new in VRCX v2026.11.14.** Login with a QR code, group roles and
+  permissions, group and avatar gallery editing, moderation reports, group
+  invites and blocked groups under Tools, renaming instances, language ratios
+  in the instance tooltip, memos in the player list, in-app password reset,
+  and the rest of upstream's
+  [release notes](https://github.com/vrcx-team/VRCX/releases/tag/v2026.11.14).
+- **QR code login on the phone itself.** A phone can't scan its own screen, so
+  the QR login has an Open link on this phone button: approve the login in
+  your browser and come back, and VRCX signs in. Scanning from another device
+  still works.
+- **Now playing.** The game log picks up the ProTV "now playing" lines worlds
+  can write, as on PC.
+- **Group roles on phones.** The new group roles dialog stacks its list and
+  editor on phone screens.
+- **VRCVideoCacher prompt.** When a YouTube video fails with "Sign in to
+  confirm", VRCX offers VRCVideoCacher's store page, which opens in the Steam
+  app when it's installed.
+
+### Changed
+
+- **No purchasing on Android.** The new VRChat Store and Purchase History
+  tools, store tabs, marketplace search tab, Buy buttons and free store item
+  prompts are hidden. Marketplace listings stay visible.
+- **Animated images pause in the background.** Animated avatars, nameplates
+  and profile effects pause, and status polling slows, while VRCX isn't on
+  screen.
+
 ## [2.0.1] - 2026-10-21
 
 ### Fixed
